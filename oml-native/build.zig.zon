@@ -1,0 +1,12 @@
+.{
+    .name = .oml_native,
+    .version = "0.16.0",
+    .dependencies = .{
+        .zstd = .{
+            .url = "git+https://github.com/allyourcodebase/zstd.git#4ccb01e6fceae86fb9fe36c60b8a103cdc058155",
+            .hash = "zstd-1.5.7-2-KEItkAMwAADNhCbGaImKrjXjnSA51jcqEbGCA3RasVZ9",
+        },
+    },
+    .paths = .{""},
+    .fingerprint = 0x4dd9c1c66d0de8c7,
+}

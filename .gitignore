@@ -1,0 +1,41 @@
+# --- project build artifacts ---
+# zig build tree and package cache (oml-native); the tree layout IS the deploy contract
+.zig-cache/
+zig-out/
+zig-pkg/
+# this module's own Gradle outputs (zig owns build/)
+gradle-build/
+# vanilla client jars fetched by fetchClientJar (adapters compile against them)
+oml-adapter-26_3/libs/
+oml-adapter-snapshot/libs/
+# installer fat jar output
+dist/
+# build-time working directories (fetchClientJar / installLauncher)
+run/
+
+# --- Gradle ---
+.gradle
+build/
+.kotlin
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# --- IDE: IntelliJ IDEA ---
+.idea
+*.iws
+*.iml
+*.ipr
+out/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+# --- IDE: VS Code ---
+.vscode/
+
+# --- OS ---
+.DS_Store
+
+# --- JVM crash diagnostics (hs_err files land in the working directory) ---
+hs_err_pid*.log
+replay_pid*.log

@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: zulu
+          java-version: '27'
+      # oml-native is built from source as part of `build` (the installer embeds it)
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - uses: gradle/actions/setup-gradle@v6
+      # HookShapeTest and the adapter compile read the vanilla client jar; caching it
+      # avoids a full Piston download on every run (key on the game version)
+      - uses: actions/cache@v6
+        with:
+          path: |
+            oml-adapter-26_3/libs
+            oml-adapter-snapshot/libs
+          key: client-jars-26.3-26.4-snapshot-2
+      - run: ./gradlew build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: oml-installer
+          path: dist/oml-installer-*.jar
+          if-no-files-found: error
+
+  # Tag build: proper version via -Poml_version (overrides the gradle.properties snapshot),
+  # installer fat jar attached to a GitHub Release, all Maven coordinates published to
+  # GitHub Packages — the interim Maven server until a dedicated one exists.
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: zulu
+          java-version: '27'
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - uses: gradle/actions/setup-gradle@v6
+      - uses: actions/cache@v6
+        with:
+          path: |
+            oml-adapter-26_3/libs
+            oml-adapter-snapshot/libs
+          key: client-jars-26.3-26.4-snapshot-2
+      - run: ./gradlew -Poml_version="${GITHUB_REF_NAME#v}" build publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: dist/oml-installer-*.jar

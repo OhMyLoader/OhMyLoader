@@ -1,0 +1,30 @@
+[versions]
+kotlin = "2.5.0-Beta1"
+asm = "9.10.1"
+kotlinxSerialization = "1.11.0"
+shadow = "9.6.1"
+flatlaf = "3.7.2"
+netty = "4.2.18.Final"
+
+[libraries]
+kotlinGradlePlugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
+
+kotlinxSerializationJson = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
+
+asm = { module = "org.ow2.asm:asm", version.ref = "asm" }
+asmTree = { module = "org.ow2.asm:asm-tree", version.ref = "asm" }
+asmAnalysis = { module = "org.ow2.asm:asm-analysis", version.ref = "asm" }
+asmCommons = { module = "org.ow2.asm:asm-commons", version.ref = "asm" }
+
+flatlaf = { module = "com.formdev:flatlaf", version.ref = "flatlaf" }
+
+nettyCodecBase = { module = "io.netty:netty-codec-base", version.ref = "netty" }
+nettyTransport = { module = "io.netty:netty-transport", version.ref = "netty" }
+
+[bundles]
+asm = ["asm", "asmTree", "asmAnalysis", "asmCommons"]
+
+[plugins]
+kotlinJvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlinPluginSerialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
