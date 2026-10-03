@@ -45,6 +45,9 @@ object AssetDownloader {
      */
     const val ASSET_INDEX_MARKER = "oml-asset-index.txt"
 
+    /** Mojang's version manifest — the one document that knows both the id list and `latest.snapshot`. */
+    private const val VERSION_MANIFEST_URL = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
+
     /**
      * The parser for third-party JSON. `ignoreUnknownKeys` because Piston's documents carry fields we
      * do not model and never will model — failing a download because Mojang added a field would be
@@ -894,7 +897,7 @@ object AssetDownloader {
     }
 
     private fun resolveVersionDetails(client: HttpClient, versionId: String): Map<*, *> {
-        val manifest = httpGet(client, "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json")
+        val manifest = httpGet(client, VERSION_MANIFEST_URL)
             ?: throw IllegalStateException("无法获取版本清单（version_manifest_v2.json）")
         val parsed = parseToPlain(manifest)
         val versionList = parsed?.get("versions") as? List<*> ?: throw IllegalStateException("版本清单格式异常")
@@ -920,6 +923,33 @@ object AssetDownloader {
         val versionJson = httpGet(client, versionUrl) ?: throw IllegalStateException("无法获取 $versionId 的版本详情")
         return parseToPlain(versionJson)
             ?: throw IllegalStateException("版本详情格式异常")
+    }
+
+    /**
+     * Resolves the `snapshot` alias to the version manifest's latest snapshot id (network call).
+     *
+     * [resolveVersionDetails] already honors the alias for everything it downloads; this function
+     * exists for callers that need the **resolved id itself** before any download — the installer
+     * writes the real id into the launcher version JSON (`inheritsFrom`), the server directory name
+     * and `launch.properties`, and none of those documents may carry a literal "snapshot": the
+     * launcher looks up vanilla versions by exact id.
+     *
+     * Honors [proxyOverride]; throws [IllegalStateException] with a readable message when the
+     * manifest is unreachable or has no snapshot entry — callers translate that into their own
+     * user-facing error.
+     */
+    fun resolveLatestSnapshotId(): String {
+        val client = newClient()
+        try {
+            val manifest = httpGet(client, VERSION_MANIFEST_URL)
+                ?: throw IllegalStateException("无法获取版本清单（version_manifest_v2.json）")
+            val parsed = parseToPlain(manifest)
+                ?: throw IllegalStateException("版本清单格式异常")
+            return (parsed["latest"] as? Map<*, *>)?.get("snapshot") as? String
+                ?: throw IllegalStateException("版本清单没有 latest.snapshot 字段，无法解析别名 snapshot")
+        } finally {
+            closeClient(client)
+        }
     }
 
     private fun httpGet(client: HttpClient, url: String): String? {

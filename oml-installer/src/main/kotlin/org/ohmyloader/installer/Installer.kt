@@ -120,10 +120,11 @@ object Installer {
                         version,
                         VersionCatalog.versions().joinToString(", ") { it.version })
                 )
+            val resolved = resolveSnapshotAlias(supported)
             return InstallContext(
-                target = supported,
+                target = resolved,
                 targetDir = dir.absoluteFile,
-                installId = id.ifBlank { "$version-OML" },
+                installId = id.ifBlank { "${resolved.version}-OML" },
                 isolation = isolation,
                 acceptEula = acceptEula,
                 allowSharedMods = acceptSharedMods,
@@ -211,6 +212,40 @@ object Installer {
         kotlin.system.exitProcess(code)
     }
 }
+
+/**
+ * The catalogue key under which the snapshot-tracking adapter (`oml-adapter-snapshot`) is bundled.
+ * The real snapshot id churns every week or two, so the catalogue pins the stable alias instead and
+ * [resolveSnapshotAlias] resolves it to the manifest's latest snapshot at install time.
+ */
+const val SNAPSHOT_ALIAS = "snapshot"
+
+/**
+ * Resolves the `snapshot` catalogue entry to its real version id. Everything written downstream —
+ * the launcher version JSON's `inheritsFrom`, the game jar path, the server directory layout —
+ * must carry the resolved id: launchers look vanilla versions up by exact id, and a literal
+ * "snapshot" there would produce a version that inherits from nothing.
+ *
+ * Resolution needs the network (the same dependency a server install already carries); a standard
+ * install gains it only when this alias is chosen. A failure is an [InstallationException] naming
+ * the escape hatch — passing the real version id directly.
+ *
+ * [fetchLatest] is the seam that keeps this unit-testable: the tests pass a stub instead of the
+ * network.
+ */
+internal fun resolveSnapshotAlias(
+    supported: SupportedVersion,
+    fetchLatest: () -> String = { AssetDownloader.resolveLatestSnapshotId() },
+): SupportedVersion =
+    if (supported.version != SNAPSHOT_ALIAS) {
+        supported
+    } else {
+        try {
+            supported.copy(version = fetchLatest())
+        } catch (e: Exception) {
+            throw InstallationException(Messages.t("err.snapshotResolve", e.message ?: e.toString()), e)
+        }
+    }
 
 /**
  * Resolves the target implied by the arguments, honoring the `--side server` shorthand.

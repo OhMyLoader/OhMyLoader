@@ -1,7 +1,9 @@
 // The SNAPSHOT adapter: a working clone of the current stable adapter, kept tracking the latest
 // snapshot (26.4-snapshot-2) so the eventual official 26.4 adapter is a small diff instead of a
-// rewrite. It is NOT embedded in the installer and not offered for installs — nobody plays
-// snapshots; this module only exists to absorb the churn early.
+// rewrite. It IS bundled in the installer under the stable alias `snapshot` — the installer
+// resolves the alias to the manifest's latest snapshot at install time — so a snapshot player
+// installs and launches the same way a 26.3 one does; this module exists to absorb the churn
+// early and to keep that install path exercised between stable releases.
 plugins {
     id("oml.convention.kotlin-jvm")
     id("oml.convention.oml-adapter")

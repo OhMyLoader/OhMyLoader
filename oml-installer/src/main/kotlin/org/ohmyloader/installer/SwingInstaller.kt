@@ -269,7 +269,6 @@ object SwingInstaller {
         // ---- install ---------------------------------------------------------------------------
         installButton.addActionListener {
             val target = selectedTarget()
-            val supported = selectedVersion()
             val targetDir = File(dirField.text.trim())
 
             val proxy = proxyField.text.trim()
@@ -283,6 +282,19 @@ object SwingInstaller {
                     return@addActionListener
                 }
                 AssetDownloader.proxyOverride = selector
+            }
+
+            // The `snapshot` entry is an alias: resolve it (network) before anything else, so a
+            // failure is an ordinary error dialog instead of a half-built install.
+            val supported = try {
+                resolveSnapshotAlias(selectedVersion())
+            } catch (e: Exception) {
+                JOptionPane.showMessageDialog(
+                    null,
+                    (e as? InstallationException)?.message ?: e.message,
+                    Messages.t("app.title"), JOptionPane.ERROR_MESSAGE,
+                )
+                return@addActionListener
             }
 
             val artifacts = try {

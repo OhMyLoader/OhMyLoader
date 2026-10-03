@@ -334,6 +334,53 @@ class InstallerContractTest {
     }
 
     // ------------------------------------------------------------------------------------------
+    // T-1.7 / AC-5 — the snapshot adapter ships in the installer under the stable `snapshot`
+    // alias, and the alias is resolved to the manifest's latest snapshot id before anything is
+    // written: launchers look vanilla versions up by exact id, so a literal "snapshot" in
+    // `inheritsFrom` would produce a version that inherits from nothing.
+    // ------------------------------------------------------------------------------------------
+
+    @Test
+    fun `the catalogue bundles the snapshot alias on the snapshot adapter`() {
+        val entry = VersionCatalog.versions().firstOrNull { it.version == "snapshot" }
+        assertNotNull(entry, "the installer must bundle the `snapshot` alias (AC-5)")
+        assertEquals("oml-adapter-snapshot", entry.adapterArtifact)
+    }
+
+    @Test
+    fun `the snapshot alias resolves to the real id and a real id passes through`() {
+        val catalogEntry = SupportedVersion("snapshot", 27, "oml-adapter-snapshot")
+        val resolved = resolveSnapshotAlias(catalogEntry, fetchLatest = { "26.4-snapshot-9" })
+        assertEquals("26.4-snapshot-9", resolved.version, "the alias must be replaced by the real id")
+        assertEquals(27, resolved.javaMajor, "resolution must not touch the other fields")
+        assertEquals("oml-adapter-snapshot", resolved.adapterArtifact)
+
+        val stable = SupportedVersion("26.3", 27, "oml-adapter-26_3")
+        assertSame(stable, resolveSnapshotAlias(stable, fetchLatest = { fail("must not resolve for a real id") }))
+    }
+
+    @Test
+    fun `a failing snapshot resolution is a controlled installation exception`() {
+        val catalogEntry = SupportedVersion("snapshot", 27, "oml-adapter-snapshot")
+        val e = assertFailsWith<InstallationException> {
+            resolveSnapshotAlias(catalogEntry, fetchLatest = { error("manifest unreachable") })
+        }
+        assertContains(e.message!!, "snapshot")
+    }
+
+    @Test
+    fun `the build embeds the snapshot adapter so the catalogue entry is installable`() {
+        // The catalogue entry alone proves nothing: the fat jar must also carry the adapter jar
+        // under lib/, or a snapshot install dies with err.fatjar.noLayer. The writer half is the
+        // build script (same source-reading guard as the natives-layout test above).
+        val script = File("build.gradle.kts")
+        assertTrue(script.isFile, "this test must run from the oml-installer project directory")
+        val text = script.readText()
+        assertContains(text, "\"snapshot\" to \"oml-adapter-snapshot\"")
+        assertContains(text, "embedSnapshot(project(\":oml-adapter-snapshot\"))")
+    }
+
+    // ------------------------------------------------------------------------------------------
     // M1.3 — failures are exceptions, and they stay exceptions (no process death on the way out)
     // ------------------------------------------------------------------------------------------
 

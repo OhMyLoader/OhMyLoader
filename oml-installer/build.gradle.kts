@@ -36,6 +36,7 @@ val embedShared = configurations.create("embedShared")
 // Adapter only: its transitive closure IS the shared layer — embedding it transitively again
 // would duplicate every shared jar.
 val embed263 = configurations.create("embed263") { isTransitive = false }
+val embedSnapshot = configurations.create("embedSnapshot") { isTransitive = false }
 
 dependencies {
     // The installer still reuses devtools' downloader (game jar / libraries).
@@ -47,6 +48,7 @@ dependencies {
     embedShared(project(":oml-core"))
     embedShared(project(":oml-launcher"))
     embed263(project(":oml-adapter-26_3"))
+    embedSnapshot(project(":oml-adapter-snapshot"))
 
     testImplementation(kotlin("test"))
 }
@@ -56,6 +58,7 @@ dependencies {
 val embedBundled = tasks.register<Sync>("embedBundled") {
     from(embedShared)
     from(embed263)
+    from(embedSnapshot)
     into(layout.buildDirectory.dir("resources/main/lib"))
 }
 
@@ -110,8 +113,11 @@ val embedNativesJars = tasks.register<Sync>("embedNativesJars") {
 // artifact id. The id is load-bearing twice — it names the embed configuration's dependency and
 // it is what the installer matches the user's version choice against (the only per-version
 // artifact under lib/). Adding a version = one entry here + one embed configuration below.
+// `snapshot` is an alias: the installer resolves it to the manifest's latest snapshot at install
+// time (AssetDownloader.resolveLatestSnapshotId) and installs under the real id.
 val bundledAdapters = mapOf(
     "26.3" to "oml-adapter-26_3",
+    "snapshot" to "oml-adapter-snapshot",
 )
 
 /** Java major version OML requires. Written into the launcher version JSON and into every user-facing message. */
