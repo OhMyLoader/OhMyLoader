@@ -29,31 +29,37 @@ class MyMod : OMLModInitializer {
     Events.CLIENT_TICK.register { /* 每帧处理 */ }
     Events.CHAT_RECEIVED.register { event ->
       if (event.message.contains("bad_word")) {
-        event.canceled = true // 拦截聊天
+        event.cancel() // 拦截聊天（cancellable 事件由 cancel() 取消，canceled 只读）
       }
     }
   }
 }
 ```
 
-修改游戏内部未暴露的逻辑时，直接写注入规则（无需 Mixin）：
+修改游戏内部未暴露的逻辑时，直接写注入规则（无需 Mixin）：规则放在一个 `@RuleSource` 标注、实现
+`RuleSetProvider` 的类里，由 loader 在启动期读取并自检。
 
 ```kotlin
-override fun rules(): RuleSet = injection {
-  classTarget("net/minecraft/client/Minecraft") {
-    method("runTick") {
-      atHead { call("com/example/MyRules", "onGameTick", "()V") }
-      require(1) // 启动期强校验，杜绝规则静默失效
-    }
-    field("proxy", desc = "Ljava/net/Proxy;") {
-      makePublic()
-      removeFinal()
+@RuleSource("my_mod")
+object MyRules : RuleSetProvider {
+  override fun rules(): RuleSet = injection {
+    classTarget("net/minecraft/client/Minecraft") {
+      method("runTick") {
+        atHead { call("com/example/MyRules", "onGameTick", "()V") }
+        require(1) // 启动期强校验，杜绝规则静默失效
+      }
+      field("proxy", desc = "Ljava/net/Proxy;") {
+        makePublic()
+        removeFinal()
+      }
     }
   }
 }
 ```
 
-> 数据驱动内容包（`.toml` 声明方块 / 物品，免代码）在路线图上，当前尚未实现；mod 目前以 jar 形式分发。
+> mod 以 jar 形式分发。纯声明式内容可以免代码：把 `content.toml` 连同自带 `assets/` 打成 **`.oml` 归档**
+> （普通 zip 改名）放进 `mods/`，归档名即命名空间。散装 `.toml` 文件不再受支持——它无法携带贴图，
+> 方块会渲染成缺失材质——loader 会对它明确报错并跳过。
 
 ## 开发构建
 
@@ -83,11 +89,12 @@ JDK 27（Zulu）· Gradle 9.8.0 · Kotlin 2.5.0-Beta1（当前唯一声明 JVM 2
 ### 追加说明
 
 - **模块结构**：`oml-core`（加载器内核：类加载 / 注入执行器 / Mixin 前端与类合并 / SPI）、
-  `oml-api`（mod 面向的 API）、`oml-launcher`（自举头）、`oml-adapter-26_3` 与 `oml-adapter-snapshot`
+  `oml-api`（mod 面向的 API）、`oml-content`（版本无关的内容注册与 `.oml`/TOML 装载）、
+  `oml-launcher`（自举头）、`oml-adapter-26_3` 与 `oml-adapter-snapshot`
   （版本驱动层，薄）、`oml-native`（zig 构建的 C 库，Zstd 编解码）、`oml-devtools`（下载器）、
   `oml-installer`（安装器，含 Java 8 引导 Stub）。
 - **调试开关**：`-Doml.injection.verify=fail|warn|off`（注入规则自检，默认 fail）；
-  `-Doml.diagnostics=inject`（改写耗时与规模统计）。
+  `-Doml.diagnostics=<任意非 false 的值>`（改写耗时与规模统计，开关是布尔的，不取值）。
 - **installLauncher**：各 adapter 模块上的任务，把 OML 装进真实启动器（版本隔离必填：
   `-PomlIsolation=true|false`，安装 id 用 `-PomlInstallId`，服务端实例加 `-PomlSide=server`）。
 - **平台**：工具链覆盖 windows / linux / osx（含 arm64 变体）；端到端真机验证的基线是 Windows。
