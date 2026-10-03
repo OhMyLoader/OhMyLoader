@@ -42,9 +42,14 @@ interface InstallationTarget {
     fun successHint(ctx: InstallContext): String
 
     companion object {
-        val ALL: List<InstallationTarget> = listOf(
-            StandardLauncherTarget, PrismComponentTarget, DedicatedServerTarget,
-        )
+        // `lazy` is load-bearing, not decoration. The first touch of any one target object runs this
+        // interface's <clinit> (it declares default methods) while that object's own <clinit> is
+        // still in progress, and an eagerly initialized ALL would capture the unfinished object as
+        // null — the first byId() call (java -jar ... --target server) would then NPE. Lazy defers
+        // the list build until all three singletons are fully initialized.
+        val ALL: List<InstallationTarget> by lazy {
+            listOf(StandardLauncherTarget, PrismComponentTarget, DedicatedServerTarget)
+        }
 
         fun byId(id: String): InstallationTarget? = ALL.firstOrNull { it.id == id }
     }
