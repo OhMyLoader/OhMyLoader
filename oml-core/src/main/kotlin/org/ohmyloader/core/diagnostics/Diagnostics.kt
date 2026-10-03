@@ -120,7 +120,8 @@ internal object Diagnostics {
     /** Prints the report (does nothing while the switch is off). */
     fun printReport() {
         if (!enabled) return
-        recorder.lines().forEach { println(it) }
+        // the report lines carry their own diagnostics formatting; they are a report, not per-event logs
+        recorder.lines().forEach { println("[Diagnostics] $it") }
     }
 
     /** Report lines (without printing) — for tests. */

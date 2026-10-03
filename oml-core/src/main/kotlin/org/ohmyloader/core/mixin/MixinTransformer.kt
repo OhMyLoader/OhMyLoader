@@ -1,5 +1,6 @@
 package org.ohmyloader.core.mixin
 
+import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.inject.InjectionError
 import org.ohmyloader.core.diagnostics.Diagnostics
 import org.ohmyloader.core.transformer.IClassTransformer
@@ -68,7 +69,7 @@ internal class MixinTransformer(
                     // fighting over the same method…), so the hard rule "provable rule error = hard
                     // failure" applies: fail this class load instead of putting knowingly broken bytecode
                     // into the game.
-                    result.problems.forEach { System.err.println("[Mixin] merge problem: $it") }
+                    result.problems.forEach { OmlLog.error("Mixin", "merge problem: $it") }
                     throw InjectionError(
                         "Mixin class merge failed (${mixin.className} → ${context.internalName}):\n" +
                             result.problems.joinToString("\n")
@@ -79,8 +80,9 @@ internal class MixinTransformer(
             // A one-line acceptably-verifiable merge report: E2E relies on it to confirm "the merge really
             // happened on real game classes", and "`@Shadow` checks passed for n" also proves OML's
             // member namespace matches the real game classes
-            println(
-                "[Mixin] class merge: ${context.internalName} ← ${here.size} mixin(s)" +
+            OmlLog.info(
+                "Mixin",
+                "class merge: ${context.internalName} ← ${here.size} mixin(s)" +
                     " (added $fields field(s) / $methods method(s), @Overwrite $overwrites," +
                     " @Shadow validated $shadows, collision auto-renamed $renamed" +
                     (if (accessors > 0) ", @Accessor synthesized $accessors" else "") +

@@ -1,5 +1,6 @@
 package org.ohmyloader.core.compression
 
+import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.natives.NativeManager
 import org.ohmyloader.api.natives.downcall
 import java.lang.foreign.Arena
@@ -71,8 +72,7 @@ object OmlNativeZstd {
         try {
             Bindings(NativeManager.loadLibrary(OmlNativeZstd::class.java, "oml-native"))
         } catch (t: Throwable) {
-            t.printStackTrace()
-            System.err.println("[OML] ERROR: oml-native unavailable — zstd consumers stay on vanilla zlib: $t")
+            OmlLog.error("OMLNative", "oml-native unavailable — zstd consumers stay on vanilla zlib", t)
             null
         }
     }

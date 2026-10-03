@@ -2,6 +2,7 @@ package org.ohmyloader.core
 
 import org.ohmyloader.api.ModContext
 import org.ohmyloader.api.OMLModInitializer
+import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.content.ContentRegistryFactory
 import org.ohmyloader.api.content.OMLContentProvider
 import org.ohmyloader.core.classloader.OMLClassLoader
@@ -138,7 +139,7 @@ object OMLCore {
             val mirror = PrintStream(FileOutputStream(file, true), true, Charsets.UTF_8)
             System.setOut(tee(System.out, mirror))
             System.setErr(tee(System.err, mirror))
-        }.onFailure { System.err.println("[OMLCore] could not open the log file $file: $it") }
+        }.onFailure { OmlLog.error("OMLCore", "could not open the log file $file", it) }
     }
 
     /** Writes to the console and to [mirror]; see [installLogFile]. */
@@ -176,12 +177,13 @@ object OMLCore {
     private fun discoverAdapter(loader: ClassLoader): IAdapter? {
         val adapter = ServiceLoader.load(IAdapter::class.java, loader).firstOrNull()
         if (adapter == null) {
-            System.err.println("[OMLCore] Fatal error: no IAdapter implementation found (check classpath and META-INF/services)")
+            OmlLog.error("OMLCore", "Fatal: no IAdapter implementation found (check classpath and META-INF/services)")
             return null
         }
         if (adapter.javaClass.classLoader !== loader) {
-            System.err.println(
-                "[OMLCore] Fatal error: the adapter ${adapter.javaClass.name} was defined by " +
+            OmlLog.error(
+                "OMLCore",
+                "Fatal: the adapter ${adapter.javaClass.name} was defined by " +
                     "${adapter.javaClass.classLoader} instead of the OML main loader ($loader). Adapter classes must sit " +
                     "under org.ohmyloader.adapter. so the main loader defines them; otherwise every adapter-side singleton " +
                     "exists twice and injected hooks see the copy that never received the declarations."
@@ -275,7 +277,7 @@ object OMLCore {
                     TomlContentLoader.load(namespace, pack.name, text, contentRegistry.forNamespace(namespace))
                 flatContentNamespaces += summary.namespace
             } catch (t: Throwable) {
-                System.err.println("[OMLCore] Failed to load content pack ${pack.name}: $t")
+                OmlLog.error("OMLCore", "Failed to load content pack ${pack.name}", t)
             }
         }
     }
@@ -289,8 +291,9 @@ object OMLCore {
         // directory is reported and refused instead of loaded.
         for (stray in modsDir.listFiles { f -> f.isFile && f.name.endsWith(".toml", ignoreCase = true) }
                 ?.sortedBy { it.name.lowercase() } ?: emptyList()) {
-            System.err.println(
-                "[OMLCore] ${stray.name}: loose .toml content packs are no longer supported — " +
+            OmlLog.warn(
+                "OMLCore",
+                "${stray.name}: loose .toml content packs are no longer supported — " +
                     "pack it as an .oml archive (content.toml + assets/ at the root)"
             )
         }
@@ -327,7 +330,7 @@ object OMLCore {
                     contentRegistry.forNamespace(namespace),
                 )
             } catch (t: Throwable) {
-                System.err.println("[OMLCore] Failed to reload content pack ${pack.name}: $t")
+                OmlLog.error("OMLCore", "Failed to reload content pack ${pack.name}", t)
             }
         }
     }
@@ -336,9 +339,10 @@ object OMLCore {
     private fun launch(adapter: IAdapter, args: Array<String>) {
         val entryClass = if (serverSide) adapter.serverMainClass else adapter.mainClass
         if (entryClass == null) {
-            System.err.println(
-                "[OMLCore] Fatal error: server startup is not yet supported for ${adapter.versionId} " +
-                    "(IAdapter.serverMainClass is null)."
+            OmlLog.error(
+                "OMLCore",
+                "Fatal: server startup is not yet supported for ${adapter.versionId} "
+                    + "(IAdapter.serverMainClass is null)."
             )
             return
         }
@@ -346,15 +350,17 @@ object OMLCore {
         try {
             val mcMainClass = Class.forName(entryClass, true, primaryLoader)
             val mainMethod = mcMainClass.getMethod("main", Array<String>::class.java)
-            println("[OMLCore] ${loadedMods.size} mod(s) loaded, handing over to the ${if (serverSide) "dedicated server" else "client"}...")
+            OmlLog.info("OMLCore", "${loadedMods.size} mod(s) loaded, handing over to the ${if (serverSide) "dedicated server" else "client"}...")
             mainMethod.invoke(null, args)
         } catch (e: ClassNotFoundException) {
-            System.err.println("[OMLCore] Fatal error: entry class $entryClass not found!")
-            System.err.println("Please check that the game jar exists in oml-adapter-*/libs/ and matches the adapter layer version.")
-            e.printStackTrace()
+            OmlLog.error(
+                "OMLCore",
+                "Fatal: entry class $entryClass not found!\n" +
+                    "Please check that the game jar exists in oml-adapter-*/libs/ and matches the adapter layer version.",
+                e
+            )
         } catch (t: Throwable) {
-            System.err.println("[OMLCore] Failed to start Minecraft!")
-            t.printStackTrace()
+            OmlLog.error("OMLCore", "Failed to start Minecraft!", t)
         }
     }
 
@@ -382,11 +388,10 @@ object OMLCore {
 
     private fun enterModInitStage(where: String) {
         if (!modInitEntered.compareAndSet(false, true)) return
-        println("[OhMyLoader] $where initialized, entering mod initialization stage (${loadedMods.size} mod(s))")
+        OmlLog.info("OMLCore", "$where initialized, entering mod initialization stage (${loadedMods.size} mod(s))")
         // Version finalization hooks (content materialization / resource-pack injection) may only matter on one side; a failure must not block mod init
         runCatching { adapter?.onGameReady() }.onFailure {
-            System.err.println("[OMLCore] Version finalization hook failed (mod init continues):")
-            it.printStackTrace()
+            OmlLog.error("OMLCore", "Version finalization hook failed (mod init continues)", it)
         }
         initMods()
     }
@@ -454,8 +459,7 @@ object OMLCore {
     /** [Hook injection point] Called by Main before it converts a fatal exception into a crash report: records the original exception as-is. */
     @JvmStatic
     fun debugOnCrash(t: Throwable, message: String) {
-        System.err.println("[OMLCore] Original startup exception [$message]:")
-        t.printStackTrace()
+        OmlLog.error("OMLCore", "Original startup exception [$message]", t)
     }
 
     /** Runs [log] exactly once; hook handlers fire repeatedly (every frame / every title update). */
@@ -475,7 +479,7 @@ object OMLCore {
      */
     @JvmStatic
     fun onWindowTitle(title: String): String {
-        once(titleLogged) { println("[OMLCore] Window title: \"$title\" -> \"$WINDOW_TITLE\"") }
+        once(titleLogged) { OmlLog.info("OMLCore", "Window title: \"$title\" -> \"$WINDOW_TITLE\"") }
         return WINDOW_TITLE
     }
 
@@ -491,7 +495,7 @@ object OMLCore {
     @JvmStatic
     fun onRunTickTicks(ticks: Int) {
         once(ticksLogged) {
-            println("[OMLCore] Local read (resolved by type, slot inferred by data flow): ticks advanced this frame = $ticks")
+            OmlLog.info("OMLCore", "Local read (resolved by type, slot inferred by data flow): ticks advanced this frame = $ticks")
         }
     }
 
@@ -508,7 +512,7 @@ object OMLCore {
     @JvmStatic
     fun onTicksStored(ticks: Int): Int {
         once(ticksStoreLogged) {
-            println("[OMLCore] Local write (read-modify-write after STORE): ticks advanced this frame = $ticks (written back unchanged)")
+            OmlLog.info("OMLCore", "Local write (read-modify-write after STORE): ticks advanced this frame = $ticks (written back unchanged)")
         }
         return ticks
     }
@@ -525,11 +529,10 @@ object OMLCore {
                 if (instance is OMLModInitializer) {
                     instance.onInitialize(ModContext(id, name, version))
                 } else {
-                    println("[OMLCore] Mod [$id] does not implement OMLModInitializer, skipping")
+                    OmlLog.warn("OMLCore", "Mod [$id] does not implement OMLModInitializer, skipping")
                 }
             } catch (t: Throwable) {
-                System.err.println("[OMLCore] Mod [$id] initialization failed")
-                t.printStackTrace()
+                OmlLog.error("OMLCore", "Mod [$id] initialization failed", t)
             }
         }
     }
@@ -549,14 +552,14 @@ object OMLCore {
         val problems = transformers.filterIsInstance<IVerifiableTransformer>()
             .flatMap { it.verify(primaryLoader) }
         if (problems.isEmpty()) return
-        problems.forEach { System.err.println("[OMLCore][injection rule] $it") }
+        problems.forEach { OmlLog.error("OMLCore", "injection rule: $it") }
         if (mode == "fail") {
             error(
                 "[OMLCore] Injection-rule self-check failed (${problems.size} issue(s), see above). " +
                     "Fix the rules and retry; to start with problems regardless add -Doml.injection.verify=warn"
             )
         }
-        println("[OMLCore] Injection-rule self-check has ${problems.size} issue(s) (warn mode, continuing startup)")
+        OmlLog.warn("OMLCore", "Injection-rule self-check has ${problems.size} issue(s) (warn mode, continuing startup)")
     }
 
     /**
@@ -571,7 +574,7 @@ object OMLCore {
         val i = args.indexOf("--gameDir")
         if (i < 0 || i + 1 >= args.size) return File(System.getProperty("user.dir") ?: ".").absoluteFile
         val dir = File(args[i + 1])
-        if (!dir.isDirectory) println("[OMLCore] Warning: the directory pointed to by --gameDir does not exist (${dir.path})")
+        if (!dir.isDirectory) OmlLog.warn("OMLCore", "the directory pointed to by --gameDir does not exist (${dir.path})")
         return dir.absoluteFile
     }
 
@@ -589,6 +592,6 @@ object OMLCore {
     }
 
     private fun printBanner() {
-        println(">> Oh My Loader (OML) v$VERSION Starting... <<")
+        OmlLog.info("OMLCore", "Oh My Loader (OML) v$VERSION starting...")
     }
 }

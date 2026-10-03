@@ -1,5 +1,6 @@
 package org.ohmyloader.core.transformer.injection
 
+import org.ohmyloader.api.OmlLog
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.*
@@ -54,8 +55,9 @@ internal object PayloadEmitter {
             val shapeOk = handlerRet == ret &&
                 (ret == Type.VOID_TYPE || (handlerArgs.isNotEmpty() && handlerArgs[0] == ret))
             if (!shapeOk) {
-                System.err.println(
-                    "[injection] TransformReturn handler shape mismatch: target ${method.name}${method.desc} " +
+                OmlLog.error(
+                    "Injection",
+                    "TransformReturn handler shape mismatch: target ${method.name}${method.desc} " +
                         "returns $ret; handler should be shaped ($ret[, extras...])$ret, actual ${payload.desc}"
                 )
                 return null
@@ -300,7 +302,7 @@ internal object PayloadEmitter {
     ): InsnList? {
         val ret = Type.getReturnType(method.desc)
         if (ret == Type.VOID_TYPE) {
-            System.err.println("[injection] CancellableReturn requires a non-void target: ${method.name}${method.desc}")
+            OmlLog.error("Injection", "CancellableReturn requires a non-void target: ${method.name}${method.desc}")
             return null
         }
         if (!payload.desc.endsWith(CALLBACK_RETURNABLE_TAIL)) {
@@ -548,8 +550,9 @@ internal object PayloadEmitter {
     ): InsnList? {
         val targetArgs = Type.getArgumentTypes(invoke.desc)
         if (targetArgs.isEmpty()) {
-            System.err.println(
-                "[injection] the target call ${invoke.owner}.${invoke.name}${invoke.desc} of ModifyArg has no arguments: ${method.name}"
+            OmlLog.error(
+                "Injection",
+                "the target call ${invoke.owner}.${invoke.name}${invoke.desc} of ModifyArg has no arguments: ${method.name}"
             )
             return null
         }
@@ -786,8 +789,9 @@ internal object PayloadEmitter {
     ): InsnList? {
         val targetArgs = Type.getArgumentTypes(invoke.desc)
         if (targetArgs.isEmpty()) {
-            System.err.println(
-                "[injection] the target call ${invoke.owner}.${invoke.name}${invoke.desc} of ModifyArgs has no arguments: ${method.name}"
+            OmlLog.error(
+                "Injection",
+                "the target call ${invoke.owner}.${invoke.name}${invoke.desc} of ModifyArgs has no arguments: ${method.name}"
             )
             return null
         }
@@ -997,8 +1001,9 @@ internal object PayloadEmitter {
         if (actual != null && actual.descriptor != type.descriptor &&
             (type.sort == Type.OBJECT || type.sort == Type.ARRAY)
         ) {
-            System.err.println(
-                "[injection] ModifyVariable writes ${type.descriptor} back to slot $slot (originally ${actual.descriptor}): " +
+            OmlLog.error(
+                "Injection",
+                "ModifyVariable writes ${type.descriptor} back to slot $slot (originally ${actual.descriptor}): " +
                     "that slot's type in the following code is widened to ${type.descriptor}; if it is still used as the original type it will VerifyError. " +
                     "(${method.name}${method.desc}; make the handler return the original type, or confirm the code after no longer uses it as the original type)"
             )
@@ -1147,7 +1152,7 @@ internal object PayloadEmitter {
         when (value) {
             is DslValue.This -> {
                 if ((method.access and Opcodes.ACC_STATIC) != 0) {
-                    System.err.println("[injection] This can only be used in instance methods, skipped: ${method.name}${method.desc}")
+                    OmlLog.error("Injection", "This can only be used in instance methods, skipped: ${method.name}${method.desc}")
                     return false
                 }
                 list.add(VarInsnNode(Opcodes.ALOAD, 0))
@@ -1155,7 +1160,7 @@ internal object PayloadEmitter {
 
             is DslValue.Arg -> {
                 val slot = argumentSlot(method, value.index) ?: run {
-                    System.err.println("[injection] argument index out of bounds: ${method.name}${method.desc} arg=${value.index}")
+                    OmlLog.error("Injection", "argument index out of bounds: ${method.name}${method.desc} arg=${value.index}")
                     return false
                 }
                 list.add(VarInsnNode(loadOpcode(method, value.index), slot))
@@ -1164,8 +1169,9 @@ internal object PayloadEmitter {
             is DslValue.Local -> {
                 val frame = locals?.frame()
                 if (frame == null) {
-                    System.err.println(
-                        "[injection] cannot read the local variable at the injection point ($value): ${method.name}${method.desc} — " +
+                    OmlLog.error(
+                        "Injection",
+                        "cannot read the local variable at the injection point ($value): ${method.name}${method.desc} — " +
                             (locals?.explain()
                                 ?: "this payload did not request a local-variable snapshot (engine internal error)")
                     )
@@ -1188,8 +1194,9 @@ internal object PayloadEmitter {
                                     "${method.name}${method.desc} $value — ${resolution.reason}"
                             )
                         }
-                        System.err.println(
-                            "[injection] local-variable read skipped: ${method.name}${method.desc} $value — ${resolution.reason}"
+                        OmlLog.error(
+                            "Injection",
+                            "local-variable read skipped: ${method.name}${method.desc} $value — ${resolution.reason}"
                         )
                         return false
                     }

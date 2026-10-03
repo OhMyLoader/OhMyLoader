@@ -1,5 +1,6 @@
 package org.ohmyloader.core.mixin
 
+import org.ohmyloader.api.OmlLog
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
@@ -386,8 +387,9 @@ object OMLMixinRegistry {
             if (callback.canceled && callback.returnValue == null) {
                 // Cancelled without setting a value: the engine will use the zero value for the return type
                 // (0/false/null), and this is almost always a mistake
-                System.err.println(
-                    "[OML] a Mixin handler cancelled a non-void target but did not set a return value, will return the zero value " +
+                OmlLog.warn(
+                    "Mixin",
+                    "a Mixin handler cancelled a non-void target but did not set a return value, will return the zero value " +
                         "(mod=${handler.modId}, ${handler.mixinClass}.${handler.handlerMethod} → " +
                         "${handler.targetMethod}); use ci.setReturnValue(v)"
                 )
@@ -433,8 +435,9 @@ object OMLMixinRegistry {
 
     private fun reportHandlerFailure(handler: Handler, t: Throwable) {
         val cause = (t as? InvocationTargetException)?.targetException ?: t
-        System.err.println(
-            "[OML] Mixin handler exception (mod=${handler.modId}, " +
+        OmlLog.error(
+            "Mixin",
+            "Mixin handler exception (mod=${handler.modId}, " +
                 "${handler.mixinClass}.${handler.handlerMethod}): $cause"
         )
     }

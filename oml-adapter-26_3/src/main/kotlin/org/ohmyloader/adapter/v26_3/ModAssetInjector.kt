@@ -1,5 +1,6 @@
 package org.ohmyloader.adapter.v26_3
 
+import org.ohmyloader.api.OmlLog
 import org.ohmyloader.adapter.v26_3.ModAssetInjector.resolveResource
 import org.ohmyloader.core.OMLCore
 import org.ohmyloader.core.adapter.Refl
@@ -46,15 +47,14 @@ object ModAssetInjector {
                 sources.add(source)
                 sourcesField.set(repo, sources)
             } catch (t: Throwable) {
-                println("[ModAssets] injection failed: $t")
-                t.printStackTrace()
+                OmlLog.error("ModAssets", "injection failed", t)
             }
         }
         try {
             repo.javaClass.getMethod("reload").invoke(repo)
             repo.javaClass.getMethod("addPack", String::class.java).invoke(repo, PACK_ID)
         } catch (t: Throwable) {
-            println("[ModAssets] re-selection failed: $t")
+            OmlLog.error("ModAssets", "re-selection failed", t)
         }
     }
 
@@ -114,12 +114,11 @@ object ModAssetInjector {
             "readMetaAndCreate", locationClass, supplierClass, packTypeClass, selectionClass
         ).invoke(null, location, supplier, clientResources, selection)
         if (pack == null) {
-            println("[ModAssets] readMetaAndCreate returned null (pack metadata rejected)")
+            OmlLog.warn("ModAssets", "readMetaAndCreate returned null (pack metadata rejected)")
         }
         pack
     } catch (t: Throwable) {
-        println("[ModAssets] creating resource pack failed: $t")
-        t.printStackTrace()
+        OmlLog.error("ModAssets", "creating resource pack failed", t)
         null
     }
 
@@ -389,7 +388,7 @@ object ModAssetInjector {
         val identifierClass = try {
             Class.forName("net.minecraft.resources.Identifier", true, loader)
         } catch (t: Throwable) {
-            println("[ModAssets] unable to load Identifier class: $t")
+            OmlLog.error("ModAssets", "unable to load Identifier class", t)
             return
         }
         val identifierOf = identifierClass.getMethod("fromNamespaceAndPath", String::class.java, String::class.java)
@@ -446,7 +445,7 @@ object ModAssetInjector {
             if (ns == namespace) identifier.javaClass.getMethod("getPath").invoke(identifier) as String else null
         }
     } catch (t: Throwable) {
-        println("[ModAssets] querying the $registryField registry failed: $t")
+        OmlLog.error("ModAssets", "querying the $registryField registry failed", t)
         emptyList()
     }
 

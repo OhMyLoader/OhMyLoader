@@ -1,5 +1,6 @@
 package org.ohmyloader.core.ruleset
 
+import org.ohmyloader.api.OmlLog
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
@@ -126,7 +127,7 @@ internal object ModRuleSets {
                         // registered for the first @Mod only, otherwise the merge runs twice and the
                         // second run collides with its own first (@Overwrite ledger / synthetic members)
                         if (!seenRuleClasses.add(node.name)) {
-                            println("[OMLCore] rule class ${node.name} already registered by an earlier @Mod in this jar; skipping duplicate")
+                            OmlLog.warn("OMLCore", "rule class ${node.name} already registered by an earlier @Mod in this jar; skipping duplicate")
                             return@use
                         }
                         found += Found(mod.id, node.name, ruleSourceId(node), node, mod.file, own)

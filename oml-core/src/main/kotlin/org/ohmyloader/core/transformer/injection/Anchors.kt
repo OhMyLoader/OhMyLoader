@@ -1,5 +1,6 @@
 package org.ohmyloader.core.transformer.injection
 
+import org.ohmyloader.api.OmlLog
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.*
@@ -143,8 +144,9 @@ internal object AnchorResolver {
         } else {
             val node = resolveCandidates(from, method, owner, superName, frames).lastOrNull()
             if (node == null) {
-                System.err.println(
-                    "[injection] within start anchor not found: ${describe(from)} in ${method.name}${method.desc}" +
+                OmlLog.error(
+                    "Injection",
+                    "within start anchor not found: ${describe(from)} in ${method.name}${method.desc}" +
                         " — not injecting (ignoring the bound would silently widen the range to the whole method)"
                 )
                 return emptyList()
@@ -157,8 +159,9 @@ internal object AnchorResolver {
         } else {
             val node = resolveCandidates(to, method, owner, superName, frames).firstOrNull()
             if (node == null) {
-                System.err.println(
-                    "[injection] within end anchor not found: ${describe(to)} in ${method.name}${method.desc}" +
+                OmlLog.error(
+                    "Injection",
+                    "within end anchor not found: ${describe(to)} in ${method.name}${method.desc}" +
                         " — not injecting (ignoring the bound would silently widen the range to the whole method)"
                 )
                 return emptyList()
@@ -189,7 +192,7 @@ internal object AnchorResolver {
     ): List<AbstractInsnNode> {
         if (ordinal == null) return candidates
         if (ordinal < 0) {
-            System.err.println("[injection] ordinal cannot be negative ($ordinal): $point — treated as unspecified")
+            OmlLog.error("Injection", "ordinal cannot be negative ($ordinal): $point — treated as unspecified")
             return candidates
         }
         return listOfNotNull(candidates.getOrNull(ordinal))
@@ -237,8 +240,9 @@ internal object AnchorResolver {
             while (j < insns.size && insns[j].isPseudo) j++
             return insns.getOrNull(j)
         }
-        System.err.println(
-            "[injection] no delegating call (super()/this()) found for constructor ${owner}.${method.name}${method.desc}, " +
+        OmlLog.error(
+            "Injection",
+            "no delegating call (super()/this()) found for constructor ${owner}.${method.name}${method.desc}, " +
                 "CTOR_HEAD anchor cannot be resolved — not injecting (no fallback to the method head: that would use this before it is initialized)"
         )
         return null
@@ -381,8 +385,9 @@ internal object AnchorResolver {
             val slots = candidates.map { it.`var` }.distinct().sorted()
             val slot = slots.getOrNull(localOrdinal)
             if (slot == null) {
-                System.err.println(
-                    "[injection] local-variable read/write anchor: only " +
+                OmlLog.error(
+                    "Injection",
+                    "local-variable read/write anchor: only " +
                         "${slots.size} slots in ${method.name}${method.desc} match that type ($slots), cannot take occurrence ${localOrdinal + 1} — not injecting"
                 )
                 return emptyList()

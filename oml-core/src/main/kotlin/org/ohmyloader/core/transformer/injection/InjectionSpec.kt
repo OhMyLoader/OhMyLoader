@@ -1,5 +1,6 @@
 package org.ohmyloader.core.transformer.injection
 
+import org.ohmyloader.api.OmlLog
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.*
 import org.ohmyloader.api.inject.*
@@ -83,7 +84,7 @@ class InjectionSpec internal constructor(
         // still fully rewritten on write-back, but the bytes differ only in those flag bits.
         for (rule in classRules.accessRules) {
             val result = AccessApplier.apply(context.node, rule)
-            result.problems.forEach { System.err.println("[injection] $it") }
+            result.problems.forEach { OmlLog.error("Injection", it) }
             reportHits(
                 "${context.internalName} :: ${rule.describe()}",
                 rule.require, rule.expect, rule.allow, rule.optional, result.hits,
@@ -151,11 +152,12 @@ class InjectionSpec internal constructor(
                 )
 
             expect != null && hits != expect ->
-                System.err.println("[injection] hit count does not match expect: $where expects $expect, but got $hits$block")
+                OmlLog.error("Injection", "hit count does not match expect: $where expects $expect, but got $hits$block")
 
             require == null && allow == null && expect == null && hits == 0 && !optional ->
-                System.err.println(
-                    "[injection] rule hit nothing: $where" +
+                OmlLog.error(
+                    "Injection",
+                    "rule hit nothing: $where" +
                         " (if intentional, mark optional() to silence; if it must hit, mark require(1) to hard-fail)$block"
                 )
         }
@@ -192,14 +194,16 @@ class InjectionSpec internal constructor(
         when (val repair = FrameRepair.ensure(method, anchor, block, after, frames)) {
             is FrameRepair.Result.Nothing -> Unit
 
-            is FrameRepair.Result.Fixed -> System.err.println(
-                "[injection] the stack frame at the injection point did not declare locals ${repair.slots.joinToString()}," +
+            is FrameRepair.Result.Fixed -> OmlLog.error(
+                "Injection",
+                "the stack frame at the injection point did not declare locals ${repair.slots.joinToString()}," +
                     " restored from dataflow: ${method.name}${method.desc}"
             )
 
             is FrameRepair.Result.Failed -> {
-                System.err.println(
-                    "[injection] injection skipped: the stack frame at ${method.name}${method.desc} cannot carry this code — " +
+                OmlLog.error(
+                    "Injection",
+                    "injection skipped: the stack frame at ${method.name}${method.desc} cannot carry this code — " +
                         repair.reason
                 )
                 return false
@@ -224,8 +228,9 @@ class InjectionSpec internal constructor(
             // Collect all anchors first, then process each: processing doesn't affect the node references of other anchors
             val anchors = AnchorResolver.resolve(point, method, owner, superName, frames)
             if (anchors.isEmpty()) {
-                System.err.println(
-                    "[injection] anchor not found: ${AnchorResolver.describe(point)} in " +
+                OmlLog.error(
+                    "Injection",
+                    "anchor not found: ${AnchorResolver.describe(point)} in " +
                         "${owner.substringAfterLast('/')}.${method.name}${method.desc}"
                 )
                 continue
@@ -236,15 +241,17 @@ class InjectionSpec internal constructor(
                 when (payload) {
                     is Payload.CheckCall -> {
                         if (!point.isMethodHead()) {
-                            System.err.println(
-                                "[injection] CheckCall only supports method-entry anchors (HEAD / CTOR_HEAD), " +
+                            OmlLog.error(
+                                "Injection",
+                                "CheckCall only supports method-entry anchors (HEAD / CTOR_HEAD), " +
                                     "currently ${AnchorResolver.describe(point)}: ${method.name}"
                             )
                             continue
                         }
                         if (org.objectweb.asm.Type.getReturnType(method.desc) != org.objectweb.asm.Type.VOID_TYPE) {
-                            System.err.println(
-                                "[injection] CheckCall only supports void targets: ${method.name}${method.desc}"
+                            OmlLog.error(
+                                "Injection",
+                                "CheckCall only supports void targets: ${method.name}${method.desc}"
                             )
                             continue
                         }
@@ -255,15 +262,17 @@ class InjectionSpec internal constructor(
 
                     is Payload.CancellableReturn -> {
                         if (!point.isMethodHead()) {
-                            System.err.println(
-                                "[injection] CancellableReturn only supports method-entry anchors (HEAD / CTOR_HEAD), " +
+                            OmlLog.error(
+                                "Injection",
+                                "CancellableReturn only supports method-entry anchors (HEAD / CTOR_HEAD), " +
                                     "currently ${AnchorResolver.describe(point)}: ${method.name}"
                             )
                             continue
                         }
                         if (org.objectweb.asm.Type.getReturnType(method.desc) == org.objectweb.asm.Type.VOID_TYPE) {
-                            System.err.println(
-                                "[injection] CancellableReturn requires a non-void target (for a void target use CheckCall): " +
+                            OmlLog.error(
+                                "Injection",
+                                "CancellableReturn requires a non-void target (for a void target use CheckCall): " +
                                     "${method.name}${method.desc}"
                             )
                             continue
@@ -275,8 +284,9 @@ class InjectionSpec internal constructor(
 
                     is Payload.ModifyArg -> {
                         if (anchor !is MethodInsnNode) {
-                            System.err.println(
-                                "[injection] the anchor of ModifyArg must be a method call, currently " +
+                            OmlLog.error(
+                                "Injection",
+                                "the anchor of ModifyArg must be a method call, currently " +
                                     "${AnchorResolver.describe(point)}: ${method.name}"
                             )
                             continue
@@ -288,8 +298,9 @@ class InjectionSpec internal constructor(
 
                     is Payload.ModifyArgs -> {
                         if (anchor !is MethodInsnNode) {
-                            System.err.println(
-                                "[injection] the anchor of ModifyArgs must be a method call, currently " +
+                            OmlLog.error(
+                                "Injection",
+                                "the anchor of ModifyArgs must be a method call, currently " +
                                     "${AnchorResolver.describe(point)}: ${method.name}"
                             )
                             continue
@@ -303,8 +314,9 @@ class InjectionSpec internal constructor(
                         // The anchor must be a "local-variable write/read instruction": the value being changed lives
                         // in that slot; at any other anchor (say a call) there is no "which variable" to speak of.
                         if (anchor !is VarInsnNode) {
-                            System.err.println(
-                                "[injection] the anchor of ModifyVariable must be a local-variable write/read instruction" +
+                            OmlLog.error(
+                                "Injection",
+                                "the anchor of ModifyVariable must be a local-variable write/read instruction" +
                                     " (STORE / LOAD), currently ${AnchorResolver.describe(point)}: ${method.name}"
                             )
                             continue
@@ -332,8 +344,9 @@ class InjectionSpec internal constructor(
 
                             HandlerKind.MODIFY_ARG -> {
                                 if (anchor !is MethodInsnNode) {
-                                    System.err.println(
-                                        "[injection] the anchor of HandlerCall(MODIFY_ARG) must be a method call, currently " +
+                                    OmlLog.error(
+                                        "Injection",
+                                        "the anchor of HandlerCall(MODIFY_ARG) must be a method call, currently " +
                                             "${AnchorResolver.describe(point)}: ${method.name}"
                                     )
                                     continue
@@ -346,8 +359,9 @@ class InjectionSpec internal constructor(
 
                             HandlerKind.MODIFY_ARGS -> {
                                 if (anchor !is MethodInsnNode) {
-                                    System.err.println(
-                                        "[injection] the anchor of HandlerCall(MODIFY_ARGS) must be a method call, currently " +
+                                    OmlLog.error(
+                                        "Injection",
+                                        "the anchor of HandlerCall(MODIFY_ARGS) must be a method call, currently " +
                                             "${AnchorResolver.describe(point)}: ${method.name}"
                                     )
                                     continue
@@ -411,8 +425,9 @@ class InjectionSpec internal constructor(
 
                             HandlerKind.MODIFY_VAR -> {
                                 if (anchor !is VarInsnNode) {
-                                    System.err.println(
-                                        "[injection] the anchor of HandlerCall(MODIFY_VAR) must be a local-variable" +
+                                    OmlLog.error(
+                                        "Injection",
+                                        "the anchor of HandlerCall(MODIFY_VAR) must be a local-variable" +
                                             " write/read instruction (STORE / LOAD), currently " +
                                             "${AnchorResolver.describe(point)}: ${method.name}"
                                     )
@@ -435,8 +450,9 @@ class InjectionSpec internal constructor(
                                 // push the args → call the handler. The handler's return value is the whole call's result,
                                 // so it's still "value-modifying", no handle needed.
                                 if (anchor !is MethodInsnNode) {
-                                    System.err.println(
-                                        "[injection] the anchor of HandlerCall(REDIRECT) must be a method call, currently " +
+                                    OmlLog.error(
+                                        "Injection",
+                                        "the anchor of HandlerCall(REDIRECT) must be a method call, currently " +
                                             "${AnchorResolver.describe(point)}: ${method.name}"
                                     )
                                     continue
@@ -502,14 +518,15 @@ class InjectionSpec internal constructor(
                         // Redirect: replace the entire **single** matched call instruction with a static handler
                         // (descriptor identical to the original call, i.e. the handler is a static mirror of the original method)
                         if (anchor !is MethodInsnNode) {
-                            System.err.println(
-                                "[injection] the anchor of Redirect must be a method call, currently " +
+                            OmlLog.error(
+                                "Injection",
+                                "the anchor of Redirect must be a method call, currently " +
                                     "${AnchorResolver.describe(point)}: ${method.name}"
                             )
                             continue
                         }
                         if (anchor.name == "<init>") {
-                            System.err.println("[injection] Redirect cannot be applied to a constructor call: $anchor")
+                            OmlLog.error("Injection", "Redirect cannot be applied to a constructor call: $anchor")
                             continue
                         }
                         // Static call: the descriptor is taken as-is. **For an instance call the receiver must be folded into the

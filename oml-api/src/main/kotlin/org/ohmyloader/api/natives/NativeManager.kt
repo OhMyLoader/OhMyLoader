@@ -1,5 +1,6 @@
 package org.ohmyloader.api.natives
 
+import org.ohmyloader.api.OmlLog
 import java.io.File
 import java.io.InputStream
 import java.lang.foreign.Arena
@@ -68,7 +69,7 @@ object NativeManager {
             val lookup = SymbolLookup.libraryLookup(file.toPath(), Arena.global())
             // Once per file per JVM: the evidence line the run-verification looks for — WHERE the
             // library physically came from (the unified natives/ directory, never a temp path).
-            println("[OMLNative] loaded ${file.name} from ${file.parentFile.absolutePath}")
+            OmlLog.info("OMLNative", "loaded ${file.name} from ${file.parentFile.absolutePath}")
             lookup
         }
     }
@@ -100,7 +101,7 @@ object NativeManager {
                     // build): byte-identical, touching it again would only churn the directory.
                 } else {
                     extractAtomically(resource.openStream(), target)
-                    println("[OMLNative] deployed $fileName -> ${target.absolutePath}")
+                    OmlLog.info("OMLNative", "deployed $fileName -> ${target.absolutePath}")
                 }
             }
         }

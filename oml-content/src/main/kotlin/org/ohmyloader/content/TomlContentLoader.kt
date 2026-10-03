@@ -1,5 +1,6 @@
 package org.ohmyloader.content
 
+import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.content.ContentRegistry
 import java.io.File
 
@@ -16,7 +17,7 @@ import java.io.File
  */
 object TomlContentLoader {
 
-    private const val TAG = "[TomlContent]"
+    private const val TAG = "Content"   // used as the OmlLog tag
 
     private val ID = Regex("[a-z0-9_.-]+")
     private val NAMESPACE = ID
@@ -66,8 +67,9 @@ object TomlContentLoader {
         for ([path, fields] in doc) {
             when {
                 path.isEmpty() -> if (fields.isNotEmpty()) {
-                    println(
-                        "$TAG $source: ignoring root-level key(s) ${fields.keys} — " +
+                    OmlLog.warn(
+                        TAG,
+                        "$source: ignoring root-level key(s) ${fields.keys} — " +
                             "content must live under [block.<id>] or [item.<id>]"
                     )
                 }
@@ -87,8 +89,9 @@ object TomlContentLoader {
                     recipes++
                 }
 
-                else -> println(
-                    "$TAG $source: ignoring section [$path] — " +
+                else -> OmlLog.warn(
+                    TAG,
+                    "$source: ignoring section [$path] — " +
                         "expected [block.<id>] or [item.<id>]"
                 )
             }
@@ -259,8 +262,9 @@ object TomlContentLoader {
     private fun reportUnknown(fields: Map<String, Any>, known: Set<String>, source: String, ctx: String) {
         val unknown = fields.keys - known
         if (unknown.isNotEmpty()) {
-            println(
-                "$TAG $source: $ctx has unknown field(s) $unknown — check for typos " +
+            OmlLog.warn(
+                TAG,
+                "$source: $ctx has unknown field(s) $unknown — check for typos " +
                     "(known: ${known.sorted()})"
             )
         }

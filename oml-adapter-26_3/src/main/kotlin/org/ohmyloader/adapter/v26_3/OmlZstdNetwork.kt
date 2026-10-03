@@ -1,5 +1,6 @@
 package org.ohmyloader.adapter.v26_3
 
+import org.ohmyloader.api.OmlLog
 import io.netty.channel.Channel
 import io.netty.channel.ChannelHandlerContext
 import io.netty.util.AttributeKey
@@ -111,7 +112,7 @@ object OmlZstdNetwork {
             val channel = conn?.let { channel(it) }
             if (channel != null && java.lang.Boolean.TRUE != channel.attr(NEGOTIATED).get()) {
                 channel.attr(NEGOTIATED).set(true)
-                println("[OMLNetwork] Client negotiated Zstd packet compression (oml:zstd)")
+                OmlLog.info("OMLNetwork", "Client negotiated Zstd packet compression (oml:zstd)")
             }
         }
         return true
@@ -202,9 +203,9 @@ object OmlZstdNetwork {
         }
         if (negotiated) {
             if (System.getProperty("oml.side") == "server") {
-                println("[OMLNetwork] Zstd packet compression active for ${channel.remoteAddress()}")
+                OmlLog.info("OMLNetwork", "Zstd packet compression active for ${channel.remoteAddress()}")
             } else {
-                println("[OMLNetwork] Negotiated Zstd packet compression with server!")
+                OmlLog.info("OMLNetwork", "Negotiated Zstd packet compression with server!")
             }
         }
     }

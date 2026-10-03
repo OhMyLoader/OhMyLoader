@@ -1,5 +1,6 @@
 package org.ohmyloader.adapter.v26_3
 
+import org.ohmyloader.api.OmlLog
 import io.netty.buffer.ByteBuf
 import org.ohmyloader.core.compression.OmlNativeZstd
 import io.netty.channel.ChannelHandlerContext
@@ -47,8 +48,7 @@ class OmlZstdCompressionEncoder(private var threshold: Int) : MessageToByteEncod
         } catch (t: Throwable) {
             // Vanilla only surfaces exception.toString() on disconnect — print the stack so lazy
             // classloading/IO failures inside the first zstd encode stay visible.
-            System.err.println("[OMLZstd] encode failed on ${ctx.channel()}:")
-            t.printStackTrace()
+            OmlLog.error("OMLZstd", "encode failed on ${ctx.channel()}", t)
             throw t
         }
     }

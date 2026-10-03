@@ -1,5 +1,6 @@
 package org.ohmyloader.core.mixin
 
+import org.ohmyloader.api.OmlLog
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
@@ -131,8 +132,8 @@ object MixinScanner {
             }
         }.merge(extraRules)
         if (rules.isEmpty() && problems.isNotEmpty()) {
-            System.err.println("[Mixin] the front-end produced no injection rules, but there are ${problems.size} problems:")
-            problems.forEach { System.err.println("[Mixin]   $it") }
+            OmlLog.error("Mixin", "the front-end produced no injection rules, but there are ${problems.size} problems:\n" +
+                problems.joinToString("\n") { "  $it" })
         }
         return MixinTransformer(
             id = "mixin",
@@ -839,31 +840,36 @@ object MixinScanner {
         var returnsValue = false
         if (cancellable) {
             when {
-                !entryAnchor -> System.err.println(
-                    "[Mixin] short-circuiting only supports method-entry anchors (HEAD / CTOR_HEAD), degraded to notify: " +
+                !entryAnchor -> OmlLog.warn(
+                    "Mixin",
+                    "short-circuiting only supports method-entry anchors (HEAD / CTOR_HEAD), degraded to notify: " +
                         "${methodNames.first()} at=${AnchorResolver.describe(anchor)} (mod=$modId)"
                 )
 
-                tail == Tail.RETURNABLE && methodDesc == null -> System.err.println(
-                    "[Mixin] value short-circuiting must fix the target descriptor (otherwise the return type is unknown), degraded to notify: " +
+                tail == Tail.RETURNABLE && methodDesc == null -> OmlLog.warn(
+                    "Mixin",
+                    "value short-circuiting must fix the target descriptor (otherwise the return type is unknown), degraded to notify: " +
                         "${methodNames.first()} (mod=$modId)"
                 )
 
-                tail == Tail.RETURNABLE && targetIsVoid -> System.err.println(
-                    "[Mixin] target ${methodNames.first()}$methodDesc returns void, the handler should use CallbackInfo instead," +
+                tail == Tail.RETURNABLE && targetIsVoid -> OmlLog.warn(
+                    "Mixin",
+                    "target ${methodNames.first()}$methodDesc returns void, the handler should use CallbackInfo instead," +
                         " degraded to notify (mod=$modId)"
                 )
 
                 tail == Tail.RETURNABLE -> returnsValue = true
 
-                !targetIsVoid -> System.err.println(
-                    "[Mixin] target ${methodNames.first()}$methodDesc returns non-void, the short-circuiting handler should use " +
+                !targetIsVoid -> OmlLog.warn(
+                    "Mixin",
+                    "target ${methodNames.first()}$methodDesc returns non-void, the short-circuiting handler should use " +
                         "CallbackInfoReturnable to supply the return value, degraded to notify (mod=$modId)"
                 )
             }
         } else if (tail == Tail.RETURNABLE) {
-            System.err.println(
-                "[Mixin] the handler takes CallbackInfoReturnable but did not declare cancellable = true:" +
+            OmlLog.warn(
+                "Mixin",
+                "the handler takes CallbackInfoReturnable but did not declare cancellable = true:" +
                     " only registers as notify (setReturnValue will not take effect): ${methodNames.first()} (mod=$modId)"
             )
         }
@@ -1385,8 +1391,9 @@ object MixinScanner {
             Capture(slot, type, ordinal, strict)
         }
         if (locals == LocalCapture.PRINT) {
-            println(
-                "[Mixin] $where declares locals = PRINT: should be able to capture at the injection point " +
+            OmlLog.info(
+                "Mixin",
+                "$where declares locals = PRINT: should be able to capture at the injection point " +
                     captures.joinToString(", ") { "${it.type}#${it.ordinal}" } + " (mod=$modId)"
             )
         }

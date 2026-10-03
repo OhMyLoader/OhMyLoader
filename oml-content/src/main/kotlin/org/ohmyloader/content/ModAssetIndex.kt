@@ -1,5 +1,6 @@
 package org.ohmyloader.content
 
+import org.ohmyloader.api.OmlLog
 import java.io.File
 import java.util.zip.ZipFile
 
@@ -67,7 +68,7 @@ class ModAssetIndex(modJars: List<File>, assetDomains: Collection<String>) {
                     }
                 }
             } catch (t: Throwable) {
-                println("[ModAssets] cannot index ${jar.name}: $t")
+                OmlLog.error("ModAssets", "cannot index ${jar.name}", t)
             }
         }
         return keys
