@@ -85,9 +85,6 @@ object OMLCore {
         // Parent loader = the "loader classpath" set up by the launcher (core / api / adapter / dependencies all live on this layer)
         val parent = Thread.currentThread().contextClassLoader
 
-        val adapter = discoverAdapter(parent) ?: return
-        this.adapter = adapter
-
         // The mods directory defaults to `mods/` under the **game directory**: whichever version is
         // launched reads that version's directory, consistent with "version isolation".
         // The system property oml.mods.dir has higher priority — during development the two sides run
@@ -97,7 +94,15 @@ object OMLCore {
         val mods = ModScanner.scan(modsDir)
         loadedMods.addAll(mods)
 
+        // The main loader is built before the adapter is discovered, and the adapter is discovered
+        // *through it*: injected hook bytecode resolves adapter classes through the defining loader of
+        // the game class it was injected into, so an adapter instance taken from the parent loader
+        // would exist as two copies, each with its own adapter-side singletons — declarations
+        // collected in one, materialization run against the other's empty state.
         val omlLoader = createMainLoader(parent, mods)
+        val adapter = discoverAdapter(omlLoader) ?: return
+        this.adapter = adapter
+
         val transformers = registerTransformers(adapter, omlLoader, mods)
 
         // All subsequent threads resolve classes through the OML main loader (placed before the
@@ -112,11 +117,28 @@ object OMLCore {
         launch(adapter, args)
     }
 
-    /** Discovers the version adapter layer via SPI; core does not depend on any specific version. */
-    private fun discoverAdapter(parent: ClassLoader): IAdapter? {
-        val adapter = ServiceLoader.load(IAdapter::class.java, parent).firstOrNull()
+    /**
+     * Discovers the version adapter layer via SPI; core does not depend on any specific version.
+     *
+     * [loader] is the main loader, and adapter classes must be defined by it — that is what puts them
+     * in the same loader as the game classes they reference (see [OMLClassLoader]'s `ADAPTER_PREFIX`)
+     * and in the loader the injected hooks resolve them through. The check below turns the one way this
+     * can break — an adapter class defined by some other loader, hence a second copy of every
+     * adapter-side singleton — into a startup error instead of content that silently never materializes.
+     */
+    private fun discoverAdapter(loader: ClassLoader): IAdapter? {
+        val adapter = ServiceLoader.load(IAdapter::class.java, loader).firstOrNull()
         if (adapter == null) {
             System.err.println("[OMLCore] Fatal error: no IAdapter implementation found (check classpath and META-INF/services)")
+            return null
+        }
+        if (adapter.javaClass.classLoader !== loader) {
+            System.err.println(
+                "[OMLCore] Fatal error: the adapter ${adapter.javaClass.name} was defined by " +
+                    "${adapter.javaClass.classLoader} instead of the OML main loader ($loader). Adapter classes must sit " +
+                    "under org.ohmyloader.adapter. so the main loader defines them; otherwise every adapter-side singleton " +
+                    "exists twice and injected hooks see the copy that never received the declarations."
+            )
             return null
         }
         return adapter
