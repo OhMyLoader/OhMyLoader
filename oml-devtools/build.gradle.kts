@@ -27,6 +27,16 @@ tasks.withType<Test>().configureEach {
 group = providers.gradleProperty("oml_group").getOrElse("org.ohmyloader")
 version = providers.gradleProperty("oml_version").getOrElse("0.0.0-SNAPSHOT")
 
+// Stamp this module's version into the jar: AssetDownloader.USER_AGENT reads it back, so the HTTP
+// user agent reports the build that made the request instead of a literal that drifts from it.
+tasks.processResources {
+    val devtoolsVersion = project.version.toString()
+    inputs.property("omlVersion", devtoolsVersion)
+    filesMatching("oml-devtools.properties") {
+        expand("version" to devtoolsVersion)
+    }
+}
+
 dependencies {
     implementation(libs.kotlinxSerializationJson)
 

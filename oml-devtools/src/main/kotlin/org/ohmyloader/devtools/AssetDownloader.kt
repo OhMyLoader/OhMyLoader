@@ -68,7 +68,18 @@ object AssetDownloader {
     private fun parseToPlain(text: String): Map<*, *>? =
         (json.parseToJsonElement(text) as? JsonObject)?.toPlainValue() as? Map<*, *>
 
-    internal const val USER_AGENT = "OhMyLoader/0.2.0-devtools"
+    /**
+     * The HTTP user agent, carrying the version this build actually is: stamped into
+     * `oml-devtools.properties` from `project.version` at build time. A literal here would report a
+     * version the request did not come from, which is worse than reporting none.
+     */
+    internal val USER_AGENT: String = "OhMyLoader/${stampedVersion()}-devtools"
+
+    private fun stampedVersion(): String =
+        AssetDownloader::class.java.getResourceAsStream("/oml-devtools.properties")?.use { stream ->
+            java.util.Properties().apply { load(stream) }
+                .getProperty("version")?.takeIf { it.isNotBlank() }
+        } ?: "unknown"
 
     /** Concurrency cap for downloads: a sudden burst of thousands of connections triggers CDN /
      * intermediate network throttling that cuts them off (EOF / handshake reset). */
@@ -147,6 +158,9 @@ object AssetDownloader {
 
     @Serializable
     private data class IndexObject(val hash: String, val size: Long)
+
+    /** An asset object's hash, and therefore its file name and URL path — nothing else may be admitted. */
+    private val SHA1_HEX = Regex("[0-9a-fA-F]{40}")
 
     @Serializable
     private data class AssetIndex(val objects: Map<String, IndexObject>)
@@ -432,27 +446,35 @@ object AssetDownloader {
         baseUrl: String = "https://resources.download.minecraft.net",
         explicitIndex: String? = null,
     ): Int = withEngine(engine) {
-        val indexUrl: String?
+        val indexRef: IndexRef?
         val indexId: String
         if (explicitIndex != null) {
             // Legacy CLI form: the caller named the index. Its url can still come from the version JSON
             // when the id happens to be a version id, so try that first and fall back to the manifest
             // lookup inside ensureIndex.
             indexId = explicitIndex
-            indexUrl = runCatching { indexUrlFor(client, explicitIndex)?.second }.getOrNull()
+            indexRef = runCatching { indexRefFor(client, explicitIndex) }.getOrNull()
         } else {
-            val resolved = indexUrlFor(client, version)
+            val resolved = indexRefFor(client, version)
                 ?: throw IllegalStateException("version $version is missing assetIndex")
-            indexId = resolved.first
-            indexUrl = resolved.second
+            indexId = resolved.id
+            indexRef = resolved
             log("[AssetDownloader] assetIndex of version $version: $indexId")
         }
 
-        val indexFile = ensureIndex(client, assetsDir, indexId, indexUrl)
+        val indexFile = ensureIndex(client, assetsDir, indexId, indexRef)
         // Record the index id actually used — see ASSET_INDEX_MARKER: the game cannot derive it from
         // its own jar, and this marker, straight from the version metadata above, is authoritative.
         File(assetsDir, ASSET_INDEX_MARKER).writeText(indexId)
         val index = json.decodeFromString<AssetIndex>(indexFile.readText())
+        // The hash is simultaneously the file name and the URL path, so it is a path component too:
+        // a malformed (or tampered) index must never be able to point the downloader outside
+        // assets/objects, where the removal of a "corrupt" file would otherwise delete user data.
+        index.objects.values.firstOrNull { !SHA1_HEX.matches(it.hash) }?.let {
+            throw IllegalStateException(
+                "asset index ${indexFile.name} carries a malformed object hash '${it.hash}' (expected 40 hex digits)"
+            )
+        }
 
         val hashes = index.objects.values.distinctBy { it.hash }
         val downloaded = AtomicInteger()
@@ -498,33 +520,67 @@ object AssetDownloader {
     private inline fun <T> withEngine(engine: GameEnvironment.Engine, body: GameEnvironment.Engine.() -> T): T =
         engine.body()
 
-    /** The asset index id + url of [version], or null when the version JSON has no assetIndex. */
-    private fun indexUrlFor(client: HttpClient, version: String): Pair<String, String?>? {
+    /**
+     * The version JSON's `assetIndex` block — the id the game is launched with, where to fetch the
+     * index, and the digest to verify it against. The digest is the only handle on the index's
+     * integrity: unlike the game jar it is fetched from a URL the version JSON merely names.
+     */
+    private data class IndexRef(val id: String, val url: String?, val sha1: String?, val size: Long?)
+
+    private fun indexRefFor(client: HttpClient, version: String): IndexRef? {
         val ai = resolveVersionDetails(client, version)["assetIndex"] as? Map<*, *> ?: return null
         val id = ai["id"] as? String ?: return null
-        return id to (ai["url"] as? String)
+        return IndexRef(
+            id = id,
+            url = ai["url"] as? String,
+            sha1 = ai["sha1"] as? String,
+            size = (ai["size"] as? Number)?.toLong(),
+        )
     }
 
-    private fun ensureIndex(client: HttpClient, assetsDir: File, index: String, indexUrl: String? = null): File {
+    private fun ensureIndex(client: HttpClient, assetsDir: File, index: String, ref: IndexRef?): File {
         val indexFile = File(File(assetsDir, "indexes").apply { mkdirs() }, "$index.json")
+        // The version JSON carries the index's size and SHA-1, so an existing file is re-verified
+        // instead of trusted for being non-empty: a truncated index would otherwise stay in place
+        // forever and surface only as "some assets are silently missing".
         if (indexFile.exists() && indexFile.length() > 0) {
-            log("[AssetDownloader] index already exists: ${indexFile.absolutePath}")
-            return indexFile
+            if (ref == null || indexMatches(indexFile, ref)) {
+                log("[AssetDownloader] index already exists: ${indexFile.absolutePath}")
+                return indexFile
+            }
+            log("[AssetDownloader] index does not match the version metadata, re-downloading: ${indexFile.absolutePath}")
+            indexFile.delete()
         }
 
-        // indexUrl takes priority (provided by the version JSON on the --version path); otherwise fall back
-        // to resolving the index by name from the manifest
-        val url = indexUrl ?: run {
+        // The resolved ref's url takes priority (provided by the version JSON); otherwise fall back
+        // to resolving the index by name from the manifest.
+        val url = ref?.url ?: run {
             log("[AssetDownloader] index missing; attempting to auto-download $index from the Mojang version manifest ...")
-            indexUrlFor(client, index)?.second
+            indexRefFor(client, index)?.url
                 ?: throw IllegalStateException("assetIndex.url missing in the version details")
         }
 
         log("[AssetDownloader] downloading asset index: $url")
         val bytes = httpGetBytes(client, url) ?: throw IllegalStateException("index download failed")
+        if (ref != null && !indexMatches(bytes, ref)) {
+            throw IllegalStateException(
+                "asset index $index failed verification against the version metadata " +
+                    "(expected size ${ref.size ?: "?"} / sha1 ${ref.sha1 ?: "?"}, got ${bytes.size} bytes)"
+            )
+        }
         writeAtomically(indexFile, bytes)
         log("[AssetDownloader] index ready: ${indexFile.absolutePath}")
         return indexFile
+    }
+
+    private fun indexMatches(file: File, ref: IndexRef): Boolean =
+        (ref.size == null || file.length() == ref.size) && digestMatches(file, ref.sha1)
+
+    private fun indexMatches(bytes: ByteArray, ref: IndexRef): Boolean {
+        if (ref.size != null && bytes.size.toLong() != ref.size) return false
+        if (ref.sha1.isNullOrBlank()) return true
+        val actual = MessageDigest.getInstance("SHA-1").digest(bytes).joinToString("") { "%02x".format(it) }
+        return actual.equals(ref.sha1, ignoreCase = true)
     }
 
     private fun verifyOrDownload(
