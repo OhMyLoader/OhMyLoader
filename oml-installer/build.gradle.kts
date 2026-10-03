@@ -148,10 +148,9 @@ val generateVersionCatalog = tasks.register("generateVersionCatalog") {
                 appendLine("    {")
                 appendLine("      \"version\": \"$version\",")
                 appendLine("      \"javaMajor\": $javaMajor,")
-                append(if (index == versions.lastIndex)
-                    "      \"adapter\": \"${adapters[version]}\"\n"
-                else
-                    "      \"adapter\": \"${adapters[version]}\",\n")
+                // no comma here: the separator belongs on the closing brace below, where the
+                // object actually ends
+                appendLine("      \"adapter\": \"${adapters[version]}\"")
                 appendLine(if (index == versions.lastIndex) "    }" else "    },")
             }
             appendLine("  ]")
