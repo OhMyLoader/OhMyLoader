@@ -116,13 +116,13 @@ internal fun downloadProgressFor(sink: ProgressSink) =
  * A `null` artifact (this build bundles no library for the platform it runs on) is a logged skip,
  * never a failure: the runtime's zstd users degrade to the vanilla paths they also support.
  */
-internal fun installOmlNative(nativesDir: File, artifacts: ArtifactSource, log: (String) -> Unit) {
+internal fun installOmlNative(nativesDir: File, artifacts: ArtifactSource, journal: InstallJournal? = null, log: (String) -> Unit) {
     val native = artifacts.nativeLibrary() ?: nativeLibraryFromPackages(artifacts)
     if (native == null) {
         log("natives/: no oml-native library bundled for this platform, skipping")
         return
     }
-    val written = writeAtomic(File(nativesDir, native.fileName)) { native.open() }
+    val written = writeAtomic(File(nativesDir, native.fileName), journal) { native.open() }
     log("natives/${native.fileName} (${written.size / 1024} KB)")
 }
 
@@ -208,14 +208,14 @@ object StandardLauncherTarget : InstallationTarget {
         // mods directory: pinned into the version JSON so a later change of the launcher's isolation
         // setting cannot silently move it
         val modsDir = (if (ctx.isolation) File(versionDir, ctx.modsDirName) else File(gameDir, ctx.modsDirName))
-            .also { it.mkdirs() }
+            .let { ctx.journal.ensureDir(it) }
 
         sink.stage(Messages.t("stage.installLayer"))
         val layer = ctx.artifacts.layerJars()
         val libraries = mutableListOf<InstalledLibrary>()
         layer.forEachIndexed { index, artifact ->
             sink.progress(index.toLong(), layer.size.toLong(), Messages.t("label.layerFiles"))
-            libraries += installLibrary(gameDir, artifact, ctx.installId, ctx.log)
+            libraries += installLibrary(gameDir, artifact, ctx.installId, ctx.log, ctx.journal)
         }
         sink.progress(layer.size.toLong(), layer.size.toLong(), Messages.t("label.layerFiles"))
 
@@ -228,8 +228,8 @@ object StandardLauncherTarget : InstallationTarget {
         // tree (not a flat write) is what makes the jar findable. The bare copy into
         // versions/<id>/natives below is the fallback the runtime loads when nothing extracted the jar.
         val nativeLibrary =
-            installOmlNativePackages(File(gameDir, "libraries"), ctx.artifacts, ctx.log, mavenTree = true)
-        installOmlNative(File(versionDir, "natives"), ctx.artifacts, ctx.log)
+            installOmlNativePackages(File(gameDir, "libraries"), ctx.artifacts, ctx.log, mavenTree = true, journal = ctx.journal)
+        installOmlNative(File(versionDir, "natives"), ctx.artifacts, ctx.journal, ctx.log)
 
         // game jar: the client jar is the game jar for both sides — the modern server artifact is a
         // bundler wrapper, and every class it unpacks is byte-for-byte present in the client jar
@@ -242,7 +242,7 @@ object StandardLauncherTarget : InstallationTarget {
         )
 
         sink.stage(Messages.t("stage.writeVersionJson"))
-        writeVersionStubJar(File(versionDir, "${ctx.installId}.jar"))
+        writeVersionStubJar(File(versionDir, "${ctx.installId}.jar"), ctx.journal)
         writeVersionJson(
             target = File(versionDir, "${ctx.installId}.json"),
             id = ctx.installId,
@@ -252,13 +252,14 @@ object StandardLauncherTarget : InstallationTarget {
             libraries = libraries,
             jvmArgs = launcherJvmArgs(props),
             nativeLibrary = nativeLibrary,
+            journal = ctx.journal,
         )
         ctx.log("versions/${ctx.installId}/${ctx.installId}.json")
         ctx.log(Messages.t("log.librariesInstalled", ctx.installId, libraries.size))
 
         if (ctx.side == "server") {
             if (ctx.acceptEula) {
-                writeAtomicText(File(gameDir, "eula.txt"), "eula=true\n")
+                writeAtomicText(File(gameDir, "eula.txt"), "eula=true\n", ctx.journal)
                 ctx.log(Messages.t("log.eulaWritten"))
             } else {
                 ctx.log(Messages.t("log.eulaSkipped", EULA_URL))
@@ -290,7 +291,7 @@ object PrismComponentTarget : InstallationTarget {
     override val id = "prism"
     override val displayNameKey = "target.prism"
 
-    private const val COMPONENT_UID = "org.ohmyloader"
+    internal const val COMPONENT_UID = "org.ohmyloader"
     private const val MAIN_CLASS = "org.ohmyloader.launcher.OMLBootstrap"
 
     /** The bare library's name per platform — the file [installOmlNative] writes, and nothing else. */
@@ -319,9 +320,8 @@ object PrismComponentTarget : InstallationTarget {
 
     override fun install(ctx: InstallContext, sink: ProgressSink) {
         val instance = instanceRootOf(ctx.targetDir)
-        val gameDir = gameDirOf(instance) ?: File(instance, "minecraft").also { it.mkdirs() }
-        val librariesDir = File(instance, "libraries")
-        librariesDir.mkdirs()
+        val gameDir = gameDirOf(instance) ?: ctx.journal.ensureDir(File(instance, "minecraft"))
+        val librariesDir = ctx.journal.ensureDir(File(instance, "libraries"))
 
         sink.stage(Messages.t("stage.installLayer"))
         val layer = ctx.artifacts.layerJars()
@@ -334,7 +334,7 @@ object PrismComponentTarget : InstallationTarget {
             // missing local file on first launch. (The source file name lacks the install id suffix,
             // so derive the target name from the coordinate instead of artifact.fileName.)
             val flatName = "${artifact.coordinateBase}-${ctx.installId}.jar"
-            val written = writeAtomic(File(librariesDir, flatName)) { artifact.open() }
+            val written = writeAtomic(File(librariesDir, flatName), ctx.journal) { artifact.open() }
             libraryNames += LayerLayout.coordinate(artifact.coordinateBase, ctx.installId)
             ctx.log("libraries/$flatName (${written.size / 1024} KB)")
         }
@@ -368,7 +368,7 @@ object PrismComponentTarget : InstallationTarget {
         // into <instance>/natives. Every platform's jar is written, not only this machine's: a Prism
         // instance is exported as a zip and imported on another OS, and a missing platform degrades
         // zstd in silence rather than failing, so narrowing here buys nothing but a latent bug.
-        val nativeLibrary = installOmlNativePackages(librariesDir, ctx.artifacts, ctx.log)
+        val nativeLibrary = installOmlNativePackages(librariesDir, ctx.artifacts, ctx.log, journal = ctx.journal)
         // a previous layout wrote the bare library there; nothing references it
         BARE_NATIVE_NAMES.forEach { name ->
             val stale = File(instance, "natives/$name")
@@ -377,7 +377,7 @@ object PrismComponentTarget : InstallationTarget {
 
         val props = RuntimeProperties(
             gameJar = gameJar,
-            modsDir = File(gameDir, ctx.modsDirName).also { it.mkdirs() },
+            modsDir = ctx.journal.ensureDir(File(gameDir, ctx.modsDirName)),
             side = "client",
         )
 
@@ -385,6 +385,7 @@ object PrismComponentTarget : InstallationTarget {
         writeAtomicText(
             File(instance, "patches/$COMPONENT_UID.json"),
             prismPatchJson(ctx, props, libraryNames, nativeLibrary),
+            ctx.journal,
         )
         ctx.log("patches/$COMPONENT_UID.json")
 
@@ -459,7 +460,7 @@ $jvmArgs
             ctx.log(Messages.t("log.prismAlreadyRegistered", COMPONENT_UID))
             return
         }
-        File(instance, "mmc-pack.json.bak").writeText(pack.readText(Charsets.UTF_8), Charsets.UTF_8)
+        writeAtomicText(File(instance, "mmc-pack.json.bak"), pack.readText(Charsets.UTF_8), ctx.journal)
         val entry = buildJsonObject {
             put("uid", COMPONENT_UID)
             put("version", ctx.installId)
@@ -474,12 +475,12 @@ $jvmArgs
         val updated =
             JsonObject(root.entries.associate { it.toPair() } + ("components" to JsonArray(components + entry)))
         val pretty = Json { prettyPrint = true }
-        writeAtomicText(pack, pretty.encodeToString(JsonElement.serializer(), updated) + "\n")
+        writeAtomicText(pack, pretty.encodeToString(JsonElement.serializer(), updated) + "\n", ctx.journal)
         ctx.log(Messages.t("log.prismRegistered", COMPONENT_UID))
     }
 
     /** Accepts either the instance root or its minecraft dir; walks up one level when needed. */
-    private fun instanceRootOf(dir: File): File {
+    internal fun instanceRootOf(dir: File): File {
         if (File(dir, "instance.cfg").isFile || File(dir, "mmc-pack.json").isFile) return dir
         val parent = dir.parentFile
         if (parent != null && (File(parent, "instance.cfg").isFile || File(parent, "mmc-pack.json").isFile)) {
@@ -532,8 +533,14 @@ object DedicatedServerTarget : InstallationTarget {
     override fun install(ctx: InstallContext, sink: ProgressSink) {
         val base = ctx.targetDir
         val version = ctx.target.version
-        listOf("lib", "libraries", "cache", ctx.modsDirName, "minecraft/$version")
-            .forEach { File(base, it).mkdirs() }
+        // Every directory here except the mods dir is created and filled exclusively by this
+        // install (game downloads), so a failed install removes them with their content; mods/ may
+        // already hold user mods and is only ever created-empty, never wiped.
+        listOf("lib", "libraries", "cache", "minecraft/$version")
+            .forEach { ctx.journal.ownTree(ctx.journal.ensureDir(File(base, it))) }
+        ctx.journal.ensureDir(File(base, ctx.modsDirName))
+        val nativesDir = ctx.journal.ensureDir(File(base, "natives"))
+        ctx.journal.ownTree(nativesDir)
         sink.stage(Messages.t("stage.prepareServer"))
 
         // 1. Everything that needs the network happens first, and every local write waits until the
@@ -548,6 +555,7 @@ object DedicatedServerTarget : InstallationTarget {
             GameEnvironment.open(version).use { env ->
                 ctx.log(Messages.t("log.bundlerClientJar", version))
                 env.downloadClientJar(serverJar)
+                ctx.journal.recordDownload(serverJar)
             }
         }
 
@@ -559,25 +567,25 @@ object DedicatedServerTarget : InstallationTarget {
         withDownloader(sink) { progress ->
             GameEnvironment.open(version).use { env ->
                 env.downloadLibraries(librariesDir, progress)
-                env.extractNatives(librariesDir, File(base, "natives"), progress)
+                env.extractNatives(librariesDir, nativesDir, progress)
             }
         }
         // our own library joins the vanilla ones in the same directory the start scripts'
         // bootstrap points java.library.path at
-        installOmlNative(File(base, "natives"), ctx.artifacts, ctx.log)
+        installOmlNative(nativesDir, ctx.artifacts, ctx.journal, ctx.log)
 
         // 2. local writes: the shell and the layer
         // the shell's manifest carries Add-Opens / Enable-Native-Access — that is what makes a bare
         // `java -jar oml-launcher.jar` a complete command
         sink.stage(Messages.t("stage.installLayer"))
         val shell = ctx.artifacts.shellJar()
-        val shellWritten = writeAtomic(File(base, "oml-launcher.jar")) { shell.open() }
+        val shellWritten = writeAtomic(File(base, "oml-launcher.jar"), ctx.journal) { shell.open() }
         ctx.log(Messages.t("log.shellJar", shellWritten.size / 1024))
 
         val layer = ctx.artifacts.layerJars()
         layer.forEachIndexed { index, artifact ->
             sink.progress(index.toLong(), layer.size.toLong(), Messages.t("label.layerFiles"))
-            val written = writeAtomic(File(base, "lib/${artifact.fileName}")) { artifact.open() }
+            val written = writeAtomic(File(base, "lib/${artifact.fileName}"), ctx.journal) { artifact.open() }
             ctx.log(Messages.t("log.layerJar", artifact.fileName, written.size / 1024))
         }
         sink.progress(layer.size.toLong(), layer.size.toLong(), Messages.t("label.layerFiles"))
@@ -604,15 +612,15 @@ object DedicatedServerTarget : InstallationTarget {
         // finds no mods at all, and nothing reports it. (Caught by the end-to-end server boot test.)
         val propsBytes = java.io.ByteArrayOutputStream()
         props.store(propsBytes, "OhMyLoader server launch configuration")
-        writeAtomicText(File(base, "launch.properties"), propsBytes.toString("ISO-8859-1"))
+        writeAtomicText(File(base, "launch.properties"), propsBytes.toString("ISO-8859-1"), ctx.journal)
         ctx.log(Messages.t("log.launchProperties"))
 
         // 4. start scripts (with the Java version check the owner needs)
         sink.stage(Messages.t("stage.writeScripts"))
-        writeServerScripts(base, ctx.target.javaMajor, ctx.log)
+        writeServerScripts(base, ctx.target.javaMajor, ctx.log, ctx.journal)
 
         // 5. EULA — only because the user said so explicitly
-        writeAtomicText(File(base, "eula.txt"), "eula=true\n")
+        writeAtomicText(File(base, "eula.txt"), "eula=true\n", ctx.journal)
         ctx.log(Messages.t("log.eulaWritten"))
     }
 

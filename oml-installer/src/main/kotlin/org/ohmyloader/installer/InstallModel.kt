@@ -410,5 +410,10 @@ class InstallContext(
     val modsDirName: String = "mods",
     /** Prism target: also register the component in mmc-pack.json (opt-in — it edits the user's instance). */
     val addPrismComponent: Boolean = false,
+    /**
+     * Every write the install makes is recorded here, so [Installer.performInstall] can undo the
+     * whole install when any step throws (T-1.6). Created by each front end with the context.
+     */
+    val journal: InstallJournal = InstallJournal(),
     val log: (String) -> Unit = { println(it) },
 )

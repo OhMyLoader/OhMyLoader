@@ -22,7 +22,8 @@ import java.util.zip.ZipOutputStream
 class WrittenFile(val file: File, val sha1: String, val size: Long)
 
 /** Streams [open] to [target] through `<name>.tmp`, hashing as it goes, then moves it into place. */
-fun writeAtomic(target: File, open: () -> InputStream): WrittenFile {
+fun writeAtomic(target: File, journal: InstallJournal? = null, open: () -> InputStream): WrittenFile {
+    journal?.recordWrite(target)
     target.parentFile?.mkdirs()
     val tmp = File(target.parentFile, "${target.name}.tmp")
     val digest = MessageDigest.getInstance("SHA-1")
@@ -49,7 +50,8 @@ fun writeAtomic(target: File, open: () -> InputStream): WrittenFile {
     return WrittenFile(target, digest.digest().joinToString("") { "%02x".format(it) }, size)
 }
 
-fun writeAtomicText(target: File, text: String) {
+fun writeAtomicText(target: File, text: String, journal: InstallJournal? = null) {
+    journal?.recordWrite(target)
     target.parentFile?.mkdirs()
     val tmp = File(target.parentFile, "${target.name}.tmp")
     tmp.writeText(text, Charsets.UTF_8)
@@ -212,6 +214,7 @@ fun installOmlNativePackages(
     artifacts: ArtifactSource,
     log: (String) -> Unit,
     mavenTree: Boolean = false,
+    journal: InstallJournal? = null,
 ): InstalledNativeLibrary? {
     val packages = artifacts.omlNativePackages()
     if (packages.isEmpty()) {
@@ -228,7 +231,7 @@ fun installOmlNativePackages(
                     "natives-${it.classifier}"
                 )
                 else it.fileName
-            val written = writeAtomic(File(librariesRoot, relative)) { it.open() }
+            val written = writeAtomic(File(librariesRoot, relative), journal) { it.open() }
             log("libraries/$relative (${written.size / 1024} KB)")
             it.classifier!! to written
         }
@@ -307,11 +310,17 @@ private fun firstLibraryEntry(pkg: OmlNativePackage): Pair<String, ByteArray>? =
     }
 
 /** Streams a layer artifact into `libraries/`, hashing while copying. Returns `null` if [skip] says so. */
-fun installLibrary(root: File, artifact: LayerArtifact, installId: String, log: (String) -> Unit): InstalledLibrary {
+fun installLibrary(
+    root: File,
+    artifact: LayerArtifact,
+    installId: String,
+    log: (String) -> Unit,
+    journal: InstallJournal? = null,
+): InstalledLibrary {
     val base = artifact.coordinateBase
     val mavenPath = LayerLayout.mavenPath(base, installId)
     val target = File(root, "libraries/$mavenPath")
-    val written = writeAtomic(target) { artifact.open() }
+    val written = writeAtomic(target, journal) { artifact.open() }
     log("libraries/$mavenPath")
     return InstalledLibrary(LayerLayout.coordinate(base, installId), mavenPath, written.sha1, written.size)
 }
@@ -393,6 +402,7 @@ fun writeVersionJson(
     libraries: List<InstalledLibrary>,
     jvmArgs: List<String>,
     nativeLibrary: InstalledNativeLibrary? = null,
+    journal: InstallJournal? = null,
 ) {
     val libs = (libraries.map { it.toJson() } + listOfNotNull(nativeLibrary?.toJson()))
         .joinToString(",\n")
@@ -420,11 +430,12 @@ $args
   }
 }
 """
-    writeAtomicText(target, json)
+    writeAtomicText(target, json, journal)
 }
 
 /** The launcher expects a jar with the same name as the version directory; the real classes live in `libraries/`. */
-fun writeVersionStubJar(target: File) {
+fun writeVersionStubJar(target: File, journal: InstallJournal? = null) {
+    journal?.recordWrite(target)
     ZipOutputStream(target.outputStream().buffered()).use { zip ->
         zip.putNextEntry(ZipEntry("META-INF/MANIFEST.MF"))
         zip.write("Manifest-Version: 1.0\r\n\r\n".toByteArray(Charsets.UTF_8))
@@ -442,7 +453,7 @@ fun writeVersionStubJar(target: File) {
 // garbled console codepage cannot break the launch itself.
 // ---------------------------------------------------------------------------------------------------
 
-fun writeServerScripts(dir: File, javaMajor: Int, log: (String) -> Unit) {
+fun writeServerScripts(dir: File, javaMajor: Int, log: (String) -> Unit, journal: InstallJournal? = null) {
     // The prose comes from the resource bundle; what stays in code is the shell syntax around it. Note
     // the two "detected" values: they name each script's own detection result, so they must reach the
     // generated file **verbatim** — substituting a Kotlin value there would bake in the installer's
@@ -479,6 +490,7 @@ cd "$(dirname "$0")"
 # $$memoryNote
 exec java -XX:MaxRAMPercentage=75.0 -XX:+AlwaysPreTouch -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -jar oml-launcher.jar "$@"
 """,
+        journal,
     )
     makeExecutable(sh, log)
 
@@ -516,7 +528,7 @@ rem $$memoryNote
 java -XX:MaxRAMPercentage=75.0 -XX:+AlwaysPreTouch -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -jar oml-launcher.jar %*
 pause
 """.replace("\r\n", "\n").replace("\n", "\r\n")
-    writeAtomicText(File(dir, "run.bat"), bat)
+    writeAtomicText(File(dir, "run.bat"), bat, journal)
     log("run.sh / run.bat")
 }
 

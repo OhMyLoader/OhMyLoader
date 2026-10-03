@@ -32,6 +32,16 @@ object Installer {
                 AssetDownloader.proxyOverride = AssetDownloader.parseProxy(options.proxy)
                     ?: throw InstallationException(Messages.t("cli.proxyInvalid", options.proxy))
             }
+            if (options.uninstall) {
+                val ctx = options.toUninstallContext()
+                println("${Messages.t("log.prefix")} ${Messages.t("cli.banner.target", options.target.displayName)}")
+                println("${Messages.t("log.prefix")} ${Messages.t("cli.banner.dir", ctx.dir)}")
+                println("${Messages.t("log.prefix")} ${Messages.t("cli.banner.id", ctx.installId)}")
+                val hint = Uninstaller.perform(ctx)
+                println()
+                println("${Messages.t("log.prefix")} $hint")
+                return
+            }
             options.artifacts().use { artifacts ->
                 val ctx = options.toContext(artifacts)
                 val sink = ConsoleProgressSink()
@@ -60,6 +70,11 @@ object Installer {
      *
      * Warnings are logged and then ignored by design: they describe situations the user is allowed to
      * be in (an unusual directory layout). Errors abort.
+     *
+     * A failure mid-install is rolled back first (T-1.6): every write the install made is recorded
+     * in the context's [InstallJournal], and the exception only travels up after the tree has been
+     * restored to its pre-install state — the user retries into a clean directory, not a
+     * "nearly installed" one.
      */
     fun performInstall(ctx: InstallContext, target: InstallationTarget, sink: ProgressSink): String {
         val validation = target.validate(ctx)
@@ -67,7 +82,12 @@ object Installer {
         if (!validation.ok) {
             throw InstallationException(validation.errors.joinToString("\n\n"))
         }
-        target.install(ctx, sink)
+        try {
+            target.install(ctx, sink)
+        } catch (t: Throwable) {
+            ctx.journal.rollback().forEach { ctx.log("${Messages.t("log.prefix")} $it") }
+            throw t
+        }
         return target.successHint(ctx)
     }
 
@@ -99,6 +119,7 @@ object Installer {
         val nativeJars: List<File>,
         val proxy: String?,
         val modsDirName: String,
+        val uninstall: Boolean,
     ) {
 
         /**
@@ -111,6 +132,15 @@ object Installer {
             if (layerJars.isEmpty())
                 FatJarArtifactSource(version, VersionCatalog.find(version)?.adapterArtifact.orEmpty())
             else DirectoryArtifactSource(version, layerJars, shellJar, nativeJarFiles = nativeJars)
+
+        /** Context for [Uninstaller]: which shape, which directory, which install id. */
+        fun toUninstallContext(): UninstallContext =
+            UninstallContext(
+                target = target,
+                dir = dir.absoluteFile,
+                installId = id.ifBlank { "$version-OML" },
+                log = { println(it) },
+            )
 
         fun toContext(artifacts: ArtifactSource): InstallContext {
             val supported = VersionCatalog.find(version)
@@ -141,7 +171,7 @@ object Installer {
                 "--target", "--version", "--dir", "--id", "--isolation", "--side",
                 "--layer-jar", "--shell-jar", "--native-jar", "--proxy", "--mods-dir-name",
             )
-            private val BOOLEAN_FLAGS = setOf("--accept-eula", "--accept-shared-mods", "--add-prism-component")
+            private val BOOLEAN_FLAGS = setOf("--accept-eula", "--accept-shared-mods", "--add-prism-component", "--uninstall")
 
             fun parse(args: Array<String>): Options {
                 val values = HashMap<String, MutableList<String>>()
@@ -166,7 +196,11 @@ object Installer {
                 fun required(key: String): String =
                     one(key) ?: throw InstallationException(Messages.t("cli.missingRequired", key))
 
-                val version = required("--version")
+                val uninstall = "--uninstall" in flags
+                // Uninstalling removes what an install wrote; the game version is not part of that
+                // record (the install id identifies it), so it is optional here — but then the id
+                // cannot be derived from it either and must be given.
+                val version = if (uninstall) one("--version") ?: "" else required("--version")
                 val dir = File(required("--dir"))
                 val side = one("--side")?.lowercase() ?: "client"
                 if (side != "client" && side != "server") {
@@ -175,7 +209,7 @@ object Installer {
                 val target = resolveTarget(one("--target")?.lowercase(), side)
 
                 val isolation = when (val isolationRaw = one("--isolation")?.lowercase()) {
-                    null if target === StandardLauncherTarget && side == "client" ->
+                    null if !uninstall && target === StandardLauncherTarget && side == "client" ->
                         throw InstallationException(Messages.t("cli.isolationRequired"))
 
                     null -> true
@@ -186,11 +220,23 @@ object Installer {
 
                 val layerJars = values["--layer-jar"].orEmpty().map(::File)
 
+                val id = one("--id") ?: ""
+                if (uninstall) {
+                    // the default install id derives from the version; without either there is
+                    // nothing that identifies what to remove
+                    val installId = when {
+                        id.isNotBlank() -> id
+                        version.isNotBlank() -> "$version-OML"
+                        else -> throw InstallationException(Messages.t("cli.missingRequired", "--id"))
+                    }
+                    validateInstallId(installId).firstOrNull()?.let { throw InstallationException(it) }
+                }
+
                 return Options(
                     target = target,
                     version = version,
                     dir = dir,
-                    id = one("--id") ?: "",
+                    id = id,
                     isolation = isolation,
                     acceptSharedMods = "--accept-shared-mods" in flags,
                     acceptEula = "--accept-eula" in flags,
@@ -201,6 +247,7 @@ object Installer {
                     nativeJars = values["--native-jar"].orEmpty().map(::File),
                     proxy = one("--proxy"),
                     modsDirName = one("--mods-dir-name") ?: "mods",
+                    uninstall = uninstall,
                 )
             }
         }
