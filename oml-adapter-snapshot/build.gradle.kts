@@ -35,6 +35,10 @@ dependencies {
     // (already on the implementation classpath).
     testImplementation(kotlin("test"))
 
+    // AdapterRuleParityTest compares this adapter's rule surface with the stable 26.3 one: a fix
+    // applied to a single copy is invisible to both sides' shape tests, which only see their own jar.
+    testImplementation(project(":oml-adapter-26_3"))
+
     // The codec tests drive the real oml-native library through the SAME test wiring oml-core's
     // own compression tests use — shared as test fixtures instead of a per-project copy that
     // would drift.
