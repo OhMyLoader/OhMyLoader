@@ -82,6 +82,20 @@ internal fun validateInstallId(id: String): List<String> {
     return emptyList()
 }
 
+/**
+ * The mods directory name is one path segment under the game (or version) directory. Unchecked it
+ * reaches `File(base, name)` — a name carrying separators or `..` would place mods outside the
+ * installation, which is the one directory the whole (possibly version-isolated) layout is built on.
+ */
+internal fun validateModsDirName(name: String): List<String> {
+    if (name.isBlank()) return listOf(Messages.t("modsDir.empty"))
+    val bad =
+        name.any { it == '/' || it == '\\' || it == ':' || it == '*' || it == '?' || it == '"' || it == '<' || it == '>' || it == '|' }
+    if (bad) return listOf(Messages.t("modsDir.chars", name))
+    if (name == "." || name == "..") return listOf(Messages.t("modsDir.dots"))
+    return emptyList()
+}
+
 internal fun downloadProgressFor(sink: ProgressSink) =
     AssetDownloader.DownloadProgress { done, total, label -> sink.progress(done, total, label) }
 
@@ -166,6 +180,7 @@ object StandardLauncherTarget : InstallationTarget {
 
         errors += validateDirectory(ctx.targetDir, Messages.t("validate.gameDir"))
         errors += validateInstallId(ctx.installId)
+        errors += validateModsDirName(ctx.modsDirName)
 
         if (ctx.targetDir.isDirectory && !looksLikeMinecraftDir(ctx.targetDir)) {
             warnings += Messages.t("validate.mcLooksOdd")
@@ -282,6 +297,7 @@ object PrismComponentTarget : InstallationTarget {
 
         errors += validateDirectory(ctx.targetDir, Messages.t("validate.instanceDir"))
         errors += validateInstallId(ctx.installId)
+        errors += validateModsDirName(ctx.modsDirName)
 
         if (ctx.targetDir.isDirectory) {
             val instance = instanceRootOf(ctx.targetDir)
@@ -504,6 +520,7 @@ object DedicatedServerTarget : InstallationTarget {
         if (!ctx.acceptEula) {
             errors += Messages.t("validate.serverEula", EULA_URL)
         }
+        errors += validateModsDirName(ctx.modsDirName)
         return Validation(errors, warnings)
     }
 
