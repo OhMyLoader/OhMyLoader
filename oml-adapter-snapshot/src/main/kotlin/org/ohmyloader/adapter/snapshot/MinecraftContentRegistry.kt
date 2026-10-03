@@ -4,7 +4,7 @@ import org.ohmyloader.api.content.OMLBlock
 import org.ohmyloader.api.content.OMLItem
 import org.ohmyloader.api.content.OMLItemDeclaration
 import org.ohmyloader.core.OMLCore
-import org.ohmyloader.core.content.AbstractContentRegistry
+import org.ohmyloader.content.AbstractContentRegistry
 
 /**
  * 26.4-snapshot-2 content registration: two-stage translation. Collection (before `Main.main`) only records declarations — bootstrap has not run yet, and registry writes would be rejected by vanilla's own freeze check. Materialization happens at the registry freeze point (the `freeze()` call inside `BuiltInRegistries.bootStrap` redirected to [EventBridge.onRegistryFreeze]): content is registered before the registry truly closes, and 26.4-snapshot-2 runs `validate(REGISTRY)` straight after, so the game itself validates the injected content.

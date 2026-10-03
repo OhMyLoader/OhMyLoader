@@ -10,6 +10,10 @@ plugins {
 dependencies {
     api(project(":oml-api"))
 
+    // The content track (declaration parsing, asset index) lives in its own module; core owns the
+    // wiring (when packs are collected, where their namespaces land) but not the machinery.
+    implementation(project(":oml-content"))
+
     implementation(libs.bundles.asm)
 
     testImplementation(kotlin("test"))

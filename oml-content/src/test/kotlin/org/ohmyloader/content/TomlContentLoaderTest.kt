@@ -1,9 +1,8 @@
 @file:Suppress("DestructingShortFormNameMismatch")
 
-package org.ohmyloader.core.content
+package org.ohmyloader.content
 
 import org.ohmyloader.api.content.*
-import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -44,14 +43,26 @@ class TomlContentLoaderTest {
 
         override fun declareBlockDrop(block: String, drop: String, dropCountMin: Int, dropCountMax: Int) =
             error("TOML packs do not declare loot yet")
+
+        val shaped = mutableListOf<Triple<String, List<String>, Map<Char, String>>>()
+        val shapeless = mutableListOf<Pair<String, List<String>>>()
+
+        override fun declareShapedCrafting(result: String, pattern: List<String>, key: Map<Char, String>, count: Int) {
+            shaped += Triple(result, pattern, key)
+        }
+
+        override fun declareShapelessCrafting(result: String, ingredients: List<String>, count: Int) {
+            shapeless += result to ingredients
+        }
     }
 
-    /** Writes [text] as a pack named [name] in a temp dir and loads it. */
+    /** Loads [text] as a pack named [name]. */
     private fun loadPack(name: String, text: String): Pair<RecordingRegistry, TomlContentLoader.PackSummary> {
-        val file = Files.createTempDirectory("oml-toml").resolve(name).toFile()
-        file.writeText(text)
         val registry = RecordingRegistry()
-        val summary = TomlContentLoader.load(file, registry)
+        val summary = TomlContentLoader.load(
+            TomlContentLoader.namespaceOf(java.io.File(name)),
+            name, text, registry,
+        )
         return registry to summary
     }
 
@@ -190,4 +201,63 @@ class TomlContentLoaderTest {
     fun `namespace is the file name sans extension`() {
         assertEquals("ruby_pack", TomlContentLoader.namespaceOf(java.io.File("mods/ruby_pack.toml")))
     }
+
+    @Test
+    fun `shaped crafting sections map onto the registry declaration`() {
+        val (registry, summary) = loadPack(
+            "craft_pack.toml",
+            """
+            [block.ruby_ore]
+            destroy_time = 3.0
+
+            [crafting.ruby_block]
+            type = "shaped"
+            count = 1
+            pattern = ["RR", "RR"]
+            key = { R = "ruby" }
+            """.trimIndent(),
+        )
+
+        assertEquals(1, summary.recipes)
+        assertEquals(listOf("ruby_block"), registry.shaped.map { it.first })
+        assertEquals(listOf("RR", "RR"), registry.shaped.single().second)
+        assertEquals(mapOf('R' to "ruby"), registry.shaped.single().third)
+        assertTrue(registry.shapeless.isEmpty())
+    }
+
+    @Test
+    fun `shapeless crafting sections map onto the registry declaration`() {
+        val (registry, summary) = loadPack(
+            "craft_pack.toml",
+            """
+            [crafting.ruby]
+            type = "shapeless"
+            count = 2
+            ingredients = ["ruby_ore", "minecraft:stick"]
+            """.trimIndent(),
+        )
+
+        assertEquals(1, summary.recipes)
+        assertEquals(listOf("ruby"), registry.shapeless.map { it.first })
+        assertEquals(listOf("ruby_ore", "minecraft:stick"), registry.shapeless.single().second)
+    }
+
+    @Test
+    fun `a malformed crafting section fails the pack`() {
+        // unknown type
+        assertFailsWith<IllegalStateException> {
+            loadPack("bad.toml", "[crafting.x]\ntype = \"weird\"\n")
+        }.let { assertTrue("unknown type" in it.message!!) }
+
+        // shaped without a pattern
+        assertFailsWith<IllegalStateException> {
+            loadPack("bad.toml", "[crafting.x]\ntype = \"shaped\"\nkey = { R = \"ruby\" }\n")
+        }.let { assertTrue("'pattern' list" in it.message!!) }
+
+        // shapeless with no ingredients at all is a registry-level failure
+        assertFailsWith<IllegalStateException> {
+            loadPack("bad.toml", "[crafting.x]\ntype = \"shapeless\"\n")
+        }
+    }
+
 }

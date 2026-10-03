@@ -2,9 +2,11 @@ package org.ohmyloader.core
 
 import org.ohmyloader.api.ModContext
 import org.ohmyloader.api.OMLModInitializer
+import org.ohmyloader.api.content.ContentRegistryFactory
 import org.ohmyloader.api.content.OMLContentProvider
 import org.ohmyloader.core.classloader.OMLClassLoader
-import org.ohmyloader.core.content.TomlContentLoader
+import org.ohmyloader.content.AbstractContentRegistry
+import org.ohmyloader.content.TomlContentLoader
 import org.ohmyloader.core.mixin.MixinScanner
 import org.ohmyloader.core.mixin.OMLMixinRegistry
 import org.ohmyloader.core.mod.ModContainer
@@ -16,8 +18,12 @@ import org.ohmyloader.core.transformer.IVerifiableTransformer
 import java.io.File
 import java.net.URL
 import java.nio.file.Paths
+import java.util.zip.ZipFile
 import java.util.*
 import java.util.concurrent.atomic.AtomicBoolean
+
+/** The declaration entry inside a `.oml` content pack archive. */
+private const val CONTENT_TOML = "content.toml"
 
 object OMLCore {
     /**
@@ -161,8 +167,17 @@ object OMLCore {
      * domain (see flatContentNamespaces / assetDomainIds). One broken pack is reported and skipped, never
      * allowed to take the others (or the game) down.
      */
+    /** The content registry factory from the version adapter, kept for [reloadContentPacks]. */
+    @Volatile
+    private var contentRegistryFactory: ContentRegistryFactory? = null
+
+    /** The directory packs were loaded from, kept for [reloadContentPacks]. */
+    @Volatile
+    private var contentPackDir: File? = null
+
     private fun declareContent(adapter: IAdapter, modsDir: File) {
         val contentRegistry = adapter.createContentRegistry() ?: return
+        contentRegistryFactory = contentRegistry
 
         for (mod in loadedMods) {
             val instance = modInstance(mod)
@@ -171,18 +186,79 @@ object OMLCore {
             }
         }
 
-        // A plain `mods/*.toml` file declares data-only blocks and items with no jar and no code —
-        // the file name (minus extension) is the resource namespace.
-        val tomlPacks = modsDir.listFiles { f -> f.isFile && f.name.endsWith(".toml", ignoreCase = true) }
-            ?.sortedBy { it.name.lowercase() }
-            ?: emptyList()
-        for (pack in tomlPacks) {
+        loadContentPacks(modsDir, contentRegistry)
+    }
+
+    /**
+     * Loads the content packs in [modsDir] into [contentRegistry]. Internal for tests: this is the
+     * whole no-code content track, and its failure modes (bad archive, duplicate namespace) must
+     * stay unit-testable without an adapter.
+     */
+    internal fun loadContentPacks(modsDir: File, contentRegistry: ContentRegistryFactory) {
+        contentRegistryFactory = contentRegistry
+        contentPackDir = modsDir
+        for (pack in packFiles(modsDir)) {
             try {
                 val namespace = TomlContentLoader.namespaceOf(pack)
-                val summary = TomlContentLoader.load(pack, contentRegistry.forNamespace(namespace))
+                val text = archiveDeclaration(pack)
+                contentPackFiles += pack
+                val summary =
+                    TomlContentLoader.load(namespace, pack.name, text, contentRegistry.forNamespace(namespace))
                 flatContentNamespaces += summary.namespace
             } catch (t: Throwable) {
-                System.err.println("[OMLCore] Failed to load TOML content pack ${pack.name}: $t")
+                System.err.println("[OMLCore] Failed to load content pack ${pack.name}: $t")
+            }
+        }
+    }
+
+    private fun packFiles(modsDir: File): List<File> {
+        // Content packs ship as `mods/*.oml` archives: `content.toml` at the root plus the pack's
+        // own assets and data (`assets/<namespace>/...`, `data/<namespace>/...`), so a creator
+        // ships textures and lang files without a jar. The file name (minus extension) is the
+        // resource namespace. Loose `.toml` files are not a pack form — they cannot carry assets,
+        // which made their blocks render with missing textures — so one found in the mods
+        // directory is reported and refused instead of loaded.
+        for (stray in modsDir.listFiles { f -> f.isFile && f.name.endsWith(".toml", ignoreCase = true) }
+                ?.sortedBy { it.name.lowercase() } ?: emptyList()) {
+            System.err.println(
+                "[OMLCore] ${stray.name}: loose .toml content packs are no longer supported — " +
+                    "pack it as an .oml archive (content.toml + assets/ at the root)"
+            )
+        }
+        return modsDir.listFiles { f -> f.isFile && f.name.endsWith(".oml", ignoreCase = true) }
+            ?.sortedBy { it.name.lowercase() } ?: emptyList()
+    }
+
+    private fun archiveDeclaration(pack: File): String =
+        ZipFile(pack).use { zip ->
+            val entry = zip.getEntry(CONTENT_TOML)
+                ?: throw IllegalStateException("the archive has no $CONTENT_TOML at its root")
+            zip.getInputStream(entry).readBytes().toString(Charsets.UTF_8)
+        }
+
+    /**
+     * Re-reads the content packs **as they exist on disk now** and refreshes the data
+     * declarations (crafting recipes) they carry, so a vanilla `/reload` picks up edits without a
+     * restart. Blocks and items are deliberately not re-declared — their registries are frozen and
+     * the declarations were consumed at the freeze point. Called by the version adapters on
+     * vanilla pack reloads; a no-op when no adapter with content registration is loaded.
+     */
+    @JvmStatic
+    fun reloadContentPacks() {
+        val contentRegistry = contentRegistryFactory ?: return
+        val dataRegistry = contentRegistry as? AbstractContentRegistry ?: return
+        val modsDir = contentPackDir ?: return
+        dataRegistry.clearDataDeclarations()
+        for (pack in packFiles(modsDir)) {
+            try {
+                val namespace = TomlContentLoader.namespaceOf(pack)
+                contentPackFiles += pack
+                TomlContentLoader.loadDataDeclarations(
+                    namespace, pack.name, archiveDeclaration(pack),
+                    contentRegistry.forNamespace(namespace),
+                )
+            } catch (t: Throwable) {
+                System.err.println("[OMLCore] Failed to reload content pack ${pack.name}: $t")
             }
         }
     }
@@ -266,8 +342,28 @@ object OMLCore {
     @JvmStatic
     fun loadedModIds(): List<String> = loadedMods.map { it.id.lowercase() }
 
-    /** Resource namespaces contributed by flat TOML content packs ("*.toml" files in the mods directory, no jar). */
+    /** Resource namespaces contributed by content packs ("*.toml" / "*.oml" files in the mods directory, no jar). */
     private val flatContentNamespaces = linkedSetOf<String>()
+
+    /**
+     * The `.oml` content pack archives: unlike loose `.toml` packs they carry their own assets and
+     * data, so the asset index must scan them exactly like mod jars.
+     */
+    private val contentPackFiles = linkedSetOf<File>()
+
+    /** The content pack archives (`.oml`), for the asset index. */
+    @JvmStatic
+    fun contentPackFiles(): List<File> = contentPackFiles.toList()
+
+    /**
+     * The asset index over the loader's own mod set — the form the version adapters consume. Built
+     * lazily by the caller (first asset query), after the mod scan has populated this class. The
+     * class itself lives in `oml-content`; this bridge is what keeps it decoupled from [OMLCore]'s
+     * mod state.
+     */
+    @JvmStatic
+    fun assetIndex(): org.ohmyloader.content.ModAssetIndex =
+        org.ohmyloader.content.ModAssetIndex(loadedModFiles() + contentPackFiles(), assetDomainIds())
 
     /**
      * Resource domains the asset injector synthesizes content assets for: loaded mod ids plus the

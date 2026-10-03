@@ -1,4 +1,4 @@
-package org.ohmyloader.core.content
+package org.ohmyloader.content
 
 import org.ohmyloader.api.content.ContentRegistry
 import java.io.File
@@ -29,7 +29,7 @@ object TomlContentLoader {
     )
 
     /** What one pack contributed, for the loader's startup log and tests. */
-    data class PackSummary(val namespace: String, val blocks: Int, val items: Int)
+    data class PackSummary(val namespace: String, val blocks: Int, val items: Int, val recipes: Int = 0)
 
     /**
      * The resource namespace of a pack file: `ruby_pack.toml` loads as `ruby_pack`. Fails when the
@@ -45,46 +45,55 @@ object TomlContentLoader {
     }
 
     /**
-     * Parses and declares one pack into [registry] (already bound to the pack's namespace via
-     * [org.ohmyloader.api.content.ContentRegistryFactory]). Throws on malformed TOML or invalid
-     * ids — callers catch per pack, so one broken file never takes down the others.
+     * Same as [load], for packs whose declaration is not a standalone file: a `.oml` archive's
+     * `content.toml` entry. [namespace] is derived by the caller (the archive name), [source]
+     * is only used in diagnostics.
      */
-    fun load(file: File, registry: ContentRegistry): PackSummary {
-        val namespace = namespaceOf(file)
+    fun load(namespace: String, source: String, toml: String, registry: ContentRegistry): PackSummary {
+        require(NAMESPACE.matches(namespace)) {
+            "$TAG $source: namespace '$namespace' is not a valid resource domain " +
+                "(must match [a-z0-9_.-]+)"
+        }
         val doc = try {
-            MinimalToml.parse(file.readText())
+            MinimalToml.parse(toml)
         } catch (e: MinimalToml.TomlParseException) {
-            throw IllegalStateException("$TAG ${file.name}: ${e.message}", e)
+            throw IllegalStateException("$TAG $source: ${e.message}", e)
         }
 
         var blocks = 0
         var items = 0
+        var recipes = 0
         for ([path, fields] in doc) {
             when {
                 path.isEmpty() -> if (fields.isNotEmpty()) {
                     println(
-                        "$TAG ${file.name}: ignoring root-level key(s) ${fields.keys} — " +
+                        "$TAG $source: ignoring root-level key(s) ${fields.keys} — " +
                             "content must live under [block.<id>] or [item.<id>]"
                     )
                 }
 
                 path.startsWith("block.") && path.count { it == '.' } == 1 -> {
-                    declareBlock(path.removePrefix("block."), fields, file.name, registry)
+                    declareBlock(path.removePrefix("block."), fields, source, registry)
                     blocks++
                 }
 
                 path.startsWith("item.") && path.count { it == '.' } == 1 -> {
-                    declareItem(path.removePrefix("item."), fields, file.name, registry)
+                    declareItem(path.removePrefix("item."), fields, source, registry)
                     items++
                 }
 
+                path.startsWith("crafting.") && path.count { it == '.' } == 1 -> {
+                    declareCrafting(path.removePrefix("crafting."), fields, source, registry)
+                    recipes++
+                }
+
                 else -> println(
-                    "$TAG ${file.name}: ignoring section [$path] — " +
+                    "$TAG $source: ignoring section [$path] — " +
                         "expected [block.<id>] or [item.<id>]"
                 )
             }
         }
-        return PackSummary(namespace, blocks, items)
+        return PackSummary(namespace, blocks, items, recipes)
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -124,6 +133,69 @@ object TomlContentLoader {
             }
         }
         reportUnknown(fields, ITEM_KEYS, source, "item '$id'")
+    }
+
+    private val CRAFTING_KEYS = setOf("type", "count", "pattern", "key", "ingredients")
+
+    /**
+     * A `[crafting.<id>]` section: the section id is the result item's local id (bare; bound to the
+     * pack's namespace), `type` selects shaped / shapeless. Validation (pattern shape, key
+     * coverage, ingredient count) happens in the registry's own declarations — a malformed
+     * section fails the pack with the registry's reason.
+     */
+    private fun declareCrafting(id: String, fields: Map<String, Any>, source: String, registry: ContentRegistry) {
+        val type = when (val t = (fields["type"] as? String)?.lowercase()) {
+            "shaped", "shapeless" -> t
+            null -> fail(source, "crafting '$id' is missing the 'type' field (shaped or shapeless)")
+            else -> fail(source, "crafting '$id': unknown type '$t' (expected shaped or shapeless)")
+        }
+        val count = intValue(fields, "count", source, "crafting '$id'") ?: 1
+
+        reportUnknown(fields, CRAFTING_KEYS, source, "crafting '$id'")
+        if (type == "shaped") {
+            val pattern = listValue(fields, "pattern", source, "crafting '$id'")
+                ?: fail(source, "crafting '$id': shaped recipes need a 'pattern' list")
+            val keyMap = (fields["key"] as? Map<*, *>)
+                ?: fail(source, "crafting '$id': shaped recipes need a 'key' inline table, e.g. key = { R = \"my_pack:ruby\" }")
+            val key = keyMap.entries.associate { [k, v] ->
+                val char = k as? String ?: fail(source, "crafting '$id': key '$k' must be a bare single character")
+                if (char.length != 1) fail(source, "crafting '$id': key '$k' must be a single character")
+                val item = v as? String
+                    ?: fail(source, "crafting '$id': key '$k' must map to a string item id")
+                char.single() to item
+            }
+            registry.declareShapedCrafting(result = id, pattern = pattern.map { it as String }, key = key, count = count)
+        } else {
+            val ingredients = listValue(fields, "ingredients", source, "crafting '$id'")
+                ?: fail(source, "crafting '$id': shapeless recipes need an 'ingredients' list")
+            registry.declareShapelessCrafting(
+                result = id,
+                ingredients = ingredients.map { it as? String ?: fail(source, "crafting '$id': ingredients must be strings") },
+                count = count,
+            )
+        }
+    }
+
+    /**
+     * Reload pass: re-dispatches only the data declarations (crafting recipes) from [toml] into
+     * [registry]. Blocks and items are silently skipped — their registries are frozen, they cannot
+     * be re-materialized, and reloading must not grow the declaration queues. Everything else
+     * behaves like [load]: malformed crafting sections throw with the reason.
+     */
+    fun loadDataDeclarations(namespace: String, source: String, toml: String, registry: ContentRegistry) {
+        require(NAMESPACE.matches(namespace)) {
+            "$TAG $source: namespace '$namespace' is not a valid resource domain"
+        }
+        val doc = try {
+            MinimalToml.parse(toml)
+        } catch (e: MinimalToml.TomlParseException) {
+            throw IllegalStateException("$TAG $source: ${e.message}", e)
+        }
+        for ([path, fields] in doc) {
+            if (path.startsWith("crafting.") && path.count { it == '.' } == 1) {
+                declareCrafting(path.removePrefix("crafting."), fields, source, registry)
+            }
+        }
     }
 
     private fun requireId(id: String, source: String, kind: String) {

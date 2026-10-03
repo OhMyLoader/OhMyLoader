@@ -3,7 +3,7 @@ package org.ohmyloader.adapter.v26_3
 import org.ohmyloader.adapter.v26_3.ModAssetInjector.resolveResource
 import org.ohmyloader.core.OMLCore
 import org.ohmyloader.core.adapter.Refl
-import org.ohmyloader.core.mod.ModAssetIndex
+import org.ohmyloader.content.ModAssetIndex
 import java.io.ByteArrayInputStream
 import java.lang.reflect.Proxy
 
@@ -169,7 +169,7 @@ object ModAssetInjector {
                 "knownPackInfo" -> java.util.Optional.empty<Any>()
                 // getNamespaces(PackType): every namespace the mod jars ship assets for (including
                 // `minecraft` when a mod overrides vanilla assets) plus the mod ids themselves —
-                // computed by the core's ModAssetIndex. 26.3 passes the pack type in, but a mod jar
+                // computed by oml-content's ModAssetIndex. 26.3 passes the pack type in, but a mod jar
                 // holds `assets/` only, so the answer is the same for either type.
                 "getNamespaces" -> assetIndex().namespaces()
                 // no root file: pack.mcmeta is answered through getMetadataSection, not read as a file
@@ -242,15 +242,20 @@ object ModAssetInjector {
     /**
      * The asset index over the loaded mod jars, built once at the first asset query (after the mod
      * scan). Jar indexing, namespace computation and directory enumeration are version-independent
-     * and live in the core's [ModAssetIndex]; this file owns only the 26.3 pack wiring and asset
+     * and live in oml-content's [ModAssetIndex]; this file owns only the 26.3 pack wiring and asset
      * shapes on top of it.
      */
     private fun assetIndex(): ModAssetIndex {
         index?.let { return it }
         synchronized(this) {
             index?.let { return it }
-            return ModAssetIndex.ofLoadedMods().also { index = it }
+            return OMLCore.assetIndex().also { index = it }
         }
+    }
+
+    /** Drops the cached index so the next query re-scans the mod jars and pack archives. */
+    internal fun invalidateIndex() {
+        synchronized(this) { index = null }
     }
 
     /**

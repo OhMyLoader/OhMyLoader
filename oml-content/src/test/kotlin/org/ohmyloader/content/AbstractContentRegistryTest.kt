@@ -1,9 +1,10 @@
-package org.ohmyloader.core.content
+package org.ohmyloader.content
 
 import org.ohmyloader.api.content.OMLItemDeclaration
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.fail
 import kotlin.test.assertTrue
 
 /**
@@ -38,6 +39,86 @@ class AbstractContentRegistryTest {
                     org.ohmyloader.api.content.OMLItem("${decl.namespace}:${decl.id}") { "item-platform" }
             }
         }
+    }
+
+    @Test
+    fun `shaped crafting materializes into a datapack recipe json`() {
+        val registry = RecordingRegistry()
+        val facade = registry.forNamespace("mymod")
+
+        facade.declareShapedCrafting(
+            result = "ruby_block",
+            pattern = listOf("RR", "RR"),
+            key = mapOf('R' to "ruby"),
+        )
+
+        assertEquals(listOf("mymod_ruby_block"), registry.recipeIdsFor("mymod"))
+        val json = registry.recipeJsonFor("mymod", "mymod_ruby_block")
+            ?: fail("the crafting recipe must be served as datapack json")
+        assertTrue("\"type\":\"minecraft:crafting_shaped\"" in json)
+        assertTrue("\"pattern\":[\"RR\",\"RR\"]" in json)
+        assertTrue("\"R\":{\"item\":\"mymod:ruby\"}" in json, "bare ingredient ids must be qualified")
+        assertTrue("\"result\":{\"id\":\"mymod:ruby_block\",\"count\":1}" in json)
+    }
+
+    @Test
+    fun `shapeless crafting qualifies bare ingredient ids and keeps order`() {
+        val registry = RecordingRegistry()
+        val facade = registry.forNamespace("mymod")
+
+        facade.declareShapelessCrafting(
+            result = "minecraft:ruby",
+            ingredients = listOf("ruby", "minecraft:stick"),
+            count = 2,
+        )
+
+        // the result was namespaced (minecraft:ruby), so the datapack key follows it
+        val json = registry.recipeJsonFor("mymod", "minecraft_ruby")
+            ?: fail("the crafting recipe must be served as datapack json")
+        assertTrue("\"type\":\"minecraft:crafting_shapeless\"" in json)
+        assertTrue("\"ingredients\":[{\"item\":\"mymod:ruby\"},{\"item\":\"minecraft:stick\"}]" in json)
+        assertTrue("\"count\":2" in json)
+    }
+
+    @Test
+    fun `two recipes with the same result get distinct datapack keys`() {
+        val registry = RecordingRegistry()
+        val facade = registry.forNamespace("mymod")
+
+        facade.declareShapelessCrafting("ruby", listOf("ruby"))
+        facade.declareShapelessCrafting("ruby", listOf("minecraft:stick"))
+
+        val keys = registry.recipeIdsFor("mymod")
+        assertEquals(listOf("mymod_ruby", "mymod_ruby_2"), keys)
+        assertTrue(
+            registry.recipeJsonFor("mymod", "mymod_ruby_2")!!.contains("stick"),
+            "the second recipe must keep its own ingredient list",
+        )
+    }
+
+    @Test
+    fun `malformed shaped patterns fail the declaration`() {
+        val registry = RecordingRegistry()
+        val facade = registry.forNamespace("mymod")
+
+        assertFailsWith<IllegalStateException> {
+            facade.declareShapedCrafting("x", listOf("RR", "R"), mapOf('R' to "ruby"))
+        }.let { assertTrue("1-3 cells wide" in it.message!!) }
+
+        assertFailsWith<IllegalStateException> {
+            facade.declareShapedCrafting("x", listOf("RX"), mapOf('R' to "ruby"))
+        }.let { assertTrue("'X' has no key entry" in it.message!!) }
+
+        assertFailsWith<IllegalStateException> {
+            facade.declareShapedCrafting("x", listOf("RRRR"), mapOf('R' to "ruby"))
+        }.let { assertTrue("1-3 cells wide" in it.message!!) }
+
+        assertFailsWith<IllegalStateException> {
+            facade.declareShapelessCrafting("x", emptyList())
+        }.let { assertTrue("1-9 ingredients" in it.message!!) }
+
+        // nothing was queued by the failed declarations
+        assertEquals(emptyList(), registry.recipeIdsFor("mymod"))
     }
 
     @Test

@@ -1,6 +1,5 @@
-package org.ohmyloader.core.mod
+package org.ohmyloader.content
 
-import org.ohmyloader.core.OMLCore
 import java.io.File
 import java.util.zip.ZipFile
 
@@ -15,7 +14,7 @@ import java.util.zip.ZipFile
  * construction. Built once — a mod's jars do not change during a session, and this path runs
  * inside the resource reload of every repository reload.
  *
- * Namespaces are the jars' first path segments plus [assetDomains] (mod ids and flat TOML content
+ * Namespaces are the jars' first path segments plus [assetDomains] (mod ids and content
  * pack namespaces): a mod or pack can register blocks/items and let the version's asset pack
  * synthesize their assets while shipping no `assets/` entry at all, so the domain ids must be
  * reportable as namespaces even with no indexed file behind them.
@@ -74,13 +73,4 @@ class ModAssetIndex(modJars: List<File>, assetDomains: Collection<String>) {
         return keys
     }
 
-    companion object {
-        /**
-         * The index over the loader's own mod set — the form the version adapters consume. Built
-         * lazily by the caller (first asset query), after the mod scan has populated [OMLCore].
-         */
-        @JvmStatic
-        fun ofLoadedMods(): ModAssetIndex =
-            ModAssetIndex(OMLCore.loadedModFiles(), OMLCore.assetDomainIds())
-    }
 }

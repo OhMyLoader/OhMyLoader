@@ -1,4 +1,4 @@
-package org.ohmyloader.core.content
+package org.ohmyloader.content
 
 /**
  * A deliberately minimal TOML parser for flat content packs. Supports exactly the subset a data-only

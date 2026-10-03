@@ -1,4 +1,4 @@
-package org.ohmyloader.core.content
+package org.ohmyloader.content
 
 import org.ohmyloader.api.content.*
 
@@ -45,21 +45,40 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
      * The datapack JSON for a collected recipe (`data/<ns>/recipe/<key>.json`), or null if no
      * declaration matches. Served by the version's asset injector through the injected resource
      * pack, riding the vanilla datapack reload instead of patching the recipe manager.
+     *
+     * Synchronized against [clearDataDeclarations]: a vanilla reload re-reads these while the
+     * loader may be re-collecting from freshly edited pack files.
      */
+    @Synchronized
     fun recipeJsonFor(namespace: String, id: String): String? =
         collectedRecipes.firstOrNull { it.namespace == namespace && it.key == id }?.json
 
     /** The collected recipe keys of [namespace], in declaration order — the datapack directory listing. */
+    @Synchronized
     fun recipeIdsFor(namespace: String): List<String> =
         collectedRecipes.filter { it.namespace == namespace }.map { it.key }
 
     /** The datapack JSON for a collected block-drop loot table (`data/<ns>/loot_table/blocks/<key>.json`). */
+    @Synchronized
     fun lootJsonFor(namespace: String, id: String): String? =
         collectedLoot.firstOrNull { it.namespace == namespace && it.key == id }?.json
 
     /** The collected loot-table keys of [namespace], in declaration order — the datapack directory listing. */
+    @Synchronized
     fun lootIdsFor(namespace: String): List<String> =
         collectedLoot.filter { it.namespace == namespace }.map { it.key }
+
+    /**
+     * Drops every collected recipe / loot declaration so a reload pass can re-collect them from
+     * the pack files as they exist on disk **now**. Blocks and items are NOT touched: their
+     * registries are frozen, so they cannot be re-materialized and their declarations stay
+     * consumed.
+     */
+    @Synchronized
+    fun clearDataDeclarations() {
+        collectedRecipes.clear()
+        collectedLoot.clear()
+    }
 
     /** Mod-facing facade: fixes the namespace binding, then lets the mod declare content. */
     final override fun forNamespace(namespace: String): ContentRegistry =
@@ -80,6 +99,39 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                 val key = qualify(namespace, input).replace(':', '_')
                 val full = recipeJson(input, result, namespace, furnace, experience, cookingTime)
                 collectedRecipes += RecipeDecl(namespace, key, furnace.recipePath, full)
+            }
+
+            override fun declareShapedCrafting(
+                result: String,
+                pattern: List<String>,
+                key: Map<Char, String>,
+                count: Int,
+            ) {
+                validateShaped(pattern, key, count)
+                val resultId = qualify(namespace, result)
+                val keyJson = key.entries.joinToString(",") { [c, id] ->
+                    "\"$c\":" + ingredientJson(qualify(namespace, id))
+                }
+                val patternJson = pattern.joinToString(",", "[", "]") { "\"$it\"" }
+                val json = "{\"type\":\"minecraft:crafting_shaped\",\"category\":\"misc\",\"group\":\"\"," +
+                    "\"pattern\":" + patternJson + ",\"key\":{" + keyJson + "}," +
+                    "\"result\":{\"id\":\"" + resultId + "\",\"count\":" + count + "}}"
+                collectedRecipes += RecipeDecl(namespace, craftingKey(namespace, result), "crafting_shaped", json)
+            }
+
+            override fun declareShapelessCrafting(result: String, ingredients: List<String>, count: Int) {
+                if (ingredients.isEmpty() || ingredients.size > 9) {
+                    throw IllegalStateException(
+                        "shapeless crafting for '$result' needs 1-9 ingredients (got ${ingredients.size})"
+                    )
+                }
+                if (count < 1) throw IllegalStateException("crafting result count must be >= 1 (got $count)")
+                val resultId = qualify(namespace, result)
+                val ingredientsJson = ingredients.joinToString(",") { ingredientJson(qualify(namespace, it)) }
+                val json = "{\"type\":\"minecraft:crafting_shapeless\",\"category\":\"misc\",\"group\":\"\"," +
+                    "\"ingredients\":[" + ingredientsJson + "]," +
+                    "\"result\":{\"id\":\"" + resultId + "\",\"count\":" + count + "}}"
+                collectedRecipes += RecipeDecl(namespace, craftingKey(namespace, result), "crafting_shapeless", json)
             }
 
             override fun declareBlockDrop(block: String, drop: String, dropCountMin: Int, dropCountMax: Int) {
@@ -114,6 +166,48 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
 
     private fun ingredientJson(item: String): String =
         """{"item":"$item"}"""
+
+    /**
+     * The datapack file id for a crafting recipe. Unlike furnace recipes (whose input doubles as
+     * the key) a crafting recipe has no single ingredient, so the key derives from the result —
+     * and two recipes producing the same result get a numeric suffix, because a datapack
+     * directory cannot hold two files with the same name.
+     */
+    private fun craftingKey(namespace: String, result: String): String {
+        val base = qualify(namespace, result).replace(':', '_')
+        val taken = collectedRecipes.mapTo(HashSet()) { it.key }
+        var candidate = base
+        var n = 2
+        while (candidate in taken) {
+            candidate = base + "_" + n
+            n++
+        }
+        return candidate
+    }
+
+    /** Shaped-pattern validation: rectangular 1-3 × 1-3, every non-blank character keyed. */
+    private fun validateShaped(pattern: List<String>, key: Map<Char, String>, count: Int) {
+        if (pattern.isEmpty() || pattern.size > 3) {
+            throw IllegalStateException("shaped crafting pattern needs 1-3 rows (got ${pattern.size})")
+        }
+        val widths = pattern.map { it.length }
+        if (widths.distinct().size > 1 || widths[0] !in 1..3) {
+            throw IllegalStateException(
+                "shaped crafting pattern rows must all be 1-3 cells wide (got $widths)"
+            )
+        }
+        for (row in pattern) {
+            for (c in row) {
+                if (c == ' ') continue
+                if (c !in key) {
+                    throw IllegalStateException(
+                        "shaped crafting pattern character '$c' has no key entry — add it to the key map"
+                    )
+                }
+            }
+        }
+        if (count < 1) throw IllegalStateException("crafting result count must be >= 1 (got $count)")
+    }
 
     private fun lootJson(block: String, drop: String, namespace: String, min: Int, max: Int): String {
         val blockId = qualify(namespace, block)

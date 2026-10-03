@@ -1,4 +1,4 @@
-package org.ohmyloader.core.content
+package org.ohmyloader.content
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

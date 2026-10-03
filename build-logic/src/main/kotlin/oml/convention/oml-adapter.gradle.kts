@@ -17,6 +17,8 @@ val installer = configurations.create("installer")
 dependencies {
     // The adapter implements oml-core's IAdapter SPI; the sources compile against it.
     implementation(project(":oml-core"))
+    // MinecraftContentRegistry extends oml-content's AbstractContentRegistry directly.
+    implementation(project(":oml-content"))
     runtimeOnly(project(":oml-launcher"))
 
     devtools(project(":oml-devtools"))

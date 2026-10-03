@@ -1,4 +1,4 @@
-package org.ohmyloader.core.mod
+package org.ohmyloader.content
 
 import java.io.File
 import java.util.zip.ZipEntry

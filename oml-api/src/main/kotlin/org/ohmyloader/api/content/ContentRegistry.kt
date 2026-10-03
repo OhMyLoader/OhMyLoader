@@ -46,6 +46,34 @@ interface ContentRegistry {
     )
 
     /**
+     * Declares a shaped crafting recipe. [pattern] rows (1-3 rows of 1-3 cells, all the same
+     * width) reference [key] characters; `' '` is an empty cell. Ingredient and [result] ids may
+     * be namespaced (`minecraft:iron_ingot`) or bare (resolved in the declaring mod's namespace).
+     *
+     * Translated at materialization into a datapack recipe JSON served through OML's injected
+     * resource pack. Throws [IllegalStateException] on a malformed pattern (ragged rows, a
+     * character without a key entry) or [count] < 1.
+     */
+    fun declareShapedCrafting(
+        result: String,
+        pattern: List<String>,
+        key: Map<Char, String>,
+        count: Int = 1,
+    )
+
+    /**
+     * Declares a shapeless crafting recipe: [ingredients] (1-9, namespaced or bare) combined in
+     * any arrangement produce [result] (× [count]). Translated at materialization into a datapack
+     * recipe JSON served through OML's injected resource pack; throws [IllegalStateException]
+     * when [ingredients] is empty or longer than the 3×3 crafting grid allows.
+     */
+    fun declareShapelessCrafting(
+        result: String,
+        ingredients: List<String>,
+        count: Int = 1,
+    )
+
+    /**
      * Declares that breaking [block] drops [drop] (instead of the block itself). Translated into
      * a datapack loot table override at materialization; [drop] may be namespaced or bare.
      */

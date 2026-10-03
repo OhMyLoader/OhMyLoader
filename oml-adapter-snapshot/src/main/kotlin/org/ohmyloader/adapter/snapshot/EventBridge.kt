@@ -48,6 +48,10 @@ object EventBridge {
     @JvmStatic
     fun onPackRepositoryReload(repo: Any?) {
         if (repo == null) return
+        // Re-read the content packs as they exist on disk (crafting recipes ride vanilla's reload)
+        // and drop the cached asset index, so edited textures are re-scanned in the same pass.
+        OMLCore.reloadContentPacks()
+        ModAssetInjector.invalidateIndex()
         ModAssetInjector.ensureInjected(repo)
     }
 
