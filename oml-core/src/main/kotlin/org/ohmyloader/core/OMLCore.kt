@@ -16,6 +16,9 @@ import org.ohmyloader.core.spi.IAdapter
 import org.ohmyloader.core.transformer.IClassTransformer
 import org.ohmyloader.core.transformer.IVerifiableTransformer
 import java.io.File
+import java.io.FileOutputStream
+import java.io.OutputStream
+import java.io.PrintStream
 import java.net.URL
 import java.nio.file.Paths
 import java.util.zip.ZipFile
@@ -74,6 +77,7 @@ object OMLCore {
 
     @JvmStatic
     fun start(args: Array<String>) {
+        installLogFile()
         printBanner()
 
         // Client and dedicated server are two separate entry paths, selected by `oml.side` (default = client)
@@ -116,6 +120,49 @@ object OMLCore {
         declareContent(adapter, modsDir)
         launch(adapter, args)
     }
+
+    /**
+     * Mirrors this process's console output into `-Doml.log.file=<path>`, when that property is set.
+     *
+     * A launcher does not always leave the child's stdout where a user can find it, and an automated
+     * gate needs the evidence in an artifact it can upload. Installed before the banner so the whole
+     * startup — including the injection-rule self-check — lands in the file. The game's own log4j file
+     * is a different consumer and stays untouched: what is mirrored here is what this process writes to
+     * stdout/stderr, which is where OML's own diagnostics go.
+     */
+    private fun installLogFile() {
+        val path = System.getProperty("oml.log.file")?.takeIf { it.isNotBlank() } ?: return
+        val file = File(path).absoluteFile
+        runCatching {
+            file.parentFile?.mkdirs()
+            val mirror = PrintStream(FileOutputStream(file, true), true, Charsets.UTF_8)
+            System.setOut(tee(System.out, mirror))
+            System.setErr(tee(System.err, mirror))
+        }.onFailure { System.err.println("[OMLCore] could not open the log file $file: $it") }
+    }
+
+    /** Writes to the console and to [mirror]; see [installLogFile]. */
+    private fun tee(console: PrintStream, mirror: PrintStream): PrintStream =
+        PrintStream(
+            object : OutputStream() {
+                override fun write(b: Int) {
+                    console.write(b)
+                    mirror.write(b)
+                }
+
+                override fun write(b: ByteArray, off: Int, len: Int) {
+                    console.write(b, off, len)
+                    mirror.write(b, off, len)
+                }
+
+                override fun flush() {
+                    console.flush()
+                    mirror.flush()
+                }
+            },
+            true,
+            Charsets.UTF_8,
+        )
 
     /**
      * Discovers the version adapter layer via SPI; core does not depend on any specific version.
