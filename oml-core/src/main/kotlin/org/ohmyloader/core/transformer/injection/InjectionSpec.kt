@@ -249,7 +249,7 @@ class InjectionSpec internal constructor(
                             continue
                         }
                         val list = PayloadEmitter.emit(payload, method, owner, locals) ?: continue
-                        !insertBlock(method, anchor, list, after = false, frames)
+                        if (!insertBlock(method, anchor, list, after = false, frames)) continue
                         inserted++
                     }
 
@@ -269,7 +269,7 @@ class InjectionSpec internal constructor(
                             continue
                         }
                         val list = PayloadEmitter.emit(payload, method, owner, locals) ?: continue
-                        !insertBlock(method, anchor, list, after = false, frames)
+                        if (!insertBlock(method, anchor, list, after = false, frames)) continue
                         inserted++
                     }
 
@@ -282,7 +282,7 @@ class InjectionSpec internal constructor(
                             continue
                         }
                         val list = PayloadEmitter.emitModifyArg(payload, method, owner, anchor, locals) ?: continue
-                        !insertBlock(method, anchor, list, after = false, frames)
+                        if (!insertBlock(method, anchor, list, after = false, frames)) continue
                         inserted++
                     }
 
@@ -295,7 +295,7 @@ class InjectionSpec internal constructor(
                             continue
                         }
                         val list = PayloadEmitter.emitModifyArgs(payload, method, owner, anchor, locals) ?: continue
-                        !insertBlock(method, anchor, list, after = false, frames)
+                        if (!insertBlock(method, anchor, list, after = false, frames)) continue
                         inserted++
                     }
 
@@ -313,7 +313,7 @@ class InjectionSpec internal constructor(
                             ?: continue
                         // Store sets after=true (write after the write), Load sets after=false (write before the read) —
                         // both landing points are answered by the anchor itself; handled uniformly here
-                        !insertBlock(method, anchor, list, point.after, frames)
+                        if (!insertBlock(method, anchor, list, point.after, frames)) continue
                         inserted++
                     }
 
@@ -326,7 +326,7 @@ class InjectionSpec internal constructor(
                                 // Entry kind: the anchor is carried by the rule itself (HEAD / CTOR_HEAD, etc.),
                                 // and the landing goes through the common branch
                                 val list = PayloadEmitter.emit(payload, method, owner, locals) ?: continue
-                                !insertBlock(method, anchor, list, point.after, frames)
+                                if (!insertBlock(method, anchor, list, point.after, frames)) continue
                                 inserted++
                             }
 
@@ -340,7 +340,7 @@ class InjectionSpec internal constructor(
                                 }
                                 val list = PayloadEmitter.emitModifyArg(payload, method, owner, anchor, locals)
                                     ?: continue
-                                !insertBlock(method, anchor, list, after = false, frames)
+                                if (!insertBlock(method, anchor, list, after = false, frames)) continue
                                 inserted++
                             }
 
@@ -354,7 +354,7 @@ class InjectionSpec internal constructor(
                                 }
                                 val list = PayloadEmitter.emitModifyArgs(payload, method, owner, anchor, locals)
                                     ?: continue
-                                !insertBlock(method, anchor, list, after = false, frames)
+                                if (!insertBlock(method, anchor, list, after = false, frames)) continue
                                 inserted++
                             }
 
@@ -367,7 +367,7 @@ class InjectionSpec internal constructor(
                                 val list = PayloadEmitter.emitInPlaceHandler(
                                     payload, "@ModifyConstant", value, method, owner, locals
                                 ) ?: continue
-                                !insertBlock(method, anchor, list, point.after, frames)
+                                if (!insertBlock(method, anchor, list, point.after, frames)) continue
                                 inserted++
                             }
 
@@ -393,7 +393,7 @@ class InjectionSpec internal constructor(
                                 val list = PayloadEmitter.emitInPlaceHandler(
                                     payload, "@ModifyReturnValue", value, method, owner, locals
                                 ) ?: continue
-                                !insertBlock(method, anchor, list, point.after, frames)
+                                if (!insertBlock(method, anchor, list, point.after, frames)) continue
                                 inserted++
                             }
 
@@ -405,7 +405,7 @@ class InjectionSpec internal constructor(
                                 val list = PayloadEmitter.emitInPlaceHandler(
                                     payload, "@ModifyExpressionValue", value, method, owner, locals
                                 ) ?: continue
-                                !insertBlock(method, anchor, list, point.after, frames)
+                                if (!insertBlock(method, anchor, list, point.after, frames)) continue
                                 inserted++
                             }
 
@@ -420,7 +420,7 @@ class InjectionSpec internal constructor(
                                 }
                                 val list = PayloadEmitter.emitModifyVariable(payload, method, owner, anchor, locals)
                                     ?: continue
-                                !insertBlock(method, anchor, list, point.after, frames)
+                                if (!insertBlock(method, anchor, list, point.after, frames)) continue
                                 inserted++
                             }
 
@@ -471,7 +471,7 @@ class InjectionSpec internal constructor(
                                     payload.owner, payload.method, payload.desc, payload.captures,
                                     method, owner, anchor, locals,
                                 )
-                                !insertBlock(method, anchor, list, after = false, frames)
+                                if (!insertBlock(method, anchor, list, after = false, frames)) continue
                                 method.instructions.remove(anchor)
                                 inserted++
                             }
@@ -484,7 +484,7 @@ class InjectionSpec internal constructor(
                             "ModifyConstant", payload.owner, payload.method, payload.desc, payload.extras,
                             instance = false, value = value, method = method, owner = owner, locals = locals,
                         ) ?: continue
-                        !insertBlock(method, anchor, list, point.after, frames)
+                        if (!insertBlock(method, anchor, list, point.after, frames)) continue
                         inserted++
                     }
 
@@ -494,7 +494,7 @@ class InjectionSpec internal constructor(
                             "ModifyExpressionValue", payload.owner, payload.method, payload.desc, payload.extras,
                             instance = false, value = value, method = method, owner = owner, locals = locals,
                         ) ?: continue
-                        !insertBlock(method, anchor, list, point.after, frames)
+                        if (!insertBlock(method, anchor, list, point.after, frames)) continue
                         inserted++
                     }
 
@@ -525,7 +525,7 @@ class InjectionSpec internal constructor(
                             Opcodes.INVOKESTATIC, payload.handlerOwner, payload.handlerMethod, desc, false
                         )
                         val block = InsnList().apply { add(replacement) }
-                        !insertBlock(method, anchor, block, after = true, frames)
+                        if (!insertBlock(method, anchor, block, after = true, frames)) continue
                         method.instructions.remove(anchor)
                         inserted++
                     }
@@ -533,7 +533,7 @@ class InjectionSpec internal constructor(
                     else -> {
                         val list =
                             PayloadEmitter.emit(payload, method, owner, locals) ?: continue // validation failed, skip
-                        !insertBlock(method, anchor, list, point.after, frames)
+                        if (!insertBlock(method, anchor, list, point.after, frames)) continue
                         inserted++
                     }
                 }
