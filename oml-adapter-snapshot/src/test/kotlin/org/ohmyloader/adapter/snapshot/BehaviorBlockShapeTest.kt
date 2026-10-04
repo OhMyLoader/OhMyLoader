@@ -31,6 +31,10 @@ class BehaviorBlockShapeTest {
             ClassNode().also { ClassReader(stream.readAllBytes()).accept(it, 0) }
         }
 
+    private fun readOur(internalName: String): ClassNode =
+        OMLBehaviorBlock::class.java.classLoader.getResourceAsStream(internalName)!!
+            .use { stream -> ClassNode().also { ClassReader(stream.readAllBytes()).accept(it, 0) } }
+
     /** The override must keep the exact name+descriptor the game class still declares. */
     private fun assertRidesGameMethod(our: ClassNode, gameOwner: ClassNode, name: String) {
         val override = our.methods.firstOrNull { it.name == name && it.desc.startsWith("(") }
@@ -67,5 +71,29 @@ class BehaviorBlockShapeTest {
             ourClass().superName,
             "OMLBehaviorBlock must extend net.minecraft.world.level.block.Block, got ${ourClass().superName}"
         )
+    }
+
+    @Test
+    fun `the machine block still implements the game EntityBlock shapes`() {
+        JarFile(clientJar).use { jar ->
+            val entityBlock = gameClass(jar, "net/minecraft/world/level/block/EntityBlock")
+            val machine = readOur("org/ohmyloader/adapter/v26_3/OMLBlockEntityBlock.class")
+            for (name in listOf("newBlockEntity", "getTicker")) {
+                val declared = machine.methods.firstOrNull { it.name == name }
+                assertNotNull(declared, "OMLBlockEntityBlock must declare $name")
+                val game = entityBlock.methods.firstOrNull { it.name == name }
+                assertNotNull(game, "the game's EntityBlock no longer declares $name")
+                assertTrue(
+                    declared.desc.substringBefore(')') == game.desc.substringBefore(')'),
+                    "$name's parameters drifted from the game's EntityBlock: ${declared.desc} vs ${game.desc}",
+                )
+            }
+            val beClass = readOur("org/ohmyloader/adapter/v26_3/OMLMachineBlockEntity.class")
+            assertEquals(
+                "net/minecraft/world/level/block/entity/BlockEntity",
+                beClass.superName,
+                "OMLMachineBlockEntity must extend the game's BlockEntity, got ${beClass.superName}"
+            )
+        }
     }
 }

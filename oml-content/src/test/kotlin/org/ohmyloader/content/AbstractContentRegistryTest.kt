@@ -187,6 +187,45 @@ class AbstractContentRegistryTest {
         org.ohmyloader.api.content.OMLBlockHitEvent(1, 2, 3, isClient = false, { "level" }, { "player" })
 
     @Test
+    fun `block entity declaration rides to materialization with its tick handler`() {
+        val registry = RecordingRegistry()
+        val facade = registry.forNamespace("mymod")
+        var ticks = 0
+
+        facade.declareBlock("machine") {
+            blockEntity {
+                tick { ticks++ }
+            }
+        }
+        assertFailsWith<IllegalStateException> {
+            facade.declareBlock("machine2") { blockEntity { }; blockEntity { } }
+        }.let { assertTrue("only be declared once" in it.message!!) }
+
+        registry.materializeAll()
+        val spec = registry.blocks.single().spec.blockEntityDeclaration
+            ?: fail("the block entity declaration must survive the trip")
+        spec.tickHandlers.single()(omlTickEvent())
+        assertEquals(1, ticks)
+    }
+
+    private fun omlTickEvent() = org.ohmyloader.api.content.OMLBlockTickEvent(1, 2, 3, NoopBlockData, { "level" })
+
+    private object NoopBlockData : org.ohmyloader.api.content.OMLBlockData {
+        override fun getInt(key: String, default: Int) = default
+        override fun putInt(key: String, value: Int) {}
+        override fun getLong(key: String, default: Long) = default
+        override fun putLong(key: String, value: Long) {}
+        override fun getFloat(key: String, default: Float) = default
+        override fun putFloat(key: String, value: Float) {}
+        override fun getDouble(key: String, default: Double) = default
+        override fun putDouble(key: String, value: Double) {}
+        override fun getBoolean(key: String, default: Boolean) = default
+        override fun putBoolean(key: String, value: Boolean) {}
+        override fun getString(key: String): String? = null
+        override fun putString(key: String, value: String) {}
+    }
+
+    @Test
     fun `declarations reach the subclass even when it materializes nothing`() {
         // The queue sizes at materialization time prove declarations reach the subclass before the
         // central drain; the drain itself ("consumed centrally") must not depend on the subclass.

@@ -143,6 +143,21 @@ class OMLBlockDeclaration {
     fun onHit(handler: (OMLBlockHitEvent) -> Unit) {
         hitHandlers += handler
     }
+
+    // Public but not mod-facing API: the version adapter reads this to materialize the block
+    // entity. Mods declare through blockEntity.
+    var blockEntityDeclaration: OMLBlockEntityDeclaration? = null
+        private set
+
+    /**
+     * Gives the block a block entity with an optional server-side tick ([OMLBlockEntityDeclaration.tick])
+     * and a persistent data store ([OMLBlockData]) — the pieces a machine is made of. Declaring it
+     * twice replaces nothing: it throws.
+     */
+    fun blockEntity(configure: OMLBlockEntityDeclaration.() -> Unit) {
+        check(blockEntityDeclaration == null) { "blockEntity { } can only be declared once per block" }
+        blockEntityDeclaration = OMLBlockEntityDeclaration().apply(configure)
+    }
 }
 
 /**

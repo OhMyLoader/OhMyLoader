@@ -5,6 +5,7 @@ import org.ohmyloader.api.content.OMLItem
 import org.ohmyloader.api.content.OMLItemDeclaration
 import org.ohmyloader.core.OMLCore
 import org.ohmyloader.content.AbstractContentRegistry
+import net.minecraft.world.level.block.entity.BlockEntityType
 import net.minecraft.world.level.block.state.BlockBehaviour
 
 /**
@@ -54,17 +55,28 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
             setBlockId.invoke(properties, keyCreate.invoke(null, blockRegistryKey, identifier))
             applyBlockProperties(properties, propertiesClass, decl)
 
+            val blockEntitySpec = decl.spec.blockEntityDeclaration
             val block: Any =
-                if (decl.spec.stepOnHandlers.isEmpty() && decl.spec.hitHandlers.isEmpty()) {
-                    blockClass.getConstructor(propertiesClass).newInstance(properties)
-                } else {
-                    // Behavior hooks materialize into the adapter's own Block subclass; the handler
-                    // list is copied because the declaration object is read-only by contract after
-                    // collection (the freeze point may fire while the mod code is still reachable).
-                    OMLBehaviorBlock(propertiesClass.cast(properties) as BlockBehaviour.Properties).apply {
-                        stepOnHandlers = decl.spec.stepOnHandlers.toList()
-                        hitHandlers = decl.spec.hitHandlers.toList()
-                    }
+                when {
+                    blockEntitySpec != null ->
+                        // A machine block carries the block entity AND may carry the behavior hooks:
+                        // OMLBlockEntityBlock extends OMLBehaviorBlock for exactly that.
+                        OMLBlockEntityBlock(propertiesClass.cast(properties) as BlockBehaviour.Properties).apply {
+                            stepOnHandlers = decl.spec.stepOnHandlers.toList()
+                            hitHandlers = decl.spec.hitHandlers.toList()
+                            tickHandlers = blockEntitySpec.tickHandlers.toList()
+                        }
+
+                    decl.spec.stepOnHandlers.isNotEmpty() || decl.spec.hitHandlers.isNotEmpty() ->
+                        // Behavior hooks materialize into the adapter's own Block subclass; the handler
+                        // list is copied because the declaration object is read-only by contract after
+                        // collection (the freeze point may fire while the mod code is still reachable).
+                        OMLBehaviorBlock(propertiesClass.cast(properties) as BlockBehaviour.Properties).apply {
+                            stepOnHandlers = decl.spec.stepOnHandlers.toList()
+                            hitHandlers = decl.spec.hitHandlers.toList()
+                        }
+
+                    else -> blockClass.getConstructor(propertiesClass).newInstance(properties)
                 }
             registerIn("net.minecraft.core.registries.BuiltInRegistries", "BLOCK", identifier, block)
 
@@ -86,6 +98,21 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
             possibleStates?.filterNotNull()?.forEach { state ->
                 addState.invoke(blockStateRegistry, state)
                 state.javaClass.getMethod("initCache").invoke(state)
+            }
+
+            // A declared block entity gets its own type, valid for exactly this block — the same
+            // identifier the block registered under (different registries, so no clash). The
+            // supplier dereferences the type only when the first entity is created (a chunk load),
+            // long after this registration closes, which is what breaks the type/supplier cycle.
+            (block as? OMLBlockEntityBlock)?.let { machineBlock ->
+                var typeRef: BlockEntityType<OMLMachineBlockEntity>? = null
+                val entityType = BlockEntityType<OMLMachineBlockEntity>(
+                    { pos, state -> OMLMachineBlockEntity(typeRef!!, pos, state) },
+                    setOf(machineBlock),
+                )
+                typeRef = entityType
+                machineBlock.attachEntityType(entityType)
+                registerIn("net.minecraft.core.registries.BuiltInRegistries", "BLOCK_ENTITY_TYPE", identifier, entityType)
             }
 
             // A fresh `Item$Properties` per block, not one shared instance: it now carries the id, and
