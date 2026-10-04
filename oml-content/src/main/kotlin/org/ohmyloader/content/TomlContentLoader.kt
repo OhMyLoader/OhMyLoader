@@ -2,6 +2,7 @@ package org.ohmyloader.content
 
 import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.content.ContentRegistry
+import org.ohmyloader.api.content.Furnace
 import java.io.File
 
 /**
@@ -14,6 +15,10 @@ import java.io.File
  * produce vanilla defaults) but do not reject the pack. Packs are loaded by [org.ohmyloader.core.OMLCore] in
  * the content-declaration window (the same collection phase code mods go through), sharing the identical
  * freeze-point materialization; the asset injector synthesizes blockstates / models / item definitions like it does for jar mods.
+ *
+ * Sections: `[block.<id>]` (properties + optional `ore` table), `[item.<id>]`, `[crafting.<id>]`,
+ * `[smelting.<result>]`, `[loot.<block>]`. The data track covers everything the code track can
+ * express as data — behavior hooks and block entities are mod code and have no TOML form.
  */
 object TomlContentLoader {
 
@@ -22,7 +27,7 @@ object TomlContentLoader {
     private val ID = Regex("[a-z0-9_.-]+")
     private val NAMESPACE = ID
 
-    private val BLOCK_KEYS = setOf("destroy_time", "explosion_resistance", "requires_correct_tool")
+    private val BLOCK_KEYS = setOf("destroy_time", "explosion_resistance", "requires_correct_tool", "ore")
     private val ITEM_KEYS = setOf(
         "max_damage", "attack_damage", "attack_speed", "mining_speed",
         "tool_damage_per_block", "can_destroy_blocks_in_creative",
@@ -30,7 +35,14 @@ object TomlContentLoader {
     )
 
     /** What one pack contributed, for the loader's startup log and tests. */
-    data class PackSummary(val namespace: String, val blocks: Int, val items: Int, val recipes: Int = 0)
+    data class PackSummary(
+        val namespace: String,
+        val blocks: Int,
+        val items: Int,
+        val recipes: Int = 0,
+        val smelting: Int = 0,
+        val loot: Int = 0,
+    )
 
     /**
      * The resource namespace of a pack file: `ruby_pack.toml` loads as `ruby_pack`. Fails when the
@@ -64,6 +76,8 @@ object TomlContentLoader {
         var blocks = 0
         var items = 0
         var recipes = 0
+        var smelting = 0
+        var loot = 0
         for ([path, fields] in doc) {
             when {
                 path.isEmpty() -> if (fields.isNotEmpty()) {
@@ -89,29 +103,93 @@ object TomlContentLoader {
                     recipes++
                 }
 
+                path.startsWith("smelting.") && path.count { it == '.' } == 1 -> {
+                    declareSmeltingSection(path.removePrefix("smelting."), fields, source, registry)
+                    smelting++
+                }
+
+                path.startsWith("loot.") && path.count { it == '.' } == 1 -> {
+                    declareLootSection(path.removePrefix("loot."), fields, source, registry)
+                    loot++
+                }
+
                 else -> OmlLog.warn(
                     TAG,
                     "$source: ignoring section [$path] — " +
-                        "expected [block.<id>] or [item.<id>]"
+                        "expected [block.<id>] / [item.<id>] / [crafting.<id>] / [smelting.<id>] / [loot.<block>]"
                 )
             }
         }
-        return PackSummary(namespace, blocks, items, recipes)
+        return PackSummary(namespace, blocks, items, recipes, smelting, loot)
     }
 
     // ---------------------------------------------------------------------------------------------
     // Section mapping
     // ---------------------------------------------------------------------------------------------
 
+    private val ORE_KEYS = setOf("vein_size", "per_chunk", "min_y", "max_y", "biomes")
+
     private fun declareBlock(id: String, fields: Map<String, Any>, source: String, registry: ContentRegistry) {
         requireId(id, source, "block")
+        val ore = fields["ore"] as? Map<*, *>
+        if (fields.containsKey("ore") && ore == null) {
+            fail(source, "block '$id'.ore must be an inline table, e.g. ore = { vein_size = 8, min_y = 16, max_y = 64 }")
+        }
         registry.declareBlock(id) {
             destroyTime = floatValue(fields, "destroy_time", source, "block '$id'")
             explosionResistance = floatValue(fields, "explosion_resistance", source, "block '$id'")
             requiresCorrectToolForDrops =
                 boolValue(fields, "requires_correct_tool", source, "block '$id'") ?: false
+            if (ore != null) {
+                val oreFields = LinkedHashMap<String, Any>()
+                for ([k, v] in ore) {
+                    if (k is String && v != null) oreFields[k] = v
+                }
+                reportUnknown(oreFields, ORE_KEYS, source, "block '$id'.ore")
+                generateAsOre {
+                    veinSize = intValue(oreFields, "vein_size", source, "block '$id'.ore") ?: 9
+                    perChunk = intValue(oreFields, "per_chunk", source, "block '$id'.ore") ?: 8
+                    minY = intValue(oreFields, "min_y", source, "block '$id'.ore") ?: 16
+                    maxY = intValue(oreFields, "max_y", source, "block '$id'.ore") ?: 64
+                    for (biome in listValue(oreFields, "biomes", source, "block '$id'.ore").orEmpty()) {
+                        biomes += biome as? String
+                            ?: fail(source, "block '$id'.ore.biomes entries must be strings")
+                    }
+                }
+            }
         }
         reportUnknown(fields, BLOCK_KEYS, source, "block '$id'")
+    }
+
+    private val SMELTING_KEYS = setOf("input", "furnace", "experience", "cooking_time")
+
+    /** A `[smelting.<result>]` section: `input` is required; the section id is the result's local id. */
+    private fun declareSmeltingSection(id: String, fields: Map<String, Any>, source: String, registry: ContentRegistry) {
+        requireId(id, source, "smelting")
+        val input = fields["input"] as? String
+            ?: fail(source, "smelting '$id' is missing its 'input' string")
+        val furnace = when (val f = (fields["furnace"] as? String)?.lowercase()) {
+            null -> Furnace.SMELTING
+            "smelting", "blasting", "smoking" -> Furnace.valueOf(f.uppercase())
+            else -> fail(source, "smelting '$id': unknown furnace '$f' (expected smelting, blasting or smoking)")
+        }
+        val experience = doubleValue(fields, "experience", source, "smelting '$id'") ?: 0.0
+        val cookingTime = intValue(fields, "cooking_time", source, "smelting '$id'") ?: 200
+        reportUnknown(fields, SMELTING_KEYS, source, "smelting '$id'")
+        registry.declareSmelting(input = input, result = id, furnace = furnace, experience = experience, cookingTime = cookingTime)
+    }
+
+    private val LOOT_KEYS = setOf("drop", "drop_count_min", "drop_count_max")
+
+    /** A `[loot.<block>]` section: breaking the block drops [drop] instead of the block itself. */
+    private fun declareLootSection(id: String, fields: Map<String, Any>, source: String, registry: ContentRegistry) {
+        requireId(id, source, "loot")
+        val drop = fields["drop"] as? String
+            ?: fail(source, "loot '$id' is missing its 'drop' string")
+        val min = intValue(fields, "drop_count_min", source, "loot '$id'") ?: 1
+        val max = intValue(fields, "drop_count_max", source, "loot '$id'") ?: 1
+        reportUnknown(fields, LOOT_KEYS, source, "loot '$id'")
+        registry.declareBlockDrop(block = id, drop = drop, dropCountMin = min, dropCountMax = max)
     }
 
     private fun declareItem(id: String, fields: Map<String, Any>, source: String, registry: ContentRegistry) {
@@ -195,8 +273,15 @@ object TomlContentLoader {
             throw IllegalStateException("$TAG $source: ${e.message}", e)
         }
         for ([path, fields] in doc) {
-            if (path.startsWith("crafting.") && path.count { it == '.' } == 1) {
-                declareCrafting(path.removePrefix("crafting."), fields, source, registry)
+            when {
+                path.startsWith("crafting.") && path.count { it == '.' } == 1 ->
+                    declareCrafting(path.removePrefix("crafting."), fields, source, registry)
+
+                path.startsWith("smelting.") && path.count { it == '.' } == 1 ->
+                    declareSmeltingSection(path.removePrefix("smelting."), fields, source, registry)
+
+                path.startsWith("loot.") && path.count { it == '.' } == 1 ->
+                    declareLootSection(path.removePrefix("loot."), fields, source, registry)
             }
         }
     }

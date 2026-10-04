@@ -30,19 +30,25 @@ class TomlContentLoaderTest {
             return OMLItem(id) { "item-platform" }
         }
 
-        // Recipes / loot are only declared through the code DSL so far, not the TOML pack format;
-        // the fixture rejects them so a future TOML extension cannot silently drop declarations.
+        val smelting = mutableListOf<SmeltingDecl>()
+        val loot = mutableListOf<LootDecl>()
+
+        data class SmeltingDecl(val input: String, val result: String, val furnace: Furnace, val experience: Double, val cookingTime: Int)
+        data class LootDecl(val block: String, val drop: String, val min: Int, val max: Int)
+
         override fun declareSmelting(
             input: String,
             result: String,
             furnace: Furnace,
             experience: Double,
             cookingTime: Int
-        ) =
-            error("TOML packs do not declare recipes yet")
+        ) {
+            smelting += SmeltingDecl(input, result, furnace, experience, cookingTime)
+        }
 
-        override fun declareBlockDrop(block: String, drop: String, dropCountMin: Int, dropCountMax: Int) =
-            error("TOML packs do not declare loot yet")
+        override fun declareBlockDrop(block: String, drop: String, dropCountMin: Int, dropCountMax: Int) {
+            loot += LootDecl(block, drop, dropCountMin, dropCountMax)
+        }
 
         val shaped = mutableListOf<Triple<String, List<String>, Map<Char, String>>>()
         val shapeless = mutableListOf<Pair<String, List<String>>>()
@@ -260,4 +266,101 @@ class TomlContentLoaderTest {
         }
     }
 
+
+    // ---------------------------------------------------------------------------------------------
+    // T-2.4: the data track aligns with the code track — smelting, loot and ore generation
+    // ---------------------------------------------------------------------------------------------
+
+    @Test
+    fun `smelting sections map onto declareSmelting with defaults and furnace variants`() {
+        val (registry, summary) = loadPack(
+            "smelter",
+            """
+            [smelting.tin_ingot]
+            input = "raw_tin"
+
+            [smelting.copper_ingot]
+            input = "raw_copper"
+            furnace = "blasting"
+            experience = 0.7
+            cooking_time = 100
+            """.trimIndent()
+        )
+
+        assertEquals(2, registry.smelting.size)
+        assertEquals(2, summary.smelting)
+        val plain = registry.smelting.first { it.result == "tin_ingot" }
+        assertEquals("raw_tin", plain.input)
+        assertEquals(Furnace.SMELTING, plain.furnace)
+        assertEquals(0.0, plain.experience)
+        assertEquals(200, plain.cookingTime)
+        val blast = registry.smelting.first { it.result == "copper_ingot" }
+        assertEquals(Furnace.BLASTING, blast.furnace)
+        assertEquals(0.7, blast.experience)
+        assertEquals(100, blast.cookingTime)
+    }
+
+    @Test
+    fun `smelting sections require the input and reject unknown furnace types`() {
+        assertFailsWith<IllegalStateException> {
+            loadPack("smelter", "[smelting.tin_ingot]\nfurnace = \"smelting\"\n")
+        }.let { assertTrue("missing its 'input'" in it.message!!) }
+
+        assertFailsWith<IllegalStateException> {
+            loadPack("smelter", "[smelting.tin_ingot]\ninput = \"raw_tin\"\nfurnace = \"microwave\"\n")
+        }.let { assertTrue("unknown furnace 'microwave'" in it.message!!) }
+    }
+
+    @Test
+    fun `loot sections map onto declareBlockDrop`() {
+        val (registry, summary) = loadPack(
+            "looty",
+            """
+            [loot.tin_ore]
+            drop = "raw_tin"
+
+            [loot.gravel_plus]
+            drop = "minecraft:iron_nugget"
+            drop_count_min = 2
+            drop_count_max = 5
+            """.trimIndent()
+        )
+
+        assertEquals(2, registry.loot.size)
+        assertEquals(2, summary.loot)
+        val plain = registry.loot.first { it.block == "tin_ore" }
+        assertEquals("raw_tin", plain.drop)
+        assertEquals(1, plain.min)
+        assertEquals(1, plain.max)
+        val ranged = registry.loot.first { it.block == "gravel_plus" }
+        assertEquals(2, ranged.min)
+        assertEquals(5, ranged.max)
+    }
+
+    @Test
+    fun `the ore table maps onto generateAsOre`() {
+        val (registry, _) = loadPack(
+            "miners",
+            """
+            [block.tin_ore]
+            destroy_time = 3.0
+            ore = { vein_size = 8, per_chunk = 6, min_y = 16, max_y = 64, biomes = ["minecraft:forest", "minecraft:taiga"] }
+            """.trimIndent()
+        )
+
+        val ore = registry.blocks.single().second.oreDeclaration
+            ?: error("the ore declaration must ride the block spec")
+        assertEquals(8, ore.veinSize)
+        assertEquals(6, ore.perChunk)
+        assertEquals(16, ore.minY)
+        assertEquals(64, ore.maxY)
+        assertEquals(listOf("minecraft:forest", "minecraft:taiga"), ore.biomes)
+    }
+
+    @Test
+    fun `a non-table ore field fails the pack loudly`() {
+        assertFailsWith<IllegalStateException> {
+            loadPack("miners", "[block.tin_ore]\nore = true\n")
+        }.let { assertTrue("must be an inline table" in it.message!!) }
+    }
 }
