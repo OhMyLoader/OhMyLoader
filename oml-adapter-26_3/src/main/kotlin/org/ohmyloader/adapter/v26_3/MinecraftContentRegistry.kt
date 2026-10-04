@@ -5,6 +5,7 @@ import org.ohmyloader.api.content.OMLItem
 import org.ohmyloader.api.content.OMLItemDeclaration
 import org.ohmyloader.core.OMLCore
 import org.ohmyloader.content.AbstractContentRegistry
+import net.minecraft.world.level.block.state.BlockBehaviour
 
 /**
  * 26.3 content registration: two-stage translation. Collection (before `Main.main`) only records declarations — bootstrap has not run yet, and registry writes would be rejected by vanilla's own freeze check. Materialization happens at the registry freeze point (the `freeze()` call inside `BuiltInRegistries.bootStrap` redirected to [EventBridge.onRegistryFreeze]): content is registered before the registry truly closes, and 26.3 runs `validate(REGISTRY)` straight after, so the game itself validates the injected content.
@@ -53,7 +54,18 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
             setBlockId.invoke(properties, keyCreate.invoke(null, blockRegistryKey, identifier))
             applyBlockProperties(properties, propertiesClass, decl)
 
-            val block = blockClass.getConstructor(propertiesClass).newInstance(properties)
+            val block: Any =
+                if (decl.spec.stepOnHandlers.isEmpty() && decl.spec.hitHandlers.isEmpty()) {
+                    blockClass.getConstructor(propertiesClass).newInstance(properties)
+                } else {
+                    // Behavior hooks materialize into the adapter's own Block subclass; the handler
+                    // list is copied because the declaration object is read-only by contract after
+                    // collection (the freeze point may fire while the mod code is still reachable).
+                    OMLBehaviorBlock(propertiesClass.cast(properties) as BlockBehaviour.Properties).apply {
+                        stepOnHandlers = decl.spec.stepOnHandlers.toList()
+                        hitHandlers = decl.spec.hitHandlers.toList()
+                    }
+                }
             registerIn("net.minecraft.core.registries.BuiltInRegistries", "BLOCK", identifier, block)
 
             // Block states must also be registered into Block.BLOCK_STATE_REGISTRY: network packets

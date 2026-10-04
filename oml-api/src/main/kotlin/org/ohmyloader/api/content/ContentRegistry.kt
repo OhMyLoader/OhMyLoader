@@ -5,16 +5,20 @@ package org.ohmyloader.api.content
  * [OMLContentProvider.declareContent], and OML translates it to the version's registration
  * mechanism at the registry-freeze point (the earliest point the version registry is still
  * writable), so a 26.3 build can attach real `DataComponentMap` values.
- * Blocks and items declared here are **data-only**: their behavior is vanilla's (a plain
- * `Block` / `Item`), configured through the declaration DSL. Content with custom behavior
- * (classes extending the versioned Block class) is out of scope — use the `platform` escape
- * hatch and write version-specific code instead.
+ * Blocks and items declared here are **data-only**: their vanilla properties are configured
+ * through the declaration DSL, and behavior beyond vanilla's comes from the declarative hooks
+ * ([OMLBlockDeclaration.onStepOn] / [OMLBlockDeclaration.onHit]) whose implementation is the
+ * version adapter's. Fully custom content classes (extending the versioned `Block` with
+ * arbitrary logic) remain out of scope — use the `platform` escape hatch and write
+ * version-specific code instead.
  */
 interface ContentRegistry {
     /**
      * Declares a simple block (also registering its corresponding block item, retrievable via
      * /setblock). [configure] optionally sets vanilla block properties (strength, tool-required
-     * drops); every field is optional and defaults to vanilla's.
+     * drops) and behavior hooks ([OMLBlockDeclaration.onStepOn] / [OMLBlockDeclaration.onHit]);
+     * every field is optional and defaults to vanilla's. With any behavior hook present the
+     * adapter materializes its behavior-carrying Block subclass instead of a plain one.
      *
      * [id] contains no namespace; OML binds it using the declaring mod's id.
      */
@@ -121,6 +125,24 @@ class OMLBlockDeclaration {
      * `requiresCorrectToolForDrops`). Default `false`.
      */
     var requiresCorrectToolForDrops: Boolean = false
+
+    // Public but not mod-facing API: the version adapter reads these to decide between a plain
+    // Block and its behavior subclass. Mods register through onStepOn / onHit.
+    val stepOnHandlers = mutableListOf<(OMLStepOnEvent) -> Unit>()
+    val hitHandlers = mutableListOf<(OMLBlockHitEvent) -> Unit>()
+
+    /**
+     * Runs every tick an entity stands on the block (vanilla `stepOn`), on both sides — gate
+     * gameplay effects on [OMLStepOnEvent.isClient].
+     */
+    fun onStepOn(handler: (OMLStepOnEvent) -> Unit) {
+        stepOnHandlers += handler
+    }
+
+    /** Runs when a player starts breaking the block (vanilla `attack`). */
+    fun onHit(handler: (OMLBlockHitEvent) -> Unit) {
+        hitHandlers += handler
+    }
 }
 
 /**

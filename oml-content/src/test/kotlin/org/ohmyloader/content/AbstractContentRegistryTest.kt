@@ -157,6 +157,36 @@ class AbstractContentRegistryTest {
     }
 
     @Test
+    fun `behavior hooks ride the declaration to materialization`() {
+        val registry = RecordingRegistry()
+        val facade = registry.forNamespace("mymod")
+        var stepped = 0
+        var hit = 0
+
+        facade.declareBlock("trap") {
+            onStepOn { stepped++ }
+            onHit { hit++ }
+        }
+
+        registry.materializeAll()
+        val spec = registry.blocks.single().spec
+        assertEquals(1, spec.stepOnHandlers.size)
+        assertEquals(1, spec.hitHandlers.size)
+
+        // the stored handlers are the mod's own lambdas, invoked with the adapter-built event
+        spec.stepOnHandlers.single()(omlStepOnEvent())
+        spec.hitHandlers.single()(omlBlockHitEvent())
+        assertEquals(1, stepped)
+        assertEquals(1, hit)
+    }
+
+    private fun omlStepOnEvent() =
+        org.ohmyloader.api.content.OMLStepOnEvent(1, 2, 3, isClient = false, { "level" }, { "entity" })
+
+    private fun omlBlockHitEvent() =
+        org.ohmyloader.api.content.OMLBlockHitEvent(1, 2, 3, isClient = false, { "level" }, { "player" })
+
+    @Test
     fun `declarations reach the subclass even when it materializes nothing`() {
         // The queue sizes at materialization time prove declarations reach the subclass before the
         // central drain; the drain itself ("consumed centrally") must not depend on the subclass.
