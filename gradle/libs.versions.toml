@@ -5,6 +5,7 @@ kotlinxSerialization = "1.11.0"
 shadow = "9.6.1"
 flatlaf = "3.7.2"
 netty = "4.2.18.Final"
+gson = "2.14.0"
 
 [libraries]
 kotlinGradlePlugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
@@ -18,6 +19,7 @@ asmCommons = { module = "org.ow2.asm:asm-commons", version.ref = "asm" }
 
 flatlaf = { module = "com.formdev:flatlaf", version.ref = "flatlaf" }
 
+gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
 nettyCodecBase = { module = "io.netty:netty-codec-base", version.ref = "netty" }
 nettyTransport = { module = "io.netty:netty-transport", version.ref = "netty" }
 

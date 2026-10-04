@@ -1,5 +1,6 @@
 package org.ohmyloader.adapter.v26_3
 
+import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.content.OMLBlock
 import org.ohmyloader.api.content.OMLItem
 import org.ohmyloader.api.content.OMLItemDeclaration
@@ -16,6 +17,9 @@ import net.minecraft.world.level.block.state.BlockBehaviour
  * All reflection goes through the OML game class loader (game classes are not on the parent loader's classpath); queues, handle caches and the mod facade come from [AbstractContentRegistry].
  */
 object MinecraftContentRegistry : AbstractContentRegistry() {
+
+    /** The feature step every underground ore lives in (vanilla `Decoration.UNDERGROUND_ORES`). */
+    private const val UNDERGROUND_ORES_STEP = 6
 
     /** Invoked by EventBridge at the registry freeze point: translate every declaration into Block + BlockItem + Item. */
     override fun doMaterialize() {
@@ -141,6 +145,84 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
             materializedItems[handle.id] = handle
         }
     }
+
+    // ---- worldgen: biome merges for declared ores ----
+
+    private val biomeMerges = java.util.concurrent.ConcurrentHashMap<String, java.util.Optional<String>>()
+
+    /** The merged biome JSON for `minecraft:worldgen/biome/<biome>.json`, null when no ore targets it. */
+    fun mergedBiomeJsonFor(biome: String): String? =
+        biomeMerges.computeIfAbsent(biome) { java.util.Optional.ofNullable(mergeBiome(it)) }.orElse(null)
+
+    /** Every biome targeted by at least one ore declaration (the pack's override listing). */
+    fun oreTargetedBiomes(): List<String> =
+        collected.flatMap { decl ->
+            decl.spec.oreDeclaration?.let { ore ->
+                if (ore.biomes.isEmpty()) vanillaBiomeIds() else ore.biomes.map(::qualifyBiome)
+            } ?: emptyList()
+        }.distinct().sorted()
+
+    private fun qualifyBiome(biome: String): String =
+        if (biome.contains(':')) biome else "minecraft:$biome"
+
+    /**
+     * Reads the baseline biome JSON from the game jar's embedded datapack (the injected pack is
+     * not on the classpath, so this is always the pre-merge original) and appends the ore placed
+     * ids to the underground-ores step. Biome files are whole-file overrides in the datapack
+     * format — there is no additive mechanism — so the merged full file is what the pack serves.
+     */
+    private fun mergeBiome(biome: String): String? {
+        val placedIds = collected.mapNotNull { decl ->
+            val ore = decl.spec.oreDeclaration ?: return@mapNotNull null
+            val targets = if (ore.biomes.isEmpty()) vanillaBiomeIds() else ore.biomes.map(::qualifyBiome)
+            if (biome in targets) "${decl.namespace}:ore_${decl.id}" else null
+        }
+        if (placedIds.isEmpty()) return null
+        val original = OMLCore.gameClassLoader().getResource("data/minecraft/worldgen/biome/$biome.json")
+        if (original == null) {
+            OmlLog.warn("Content", "ore targets biome [$biome] but no biome json exists for it; skipped")
+            return null
+        }
+        val root = com.google.gson.JsonParser.parseString(
+            original.openStream().use { it.readBytes().toString(Charsets.UTF_8) }
+        ).asJsonObject
+        val features = root.getAsJsonArray("features")
+        if (features == null || features.size() <= UNDERGROUND_ORES_STEP) {
+            OmlLog.warn("Content", "biome [$biome] has no underground-ores feature step; ore merge skipped")
+            return null
+        }
+        val step = features.get(UNDERGROUND_ORES_STEP).asJsonArray
+        placedIds.forEach { step.add(com.google.gson.JsonPrimitive(it)) }
+        return root.toString()
+    }
+
+    /** Biome files the vanilla datapack ships, from the game jar. Empty when the jar is unknown. */
+    private fun vanillaBiomeIds(): List<String> {
+        cachedVanillaBiomes?.let { return it }
+        val gameJar = System.getProperty("oml.game.jar")
+        val ids = if (gameJar == null) {
+            emptyList()
+        } else {
+            runCatching {
+                java.util.jar.JarFile(gameJar).use { jar ->
+                    jar.entries().asSequence()
+                        .map { it.name }
+                        .filter { it.startsWith("data/minecraft/worldgen/biome/") && it.endsWith(".json") }
+                        .map { it.substringAfterLast('/').removeSuffix(".json") }
+                        .toSortedSet()
+                        .toList()
+                }
+            }.getOrElse {
+                OmlLog.warn("Content", "cannot enumerate the vanilla biomes in $gameJar: ${it.message}")
+                emptyList()
+            }
+        }
+        cachedVanillaBiomes = ids
+        return ids
+    }
+
+    @Volatile
+    private var cachedVanillaBiomes: List<String>? = null
 
     /** Applies [org.ohmyloader.api.content.OMLBlockDeclaration] values onto `BlockBehaviour.Properties`. */
     private fun applyBlockProperties(properties: Any, propertiesClass: Class<*>, decl: BlockDecl) {

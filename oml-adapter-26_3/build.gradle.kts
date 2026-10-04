@@ -24,6 +24,10 @@ dependencies {
     // real 26.3 jar (unobfuscated, so names match exactly). compileOnly — at run time the game
     // supplies these classes, and shipping them would be a second copy of Minecraft.
     compileOnly(files("libs/26.3-client.jar"))
+
+    // The biome merge for declared ores parses the vanilla biome JSON (Gson): compile-time only,
+    // the game's own libraries supply the same artifact at run time.
+    compileOnly(libs.gson)
     // Codec round-trip tests instantiate our stream wrappers, whose supertypes live in the game jar.
     testImplementation(files("libs/26.3-client.jar"))
 

@@ -158,6 +158,48 @@ class OMLBlockDeclaration {
         check(blockEntityDeclaration == null) { "blockEntity { } can only be declared once per block" }
         blockEntityDeclaration = OMLBlockEntityDeclaration().apply(configure)
     }
+
+    // Public but not mod-facing API: the version adapter reads this to generate the worldgen
+    // datapack files. Mods declare through generateAsOre.
+    var oreDeclaration: OMLBlockOreDeclaration? = null
+        private set
+
+    /**
+     * Declares that this block generates naturally as an ore. Materialized into datapack
+     * worldgen files (feature + placed feature) and merged into the target biomes' feature lists
+     * by the version adapter; only newly generated chunks are affected, like any datapack ore.
+     */
+    fun generateAsOre(configure: OMLBlockOreDeclaration.() -> Unit = {}) {
+        check(oreDeclaration == null) { "generateAsOre can only be declared once per block" }
+        oreDeclaration = OMLBlockOreDeclaration().apply(configure)
+    }
+}
+
+/**
+ * Ore generation parameters for [OMLBlockDeclaration.generateAsOre]. The vein replaces
+ * `minecraft:stone_ore_replaceables` (the stone family), so it appears in stone — a deepslate
+ * variant is a later extension, not part of this declaration.
+ */
+class OMLBlockOreDeclaration {
+
+    /** Blocks per vein (vanilla `size`). */
+    var veinSize: Int = 9
+
+    /** Placement attempts per chunk (vanilla `count`). */
+    var perChunk: Int = 8
+
+    /** Lower bound of the trapezoid height distribution, absolute Y. */
+    var minY: Int = 16
+
+    /** Upper bound of the trapezoid height distribution, absolute Y. */
+    var maxY: Int = 64
+
+    /**
+     * Biomes (namespaced) the ore generates in. Empty means every biome the vanilla datapack
+     * ships — harmless outside the overworld, because netherrack and end stone do not match the
+     * stone replaceable tag the vein targets.
+     */
+    val biomes = mutableListOf<String>()
 }
 
 /**

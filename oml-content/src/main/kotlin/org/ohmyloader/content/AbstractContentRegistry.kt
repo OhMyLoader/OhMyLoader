@@ -80,6 +80,49 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
         collectedLoot.clear()
     }
 
+    /** A collected ore-generation declaration, flattened to its two datapack files' JSON. */
+    data class OreGenDecl(val namespace: String, val key: String, val featureJson: String, val placedJson: String)
+
+    /**
+     * Every ore declaration's datapack files, in declaration order. The adapter serves them under
+     * its version's worldgen paths and merges the placed ids into the target biomes' feature
+     * lists; the JSON is the version-independent datapack format (the same shape across 26.x), so
+     * it is generated here — derived on demand from the collected block declarations, which stay
+     * consumed (blocks are frozen), so reloads re-serve them without re-collection.
+     */
+    @Synchronized
+    fun oreGenDecls(): List<OreGenDecl> = collected.mapNotNull { decl ->
+        decl.spec.oreDeclaration?.let { ore ->
+            val key = "ore_${decl.id}"
+            OreGenDecl(decl.namespace, key, oreFeatureJson(decl.namespace, decl.id, ore), orePlacedJson(decl.namespace, key, ore))
+        }
+    }
+
+    @Synchronized
+    fun oreGenKeysFor(namespace: String): List<String> =
+        collected.filter { it.namespace == namespace && it.spec.oreDeclaration != null }.map { "ore_${it.id}" }
+
+    @Synchronized
+    fun oreFeatureJsonFor(namespace: String, key: String): String? =
+        oreGenDecls().firstOrNull { it.namespace == namespace && it.key == key }?.featureJson
+
+    @Synchronized
+    fun orePlacedJsonFor(namespace: String, key: String): String? =
+        oreGenDecls().firstOrNull { it.namespace == namespace && it.key == key }?.placedJson
+
+    private fun oreFeatureJson(namespace: String, blockId: String, ore: OMLBlockOreDeclaration): String =
+        "{\"type\":\"minecraft:ore\",\"size\":${ore.veinSize},\"discard_chance_on_air_exposure\":0.0," +
+            "\"targets\":[{\"state\":\"$namespace:$blockId\",\"target\":{" +
+            "\"predicate_type\":\"minecraft:tag_match\",\"tag\":\"minecraft:stone_ore_replaceables\"}}]}"
+
+    private fun orePlacedJson(namespace: String, key: String, ore: OMLBlockOreDeclaration): String =
+        "{\"feature\":\"$namespace:$key\",\"placement\":[" +
+            "{\"type\":\"minecraft:count\",\"count\":${ore.perChunk}}," +
+            "{\"type\":\"minecraft:in_square\"}," +
+            "{\"type\":\"minecraft:height_range\",\"height\":{\"type\":\"minecraft:trapezoid\"," +
+            "\"min_inclusive\":{\"absolute\":${ore.minY}},\"max_inclusive\":{\"absolute\":${ore.maxY}}}}," +
+            "{\"type\":\"minecraft:biome\"}]}"
+
     /** Mod-facing facade: fixes the namespace binding, then lets the mod declare content. */
     final override fun forNamespace(namespace: String): ContentRegistry =
         object : ContentRegistry {

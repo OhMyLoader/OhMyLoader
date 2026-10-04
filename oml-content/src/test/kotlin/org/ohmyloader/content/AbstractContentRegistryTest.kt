@@ -187,6 +187,37 @@ class AbstractContentRegistryTest {
         org.ohmyloader.api.content.OMLBlockHitEvent(1, 2, 3, isClient = false, { "level" }, { "player" })
 
     @Test
+    fun `ore declarations produce the vanilla-shaped datapack files`() {
+        val registry = RecordingRegistry()
+        val facade = registry.forNamespace("mymod")
+
+        facade.declareBlock("tin_ore") {
+            generateAsOre {
+                veinSize = 8
+                perChunk = 6
+                minY = 16
+                maxY = 64
+            }
+        }
+
+        val decls = registry.oreGenDecls()
+        assertEquals(1, decls.size)
+        val [ns, key, feature, placed] = listOf(
+            decls[0].namespace, decls[0].key, decls[0].featureJson, decls[0].placedJson
+        )
+        assertEquals("ore_tin_ore", key)
+        assertTrue("\"type\":\"minecraft:ore\"" in feature)
+        assertTrue("\"state\":\"mymod:tin_ore\"" in feature, "the vein must replace with the declared block")
+        assertTrue("stone_ore_replaceables" in feature)
+        assertTrue("\"feature\":\"mymod:ore_tin_ore\"" in placed)
+        assertTrue("\"count\":6" in placed)
+        assertTrue("\"absolute\":16" in placed && "\"absolute\":64" in placed)
+        // the per-namespace listing the pack's directory enumeration serves
+        assertEquals(listOf("ore_tin_ore"), registry.oreGenKeysFor("mymod"))
+        assertEquals(null, registry.oreFeatureJsonFor("mymod", "ore_absent"))
+    }
+
+    @Test
     fun `block entity declaration rides to materialization with its tick handler`() {
         val registry = RecordingRegistry()
         val facade = registry.forNamespace("mymod")

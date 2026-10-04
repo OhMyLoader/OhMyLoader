@@ -170,7 +170,16 @@ object ModAssetInjector {
                 // `minecraft` when a mod overrides vanilla assets) plus the mod ids themselves —
                 // computed by oml-content's ModAssetIndex. 26.3 passes the pack type in, but a mod jar
                 // holds `assets/` only, so the answer is the same for either type.
-                "getNamespaces" -> assetIndex().namespaces()
+                "getNamespaces" -> {
+                    val base = assetIndex().namespaces()
+                    // declared ores merge into vanilla biome files, so the minecraft namespace must
+                    // be listed for the datapack reload to even look inside it
+                    if (MinecraftContentRegistry.oreTargetedBiomes().isNotEmpty() && "minecraft" !in base) {
+                        base + "minecraft"
+                    } else {
+                        base
+                    }
+                }
                 // no root file: pack.mcmeta is answered through getMetadataSection, not read as a file
                 "getRootResource" -> null
                 "location" -> location
@@ -352,6 +361,23 @@ object ModAssetInjector {
                 contentRegistry.lootJsonFor(namespace, id)
             }
 
+            path.startsWith("worldgen/feature/") && path.endsWith(".json") -> {
+                val id = path.removePrefix("worldgen/feature/").removeSuffix(".json")
+                contentRegistry.oreFeatureJsonFor(namespace, id)
+            }
+
+            path.startsWith("worldgen/placed_feature/") && path.endsWith(".json") -> {
+                val id = path.removePrefix("worldgen/placed_feature/").removeSuffix(".json")
+                contentRegistry.orePlacedJsonFor(namespace, id)
+            }
+
+            // declared ores merge into vanilla biomes: the pack's whole-file override wins over the
+            // jar's original (which this same function would otherwise serve as the fallback below)
+            namespace == "minecraft" && path.startsWith("worldgen/biome/") && path.endsWith(".json") -> {
+                val biome = path.removePrefix("worldgen/biome/").removeSuffix(".json")
+                contentRegistry.mergedBiomeJsonFor(biome)
+            }
+
             else -> null
         }?.toByteArray(Charsets.UTF_8)
     }
@@ -399,6 +425,21 @@ object ModAssetInjector {
             val bytes = resolveResource(namespace, fullPath, loader) ?: return
             val identifier = identifierOf.invoke(null, namespace, fullPath)
             accept.invoke(output, identifier, ioSupplierOf(ioSupplierClass, loader, bytes))
+        }
+
+        // declared ore generation: the mod namespace's feature files, and the merged vanilla biome
+        // files under minecraft — the datapack loader only reads what a pack lists
+        if (isDataPath(path)) {
+            val dir = path.trimEnd('/')
+            if (namespace == "minecraft" && (dir == "worldgen/biome" || dir.startsWith("worldgen/biome/"))) {
+                MinecraftContentRegistry.oreTargetedBiomes().forEach { emit("worldgen/biome/$it.json") }
+            }
+            if (dir == "worldgen/feature" || dir.startsWith("worldgen/feature/")) {
+                MinecraftContentRegistry.oreGenKeysFor(namespace).forEach { emit("worldgen/feature/$it.json") }
+            }
+            if (dir == "worldgen/placed_feature" || dir.startsWith("worldgen/placed_feature/")) {
+                MinecraftContentRegistry.oreGenKeysFor(namespace).forEach { emit("worldgen/placed_feature/$it.json") }
+            }
         }
 
         // jar-shipped entries: the core index matches the requested directory as a prefix over the
