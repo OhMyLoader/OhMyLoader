@@ -177,9 +177,17 @@ object ModAssetInjector {
                 // holds `assets/` only, so the answer is the same for either type.
                 "getNamespaces" -> {
                     val base = assetIndex().namespaces()
-                    // declared ores merge into vanilla biome files, so the minecraft namespace must
-                    // be listed for the datapack reload to even look inside it
-                    if (MinecraftContentRegistry.oreTargetedBiomes().isNotEmpty() && "minecraft" !in base) {
+                    // Declared ores merge into vanilla biome files, so the minecraft namespace must
+                    // be listed for the SERVER datapack reload to even look inside it. For
+                    // CLIENT_RESOURCES it must NOT be listed, ever: the pack sits at Position.TOP,
+                    // and a minecraft-claiming pack would shadow every vanilla asset with whatever
+                    // loader.getResource("assets/minecraft/…") finds — the game jar's own copy,
+                    // which ships 69-byte placeholder panorama textures where the real ones come
+                    // from the downloaded asset index (the missing title-screen background).
+                    val serverData = packTypeClass.getField("SERVER_DATA").get(null)
+                    if (args.getOrNull(0) == serverData &&
+                        MinecraftContentRegistry.oreTargetedBiomes().isNotEmpty() && "minecraft" !in base
+                    ) {
                         base + "minecraft"
                     } else {
                         base
