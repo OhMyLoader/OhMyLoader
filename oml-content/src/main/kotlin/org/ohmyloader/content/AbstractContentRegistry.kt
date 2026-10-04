@@ -81,34 +81,36 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
     }
 
     /** A collected ore-generation declaration, flattened to its two datapack files' JSON. */
-    data class OreGenDecl(val namespace: String, val key: String, val featureJson: String, val placedJson: String)
+    data class OreGenDecl(
+        val namespace: String,
+        val key: String,
+        val featureJson: String,
+        val placedJson: String,
+        /** The declared biome list (possibly empty = every biome); the adapter resolves it. */
+        val biomes: List<String>,
+    )
 
     /**
      * Every ore declaration's datapack files, in declaration order. The adapter serves them under
      * its version's worldgen paths and merges the placed ids into the target biomes' feature
-     * lists; the JSON is the version-independent datapack format (the same shape across 26.x), so
-     * it is generated here — derived on demand from the collected block declarations, which stay
-     * consumed (blocks are frozen), so reloads re-serve them without re-collection.
+     * lists. The JSON is the version-independent datapack format (the same shape across 26.x), so
+     * it is generated at collect time; the list survives the post-materialization drain of the
+     * block queue, because blocks are frozen and their ore files must stay served for every later
+     * datapack reload.
      */
-    @Synchronized
-    fun oreGenDecls(): List<OreGenDecl> = collected.mapNotNull { decl ->
-        decl.spec.oreDeclaration?.let { ore ->
-            val key = "ore_${decl.id}"
-            OreGenDecl(decl.namespace, key, oreFeatureJson(decl.namespace, decl.id, ore), orePlacedJson(decl.namespace, key, ore))
-        }
-    }
+    protected val collectedOreGen: MutableList<OreGenDecl> = mutableListOf()
 
-    @Synchronized
+    /** Read-only view for the adapter (serving + biome merge), in declaration order. */
+    val oreGenDecls: List<OreGenDecl> get() = collectedOreGen
+
     fun oreGenKeysFor(namespace: String): List<String> =
-        collected.filter { it.namespace == namespace && it.spec.oreDeclaration != null }.map { "ore_${it.id}" }
+        collectedOreGen.filter { it.namespace == namespace }.map { it.key }
 
-    @Synchronized
     fun oreFeatureJsonFor(namespace: String, key: String): String? =
-        oreGenDecls().firstOrNull { it.namespace == namespace && it.key == key }?.featureJson
+        collectedOreGen.firstOrNull { it.namespace == namespace && it.key == key }?.featureJson
 
-    @Synchronized
     fun orePlacedJsonFor(namespace: String, key: String): String? =
-        oreGenDecls().firstOrNull { it.namespace == namespace && it.key == key }?.placedJson
+        collectedOreGen.firstOrNull { it.namespace == namespace && it.key == key }?.placedJson
 
     private fun oreFeatureJson(namespace: String, blockId: String, ore: OMLBlockOreDeclaration): String =
         "{\"type\":\"minecraft:ore\",\"size\":${ore.veinSize},\"discard_chance_on_air_exposure\":0.0," +
@@ -266,6 +268,18 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
      */
     protected fun collect(namespace: String, id: String, spec: OMLBlockDeclaration): OMLBlock {
         val key = "$namespace:$id"
+        val ore = spec.oreDeclaration
+        if (ore != null) {
+            // snapshotted at collect time: the block queue is drained after materialization, but
+            // the ore's datapack files must stay served for every later datapack reload (blocks
+            // are frozen, so the declaration cannot be re-collected)
+            val key2 = "ore_$id"
+            collectedOreGen += OreGenDecl(
+                namespace, key2, oreFeatureJson(namespace, id, ore),
+                orePlacedJson(namespace, key2, ore),
+                ore.biomes.toList(),
+            )
+        }
         return OMLBlock(key) { materialized[key]?.platform ?: error("block $key has not been materialized") }
             .also { collected += BlockDecl(namespace, id, spec) }
     }

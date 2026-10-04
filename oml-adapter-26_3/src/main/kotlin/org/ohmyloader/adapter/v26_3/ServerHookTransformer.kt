@@ -1,5 +1,6 @@
 package org.ohmyloader.adapter.v26_3
 
+import org.ohmyloader.api.inject.DslValue
 import org.ohmyloader.api.inject.injection
 import org.ohmyloader.core.transformer.injection.InjectingTransformer
 
@@ -10,6 +11,21 @@ import org.ohmyloader.core.transformer.injection.InjectingTransformer
  */
 class ServerHookTransformer : InjectingTransformer(
     injection {
+        // Resource pack repo openAllSelected pre-hook — the SERVER half of the rule the client
+        // transformer also carries (shared bootstrap code, the same deliberate duplication as the
+        // freeze rule below). M2 made the dedicated server a datapack consumer: declared ores
+        // merge into biome files and the recipe/loot JSONs are datapack content, so the server's
+        // SERVER_DATA repository must contain the pack or the data silently loads vanilla-only.
+        classTarget("net/minecraft/server/packs/repository/PackRepository") {
+            method("openAllSelected", desc = "()Ljava/util/List;") {
+                atHead {
+                    call(
+                        "org/ohmyloader/adapter/v26_3/EventBridge", "onPackRepositoryReload", "(Ljava/lang/Object;)V",
+                        args = listOf(DslValue.This),
+                    )
+                }
+            }
+        }
         classTarget("net/minecraft/server/MinecraftServer") {
             // invoked once per logic tick of the dedicated server main loop
             method("tickServer", desc = "(Ljava/util/function/BooleanSupplier;)V") {

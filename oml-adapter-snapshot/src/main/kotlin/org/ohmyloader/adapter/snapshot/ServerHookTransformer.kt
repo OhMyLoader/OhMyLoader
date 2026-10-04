@@ -1,19 +1,35 @@
 package org.ohmyloader.adapter.snapshot
 
+import org.ohmyloader.api.inject.DslValue
 import org.ohmyloader.api.inject.injection
 import org.ohmyloader.core.transformer.injection.InjectingTransformer
 
 /**
  * 26.4-snapshot-2 **server-side** game hook, kept separate from [MinecraftHookTransformer] because the two sides target different classes (the client hooks `Minecraft`, the server hooks `MinecraftServer`): a merged batch would let every rule silently miss on the other side — the most dangerous failure mode of this engine.
  * The exception is rules targeting **shared bootstrap code**, written in both transformers — the duplication is deliberate, it is the same fact: `BuiltInRegistries.bootStrap()` runs on both sides and content must materialize on both (a block that exists only on the client cannot be placed, saved or sent); the region-file compression rules likewise.
- * 26.4-snapshot-2 shape facts: `MinecraftServer` has multiple constructor overloads, so the constructor rule deliberately declares no descriptor and matches every overload — what the once-only [org.ohmyloader.core.OMLCore.onServerReady] guard expects; `tickServer` is `protected`, so its rule matches on the descriptor, not visibility; `bootStrap()` is reached from `Bootstrap.bootStrap()` in the dedicated-server call path, so the rule is live on the server.
+ * 26.4-snapshot-2 shape facts: `MinecraftServer` gained constructor parameters, so the constructor rule deliberately declares no descriptor and matches every overload — what the once-only [org.ohmyloader.core.OMLCore.onServerReady] guard expects; `tickServer` is `protected`, so its rule matches on the descriptor, not visibility; `bootStrap()` is reached from `Bootstrap.bootStrap()` in the dedicated-server call path, so the rule is live on the server.
  */
 class ServerHookTransformer : InjectingTransformer(
     injection {
+        // Resource pack repo openAllSelected pre-hook — the SERVER half of the rule the client
+        // transformer also carries (shared bootstrap code, the same deliberate duplication as the
+        // freeze rule below). M2 made the dedicated server a datapack consumer: declared ores
+        // merge into biome files and the recipe/loot JSONs are datapack content, so the server's
+        // SERVER_DATA repository must contain the pack or the data silently loads vanilla-only.
+        classTarget("net/minecraft/server/packs/repository/PackRepository") {
+            method("openAllSelected", desc = "()Ljava/util/List;") {
+                atHead {
+                    call(
+                        "org/ohmyloader/adapter/v26_3/EventBridge", "onPackRepositoryReload", "(Ljava/lang/Object;)V",
+                        args = listOf(DslValue.This),
+                    )
+                }
+            }
+        }
         classTarget("net/minecraft/server/MinecraftServer") {
             // invoked once per logic tick of the dedicated server main loop
             method("tickServer", desc = "(Ljava/util/function/BooleanSupplier;)V") {
-                atHead { call("org/ohmyloader/adapter/snapshot/EventBridge", "onServerTick", "()V") }
+                atHead { call("org/ohmyloader/adapter/v26_3/EventBridge", "onServerTick", "()V") }
                 require(1)
             }
 
@@ -36,7 +52,7 @@ class ServerHookTransformer : InjectingTransformer(
                     owner = "net/minecraft/core/registries/BuiltInRegistries",
                     name = "freeze",
                     desc = "()V",
-                    handlerOwner = "org/ohmyloader/adapter/snapshot/EventBridge",
+                    handlerOwner = "org/ohmyloader/adapter/v26_3/EventBridge",
                     handlerMethod = "onRegistryFreeze"
                 )
             }
@@ -51,7 +67,7 @@ class ServerHookTransformer : InjectingTransformer(
             method("<clinit>", desc = "()V") {
                 atTail {
                     call(
-                        "org/ohmyloader/adapter/snapshot/ZstdRegionChunkFormat",
+                        "org/ohmyloader/adapter/v26_3/ZstdRegionChunkFormat",
                         "onRegionFileVersionInitialized", "()V",
                     )
                 }
@@ -59,7 +75,7 @@ class ServerHookTransformer : InjectingTransformer(
             method("getSelected", desc = "()Lnet/minecraft/world/level/chunk/storage/RegionFileVersion;") {
                 atTail {
                     transformReturn(
-                        owner = "org/ohmyloader/adapter/snapshot/ZstdRegionChunkFormat",
+                        owner = "org/ohmyloader/adapter/v26_3/ZstdRegionChunkFormat",
                         method = "onSelectedVersion",
                         desc = "(Lnet/minecraft/world/level/chunk/storage/RegionFileVersion;)Lnet/minecraft/world/level/chunk/storage/RegionFileVersion;",
                     )
@@ -67,5 +83,5 @@ class ServerHookTransformer : InjectingTransformer(
             }
         }
     },
-    id = "snapshot:server-hooks",
+    id = "v26_3:server-hooks",
 )

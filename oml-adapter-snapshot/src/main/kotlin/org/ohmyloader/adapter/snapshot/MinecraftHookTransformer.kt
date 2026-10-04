@@ -40,7 +40,7 @@ class MinecraftHookTransformer : InjectingTransformer(
             }
         }
         classTarget("net/minecraft/client/Minecraft") {
-            // Access-flag rewrite: `proxy` is still `private final java.net.Proxy` (26.3 added a
+            // Access-flag rewrite: `proxy` is still `private final java.net.Proxy` (26.4-snapshot-2 added a
             // public `getProxy()` next to it, but the field itself stays closed). Loosening the bits
             // touches no instruction, so game behavior is unchanged; any package in the same process
             // can now read it as an ordinary public member.
@@ -53,7 +53,7 @@ class MinecraftHookTransformer : InjectingTransformer(
                 atTail { omlCall("onMinecraftReady") }
             }
             method("runTick", desc = "(Z)V") {
-                atHead { call("org/ohmyloader/adapter/snapshot/EventBridge", "onClientTick", "()V") }
+                atHead { call("org/ohmyloader/adapter/v26_3/EventBridge", "onClientTick", "()V") }
             }
             // Local read: `runTick(boolean)` stores `DeltaTracker$Timer.advanceGameTime(J)I` into int
             // slot 2 (offset 96 istore_2, the method's only int-slot write at that point — the other
@@ -119,7 +119,7 @@ class MinecraftHookTransformer : InjectingTransformer(
                     )
                 }
             }
-            // GuiOpenEvent (cancellable). 26.3 renamed `setScreen` to `setScreenAndShow`, and the
+            // GuiOpenEvent (cancellable). 26.4-snapshot-2 renamed `setScreen` to `setScreenAndShow`, and the
             // method now also forces a frame: `Gui.setScreen(screen)` at offset 17 is followed by
             // `renderFrame(false)`. Cancelling here therefore short-circuits both the screen swap and
             // that forced frame — the hook must sit ahead of both, so HEAD is the only anchor that
@@ -127,28 +127,28 @@ class MinecraftHookTransformer : InjectingTransformer(
             method("setScreenAndShow", desc = "(Lnet/minecraft/client/gui/screens/Screen;)V") {
                 atHead {
                     cancellableCall(
-                        "org/ohmyloader/adapter/snapshot/EventBridge", "onGuiOpen", "(Ljava/lang/Object;)Z",
+                        "org/ohmyloader/adapter/v26_3/EventBridge", "onGuiOpen", "(Ljava/lang/Object;)Z",
                         args = listOf(DslValue.Arg(0))
                     )
                 }
             }
-            // WorldLoadEvent. 26.3 dropped the `ReceivingLevelScreen$Reason` parameter, so the
+            // WorldLoadEvent. 26.4-snapshot-2 dropped the `ReceivingLevelScreen$Reason` parameter, so the
             // descriptor is back to a single argument (`(Lnet/minecraft/client/multiplayer/ClientLevel;)V`,
             // body: putfield level + updateLevelInEngines).
             method("setLevel", desc = "(Lnet/minecraft/client/multiplayer/ClientLevel;)V") {
                 atHead {
                     call(
-                        "org/ohmyloader/adapter/snapshot/EventBridge", "onWorldLoad", "(Ljava/lang/Object;)V",
+                        "org/ohmyloader/adapter/v26_3/EventBridge", "onWorldLoad", "(Ljava/lang/Object;)V",
                         args = listOf(DslValue.Arg(0))
                     )
                 }
             }
-            // WorldLoadEvent (world = null). 26.4-snapshot-2 has no `disconnect()` on Minecraft:
+            // WorldLoadEvent (world = null). 26.4-snapshot-2 has no `disconnect()` on Minecraft any more:
             // `disconnectFromWorld(Component)` is the leaving-the-world path (it disconnects the
             // ClientLevel, swaps in the progress/saving screen and finally a TitleScreen). Anchoring
             // its head fires the event while the world is still live, before any teardown.
             method("disconnectFromWorld", desc = "(Lnet/minecraft/network/chat/Component;)V") {
-                atHead { call("org/ohmyloader/adapter/snapshot/EventBridge", "onWorldDisconnect", "()V") }
+                atHead { call("org/ohmyloader/adapter/v26_3/EventBridge", "onWorldDisconnect", "()V") }
             }
         }
         classTarget("com/mojang/blaze3d/platform/FramerateLimitTracker") {
@@ -160,7 +160,7 @@ class MinecraftHookTransformer : InjectingTransformer(
             method("getFramerateLimit", desc = "()I") {
                 atTail {
                     transformReturn(
-                        owner = "org/ohmyloader/adapter/snapshot/EventBridge",
+                        owner = "org/ohmyloader/adapter/v26_3/EventBridge",
                         method = "onFrameLimit",
                         desc = "(I)I"
                     )
@@ -177,7 +177,7 @@ class MinecraftHookTransformer : InjectingTransformer(
                     owner = "net/minecraft/core/registries/BuiltInRegistries",
                     name = "freeze",
                     desc = "()V",
-                    handlerOwner = "org/ohmyloader/adapter/snapshot/EventBridge",
+                    handlerOwner = "org/ohmyloader/adapter/v26_3/EventBridge",
                     handlerMethod = "onRegistryFreeze"
                 )
             }
@@ -195,7 +195,7 @@ class MinecraftHookTransformer : InjectingTransformer(
             method("<clinit>", desc = "()V") {
                 atTail {
                     call(
-                        "org/ohmyloader/adapter/snapshot/ZstdRegionChunkFormat",
+                        "org/ohmyloader/adapter/v26_3/ZstdRegionChunkFormat",
                         "onRegionFileVersionInitialized", "()V",
                     )
                 }
@@ -203,18 +203,18 @@ class MinecraftHookTransformer : InjectingTransformer(
             method("getSelected", desc = "()Lnet/minecraft/world/level/chunk/storage/RegionFileVersion;") {
                 atTail {
                     transformReturn(
-                        owner = "org/ohmyloader/adapter/snapshot/ZstdRegionChunkFormat",
+                        owner = "org/ohmyloader/adapter/v26_3/ZstdRegionChunkFormat",
                         method = "onSelectedVersion",
                         desc = "(Lnet/minecraft/world/level/chunk/storage/RegionFileVersion;)Lnet/minecraft/world/level/chunk/storage/RegionFileVersion;",
                     )
                 }
             }
         }
-        // Resource pack repo openAllSelected pre-hook (mounts the mod resource pack). This lives in
-        // the **client** transformer even though `PackRepository` is shared bootstrap code (unlike
-        // the BuiltInRegistries freeze rule above, which both sides need): the injector serves
-        // CLIENT_RESOURCES only — blockstates/models/items/textures live under `assets/`, a realm the
-        // dedicated server never opens — so on the server the rule would have nothing to inject.
+        // Resource pack repo openAllSelected pre-hook (mounts the mod pack). Shared bootstrap code,
+        // so the rule is written in BOTH transformers — the client reload opens `assets/` and the
+        // dedicated server's SERVER_DATA repository opens `data/` (declared ores merge into biome
+        // files; recipes and loot are datapack JSON), and each side needs the pack mounted into its
+        // own repository instance.
         //
         // Verified in the client jar that both resource-reload paths pass through here: the Minecraft
         // constructor inlines `reload()` -> `Options.loadSelectedResourcePacks` ->
@@ -226,7 +226,7 @@ class MinecraftHookTransformer : InjectingTransformer(
             method("openAllSelected", desc = "()Ljava/util/List;") {
                 atHead {
                     call(
-                        "org/ohmyloader/adapter/snapshot/EventBridge", "onPackRepositoryReload", "(Ljava/lang/Object;)V",
+                        "org/ohmyloader/adapter/v26_3/EventBridge", "onPackRepositoryReload", "(Ljava/lang/Object;)V",
                         args = listOf(DslValue.This)
                     )
                 }
@@ -237,7 +237,7 @@ class MinecraftHookTransformer : InjectingTransformer(
             method("sendChat", desc = "(Ljava/lang/String;)V") {
                 atHead {
                     cancellableCall(
-                        "org/ohmyloader/adapter/snapshot/EventBridge", "onChatSent", "(Ljava/lang/String;)Z",
+                        "org/ohmyloader/adapter/v26_3/EventBridge", "onChatSent", "(Ljava/lang/String;)Z",
                         args = listOf(DslValue.Arg(0))
                     )
                 }
@@ -247,7 +247,7 @@ class MinecraftHookTransformer : InjectingTransformer(
             method("handleSystemChat", desc = "(Lnet/minecraft/network/protocol/game/ClientboundSystemChatPacket;)V") {
                 atHead {
                     cancellableCall(
-                        "org/ohmyloader/adapter/snapshot/EventBridge", "onChatReceived", "(Ljava/lang/Object;)Z",
+                        "org/ohmyloader/adapter/v26_3/EventBridge", "onChatReceived", "(Ljava/lang/Object;)Z",
                         args = listOf(DslValue.Arg(0))
                     )
                 }
@@ -255,7 +255,7 @@ class MinecraftHookTransformer : InjectingTransformer(
             method("handlePlayerChat", desc = "(Lnet/minecraft/network/protocol/game/ClientboundPlayerChatPacket;)V") {
                 atHead {
                     cancellableCall(
-                        "org/ohmyloader/adapter/snapshot/EventBridge", "onChatReceived", "(Ljava/lang/Object;)Z",
+                        "org/ohmyloader/adapter/v26_3/EventBridge", "onChatReceived", "(Ljava/lang/Object;)Z",
                         args = listOf(DslValue.Arg(0))
                     )
                 }
@@ -266,12 +266,12 @@ class MinecraftHookTransformer : InjectingTransformer(
             ) {
                 atHead {
                     cancellableCall(
-                        "org/ohmyloader/adapter/snapshot/EventBridge", "onChatReceived", "(Ljava/lang/Object;)Z",
+                        "org/ohmyloader/adapter/v26_3/EventBridge", "onChatReceived", "(Ljava/lang/Object;)Z",
                         args = listOf(DslValue.Arg(0))
                     )
                 }
             }
         }
     },
-    id = "snapshot:minecraft-hooks",
+    id = "v26_3:minecraft-hooks",
 )

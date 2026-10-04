@@ -210,11 +210,11 @@ class MinecraftHookTransformer : InjectingTransformer(
                 }
             }
         }
-        // Resource pack repo openAllSelected pre-hook (mounts the mod resource pack). This lives in
-        // the **client** transformer even though `PackRepository` is shared bootstrap code (unlike
-        // the BuiltInRegistries freeze rule above, which both sides need): the injector serves
-        // CLIENT_RESOURCES only — blockstates/models/items/textures live under `assets/`, a realm the
-        // dedicated server never opens — so on the server the rule would have nothing to inject.
+        // Resource pack repo openAllSelected pre-hook (mounts the mod pack). Shared bootstrap code,
+        // so the rule is written in BOTH transformers — the client reload opens `assets/` and the
+        // dedicated server's SERVER_DATA repository opens `data/` (declared ores merge into biome
+        // files; recipes and loot are datapack JSON), and each side needs the pack mounted into its
+        // own repository instance.
         //
         // Verified in the client jar that both resource-reload paths pass through here: the Minecraft
         // constructor inlines `reload()` -> `Options.loadSelectedResourcePacks` ->

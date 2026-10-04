@@ -19,7 +19,6 @@ object ModAssetInjector {
     private const val PACK_ID = "oml_mod_resources"
     private const val PACK_NAME = "OML Mod Resources"
 
-    private var injected = false
 
     /**
      * Idempotent injection: mount the mod resource pack into PackRepository's sources and add it
@@ -31,14 +30,20 @@ object ModAssetInjector {
      * of would silently drop this pack; `addPack` on an already-selected id is a no-op, so this
      * stays idempotent.
      */
+    /** The pack instance, shared by every repository that mounts it (it answers both pack types). */
+    @Volatile
+    private var pack: Any? = null
+
+    /** Repositories the pack is already mounted into — the client and the (integrated or dedicated) server each have their own. */
+    private val mountedRepos: MutableSet<Any> = java.util.Collections.newSetFromMap(java.util.IdentityHashMap())
+
     @Synchronized
     fun ensureInjected(repo: Any) {
         val loader = OMLCore.gameClassLoader()
-        if (!injected) {
-            injected = true
+        val thePack = pack ?: createPack(loader)?.also { pack = it } ?: return
+        if (mountedRepos.add(repo)) {
             try {
-                val pack = createPack(loader) ?: return
-                val source = createRepositorySource(loader, pack)
+                val source = createRepositorySource(loader, thePack)
 
                 val sourcesField = Refl.field(repo, "sources")
 
