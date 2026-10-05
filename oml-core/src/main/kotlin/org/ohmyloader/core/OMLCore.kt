@@ -380,8 +380,15 @@ object OMLCore {
      * there — the two sides' "environment ready" moments inherently differ, hence a separate
      * entry for each rather than one side pretending to be the other.
      */
+    @Volatile
+    @JvmField
+    var serverInstance: Any? = null
+
     @JvmStatic
-    fun onServerReady() = enterModInitStage("MinecraftServer")
+    fun onServerReady(server: Any?) {
+        serverInstance = server
+        enterModInitStage("MinecraftServer")
+    }
 
     /** The mod-init stage is entered exactly once: `MinecraftServer` may have multiple constructors, and both sides may have multiple instances. */
     private val modInitEntered = AtomicBoolean(false)

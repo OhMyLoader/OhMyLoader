@@ -37,7 +37,11 @@ class ServerHookTransformer : InjectingTransformer(
             // tail of the client constructor — there is no `Minecraft` class on this side, so that
             // path never fires.
             constructor {
-                atTail { omlCall("onServerReady") }
+                // ConstructorHead, not tail: the hook passes `this`, and `this` is only a legal
+                // value once super() has run (the startup self-check rejects the tail form).
+                atConstructorHead {
+                    omlCall("onServerReady", desc = "(Ljava/lang/Object;)V", args = listOf(DslValue.This))
+                }
             }
         }
 
