@@ -27,6 +27,9 @@ object ModScanner {
             while (entries.hasMoreElements()) {
                 val entry = entries.nextElement()
                 if (!entry.name.endsWith(".class")) continue
+                // MR-JAR versioned copies are not entry points: scanning them would produce a
+                // second ModContainer for the same modId and initialize the mod twice.
+                if (entry.name.startsWith("META-INF/")) continue
 
                 zip.getInputStream(entry).use { stream ->
                     val reader = ClassReader(stream)
