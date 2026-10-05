@@ -41,7 +41,7 @@ object ModAssetInjector {
     fun ensureInjected(repo: Any) {
         val loader = OMLCore.gameClassLoader()
         val thePack = pack ?: createPack(loader)?.also { pack = it } ?: return
-        if (mountedRepos.add(repo)) {
+        if (repo !in mountedRepos) {
             try {
                 val source = createRepositorySource(loader, thePack)
 
@@ -51,8 +51,11 @@ object ModAssetInjector {
                 val sources = HashSet<Any>(sourcesField.get(repo) as Collection<Any>)
                 sources.add(source)
                 sourcesField.set(repo, sources)
+                // Only after success: marking a repo mounted whose source installation threw
+                // would skip it on every later reload — the silent no-mod-assets failure.
+                mountedRepos.add(repo)
             } catch (t: Throwable) {
-                OmlLog.error("ModAssets", "injection failed", t)
+                OmlLog.error("ModAssets", "injection failed — will retry on the next reload", t)
             }
         }
         try {
