@@ -44,6 +44,13 @@ interface IAdapter {
     fun createContentRegistry(): org.ohmyloader.api.content.ContentRegistryFactory? = null
 
     /**
+     * The version's custom-payload send path (client→server and server→player). Null when that
+     * version does not yet route mod payloads; mods calling a send method then get a clear error
+     * rather than a packet dropped without a trace.
+     */
+    fun createNetworkSender(): org.ohmyloader.api.network.OMLNetworkSender? = null
+
+    /**
      * Game-ready hook (tail of Minecraft initialization): post-processing that needs the game
      * runtime environment (e.g. content materialization) runs here.
      */

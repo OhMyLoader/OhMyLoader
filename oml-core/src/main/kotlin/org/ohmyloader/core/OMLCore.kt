@@ -9,6 +9,12 @@ import org.ohmyloader.api.command.OMLCommandDeclaration
 import org.ohmyloader.api.command.OMLCommandProvider
 import org.ohmyloader.api.command.OMLCommandRegistry
 import org.ohmyloader.api.content.OMLContentProvider
+import org.ohmyloader.api.network.OMLNetwork
+import org.ohmyloader.api.network.OMLNetworkContext
+import org.ohmyloader.api.network.OMLNetworkProvider
+import org.ohmyloader.api.network.OMLNetworkRegistry
+import org.ohmyloader.api.network.OMLPayloadType
+import org.ohmyloader.core.network.PayloadDeclarations
 import org.ohmyloader.content.AbstractContentRegistry
 import org.ohmyloader.content.TomlContentLoader
 import org.ohmyloader.core.OMLCore.installLogFile
@@ -112,6 +118,8 @@ object OMLCore {
         val omlLoader = createMainLoader(parent, mods)
         val adapter = discoverAdapter(omlLoader) ?: return
         this.adapter = adapter
+        // Installed before mod init: a mod may send during its own initialization.
+        OMLNetwork.sender = adapter.createNetworkSender()
 
         val transformers = registerTransformers(adapter, omlLoader, mods)
 
@@ -551,6 +559,16 @@ object OMLCore {
         }
     }
 
+    private fun networkRegistryFor(modId: String) = object : OMLNetworkRegistry {
+        override fun <T> clientToServer(type: OMLPayloadType<T>, handler: (T, OMLNetworkContext) -> Unit) {
+            PayloadDeclarations.add(modId, type, PayloadDeclarations.Direction.CLIENT_TO_SERVER, handler)
+        }
+
+        override fun <T> serverToClient(type: OMLPayloadType<T>, handler: (T, OMLNetworkContext) -> Unit) {
+            PayloadDeclarations.add(modId, type, PayloadDeclarations.Direction.SERVER_TO_CLIENT, handler)
+        }
+    }
+
     private fun modInstance(mod: ModContainer): Any = modInstances.getOrPut(mod.id) {
         Class.forName(mod.entryClass, true, primaryLoader).getDeclaredConstructor().newInstance()
     }
@@ -569,6 +587,9 @@ object OMLCore {
                 }
                 if (instance is OMLCommandProvider) {
                     instance.declareCommands(commandRegistryFor(id))
+                }
+                if (instance is OMLNetworkProvider) {
+                    instance.declareNetwork(networkRegistryFor(id))
                 }
             } catch (t: Throwable) {
                 OmlLog.error("OMLCore", "Mod [$id] initialization failed", t)
