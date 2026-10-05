@@ -32,8 +32,9 @@ afterEvaluate {
     val clientJar = file("libs/$versionId-client.jar")
     val stdoutEnc = listOf("-Dsun.stdout.encoding=UTF-8", "-Dsun.stderr.encoding=UTF-8")
 
-    // This convention provides only the two build-time entry points an adapter module needs:
-    // fetch the vanilla jar it hooks, and install the loader into a launcher game directory.
+    // This convention provides the build-time entry points an adapter module needs: fetch the vanilla
+    // jar it hooks, fetch that version's libraries for the tests that load game classes, and install
+    // the loader into a launcher game directory.
     // Everything that *runs* the game lives in the oml-gradle plugin.
 
     // The vanilla client jar, kept locally (gitignored): the adapter compiles against it (26.x jars
@@ -59,6 +60,32 @@ afterEvaluate {
     }
     tasks.withType<KotlinCompile>().configureEach {
         dependsOn(fetchClientJar)
+    }
+
+    // The version's own library tree, for tests that load real game classes: `Identifier`'s static
+    // init links brigadier, DataFixerUpper, JOML and Mojang's util, so a test that builds a real
+    // channel id needs them. Hand-listing those artifacts would freeze versions the game moves with
+    // each snapshot; the version JSON is the authoritative list. Netty stays excluded — this
+    // repository pins it for the packet-codec tests.
+    val gameLibraries = file("libs/$versionId-libraries")
+    val fetchGameLibraries = tasks.register<JavaExec>("fetchGameLibraries") {
+        group = "ohmyloader"
+        description = "Download Minecraft $versionId's runtime libraries into libs/ (only if missing)"
+        classpath(devtools)
+        mainClass.set("org.ohmyloader.devtools.AssetDownloader")
+        workingDir = file("run")
+        jvmArgs(stdoutEnc)
+        args("--libraries", versionId, gameLibraries.absolutePath)
+        outputs.dir(gameLibraries)
+        inputs.property("gameVersion", versionId)
+    }
+    dependencies.add("testRuntimeOnly", fileTree(gameLibraries) {
+        include("**/*.jar")
+        exclude("**/io/netty/**")
+    })
+
+    tasks.withType<Test>().configureEach {
+        dependsOn(fetchGameLibraries)
     }
 
     // Build-time packaging tool: write a launcher version with inheritsFrom and copy the loader

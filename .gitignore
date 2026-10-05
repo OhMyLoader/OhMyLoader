@@ -5,13 +5,15 @@ zig-out/
 zig-pkg/
 # this module's own Gradle outputs (zig owns build/)
 gradle-build/
-# vanilla client jars fetched by fetchClientJar (adapters compile against them)
+# game artifacts fetched by fetchClientJar / fetchGameLibraries (the adapter compiles against the jar)
 oml-adapter-26_3/libs/
 oml-adapter-snapshot/libs/
 # installer fat jar output
 dist/
 # build-time working directories (fetchClientJar / installLauncher)
 run/
+# log4j's output when devtools runs from a module directory
+logs/
 
 # --- Gradle ---
 .gradle
