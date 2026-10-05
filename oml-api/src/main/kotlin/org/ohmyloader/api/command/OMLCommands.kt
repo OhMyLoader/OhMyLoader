@@ -64,9 +64,17 @@ class OMLCommandSource(
     /** True when a player executed the command; console and function callers are not players. */
     val hasPlayer: Boolean,
     private val arguments: Map<String, Any>,
+    private val replyFn: (String) -> Unit,
+    private val replyErrorFn: (String) -> Unit,
     platformSupplier: () -> Any,
 ) {
     val platform: Any by lazy(platformSupplier)
+
+    /** Reports a successful result back to the invoker (chat for players, stdout for the console). */
+    fun reply(message: String) = replyFn(message)
+
+    /** Reports a failure back to the invoker — rendered in red for players. */
+    fun replyError(message: String) = replyErrorFn(message)
 
     fun getString(name: String): String = argument(name) as String
     fun getInt(name: String): Int = argument(name) as Int

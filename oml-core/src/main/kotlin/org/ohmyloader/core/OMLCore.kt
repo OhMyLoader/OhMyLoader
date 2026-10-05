@@ -584,7 +584,10 @@ object OMLCore {
     }
 
     private fun initMods() {
-        for (mod in ModGraph.order(loadedMods)) {
+        val ordered = ModGraph.order(loadedMods)
+        initOrder.addAll(ordered)
+        registerBuiltinCommands()
+        for (mod in ordered) {
             val (id, name, version, entryClass) = mod
             try {
                 val instance = modInstance(mod)
@@ -605,9 +608,49 @@ object OMLCore {
                     instance.declareKeyBindings(keyBindingRegistryFor(id))
                 }
             } catch (t: Throwable) {
+                initFailures[id] = t
                 OmlLog.error("OMLCore", "Mod [$id] initialization failed", t)
             }
         }
+    }
+
+    /** Mods whose [OMLModInitializer.onInitialize] threw, by id — surfaced by the `/oml mods` command. */
+    val initFailures = LinkedHashMap<String, Throwable>()
+
+    /** The initialization order after dependency sorting — what `/oml mods` reports. */
+    val initOrder = mutableListOf<ModContainer>()
+
+    /**
+     * The loader's own `/oml` command, registered like a mod's but under the `oml` id: `mods`
+     * lists every loaded mod with its version, failed inits in red via
+     * [OMLCommandSource.replyError]; `version` prints the loader version.
+     */
+    private fun registerBuiltinCommands() {
+        fun node(name: String) = OMLCommandDeclaration(name, null)
+        val mods = node("mods").apply {
+            executes { source ->
+                source.reply("${initOrder.size} mod(s) loaded:")
+                for (mod in initOrder) {
+                    val failure = initFailures[mod.id]
+                    if (failure == null) {
+                        source.reply("  ${mod.id} ${mod.version}")
+                    } else {
+                        source.replyError("  ${mod.id} ${mod.version} — FAILED: ${failure.message}")
+                    }
+                }
+                for (id in initFailures.keys - initOrder.map { it.id }.toSet()) {
+                    source.replyError("  $id — FAILED: ${initFailures[id]?.message}")
+                }
+            }
+        }
+        val version = node("version").apply {
+            executes { source -> source.reply("Oh My Loader $VERSION") }
+        }
+        val root = node("oml").apply {
+            children += mods
+            children += version
+        }
+        CommandDeclarations.entries.add(CommandDeclarations.Entry("oml", root))
     }
 
     /**

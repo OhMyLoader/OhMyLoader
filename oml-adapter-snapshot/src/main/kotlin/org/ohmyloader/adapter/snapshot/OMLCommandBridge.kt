@@ -67,6 +67,8 @@ object OMLCommandBridge {
                     context.source.getTextName(),
                     context.source.getPlayer() != null,
                     newPath.associate { (name, type) -> name to extract(context, name, type) },
+                    { context.source.sendSuccess({ Component.literal(it) }, false) },
+                    { context.source.sendFailure(Component.literal(it)) },
                 ) { context.source }
                 runCatching { node.execute(source) }.onFailure {
                     context.source.sendFailure(Component.literal("[$modId] command failed: ${it.message}"))
