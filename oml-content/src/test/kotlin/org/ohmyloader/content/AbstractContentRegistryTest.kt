@@ -1,5 +1,6 @@
 package org.ohmyloader.content
 
+import org.ohmyloader.api.content.Furnace
 import org.ohmyloader.api.content.OMLItemDeclaration
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -273,5 +274,35 @@ class AbstractContentRegistryTest {
 
         val error = assertFailsWith<IllegalStateException> { handle.platform }
         assertEquals("item mymod:early_item has not been materialized", error.message)
+    }
+
+    @Test
+    fun `furnace variants of one input get distinct recipe keys instead of shadowing each other`() {
+        val registry = RecordingRegistry()
+        val facade = registry.forNamespace("mymod")
+
+        facade.declareSmelting(input = "raw_ruby", result = "ruby", furnace = Furnace.SMELTING, experience = 0.7, cookingTime = 200)
+        facade.declareSmelting(input = "raw_ruby", result = "ruby", furnace = Furnace.BLASTING, experience = 0.7, cookingTime = 100)
+
+        assertEquals(listOf("mymod_raw_ruby", "mymod_raw_ruby_2"), registry.recipeIdsFor("mymod"))
+        val smelting = registry.recipeJsonFor("mymod", "mymod_raw_ruby")
+            ?: fail("the first recipe must be served as datapack json")
+        val blasting = registry.recipeJsonFor("mymod", "mymod_raw_ruby_2")
+            ?: fail("the second recipe must not be swallowed by the key collision")
+        assertTrue("\"type\":\"minecraft:smelting\"" in smelting)
+        assertTrue("\"type\":\"minecraft:blasting\"" in blasting)
+    }
+
+    @Test
+    fun `a second block-drop declaration for one block keeps the first instead of an orphan table`() {
+        val registry = RecordingRegistry()
+        val facade = registry.forNamespace("mymod")
+
+        facade.declareBlockDrop(block = "ruby_ore", drop = "raw_ruby")
+        facade.declareBlockDrop(block = "ruby_ore", drop = "ruby")
+
+        assertEquals(listOf("mymod_ruby_ore"), registry.lootIdsFor("mymod"))
+        val json = registry.lootJsonFor("mymod", "mymod_ruby_ore") ?: fail("the loot table must be served")
+        assertTrue("\"mymod:raw_ruby\"" in json, "the first declaration wins")
     }
 }

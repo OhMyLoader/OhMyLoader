@@ -1,5 +1,6 @@
 package org.ohmyloader.content
 
+import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.content.*
 
 /**
@@ -160,9 +161,12 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                 experience: Double,
                 cookingTime: Int,
             ) {
-                val key = qualify(namespace, input).replace(':', '_')
                 val full = recipeJson(input, result, namespace, furnace, experience, cookingTime)
-                collectedRecipes += RecipeDecl(namespace, key, furnace.recipePath, full, reloadable)
+                collectedRecipes += RecipeDecl(
+                    namespace,
+                    uniqueKey(collectedRecipes.mapTo(HashSet()) { it.key }, qualify(namespace, input).replace(':', '_')),
+                    furnace.recipePath, full, reloadable,
+                )
             }
 
             override fun declareShapedCrafting(
@@ -202,6 +206,13 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
 
             override fun declareBlockDrop(block: String, drop: String, dropCountMin: Int, dropCountMax: Int) {
                 val key = qualify(namespace, block).replace(':', '_')
+                // A block has exactly one default loot table (its id derives from the file name), so a
+                // second declaration cannot also take effect — suffixing would emit an orphan table
+                // nothing references. Keep the first, say so loudly.
+                if (collectedLoot.any { it.namespace == namespace && it.key == key }) {
+                    OmlLog.warn("Content", "block drop for '$block' declared more than once; keeping the first, ignoring this one")
+                    return
+                }
                 val full = lootJson(block, drop, namespace, dropCountMin, dropCountMax)
                 collectedLoot += LootDecl(namespace, key, full, reloadable)
             }
@@ -235,9 +246,11 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
      * and two recipes producing the same result get a numeric suffix, because a datapack
      * directory cannot hold two files with the same name.
      */
-    private fun craftingKey(namespace: String, result: String): String {
-        val base = qualify(namespace, result).replace(':', '_')
-        val taken = collectedRecipes.mapTo(HashSet()) { it.key }
+    private fun craftingKey(namespace: String, result: String): String =
+        uniqueKey(collectedRecipes.mapTo(HashSet()) { it.key }, qualify(namespace, result).replace(':', '_'))
+
+    /** A datapack directory cannot hold two files with the same name — suffix the second and on. */
+    private fun uniqueKey(taken: Set<String>, base: String): String {
         var candidate = base
         var n = 2
         while (candidate in taken) {
