@@ -156,10 +156,8 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
 
     /** Every biome targeted by at least one ore declaration (the pack's override listing). */
     fun oreTargetedBiomes(): List<String> =
-        collected.flatMap { decl ->
-            decl.spec.oreDeclaration?.let { ore ->
-                if (ore.biomes.isEmpty()) vanillaBiomeIds() else ore.biomes.map(::qualifyBiome)
-            } ?: emptyList()
+        oreGenDecls.flatMap { ore ->
+            if (ore.biomes.isEmpty()) vanillaBiomeIds() else ore.biomes.map(::qualifyBiome)
         }.distinct().sorted()
 
     private fun qualifyBiome(biome: String): String =
@@ -172,11 +170,10 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
      * format — there is no additive mechanism — so the merged full file is what the pack serves.
      */
     private fun mergeBiome(biome: String): String? {
-        val placedIds = collected.mapNotNull { decl ->
-            val ore = decl.spec.oreDeclaration ?: return@mapNotNull null
+        val placedIds = oreGenDecls.filter { ore ->
             val targets = if (ore.biomes.isEmpty()) vanillaBiomeIds() else ore.biomes.map(::qualifyBiome)
-            if (biome in targets) "${decl.namespace}:ore_${decl.id}" else null
-        }
+            biome in targets
+        }.map { "${it.namespace}:${it.key}" }
         if (placedIds.isEmpty()) return null
         val original = OMLCore.gameClassLoader().getResource("data/minecraft/worldgen/biome/$biome.json")
         if (original == null) {
