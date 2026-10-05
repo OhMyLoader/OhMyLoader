@@ -28,7 +28,33 @@ object EventBridge {
     private val contentRegistry = MinecraftContentRegistry
 
     @JvmStatic
-    fun onClientTick() = EventDispatch.onClientTick()
+    fun onClientTick() {
+        OMLKeyBindingsBridge.applyPending()
+        EventDispatch.onClientTick()
+    }
+
+    /**
+     * [keyPress head] Dispatches declared key bindings. Vanilla's own gating is re-applied here
+     * rather than in bytecode: only press actions, and only when no screen is open — the same
+     * no-screen branch the game routes vanilla key mappings through. A null Minecraft instance
+     * (headless tests) dispatches: the game cannot be running, so the screen gate is vacuous.
+     */
+    @JvmStatic
+    fun onKeyPress(window: Long, action: Int, event: net.minecraft.client.input.KeyEvent) {
+        if (action != com.mojang.blaze3d.platform.InputConstants.PRESS) return
+        // getInstance carries a non-null contract and throws before the game is up; a null
+        // instance (headless) just means the screen gate is vacuous.
+        val mc = runCatching { net.minecraft.client.Minecraft.getInstance() }.getOrNull()
+        if (mc != null && mc.gui.screen() != null) return
+        OMLKeyBindingsBridge.dispatchPress(event)
+    }
+
+    /** [Hud.extractRenderState head] Fires the HUD render callback with the frame's draw surface. */
+    @JvmStatic
+    fun onHudRender(
+        extractor: net.minecraft.client.gui.GuiGraphicsExtractor,
+        @Suppress("UNUSED_PARAMETER") delta: net.minecraft.client.DeltaTracker,
+    ) = EventDispatch.onHudRender(extractor)
 
     @JvmStatic
     fun onServerTick() = EventDispatch.onServerTick()

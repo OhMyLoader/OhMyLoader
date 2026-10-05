@@ -2,6 +2,7 @@ package org.ohmyloader.adapter.snapshot
 
 import net.minecraft.world.level.block.entity.BlockEntityType
 import net.minecraft.world.level.block.state.BlockBehaviour
+import net.minecraft.world.level.ItemLike
 import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.content.OMLBlock
 import org.ohmyloader.api.content.OMLItem
@@ -23,6 +24,7 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
 
     /** Invoked by EventBridge at the registry freeze point: translate every declaration into Block + BlockItem + Item. */
     override fun doMaterialize() {
+        val creativeItems = mutableListOf<ItemLike>()
         val loader = OMLCore.gameClassLoader()
         val propertiesClass =
             Class.forName($$"net.minecraft.world.level.block.state.BlockBehaviour$Properties", true, loader)
@@ -131,6 +133,7 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
             val item =
                 blockItemClass.getConstructor(blockClass, itemPropertiesClass).newInstance(block, itemProperties)
             registerIn("net.minecraft.core.registries.BuiltInRegistries", "ITEM", identifier, item)
+            creativeItems.add(item as ItemLike)
 
             val handle = OMLBlock("$namespace:$id") { block }
             materialized[handle.id] = handle
@@ -145,10 +148,13 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
 
             val item = itemClass.getConstructor(itemPropertiesClass).newInstance(itemProperties)
             registerIn("net.minecraft.core.registries.BuiltInRegistries", "ITEM", identifier, item)
+            creativeItems.add(item as ItemLike)
 
             val handle = OMLItem("$namespace:$id") { item }
             materializedItems[handle.id] = handle
         }
+
+        OMLCreativeTabs.register(creativeItems)
     }
 
     // ---- worldgen: biome merges for declared ores ----

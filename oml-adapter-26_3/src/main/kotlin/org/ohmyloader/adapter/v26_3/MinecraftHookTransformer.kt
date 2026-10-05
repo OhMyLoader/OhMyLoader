@@ -298,6 +298,51 @@ class MinecraftHookTransformer : InjectingTransformer(
                 }
             }
         }
+        classTarget("net/minecraft/client/Options") {
+            // Mod key bindings: the array is `public final`, and a final-field putfield is only
+            // legal from the declaring class, so the bits are loosened for the bridge's reassignment
+            // (same pattern as `proxy`). The append itself must NOT happen at construction:
+            // Options.<init> runs before mod declarations are collected, so
+            // OMLKeyBindingsBridge applies them lazily on the first client tick.
+            field("keyMappings", desc = "[Lnet/minecraft/client/KeyMapping;") {
+                makePublic()
+                removeFinal()
+                require(1)
+            }
+        }
+        classTarget("net/minecraft/client/KeyboardHandler") {
+            // KeyPressEvent. The int parameter is the action encoded by SDLEventHandler:
+            // 1 = press, 0 = release, -1 = repeat. HEAD fires for every keyboard event, including
+            // screen-open ones; the bridge re-applies vanilla's own gating (press action, no
+            // open screen) before dispatching to declared bindings.
+            method("keyPress", desc = "(JILnet/minecraft/client/input/KeyEvent;)V") {
+                atHead {
+                    call(
+                        "org/ohmyloader/adapter/v26_3/EventBridge", "onKeyPress",
+                        "(JILnet/minecraft/client/input/KeyEvent;)V",
+                        args = listOf(DslValue.Arg(0), DslValue.Arg(1), DslValue.Arg(2)),
+                    )
+                }
+            }
+        }
+        classTarget("net/minecraft/client/gui/Hud") {
+            // HudRenderEvent. extractRenderState is the HUD extraction pass; its only caller is
+            // guarded by GameRenderState.shouldRenderLevel, so the hook fires exactly once per
+            // frame and only while a world is loaded. Internal early-returns (loading screens, F1)
+            // sit after HEAD, so the event means "the HUD pass begins", not "pixels will follow".
+            method(
+                "extractRenderState",
+                desc = "(Lnet/minecraft/client/gui/GuiGraphicsExtractor;Lnet/minecraft/client/DeltaTracker;)V",
+            ) {
+                atHead {
+                    call(
+                        "org/ohmyloader/adapter/v26_3/EventBridge", "onHudRender",
+                        "(Lnet/minecraft/client/gui/GuiGraphicsExtractor;Lnet/minecraft/client/DeltaTracker;)V",
+                        args = listOf(DslValue.Arg(0), DslValue.Arg(1)),
+                    )
+                }
+            }
+        }
     },
     id = "v26_3:minecraft-hooks",
 )
