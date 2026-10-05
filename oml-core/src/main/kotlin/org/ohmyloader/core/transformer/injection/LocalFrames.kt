@@ -185,15 +185,19 @@ internal class AnchorLocals(private val frame: LocalFrame?, private val unavaila
 }
 
 /**
- * The **all-injection-point** snapshots of a method: dataflow runs only once, and however many injection points a
- * method has, they all reuse it.
+ * The **all-injection-point** snapshots of a method: dataflow runs once per bytecode state and
+ * however many injection points a method has, they all reuse it.
  *
- * Multiple injection points per method are the norm ([InjectionSpec] is "each rule × each anchor"), and
- * `Analyzer.analyze` is whole-method-level cost, so the cache hangs on the method rather than on each anchor.
+ * Multiple injection points per method are the norm ([InjectionSpec] is "each rule × each anchor"),
+ * and `Analyzer.analyze` is whole-method-level cost, so the cache hangs on the method rather than
+ * on each anchor. The cache must be re-run whenever the instruction list grew: injected blocks
+ * **shift every later instruction index**, and the frame table is addressed by index
+ * (`instructions.indexOf(anchor)`), so a table computed against the pre-insertion list answers
+ * at the wrong instruction for every anchor after the insertion.
  */
 internal class MethodFrames(private val owner: String, private val method: MethodNode) {
 
-    private var computed = false
+    private var analyzedAtSize = -1
     private var table: Array<Frame<BasicValue>?>? = null
     private var failure: String? = null
 
@@ -286,8 +290,11 @@ internal class MethodFrames(private val owner: String, private val method: Metho
     }
 
     private fun ensure() {
-        if (computed) return
-        computed = true
+        val size = method.instructions.size()
+        if (analyzedAtSize == size) return
+        analyzedAtSize = size
+        table = null
+        failure = null
         try {
             val analyzer = Analyzer(PreciseInterpreter())
             analyzer.analyze(owner, method)
