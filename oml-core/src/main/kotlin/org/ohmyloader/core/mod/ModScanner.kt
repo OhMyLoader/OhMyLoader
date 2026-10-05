@@ -44,6 +44,7 @@ object ModScanner {
                     var modId = "unknown"
                     var name = ""
                     var version = "1.0.0"
+                    var dependencies = emptyList<DependencySpec>()
                     val values = modAnnotation.values.orEmpty()
                     var i = 0
                     while (i + 1 < values.size) {
@@ -51,12 +52,19 @@ object ModScanner {
                             "id" -> modId = values[i + 1] as? String ?: modId
                             "name" -> name = values[i + 1] as? String ?: ""
                             "version" -> version = values[i + 1] as? String ?: "1.0.0"
+                            // an array annotation member arrives as ArrayList<String>
+                            "dependencies" -> dependencies = (values[i + 1] as? ArrayList<*>)
+                                .orEmpty()
+                                .mapNotNull { it as? String }
+                                .map(DependencySpec::parse)
                         }
                         i += 2
                     }
                     if (name.isEmpty()) name = modId
 
-                    found += ModContainer(modId, name, version, classNode.name.replace('/', '.'), jarFile)
+                    found += ModContainer(
+                        modId, name, version, classNode.name.replace('/', '.'), jarFile, dependencies,
+                    )
                 }
             }
         }

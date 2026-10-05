@@ -25,6 +25,7 @@ import org.ohmyloader.core.classloader.OMLClassLoader
 import org.ohmyloader.core.mixin.MixinScanner
 import org.ohmyloader.core.mixin.OMLMixinRegistry
 import org.ohmyloader.core.mod.ModContainer
+import org.ohmyloader.core.mod.ModGraph
 import org.ohmyloader.core.mod.ModScanner
 import org.ohmyloader.core.ruleset.ModRuleSets
 import org.ohmyloader.core.spi.IAdapter
@@ -583,7 +584,7 @@ object OMLCore {
     }
 
     private fun initMods() {
-        for (mod in loadedMods) {
+        for (mod in ModGraph.order(loadedMods)) {
             val (id, name, version, entryClass) = mod
             try {
                 val instance = modInstance(mod)
