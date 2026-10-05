@@ -17,3 +17,9 @@ interface OMLWorld {
     /** The underlying game object (a `ClientLevel`). */
     val platform: Any
 }
+
+/** HUD draw-surface wrapper, handed out by [org.ohmyloader.api.event.HudRenderEvent]. */
+interface OMLGuiGraphics {
+    /** The underlying game object (a `GuiGraphicsExtractor`). */
+    val platform: Any
+}

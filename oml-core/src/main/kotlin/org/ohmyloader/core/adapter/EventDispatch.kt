@@ -1,6 +1,7 @@
 package org.ohmyloader.core.adapter
 
 import org.ohmyloader.api.event.*
+import org.ohmyloader.api.wrapper.OMLGuiGraphics
 import org.ohmyloader.api.wrapper.OMLScreen
 import org.ohmyloader.api.wrapper.OMLWorld
 import java.util.*
@@ -80,6 +81,12 @@ object EventDispatch {
         Events.WORLD_LOAD.fire(WorldLoadEvent(null))
     }
 
+    @JvmStatic
+    fun onHudRender(graphics: Any?) {
+        if (graphics == null) return
+        Events.HUD_RENDER.fire(HudRenderEvent(GuiGraphicsWrap(graphics)))
+    }
+
     /**
      * Tries each candidate name in turn to invoke a zero-argument getter (fallback for when
      * getter names differ across targets). Intended for reuse by adapter-specific logic in
@@ -136,4 +143,5 @@ object EventDispatch {
 
     private class ScreenWrap(override val platform: Any) : OMLScreen
     private class WorldWrap(override val platform: Any) : OMLWorld
+    private class GuiGraphicsWrap(override val platform: Any) : OMLGuiGraphics
 }

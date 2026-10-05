@@ -13,6 +13,9 @@ import org.ohmyloader.api.network.OMLNetwork
 import org.ohmyloader.api.network.OMLNetworkContext
 import org.ohmyloader.api.network.OMLNetworkProvider
 import org.ohmyloader.api.network.OMLNetworkRegistry
+import org.ohmyloader.api.client.OMLKeyBindingProvider
+import org.ohmyloader.api.client.OMLKeyBindingRegistry
+import org.ohmyloader.core.client.KeyBindingDeclarations
 import org.ohmyloader.api.network.OMLPayloadType
 import org.ohmyloader.core.network.PayloadDeclarations
 import org.ohmyloader.content.AbstractContentRegistry
@@ -569,6 +572,12 @@ object OMLCore {
         }
     }
 
+    private fun keyBindingRegistryFor(modId: String) = object : OMLKeyBindingRegistry {
+        override fun register(id: String, defaultKey: String, onPress: () -> Unit) {
+            KeyBindingDeclarations.entries += KeyBindingDeclarations.Entry(modId, id, defaultKey, onPress)
+        }
+    }
+
     private fun modInstance(mod: ModContainer): Any = modInstances.getOrPut(mod.id) {
         Class.forName(mod.entryClass, true, primaryLoader).getDeclaredConstructor().newInstance()
     }
@@ -590,6 +599,9 @@ object OMLCore {
                 }
                 if (instance is OMLNetworkProvider) {
                     instance.declareNetwork(networkRegistryFor(id))
+                }
+                if (instance is OMLKeyBindingProvider) {
+                    instance.declareKeyBindings(keyBindingRegistryFor(id))
                 }
             } catch (t: Throwable) {
                 OmlLog.error("OMLCore", "Mod [$id] initialization failed", t)

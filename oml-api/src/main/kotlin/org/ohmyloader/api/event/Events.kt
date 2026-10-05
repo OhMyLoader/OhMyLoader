@@ -31,4 +31,10 @@ object Events {
 
     /** World load/disconnect: [WorldLoadEvent.world] being null indicates a disconnect. */
     val WORLD_LOAD = EventDefinition<WorldLoadEvent>("world_load")
+
+    /**
+     * HUD render callback: dispatched once per frame while a world is loaded, before the HUD is
+     * extracted.
+     */
+    val HUD_RENDER = EventDefinition<HudRenderEvent>("hud_render")
 }
