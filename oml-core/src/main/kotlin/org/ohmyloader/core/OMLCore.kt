@@ -561,7 +561,9 @@ object OMLCore {
             try {
                 val instance = modInstance(mod)
                 if (instance is OMLModInitializer) {
-                    instance.onInitialize(ModContext(id, name, version))
+                    val config = org.ohmyloader.core.config.OMLConfigImpl(id, File(gameDir, "config"))
+                    instance.onInitialize(ModContext(id, name, version, config))
+                    config.generateIfMissing()
                 } else {
                     OmlLog.warn("OMLCore", "Mod [$id] does not implement OMLModInitializer, skipping")
                 }
