@@ -2,11 +2,7 @@ package org.ohmyloader.content
 
 import org.ohmyloader.api.content.Furnace
 import org.ohmyloader.api.content.OMLItemDeclaration
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.fail
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 /**
  * The version-independent half of the two-phase content contract: collection order, declaration
@@ -204,7 +200,7 @@ class AbstractContentRegistryTest {
         val decls = registry.oreGenDecls
         assertEquals(1, decls.size)
         val [ns, key, feature, placed] = listOf(
-            decls[0].namespace, decls[0].key, decls[0].featureJson, decls[0].placedJson
+            decls[0].namespace, decls[0].key, decls[0].featureJson, decls[0].placedJson,
         )
         assertEquals("ore_tin_ore", key)
         assertTrue("\"type\":\"minecraft:ore\"" in feature)
@@ -240,7 +236,7 @@ class AbstractContentRegistryTest {
         assertEquals(1, ticks)
     }
 
-    private fun omlTickEvent() = org.ohmyloader.api.content.OMLBlockTickEvent(1, 2, 3, NoopBlockData, { "level" })
+    private fun omlTickEvent() = org.ohmyloader.api.content.OMLBlockTickEvent(1, 2, 3, NoopBlockData) { "level" }
 
     private object NoopBlockData : org.ohmyloader.api.content.OMLBlockData {
         override fun getInt(key: String, default: Int) = default
@@ -281,8 +277,20 @@ class AbstractContentRegistryTest {
         val registry = RecordingRegistry()
         val facade = registry.forNamespace("mymod")
 
-        facade.declareSmelting(input = "raw_ruby", result = "ruby", furnace = Furnace.SMELTING, experience = 0.7, cookingTime = 200)
-        facade.declareSmelting(input = "raw_ruby", result = "ruby", furnace = Furnace.BLASTING, experience = 0.7, cookingTime = 100)
+        facade.declareSmelting(
+            input = "raw_ruby",
+            result = "ruby",
+            furnace = Furnace.SMELTING,
+            experience = 0.7,
+            cookingTime = 200,
+        )
+        facade.declareSmelting(
+            input = "raw_ruby",
+            result = "ruby",
+            furnace = Furnace.BLASTING,
+            experience = 0.7,
+            cookingTime = 100,
+        )
 
         assertEquals(listOf("mymod_raw_ruby", "mymod_raw_ruby_2"), registry.recipeIdsFor("mymod"))
         val smelting = registry.recipeJsonFor("mymod", "mymod_raw_ruby")

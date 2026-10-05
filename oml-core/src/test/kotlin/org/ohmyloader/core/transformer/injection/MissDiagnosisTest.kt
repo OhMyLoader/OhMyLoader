@@ -81,7 +81,7 @@ class MissDiagnosisTest {
             methodNode("m", "()V") {
                 add(MethodInsnNode(Opcodes.INVOKESTATIC, "x/Y", "bar", "()V", false))
                 add(InsnNode(Opcodes.RETURN))
-            }
+            },
         )
 
         val text = diagnoseAnchor(node, InjectionPoint.Call(null, "bar", "(II)V", after = false))
@@ -112,7 +112,7 @@ class MissDiagnosisTest {
             methodNode("foo", "()V") {
                 add(MethodInsnNode(Opcodes.INVOKESTATIC, "x/Y", "bar", "()V", false))
                 add(InsnNode(Opcodes.RETURN))
-            }
+            },
         )
 
         val text = diagnoseAnchor(node, InjectionPoint.Call(null, "nope", null, after = false))
@@ -130,7 +130,7 @@ class MissDiagnosisTest {
                 add(IntInsnNode(Opcodes.BIPUSH, 60))
                 add(InsnNode(Opcodes.POP))
                 add(InsnNode(Opcodes.RETURN))
-            }
+            },
         )
 
         val text = diagnoseAnchor(node, InjectionPoint.Constant(42))
@@ -147,7 +147,7 @@ class MissDiagnosisTest {
                 add(IntInsnNode(Opcodes.BIPUSH, 5))
                 add(VarInsnNode(Opcodes.ISTORE, 1))
                 add(InsnNode(Opcodes.RETURN))
-            }
+            },
         )
 
         val text = diagnoseAnchor(node, InjectionPoint.Store(index = 7))
@@ -164,7 +164,7 @@ class MissDiagnosisTest {
                 add(FieldInsnNode(Opcodes.GETFIELD, "x/Y", "f", "I"))
                 add(InsnNode(Opcodes.POP))
                 add(InsnNode(Opcodes.RETURN))
-            }
+            },
         )
 
         val text = diagnoseAnchor(node, InjectionPoint.FieldAccess(null, "g", null, null, after = false))
@@ -180,7 +180,7 @@ class MissDiagnosisTest {
                 add(TypeInsnNode(Opcodes.NEW, "x/Y"))
                 add(InsnNode(Opcodes.POP))
                 add(InsnNode(Opcodes.RETURN))
-            }
+            },
         )
 
         val text = diagnoseAnchor(node, InjectionPoint.NewInstance(owner = "x/Z", desc = null))
@@ -242,7 +242,7 @@ class MissDiagnosisTest {
             methodNode("m", "()V") {
                 add(MethodInsnNode(Opcodes.INVOKESTATIC, "x/Y", "bar", "()V", false))
                 add(InsnNode(Opcodes.RETURN))
-            }
+            },
         )
 
         val failure = assertFailsWith<InjectionError> { spec.transform(TransformContext(owner, node)) }
@@ -267,7 +267,7 @@ class MissDiagnosisTest {
             methodNode("m", "()V") {
                 add(MethodInsnNode(Opcodes.INVOKESTATIC, "x/Y", "bar", "()V", false))
                 add(InsnNode(Opcodes.RETURN))
-            }
+            },
         )
 
         assertTrue(spec.transform(TransformContext(owner, node)), "the rule should hit and modify the target")

@@ -60,7 +60,7 @@ class ModScannerTest {
         val modsDir = createTempDirectory("oml-mods").toFile()
         val file = File(modsDir, "two-mods.jar")
         JarOutputStream(file.outputStream()).use { jar ->
-            for ((name, id) in listOf("org/example/One.class" to "one", "org/example/Two.class" to "two")) {
+            for ([name, id] in listOf("org/example/One.class" to "one", "org/example/Two.class" to "two")) {
                 jar.putNextEntry(JarEntry(name))
                 jar.write(modClassBytes(name.removeSuffix(".class"), id))
                 jar.closeEntry()

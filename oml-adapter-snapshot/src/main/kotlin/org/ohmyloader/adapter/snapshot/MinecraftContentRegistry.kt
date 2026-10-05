@@ -1,13 +1,13 @@
 package org.ohmyloader.adapter.snapshot
 
+import net.minecraft.world.level.block.entity.BlockEntityType
+import net.minecraft.world.level.block.state.BlockBehaviour
 import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.content.OMLBlock
 import org.ohmyloader.api.content.OMLItem
 import org.ohmyloader.api.content.OMLItemDeclaration
-import org.ohmyloader.core.OMLCore
 import org.ohmyloader.content.AbstractContentRegistry
-import net.minecraft.world.level.block.entity.BlockEntityType
-import net.minecraft.world.level.block.state.BlockBehaviour
+import org.ohmyloader.core.OMLCore
 
 /**
  * 26.4-snapshot-2 content registration: two-stage translation. Collection (before `Main.main`) only records declarations — bootstrap has not run yet, and registry writes would be rejected by vanilla's own freeze check. Materialization happens at the registry freeze point (the `freeze()` call inside `BuiltInRegistries.bootStrap` redirected to [EventBridge.onRegistryFreeze]): content is registered before the registry truly closes, and 26.4-snapshot-2 runs `validate(REGISTRY)` straight after, so the game itself validates the injected content.
@@ -110,13 +110,18 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
             // long after this registration closes, which is what breaks the type/supplier cycle.
             (block as? OMLBlockEntityBlock)?.let { machineBlock ->
                 var typeRef: BlockEntityType<OMLMachineBlockEntity>? = null
-                val entityType = BlockEntityType<OMLMachineBlockEntity>(
+                val entityType = BlockEntityType(
                     { pos, state -> OMLMachineBlockEntity(typeRef!!, pos, state) },
                     setOf(machineBlock),
                 )
                 typeRef = entityType
                 machineBlock.attachEntityType(entityType)
-                registerIn("net.minecraft.core.registries.BuiltInRegistries", "BLOCK_ENTITY_TYPE", identifier, entityType)
+                registerIn(
+                    "net.minecraft.core.registries.BuiltInRegistries",
+                    "BLOCK_ENTITY_TYPE",
+                    identifier,
+                    entityType,
+                )
             }
 
             // A fresh `Item$Properties` per block, not one shared instance: it now carries the id, and
@@ -181,7 +186,7 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
             return null
         }
         val root = com.google.gson.JsonParser.parseString(
-            original.openStream().use { it.readBytes().toString(Charsets.UTF_8) }
+            original.openStream().use { it.readBytes().toString(Charsets.UTF_8) },
         ).asJsonObject
         val features = root.getAsJsonArray("features")
         if (features == null || features.size() <= UNDERGROUND_ORES_STEP) {
@@ -281,7 +286,7 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
                     modifierCtor.newInstance(
                         identifierOf.invoke(null, decl.namespace, "${decl.id}.attack_damage"),
                         amount,
-                        operationAddValue(loader)
+                        operationAddValue(loader),
                     ),
                     mainHandGroup(loader),
                 )
@@ -293,7 +298,7 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
                     modifierCtor.newInstance(
                         identifierOf.invoke(null, decl.namespace, "${decl.id}.attack_speed"),
                         amount,
-                        operationAddValue(loader)
+                        operationAddValue(loader),
                     ),
                     mainHandGroup(loader),
                 )
@@ -348,7 +353,7 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
                 rules,
                 spec.miningSpeed ?: 1.0f,
                 spec.toolDamagePerBlock,
-                spec.canDestroyBlocksInCreative
+                spec.canDestroyBlocksInCreative,
             )
             component.invoke(itemProperties, dataComponent(loader, "TOOL"), tool)
         }
@@ -358,7 +363,7 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
         val colon = blockName.indexOf(':')
         return if (colon < 0) "minecraft" to blockName else blockName.substring(
             0,
-            colon
+            colon,
         ) to blockName.substring(colon + 1)
     }
 

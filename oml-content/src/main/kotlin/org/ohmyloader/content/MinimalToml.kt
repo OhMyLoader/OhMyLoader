@@ -39,7 +39,7 @@ object MinimalToml {
                     if (part.isEmpty() || !part.isBareKey()) {
                         throw TomlParseException(
                             "unsupported table key component '$part' (quoted keys are not supported)",
-                            lineNo
+                            lineNo,
                         )
                     }
                 }

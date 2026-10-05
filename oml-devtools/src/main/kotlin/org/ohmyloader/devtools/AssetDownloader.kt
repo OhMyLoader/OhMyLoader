@@ -3,6 +3,7 @@ package org.ohmyloader.devtools
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 import org.ohmyloader.devtools.AssetDownloader.parseToPlain
+import org.ohmyloader.devtools.AssetDownloader.resolveVersionDetails
 import java.io.File
 import java.net.InetSocketAddress
 import java.net.ProxySelector
@@ -310,7 +311,7 @@ object AssetDownloader {
         val sha1 = meta["sha1"] as? String
 
         // An existing file is only trusted when it passes the *same* checks a fresh download would:
-        // size when the JSON gives one, digest when it gives one. Otherwise a corrupted jar is
+        // size when the JSON gives one, digest when it gives one. Otherwise, a corrupted jar is
         // reused forever.
         if (!force && target.isFile && expected != null && target.length() == expected &&
             digestMatches(target, sha1)
@@ -418,7 +419,7 @@ object AssetDownloader {
             log(
                 "[AssetDownloader] no $classifier natives could be extracted for ${engine.version}: " +
                     "either the version declares none, or ${librariesDir.absolutePath} does not have them " +
-                    "yet (run the library download first)"
+                    "yet (run the library download first)",
             )
             return@withEngine emptyList()
         }
@@ -475,7 +476,7 @@ object AssetDownloader {
         // assets/objects, where the removal of a "corrupt" file would otherwise delete user data.
         index.objects.values.firstOrNull { !SHA1_HEX.matches(it.hash) }?.let {
             throw IllegalStateException(
-                "asset index ${indexFile.name} carries a malformed object hash '${it.hash}' (expected 40 hex digits)"
+                "asset index ${indexFile.name} carries a malformed object hash '${it.hash}' (expected 40 hex digits)",
             )
         }
 
@@ -568,7 +569,7 @@ object AssetDownloader {
         if (ref != null && !indexMatches(bytes, ref)) {
             throw IllegalStateException(
                 "asset index $index failed verification against the version metadata " +
-                    "(expected size ${ref.size ?: "?"} / sha1 ${ref.sha1 ?: "?"}, got ${bytes.size} bytes)"
+                    "(expected size ${ref.size ?: "?"} / sha1 ${ref.sha1 ?: "?"}, got ${bytes.size} bytes)",
             )
         }
         writeAtomically(indexFile, bytes)
@@ -594,7 +595,7 @@ object AssetDownloader {
         baseUrl: String,
         force: Boolean,
         downloaded: AtomicInteger,
-        skipped: AtomicInteger
+        skipped: AtomicInteger,
     ) {
         val target = File(File(assetsDir, "objects/${obj.hash.substring(0, 2)}"), obj.hash)
         // For assets the digest is not merely available — it *is* the file name and the URL path. An
@@ -656,7 +657,7 @@ object AssetDownloader {
         artifact: VersionArtifact,
         destDir: File,
         added: MutableList<File>,
-        skipped: AtomicInteger
+        skipped: AtomicInteger,
     ) {
         val target = File(destDir, artifact.path)
         // same rule as the game jar: an existing file must pass the digest too, or a library that
@@ -681,7 +682,7 @@ object AssetDownloader {
 
     /**
      * The shared-library file extensions the natives jars of [osName] carry. Windows unpacks `.dll`,
-     * macOS `.dylib` (plus the legacy `.jnilib` some older macos natives jars ship), Linux `.so`.
+     * macOS `.dylib` (plus the legacy `.jnilib` some older macOS natives jars ship), Linux `.so`.
      * Filtering by extension — rather than extracting everything — keeps the natives directory to
      * exactly what the JVM can link against on this platform.
      */
@@ -785,7 +786,7 @@ object AssetDownloader {
                 if (expectedSha1 != null && !sha1HexOfDigest(digest).equals(expectedSha1, ignoreCase = true)) {
                     throw IllegalStateException(
                         "下载内容校验失败（SHA-1 不符）：期望 $expectedSha1，实际 " +
-                            "${sha1HexOfDigest(digest)}（$url）"
+                            "${sha1HexOfDigest(digest)}（$url）",
                     )
                 }
                 moveIntoPlace(tmp, target)
@@ -956,7 +957,7 @@ object AssetDownloader {
         val resp = client.send(
             HttpRequest.newBuilder(URI.create(url)).header("User-Agent", USER_AGENT)
                 .timeout(Duration.ofMinutes(5)).GET().build(),
-            HttpResponse.BodyHandlers.ofString()
+            HttpResponse.BodyHandlers.ofString(),
         )
         return if (resp.statusCode() == 200) resp.body() else null
     }
@@ -965,7 +966,7 @@ object AssetDownloader {
         val resp = client.send(
             HttpRequest.newBuilder(URI.create(url)).header("User-Agent", USER_AGENT)
                 .timeout(Duration.ofMinutes(5)).GET().build(),
-            HttpResponse.BodyHandlers.ofByteArray()
+            HttpResponse.BodyHandlers.ofByteArray(),
         )
         return if (resp.statusCode() == 200) resp.body() else null
     }

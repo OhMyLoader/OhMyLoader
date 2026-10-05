@@ -141,7 +141,7 @@ class PlatformRulesTest {
     fun `the osx and linux classifiers find their own natives jars in the modern layout`() {
         // Pinned together with nativesJarPath: the classifier that nativesClassifier returns must be
         // the exact suffix the version JSON's artifact path carries — an off-by-one here selects the
-        // x86_64 set on Apple silicon and dies in LWJGL far away from the cause.
+        // x86_64 set on Apple Silicon and dies in LWJGL far away from the cause.
         listOf(
             "org/lwjgl/lwjgl/3.3.3/lwjgl-3.3.3-natives-linux.jar" to
                 PlatformRules.nativesClassifier(PlatformRules.LINUX, x64),

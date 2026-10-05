@@ -116,7 +116,12 @@ internal fun downloadProgressFor(sink: ProgressSink) =
  * A `null` artifact (this build bundles no library for the platform it runs on) is a logged skip,
  * never a failure: the runtime's zstd users degrade to the vanilla paths they also support.
  */
-internal fun installOmlNative(nativesDir: File, artifacts: ArtifactSource, journal: InstallJournal? = null, log: (String) -> Unit) {
+internal fun installOmlNative(
+    nativesDir: File,
+    artifacts: ArtifactSource,
+    journal: InstallJournal? = null,
+    log: (String) -> Unit,
+) {
     val native = artifacts.nativeLibrary() ?: nativeLibraryFromPackages(artifacts)
     if (native == null) {
         log("natives/: no oml-native library bundled for this platform, skipping")
@@ -228,7 +233,13 @@ object StandardLauncherTarget : InstallationTarget {
         // tree (not a flat write) is what makes the jar findable. The bare copy into
         // versions/<id>/natives below is the fallback the runtime loads when nothing extracted the jar.
         val nativeLibrary =
-            installOmlNativePackages(File(gameDir, "libraries"), ctx.artifacts, ctx.log, mavenTree = true, journal = ctx.journal)
+            installOmlNativePackages(
+                File(gameDir, "libraries"),
+                ctx.artifacts,
+                ctx.log,
+                mavenTree = true,
+                journal = ctx.journal,
+            )
         installOmlNative(File(versionDir, "natives"), ctx.artifacts, ctx.journal, ctx.log)
 
         // game jar: the client jar is the game jar for both sides — the modern server artifact is a

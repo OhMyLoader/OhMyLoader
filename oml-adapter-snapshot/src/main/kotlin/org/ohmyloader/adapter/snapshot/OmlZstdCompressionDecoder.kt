@@ -1,12 +1,12 @@
 package org.ohmyloader.adapter.snapshot
 
 import io.netty.buffer.ByteBuf
-import org.ohmyloader.core.compression.OmlNativeZstd
 import io.netty.buffer.Unpooled
 import io.netty.channel.ChannelHandlerContext
 import io.netty.handler.codec.ByteToMessageDecoder
 import io.netty.handler.codec.DecoderException
 import net.minecraft.network.VarInt
+import org.ohmyloader.core.compression.OmlNativeZstd
 import java.lang.foreign.Arena
 import java.lang.foreign.MemorySegment
 import java.lang.foreign.ValueLayout

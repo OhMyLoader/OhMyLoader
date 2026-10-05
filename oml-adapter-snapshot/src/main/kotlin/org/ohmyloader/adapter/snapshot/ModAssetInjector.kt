@@ -1,10 +1,10 @@
 package org.ohmyloader.adapter.snapshot
 
-import org.ohmyloader.api.OmlLog
 import org.ohmyloader.adapter.snapshot.ModAssetInjector.resolveResource
+import org.ohmyloader.api.OmlLog
+import org.ohmyloader.content.ModAssetIndex
 import org.ohmyloader.core.OMLCore
 import org.ohmyloader.core.adapter.Refl
-import org.ohmyloader.content.ModAssetIndex
 import java.io.ByteArrayInputStream
 import java.lang.reflect.Proxy
 
@@ -90,18 +90,18 @@ object ModAssetInjector {
         // PackLocationInfo(PACK_ID, Component.literal(name), PackSource.BUILT_IN, Optional.empty())
         val title = componentClass.getMethod("literal", String::class.java).invoke(null, PACK_NAME)
         val location = locationClass.getConstructor(
-            String::class.java, componentClass, packSourceClass, optional
+            String::class.java, componentClass, packSourceClass, optional,
         ).newInstance(
             PACK_ID,
             title,
             packSourceClass.getField("BUILT_IN").get(null),
-            optional.getMethod("empty").invoke(null)
+            optional.getMethod("empty").invoke(null),
         )
 
         // PackSelectionConfig(false, Pack.Position.TOP, false): not required, on top, not fixed —
         // i.e. a normal user-selectable pack that wins over the vanilla lower layers.
         val selection = selectionClass.getConstructor(
-            Boolean::class.javaPrimitiveType, positionClass, Boolean::class.javaPrimitiveType
+            Boolean::class.javaPrimitiveType, positionClass, Boolean::class.javaPrimitiveType,
         ).newInstance(false, positionClass.getField("TOP").get(null), false)
 
         val resources = createPackResources(loader, packResourcesClass, location, packTypeClass, clientResources)
@@ -119,7 +119,7 @@ object ModAssetInjector {
         }
 
         val pack = packClass.getMethod(
-            "readMetaAndCreate", locationClass, supplierClass, packTypeClass, selectionClass
+            "readMetaAndCreate", locationClass, supplierClass, packTypeClass, selectionClass,
         ).invoke(null, location, supplier, clientResources, selection)
         if (pack == null) {
             OmlLog.warn("ModAssets", "readMetaAndCreate returned null (pack metadata rejected)")
@@ -221,7 +221,7 @@ object ModAssetInjector {
                 "listResources" -> {
                     emitListedResources(
                         args[1] as String, args[2] as String, args[3],
-                        loader, ioSupplierClass
+                        loader, ioSupplierClass,
                     )
                     null
                 }

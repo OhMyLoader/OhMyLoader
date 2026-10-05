@@ -186,7 +186,7 @@ class ModRuleSetsTest {
         val refs = ModRuleSets.referencedTypes(node)
         for (expected in listOf(
             "omltest/Base", "omltest/Iface", "omltest/FieldType",
-            "omltest/Arg", "omltest/Ret", "omltest/Newed", "omltest/Called"
+            "omltest/Arg", "omltest/Ret", "omltest/Newed", "omltest/Called",
         )) {
             assertTrue(expected in refs, "reference surface missed $expected: $refs")
         }

@@ -8,7 +8,7 @@ package org.ohmyloader.api
 annotation class Mod(
     val id: String,
     val name: String = "",
-    val version: String = "1.0.0"
+    val version: String = "1.0.0",
 )
 
 /**

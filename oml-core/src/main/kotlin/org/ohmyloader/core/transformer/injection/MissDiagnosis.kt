@@ -39,10 +39,10 @@ internal object MissDiagnosis {
         injectable.isEmpty() -> listOf(
             "None of the ${named.size} matched methods has a method body (abstract / native): " +
                 named.joinToString(", ") { "${it.name}${it.desc}" } +
-                " — injection inserts code into the body; abstract methods have nothing to insert into"
+                " — injection inserts code into the body; abstract methods have nothing to insert into",
         )
 
-        else -> rule.points.map { (point, _) -> anchorProblem(node, injectable, point) }
+        else -> rule.points.map { [point, _] -> anchorProblem(node, injectable, point) }
     }
 
     // ---------- selector didn't match ----------
@@ -91,7 +91,7 @@ internal object MissDiagnosis {
             is InjectionPoint.FieldAccess -> "$where did not hit$inMethods: " + fieldDrift(methods, point)
 
             is InjectionPoint.Constant -> "$where did not hit$inMethods: the method's constants are " + constantsHint(
-                methods
+                methods,
             )
 
             is InjectionPoint.NewInstance -> "$where did not hit$inMethods: " + newHint(node, methods, point)
@@ -142,7 +142,7 @@ internal object MissDiagnosis {
                 methods.flatMap { it.instructions.toArray().toList() }
                     .filterIsInstance<MethodInsnNode>()
                     .distinctBy { "${it.owner}.${it.name}${it.desc}" }
-                    .map { "${it.owner}.${it.name}${it.desc}" }
+                    .map { "${it.owner}.${it.name}${it.desc}" },
             )
     }
 
@@ -157,8 +157,10 @@ internal object MissDiagnosis {
                 sample(sameName.map { "${it.owner}.${it.name} ${it.desc}" })
         }
         return "The method's field accesses are " +
-            sample(accesses.distinctBy { "${it.owner}.${it.name}${it.desc}" }
-                .map { "${it.owner}.${it.name} ${it.desc}" })
+            sample(
+                accesses.distinctBy { "${it.owner}.${it.name}${it.desc}" }
+                    .map { "${it.owner}.${it.name} ${it.desc}" },
+            )
     }
 
     private fun constantsHint(methods: List<MethodNode>): String =

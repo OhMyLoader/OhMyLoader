@@ -254,13 +254,13 @@ class InjectionLocalTest {
         assertEquals(
             "Ljava/lang/Object;",
             locals.live(1)!!.descriptor,
-            "merged references of the same category degrade to Object"
+            "merged references of the same category degrade to Object",
         )
         assertIs<LocalResolution.Found>(
-            locals.resolve(DslValue.Local(index = 1, type = "Ljava/lang/Object;"), isStatic = true)
+            locals.resolve(DslValue.Local(index = 1, type = "Ljava/lang/Object;"), isStatic = true),
         )
         assertIs<LocalResolution.Missing>(
-            locals.resolve(DslValue.Local(type = "Ljava/lang/String;"), isStatic = true)
+            locals.resolve(DslValue.Local(type = "Ljava/lang/String;"), isStatic = true),
         )
     }
 
@@ -292,7 +292,7 @@ class InjectionLocalTest {
                 BasicValue(Type.getType("Ljava/lang/String;")), // 3
                 BasicValue(Type.LONG_TYPE), null,               // 4 (+5 is the upper half-slot)
                 null,                                           // 6 = dead slot
-            )
+            ),
         )
 
         fun found(index: Int? = null, type: String? = null, ordinal: Int = 0, isStatic: Boolean = false) =
@@ -354,7 +354,7 @@ class InjectionLocalTest {
             add(MethodInsnNode(Opcodes.INVOKESTATIC, LocalSink.OWNER, "two", "(Ljava/lang/String;I)V", false))
             add(VarInsnNode(Opcodes.ALOAD, 2))
             add(InsnNode(Opcodes.ARETURN))
-        }
+        },
     )
 
     /** `static int flag(boolean on) { return on; }` — used to demonstrate the int-family interchange (static: the parameter sits in slot 0). */
@@ -362,7 +362,7 @@ class InjectionLocalTest {
         staticMethod("flag", "(Z)I") {
             add(VarInsnNode(Opcodes.ILOAD, 0))
             add(InsnNode(Opcodes.IRETURN))
-        }
+        },
     )
 
     /** `static int flagPair(boolean on, int n) { return n; }` — Z and I are present together (slots 0 and 1). */
@@ -370,7 +370,7 @@ class InjectionLocalTest {
         staticMethod("flagPair", "(ZI)I") {
             add(VarInsnNode(Opcodes.ILOAD, 1))
             add(InsnNode(Opcodes.IRETURN))
-        }
+        },
     )
 
     /** The instance method `String greet(String name) { return name; }` (slot 0 is `this`). */
@@ -398,7 +398,7 @@ class InjectionLocalTest {
             add(IntInsnNode(Opcodes.BIPUSH, 0))
             add(MethodInsnNode(Opcodes.INVOKESTATIC, LocalSink.OWNER, "two", "(Ljava/lang/String;I)V", false))
             add(InsnNode(Opcodes.RETURN))
-        }
+        },
     )
 
     /**
@@ -427,7 +427,7 @@ class InjectionLocalTest {
             add(InsnNode(Opcodes.ICONST_0))
             add(MethodInsnNode(Opcodes.INVOKESTATIC, LocalSink.OWNER, "two", "(Ljava/lang/String;I)V", false))
             add(InsnNode(Opcodes.RETURN))
-        }
+        },
     )
 
     private fun classNode(vararg methods: MethodNode): ClassNode =

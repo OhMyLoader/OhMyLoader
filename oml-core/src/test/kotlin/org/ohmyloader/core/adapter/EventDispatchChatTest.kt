@@ -1,12 +1,8 @@
 package org.ohmyloader.core.adapter
 
 import org.ohmyloader.api.event.Events
-import java.util.Optional
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
+import java.util.*
+import kotlin.test.*
 
 /**
  * The version-independent chat-text extraction mechanism, exercised against fake packets: the

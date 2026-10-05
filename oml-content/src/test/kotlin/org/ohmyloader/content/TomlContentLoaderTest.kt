@@ -33,7 +33,14 @@ class TomlContentLoaderTest {
         val smelting = mutableListOf<SmeltingDecl>()
         val loot = mutableListOf<LootDecl>()
 
-        data class SmeltingDecl(val input: String, val result: String, val furnace: Furnace, val experience: Double, val cookingTime: Int)
+        data class SmeltingDecl(
+            val input: String,
+            val result: String,
+            val furnace: Furnace,
+            val experience: Double,
+            val cookingTime: Int,
+        )
+
         data class LootDecl(val block: String, val drop: String, val min: Int, val max: Int)
 
         override fun declareSmelting(
@@ -41,7 +48,7 @@ class TomlContentLoaderTest {
             result: String,
             furnace: Furnace,
             experience: Double,
-            cookingTime: Int
+            cookingTime: Int,
         ) {
             smelting += SmeltingDecl(input, result, furnace, experience, cookingTime)
         }
@@ -124,12 +131,12 @@ class TomlContentLoaderTest {
                 OMLItemDeclaration.ToolRuleSpec(
                     OMLItemDeclaration.ToolRuleKind.MINES_AND_DROPS,
                     "minecraft:stone",
-                    8.0f
+                    8.0f,
                 ),
                 OMLItemDeclaration.ToolRuleSpec(
                     OMLItemDeclaration.ToolRuleKind.DENIES_DROPS,
                     "minecraft:grass_block",
-                    0f
+                    0f,
                 ),
                 OMLItemDeclaration.ToolRuleSpec(OMLItemDeclaration.ToolRuleKind.OVERRIDE_SPEED, "minecraft:dirt", 4.0f),
             ),
@@ -284,7 +291,7 @@ class TomlContentLoaderTest {
             furnace = "blasting"
             experience = 0.7
             cooking_time = 100
-            """.trimIndent()
+            """.trimIndent(),
         )
 
         assertEquals(2, registry.smelting.size)
@@ -323,7 +330,7 @@ class TomlContentLoaderTest {
             drop = "minecraft:iron_nugget"
             drop_count_min = 2
             drop_count_max = 5
-            """.trimIndent()
+            """.trimIndent(),
         )
 
         assertEquals(2, registry.loot.size)
@@ -345,7 +352,7 @@ class TomlContentLoaderTest {
             [block.tin_ore]
             destroy_time = 3.0
             ore = { vein_size = 8, per_chunk = 6, min_y = 16, max_y = 64, biomes = ["minecraft:forest", "minecraft:taiga"] }
-            """.trimIndent()
+            """.trimIndent(),
         )
 
         val ore = registry.blocks.single().second.oreDeclaration

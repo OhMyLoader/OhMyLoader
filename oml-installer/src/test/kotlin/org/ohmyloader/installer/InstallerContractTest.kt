@@ -150,7 +150,7 @@ class InstallerContractTest {
             File(root, "download").also { it.mkdirs() },
             "0.1.0-SNAPSHOT",
             "windows",
-            "oml-native.dll"
+            "oml-native.dll",
         )
         val source = DirectoryArtifactSource("26.3", emptyList(), null, nativeJarFiles = listOf(jar))
         // stale artifacts an install of an older layout may have left: a flat jar at the libraries
@@ -177,7 +177,7 @@ class InstallerContractTest {
         assertContains(
             json,
             "\"path\": \"$mavenPath\"",
-            message = "the path is the Maven location, relative to libraries/"
+            message = "the path is the Maven location, relative to libraries/",
         )
         assertContains(json, "\"natives\": {\n        \"windows\": \"natives-windows\"")
     }
@@ -190,7 +190,7 @@ class InstallerContractTest {
             File(root, "download").also { it.mkdirs() },
             "0.1.0-SNAPSHOT",
             "windows",
-            "oml-native.dll"
+            "oml-native.dll",
         )
         val source = DirectoryArtifactSource("26.3", emptyList(), null, nativeJarFiles = listOf(jar))
 
@@ -239,7 +239,7 @@ class InstallerContractTest {
             assertEquals(
                 platforms.size,
                 installed.natives.size,
-                "mavenTree=$mavenTree: every bundled platform must be written"
+                "mavenTree=$mavenTree: every bundled platform must be written",
             )
 
             platforms.forEach { [os, _] ->
@@ -260,7 +260,7 @@ class InstallerContractTest {
             assertEquals(
                 platforms.map { it.first },
                 declared,
-                "the `natives` block must declare every written platform, arm64 slots included"
+                "the `natives` block must declare every written platform, arm64 slots included",
             )
         }
     }
@@ -329,7 +329,7 @@ class InstallerContractTest {
         assertEquals(
             expectedClassifier,
             if (native.fileName == "oml-native-arm64.so") "$os-arm64" else os,
-            "the selected jar must be the one matching the running JVM's architecture"
+            "the selected jar must be the one matching the running JVM's architecture",
         )
     }
 
@@ -449,8 +449,8 @@ class InstallerContractTest {
         assertFalse(
             AssetDownloader.digestMatches(
                 file,
-                sha1Of(File(dir, "other.bin").apply { writeBytes(payload.reversedArray()) })
-            )
+                sha1Of(File(dir, "other.bin").apply { writeBytes(payload.reversedArray()) }),
+            ),
         )
         assertFalse(AssetDownloader.digestMatches(file, "0".repeat(40)))
     }

@@ -84,7 +84,7 @@ object TomlContentLoader {
                     OmlLog.warn(
                         TAG,
                         "$source: ignoring root-level key(s) ${fields.keys} — " +
-                            "content must live under [block.<id>] or [item.<id>]"
+                            "content must live under [block.<id>] or [item.<id>]",
                     )
                 }
 
@@ -116,7 +116,7 @@ object TomlContentLoader {
                 else -> OmlLog.warn(
                     TAG,
                     "$source: ignoring section [$path] — " +
-                        "expected [block.<id>] / [item.<id>] / [crafting.<id>] / [smelting.<id>] / [loot.<block>]"
+                        "expected [block.<id>] / [item.<id>] / [crafting.<id>] / [smelting.<id>] / [loot.<block>]",
                 )
             }
         }
@@ -133,7 +133,10 @@ object TomlContentLoader {
         requireId(id, source, "block")
         val ore = fields["ore"] as? Map<*, *>
         if (fields.containsKey("ore") && ore == null) {
-            fail(source, "block '$id'.ore must be an inline table, e.g. ore = { vein_size = 8, min_y = 16, max_y = 64 }")
+            fail(
+                source,
+                "block '$id'.ore must be an inline table, e.g. ore = { vein_size = 8, min_y = 16, max_y = 64 }",
+            )
         }
         registry.declareBlock(id) {
             destroyTime = floatValue(fields, "destroy_time", source, "block '$id'")
@@ -164,7 +167,12 @@ object TomlContentLoader {
     private val SMELTING_KEYS = setOf("input", "furnace", "experience", "cooking_time")
 
     /** A `[smelting.<result>]` section: `input` is required; the section id is the result's local id. */
-    private fun declareSmeltingSection(id: String, fields: Map<String, Any>, source: String, registry: ContentRegistry) {
+    private fun declareSmeltingSection(
+        id: String,
+        fields: Map<String, Any>,
+        source: String,
+        registry: ContentRegistry,
+    ) {
         requireId(id, source, "smelting")
         val input = fields["input"] as? String
             ?: fail(source, "smelting '$id' is missing its 'input' string")
@@ -176,7 +184,13 @@ object TomlContentLoader {
         val experience = doubleValue(fields, "experience", source, "smelting '$id'") ?: 0.0
         val cookingTime = intValue(fields, "cooking_time", source, "smelting '$id'") ?: 200
         reportUnknown(fields, SMELTING_KEYS, source, "smelting '$id'")
-        registry.declareSmelting(input = input, result = id, furnace = furnace, experience = experience, cookingTime = cookingTime)
+        registry.declareSmelting(
+            input = input,
+            result = id,
+            furnace = furnace,
+            experience = experience,
+            cookingTime = cookingTime,
+        )
     }
 
     private val LOOT_KEYS = setOf("drop", "drop_count_min", "drop_count_max")
@@ -237,7 +251,10 @@ object TomlContentLoader {
             val pattern = listValue(fields, "pattern", source, "crafting '$id'")
                 ?: fail(source, "crafting '$id': shaped recipes need a 'pattern' list")
             val keyMap = (fields["key"] as? Map<*, *>)
-                ?: fail(source, "crafting '$id': shaped recipes need a 'key' inline table, e.g. key = { R = \"my_pack:ruby\" }")
+                ?: fail(
+                    source,
+                    "crafting '$id': shaped recipes need a 'key' inline table, e.g. key = { R = \"my_pack:ruby\" }",
+                )
             val key = keyMap.entries.associate { [k, v] ->
                 val char = k as? String ?: fail(source, "crafting '$id': key '$k' must be a bare single character")
                 if (char.length != 1) fail(source, "crafting '$id': key '$k' must be a single character")
@@ -245,13 +262,23 @@ object TomlContentLoader {
                     ?: fail(source, "crafting '$id': key '$k' must map to a string item id")
                 char.single() to item
             }
-            registry.declareShapedCrafting(result = id, pattern = pattern.map { it as String }, key = key, count = count)
+            registry.declareShapedCrafting(
+                result = id,
+                pattern = pattern.map { it as String },
+                key = key,
+                count = count,
+            )
         } else {
             val ingredients = listValue(fields, "ingredients", source, "crafting '$id'")
                 ?: fail(source, "crafting '$id': shapeless recipes need an 'ingredients' list")
             registry.declareShapelessCrafting(
                 result = id,
-                ingredients = ingredients.map { it as? String ?: fail(source, "crafting '$id': ingredients must be strings") },
+                ingredients = ingredients.map {
+                    it as? String ?: fail(
+                        source,
+                        "crafting '$id': ingredients must be strings",
+                    )
+                },
                 count = count,
             )
         }
@@ -350,7 +377,7 @@ object TomlContentLoader {
             OmlLog.warn(
                 TAG,
                 "$source: $ctx has unknown field(s) $unknown — check for typos " +
-                    "(known: ${known.sorted()})"
+                    "(known: ${known.sorted()})",
             )
         }
     }

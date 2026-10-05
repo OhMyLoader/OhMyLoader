@@ -22,7 +22,7 @@ import java.net.URLClassLoader
  */
 class OMLClassLoader(
     urls: Array<URL>,
-    parent: ClassLoader
+    parent: ClassLoader,
 ) : URLClassLoader(urls, parent) {
 
     private val transformers = mutableListOf<IClassTransformer>()

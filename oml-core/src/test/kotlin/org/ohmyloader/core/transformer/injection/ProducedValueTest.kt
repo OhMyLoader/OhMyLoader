@@ -67,7 +67,7 @@ class ProducedValueTest {
                         handlerCall(OWNER, "onReturn", "(I)I", kind = HandlerKind.MODIFY_RETURN)
                     }
                 }
-            }
+            },
         )
 
         ValueProbe.events.clear()
@@ -89,7 +89,7 @@ class ProducedValueTest {
                         handlerCall(OWNER, "onReturn", "(I)I", kind = HandlerKind.MODIFY_RETURN)
                     }
                 }
-            }
+            },
         )
 
         val instance = clazz.getDeclaredConstructor().newInstance()
@@ -109,7 +109,7 @@ class ProducedValueTest {
                             handlerCall(OWNER, "onReturn", "(I)I", kind = HandlerKind.MODIFY_RETURN)
                         }
                     }
-                }
+                },
             )
         }
         assertContains(failure.message.orEmpty(), "returns void")
@@ -125,7 +125,7 @@ class ProducedValueTest {
                             handlerCall(OWNER, "onReturn", "(I)I", kind = HandlerKind.MODIFY_RETURN)
                         }
                     }
-                }
+                },
             )
         }
         assertContains(failure.message.orEmpty(), "must be RETURN")
@@ -141,7 +141,7 @@ class ProducedValueTest {
                             handlerCall(OWNER, "onReturnLong", "(J)J", kind = HandlerKind.MODIFY_RETURN)
                         }
                     }
-                }
+                },
             )
         }
         assertContains(failure.message.orEmpty(), "the value's type")
@@ -158,7 +158,7 @@ class ProducedValueTest {
                         handlerCall(OWNER, "onValue", "(I)I", kind = HandlerKind.MODIFY_EXPR_VALUE)
                     }
                 }
-            }
+            },
         )
 
         ValueProbe.events.clear()
@@ -180,7 +180,7 @@ class ProducedValueTest {
                         handlerCall(OWNER, "onNumber", "(I)I", kind = HandlerKind.MODIFY_EXPR_VALUE)
                     }
                 }
-            }
+            },
         )
 
         val instance = clazz.getDeclaredConstructor().newInstance()
@@ -199,7 +199,7 @@ class ProducedValueTest {
                         )
                     }
                 }
-            }
+            },
         )
 
         val instance = clazz.getDeclaredConstructor().newInstance()
@@ -216,7 +216,7 @@ class ProducedValueTest {
                             handlerCall(OWNER, "onValue", "(I)I", kind = HandlerKind.MODIFY_EXPR_VALUE)
                         }
                     }
-                }
+                },
             )
         }
         assertContains(failure.message.orEmpty(), "already been produced")
@@ -232,7 +232,7 @@ class ProducedValueTest {
                             handlerCall(OWNER, "onValue", "(I)I", kind = HandlerKind.MODIFY_EXPR_VALUE)
                         }
                     }
-                }
+                },
             )
         }
         assertContains(failure.message.orEmpty(), "produces no value")
@@ -248,7 +248,7 @@ class ProducedValueTest {
                             handlerCall(OWNER, "onValue", "(I)I", kind = HandlerKind.MODIFY_EXPR_VALUE)
                         }
                     }
-                }
+                },
             )
         }
         assertContains(failure.message.orEmpty(), "not-yet-initialized")
@@ -263,11 +263,11 @@ class ProducedValueTest {
                         afterCall(STUB, "value", "()I") {
                             handlerCall(
                                 OWNER, "onText", "(Ljava/lang/String;)Ljava/lang/String;",
-                                kind = HandlerKind.MODIFY_EXPR_VALUE
+                                kind = HandlerKind.MODIFY_EXPR_VALUE,
                             )
                         }
                     }
-                }
+                },
             )
         }
         assertContains(failure.message.orEmpty(), "the value's type")
@@ -288,7 +288,7 @@ class ProducedValueTest {
                         }
                     }
                 }
-            }
+            },
         )
 
         ValueProbe.events.clear()
@@ -309,7 +309,7 @@ class ProducedValueTest {
                             }
                         }
                     }
-                }
+                },
             )
         }
         assertContains(failure.message.orEmpty(), "the value's type")
@@ -353,7 +353,7 @@ class ProducedValueTest {
         }.verify(null)
         assertTrue(
             wrongAnchor.any { it.contains("@ModifyReturnValue") && it.contains("RETURN") },
-            wrongAnchor.toString()
+            wrongAnchor.toString(),
         )
 
         val wrongShape = specOf {
@@ -471,11 +471,13 @@ class ProducedValueTest {
     }
 
     private fun ClassNode.method(access: Int, name: String, desc: String, body: InsnList.() -> Unit = {}) {
-        methods.add(MethodNode(access, name, desc, null, null).apply {
-            body(instructions)
-            maxStack = 8
-            maxLocals = 8
-        })
+        methods.add(
+            MethodNode(access, name, desc, null, null).apply {
+                body(instructions)
+                maxStack = 8
+                maxLocals = 8
+            },
+        )
     }
 
     /**
@@ -569,7 +571,7 @@ class ProducedValueTest {
                 MethodInsnNode(
                     Opcodes.INVOKEVIRTUAL, "java/lang/String", "concat",
                     "(Ljava/lang/String;)Ljava/lang/String;", false,
-                )
+                ),
             )
             add(InsnNode(Opcodes.ARETURN))
         }

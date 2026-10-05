@@ -42,8 +42,8 @@ internal object AccessApplier {
                     rejection(
                         node.name, rule, "the class itself",
                         "a top-level class can only be public or package-private (${wanted.label} is a level only nested classes have, " +
-                            "recorded in the InnerClasses attribute, but it is not in its own InnerClasses table)"
-                    )
+                            "recorded in the InnerClasses attribute, but it is not in its own InnerClasses table)",
+                    ),
                 ),
             )
         }
@@ -134,7 +134,7 @@ internal object AccessApplier {
         val from = narrowed.map { Visibility.of(it).label }.distinct().joinToString(", ")
         return listOf(
             "$owner :: ${rule.describe()} — visibility narrowed ($from → ${wanted.label}); rewritten per the rule, " +
-                "but callers compiled against the original (wider) access will throw IllegalAccessError at link time"
+                "but callers compiled against the original (wider) access will throw IllegalAccessError at link time",
         )
     }
 

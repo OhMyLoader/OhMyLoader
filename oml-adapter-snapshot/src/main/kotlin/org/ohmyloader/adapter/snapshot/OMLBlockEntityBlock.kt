@@ -6,7 +6,6 @@ import net.minecraft.world.level.block.EntityBlock
 import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.entity.BlockEntityTicker
 import net.minecraft.world.level.block.entity.BlockEntityType
-import net.minecraft.world.level.block.state.BlockBehaviour
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.storage.ValueInput
 import net.minecraft.world.level.storage.ValueOutput
@@ -19,7 +18,7 @@ import org.ohmyloader.api.content.OMLBlockTickEvent
  * built — the type's supplier reads it back only when the first block entity is created (a chunk
  * load), long after registration closes, which is what breaks the type/supplier cycle.
  */
-class OMLBlockEntityBlock(properties: BlockBehaviour.Properties) : OMLBehaviorBlock(properties), EntityBlock {
+class OMLBlockEntityBlock(properties: Properties) : OMLBehaviorBlock(properties), EntityBlock {
 
     /** The declaration's tick handlers, copied at materialization like the behavior hooks are. */
     var tickHandlers: List<(OMLBlockTickEvent) -> Unit> = emptyList()
@@ -48,7 +47,7 @@ class OMLBlockEntityBlock(properties: BlockBehaviour.Properties) : OMLBehaviorBl
         if (handlers.isEmpty() || type !== entityType || level.isClientSide) return null
         return BlockEntityTicker { tickLevel, pos, _, blockEntity ->
             val machine = blockEntity as OMLMachineBlockEntity
-            val event = OMLBlockTickEvent(pos.x, pos.y, pos.z, machine.data, { tickLevel })
+            val event = OMLBlockTickEvent(pos.x, pos.y, pos.z, machine.data) { tickLevel }
             handlers.forEach { it(event) }
             // the data store may have been written this tick; a clean store makes this a no-op cost
             if (machine.data.consumeDirty()) machine.setChanged()

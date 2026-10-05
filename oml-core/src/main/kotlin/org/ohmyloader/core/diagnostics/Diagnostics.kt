@@ -6,7 +6,7 @@ import java.util.*
  * Timing and scale statistics for the transformation pipeline: how many classes were transformed and how long it
  * took, where the time went (parse / version conversion / merging / injection / write-back), with totals and
  * averages plus the slowest few classes — only concrete class names tell you what to optimize. Recording is
- * always on (negligible next to ASM parsing; "wanting to see" is only realized afterwards); printing
+ * always on (negligible next to ASM parsing; "wanting to see" is only realized afterward); printing
  * is gated by the system property `oml.diagnostics` (any non-empty value other than `false`), read once on first
  * touch. A first report prints once [FIRST_REPORT_AT] classes have been transformed, then every [REPORT_EVERY]
  * classes — the report must be visible while running, since a hard-killed game (`TerminateProcess` on Windows)

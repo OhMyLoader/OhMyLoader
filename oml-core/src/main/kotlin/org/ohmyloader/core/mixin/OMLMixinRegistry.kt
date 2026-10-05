@@ -1,9 +1,9 @@
 package org.ohmyloader.core.mixin
 
-import org.ohmyloader.api.OmlLog
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
+import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.mixin.CallbackInfo
 import org.ohmyloader.api.mixin.CallbackInfoReturnable
 import org.ohmyloader.core.transformer.injection.Boxing
@@ -347,7 +347,7 @@ object OMLMixinRegistry {
     // ---------- entry points called by the generated bridge class (reflection and exception isolation live here) ----------
 
     /**
-     * [Bridge entry point] Execute the handler and return whether it cancelled.
+     * [Bridge entry point] Execute the handler and return whether it canceled.
      *
      * @param captures the captured locals (boxed), in the same order as the handler's parameters
      */
@@ -385,13 +385,13 @@ object OMLMixinRegistry {
                 ?: throw NoSuchMethodException(handlerDescription(handler))
             method.invoke(instance, *(captures + callback))
             if (callback.canceled && callback.returnValue == null) {
-                // Cancelled without setting a value: the engine will use the zero value for the return type
+                // Canceled without setting a value: the engine will use the zero value for the return type
                 // (0/false/null), and this is almost always a mistake
                 OmlLog.warn(
                     "Mixin",
                     "a Mixin handler cancelled a non-void target but did not set a return value, will return the zero value " +
                         "(mod=${handler.modId}, ${handler.mixinClass}.${handler.handlerMethod} → " +
-                        "${handler.targetMethod}); use ci.setReturnValue(v)"
+                        "${handler.targetMethod}); use ci.setReturnValue(v)",
                 )
             }
         } catch (t: Throwable) {
@@ -438,7 +438,7 @@ object OMLMixinRegistry {
         OmlLog.error(
             "Mixin",
             "Mixin handler exception (mod=${handler.modId}, " +
-                "${handler.mixinClass}.${handler.handlerMethod}): $cause"
+                "${handler.mixinClass}.${handler.handlerMethod}): $cause",
         )
     }
 

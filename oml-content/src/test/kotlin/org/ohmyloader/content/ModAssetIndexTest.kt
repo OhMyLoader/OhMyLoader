@@ -36,7 +36,7 @@ class ModAssetIndexTest {
                 "assets/oml/textures/block/ruby.png",
                 "data/oml/recipe/ruby_smelting.json",
                 "oml/Main.class",
-            )
+            ),
         )
         val index = ModAssetIndex(listOf(jar), emptyList())
 
@@ -70,7 +70,7 @@ class ModAssetIndexTest {
                 "assets/oml/sounds/step2.ogg",
                 "assets/oml/blockstates/ruby.json",
                 "assets/oml/textures/block/sounds.png",
-            )
+            ),
         )
         val index = ModAssetIndex(listOf(jar), emptyList())
 

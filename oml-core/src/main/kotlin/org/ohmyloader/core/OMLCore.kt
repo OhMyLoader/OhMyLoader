@@ -5,9 +5,10 @@ import org.ohmyloader.api.OMLModInitializer
 import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.content.ContentRegistryFactory
 import org.ohmyloader.api.content.OMLContentProvider
-import org.ohmyloader.core.classloader.OMLClassLoader
 import org.ohmyloader.content.AbstractContentRegistry
 import org.ohmyloader.content.TomlContentLoader
+import org.ohmyloader.core.OMLCore.installLogFile
+import org.ohmyloader.core.classloader.OMLClassLoader
 import org.ohmyloader.core.mixin.MixinScanner
 import org.ohmyloader.core.mixin.OMLMixinRegistry
 import org.ohmyloader.core.mod.ModContainer
@@ -22,9 +23,9 @@ import java.io.OutputStream
 import java.io.PrintStream
 import java.net.URL
 import java.nio.file.Paths
-import java.util.zip.ZipFile
 import java.util.*
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.zip.ZipFile
 
 /** The declaration entry inside a `.oml` content pack archive. */
 private const val CONTENT_TOML = "content.toml"
@@ -186,7 +187,7 @@ object OMLCore {
                 "Fatal: the adapter ${adapter.javaClass.name} was defined by " +
                     "${adapter.javaClass.classLoader} instead of the OML main loader ($loader). Adapter classes must sit " +
                     "under org.ohmyloader.adapter. so the main loader defines them; otherwise every adapter-side singleton " +
-                    "exists twice and injected hooks see the copy that never received the declarations."
+                    "exists twice and injected hooks see the copy that never received the declarations.",
             )
             return null
         }
@@ -274,7 +275,12 @@ object OMLCore {
                 val text = archiveDeclaration(pack)
                 contentPackFiles += pack
                 val summary =
-                    TomlContentLoader.load(namespace, pack.name, text, contentRegistry.forNamespace(namespace, reloadable = true))
+                    TomlContentLoader.load(
+                        namespace,
+                        pack.name,
+                        text,
+                        contentRegistry.forNamespace(namespace, reloadable = true),
+                    )
                 flatContentNamespaces += summary.namespace
             } catch (t: Throwable) {
                 OmlLog.error("OMLCore", "Failed to load content pack ${pack.name}", t)
@@ -290,11 +296,11 @@ object OMLCore {
         // which made their blocks render with missing textures — so one found in the mods
         // directory is reported and refused instead of loaded.
         for (stray in modsDir.listFiles { f -> f.isFile && f.name.endsWith(".toml", ignoreCase = true) }
-                ?.sortedBy { it.name.lowercase() } ?: emptyList()) {
+            ?.sortedBy { it.name.lowercase() } ?: emptyList()) {
             OmlLog.warn(
                 "OMLCore",
                 "${stray.name}: loose .toml content packs are no longer supported — " +
-                    "pack it as an .oml archive (content.toml + assets/ at the root)"
+                    "pack it as an .oml archive (content.toml + assets/ at the root)",
             )
         }
         return modsDir.listFiles { f -> f.isFile && f.name.endsWith(".oml", ignoreCase = true) }
@@ -342,7 +348,7 @@ object OMLCore {
             OmlLog.error(
                 "OMLCore",
                 "Fatal: server startup is not yet supported for ${adapter.versionId} "
-                    + "(IAdapter.serverMainClass is null)."
+                    + "(IAdapter.serverMainClass is null).",
             )
             return
         }
@@ -350,14 +356,17 @@ object OMLCore {
         try {
             val mcMainClass = Class.forName(entryClass, true, primaryLoader)
             val mainMethod = mcMainClass.getMethod("main", Array<String>::class.java)
-            OmlLog.info("OMLCore", "${loadedMods.size} mod(s) loaded, handing over to the ${if (serverSide) "dedicated server" else "client"}...")
+            OmlLog.info(
+                "OMLCore",
+                "${loadedMods.size} mod(s) loaded, handing over to the ${if (serverSide) "dedicated server" else "client"}...",
+            )
             mainMethod.invoke(null, args)
         } catch (e: ClassNotFoundException) {
             OmlLog.error(
                 "OMLCore",
                 "Fatal: entry class $entryClass not found!\n" +
                     "Please check that the game jar exists in oml-adapter-*/libs/ and matches the adapter layer version.",
-                e
+                e,
             )
         } catch (t: Throwable) {
             OmlLog.error("OMLCore", "Failed to start Minecraft!", t)
@@ -502,7 +511,10 @@ object OMLCore {
     @JvmStatic
     fun onRunTickTicks(ticks: Int) {
         once(ticksLogged) {
-            OmlLog.info("OMLCore", "Local read (resolved by type, slot inferred by data flow): ticks advanced this frame = $ticks")
+            OmlLog.info(
+                "OMLCore",
+                "Local read (resolved by type, slot inferred by data flow): ticks advanced this frame = $ticks",
+            )
         }
     }
 
@@ -519,7 +531,10 @@ object OMLCore {
     @JvmStatic
     fun onTicksStored(ticks: Int): Int {
         once(ticksStoreLogged) {
-            OmlLog.info("OMLCore", "Local write (read-modify-write after STORE): ticks advanced this frame = $ticks (written back unchanged)")
+            OmlLog.info(
+                "OMLCore",
+                "Local write (read-modify-write after STORE): ticks advanced this frame = $ticks (written back unchanged)",
+            )
         }
         return ticks
     }
@@ -563,10 +578,13 @@ object OMLCore {
         if (mode == "fail") {
             error(
                 "[OMLCore] Injection-rule self-check failed (${problems.size} issue(s), see above). " +
-                    "Fix the rules and retry; to start with problems regardless add -Doml.injection.verify=warn"
+                    "Fix the rules and retry; to start with problems regardless add -Doml.injection.verify=warn",
             )
         }
-        OmlLog.warn("OMLCore", "Injection-rule self-check has ${problems.size} issue(s) (warn mode, continuing startup)")
+        OmlLog.warn(
+            "OMLCore",
+            "Injection-rule self-check has ${problems.size} issue(s) (warn mode, continuing startup)",
+        )
     }
 
     /**
@@ -581,7 +599,10 @@ object OMLCore {
         val i = args.indexOf("--gameDir")
         if (i < 0 || i + 1 >= args.size) return File(System.getProperty("user.dir") ?: ".").absoluteFile
         val dir = File(args[i + 1])
-        if (!dir.isDirectory) OmlLog.warn("OMLCore", "the directory pointed to by --gameDir does not exist (${dir.path})")
+        if (!dir.isDirectory) OmlLog.warn(
+            "OMLCore",
+            "the directory pointed to by --gameDir does not exist (${dir.path})",
+        )
         return dir.absoluteFile
     }
 

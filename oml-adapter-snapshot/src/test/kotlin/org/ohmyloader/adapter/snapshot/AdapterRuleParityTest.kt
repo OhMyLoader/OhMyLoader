@@ -1,12 +1,12 @@
 package org.ohmyloader.adapter.snapshot
 
-import org.ohmyloader.adapter.v26_3.MinecraftHookTransformer as StableClientHooks
-import org.ohmyloader.adapter.v26_3.ServerHookTransformer as StableServerHooks
 import org.ohmyloader.api.inject.AccessRule
 import org.ohmyloader.api.inject.Payload
 import org.ohmyloader.api.inject.RuleSet
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import org.ohmyloader.adapter.v26_3.MinecraftHookTransformer as StableClientHooks
+import org.ohmyloader.adapter.v26_3.ServerHookTransformer as StableServerHooks
 
 /**
  * The snapshot adapter is a deliberate copy of the stable one — it exists so the eventual 26.4 adapter
@@ -47,12 +47,23 @@ class AdapterRuleParityTest {
 
     /** One line per rule, holding only what must match: target, selector, anchor, payload. */
     private fun surface(rules: RuleSet): List<String> = buildList {
-        for ((target, classRules) in rules.classes) {
+        for ([target, classRules] in rules.classes) {
             for (rule in classRules.methods) {
-                val anchors = rule.points.joinToString(",") { (point, payload) ->
+                val anchors = rule.points.joinToString(",") { [point, payload] ->
                     "${normalize(point.toString())}->${describe(payload)}"
                 }
-                add("method $target ${rule.selector.names.sorted().joinToString("|")}${rule.selector.desc.orEmpty()}${policy(rule.require, rule.expect, rule.allow, rule.optional)} [$anchors]")
+                add(
+                    "method $target ${
+                        rule.selector.names.sorted().joinToString("|")
+                    }${rule.selector.desc.orEmpty()}${
+                        policy(
+                            rule.require,
+                            rule.expect,
+                            rule.allow,
+                            rule.optional,
+                        )
+                    } [$anchors]",
+                )
             }
             for (rule in classRules.accessRules) add("access $target ${describe(rule)}")
         }

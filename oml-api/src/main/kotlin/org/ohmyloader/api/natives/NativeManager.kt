@@ -179,7 +179,7 @@ object NativeManager {
                     tmp.toPath(),
                     target.toPath(),
                     StandardCopyOption.REPLACE_EXISTING,
-                    StandardCopyOption.ATOMIC_MOVE
+                    StandardCopyOption.ATOMIC_MOVE,
                 )
             } catch (e: java.nio.file.AtomicMoveNotSupportedException) {
                 Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)

@@ -1,13 +1,6 @@
 package org.ohmyloader.installer
 
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.*
 import java.io.File
 import java.nio.file.Files
 
@@ -64,7 +57,7 @@ object Uninstaller {
             json.parseToJsonElement(versionJson.readText(Charsets.UTF_8)).jsonObject
         } catch (t: Throwable) {
             throw InstallationException(
-                Messages.t("uninstall.badJson", versionJson.absolutePath, versionDir.absolutePath), t
+                Messages.t("uninstall.badJson", versionJson.absolutePath, versionDir.absolutePath), t,
             )
         }
 
@@ -123,7 +116,7 @@ object Uninstaller {
             json.parseToJsonElement(patchFile.readText(Charsets.UTF_8)).jsonObject
         } catch (t: Throwable) {
             throw InstallationException(
-                Messages.t("uninstall.badJson", patchFile.absolutePath, instance.absolutePath), t
+                Messages.t("uninstall.badJson", patchFile.absolutePath, instance.absolutePath), t,
             )
         }
 
@@ -165,7 +158,8 @@ object Uninstaller {
     private fun removeComponentFromPack(instance: File, ctx: UninstallContext) {
         val pack = File(instance, "mmc-pack.json")
         if (!pack.isFile) return
-        val root = runCatching { json.parseToJsonElement(pack.readText(Charsets.UTF_8)).jsonObject }.getOrNull() ?: return
+        val root =
+            runCatching { json.parseToJsonElement(pack.readText(Charsets.UTF_8)).jsonObject }.getOrNull() ?: return
         val components = root["components"]?.jsonArray ?: return
         val uid = PrismComponentTarget.COMPONENT_UID
         val kept = components.filter {

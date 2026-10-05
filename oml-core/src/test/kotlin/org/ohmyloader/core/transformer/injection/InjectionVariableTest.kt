@@ -38,7 +38,7 @@ class InjectionVariableTest {
                 target = "compute",
                 desc = "(I)I",
                 anchor = { afterStore(index = 1, type = "I", block = it) },
-                handler = "add100"
+                handler = "add100",
             ),
             computeTarget(),
         )
@@ -55,7 +55,7 @@ class InjectionVariableTest {
                 target = "compute",
                 desc = "(I)I",
                 anchor = { afterStore(type = "I", block = it) },
-                handler = "add100"
+                handler = "add100",
             ),
             computeTarget(),
         )
@@ -83,7 +83,7 @@ class InjectionVariableTest {
             ),
             twiceTarget(),
         )
-        // The 2nd write is changed to 40, and nothing overwrites it afterwards
+        // The 2nd write is changed to 40, and nothing overwrites it afterward
         assertEquals(40, invokeStatic(second, "twice", 3))
     }
 
@@ -239,7 +239,8 @@ class InjectionVariableTest {
                 desc = "(I)I",
                 handler = "add100",
                 hits = 2,
-                anchor = { afterStore(block = it) }),
+                anchor = { afterStore(block = it) },
+            ),
             argStoreTarget(),
         )
 
@@ -410,7 +411,7 @@ class InjectionVariableTest {
             add(IntInsnNode(Opcodes.BIPUSH, 10))
             add(InsnNode(Opcodes.IMUL))
             add(InsnNode(Opcodes.IRETURN))
-        }
+        },
     )
 
     /** `static int readOnce(int a) { int x = a + 1; return x; }` — slot 1 is read exactly once. */
@@ -422,7 +423,7 @@ class InjectionVariableTest {
             add(VarInsnNode(Opcodes.ISTORE, 1))
             add(VarInsnNode(Opcodes.ILOAD, 1))
             add(InsnNode(Opcodes.IRETURN))
-        }
+        },
     )
 
     /** `static int twice(int a) { int x = a; x = a + 1; return x; }` — slot 1 is written twice. */
@@ -436,7 +437,7 @@ class InjectionVariableTest {
             add(VarInsnNode(Opcodes.ISTORE, 1))
             add(VarInsnNode(Opcodes.ILOAD, 1))
             add(InsnNode(Opcodes.IRETURN))
-        }
+        },
     )
 
     /**
@@ -460,7 +461,7 @@ class InjectionVariableTest {
             add(VarInsnNode(Opcodes.LLOAD, 4))
             add(InsnNode(Opcodes.LADD))
             add(InsnNode(Opcodes.LRETURN))
-        }
+        },
     )
 
     /** `static String tag(int a) { String s = "t"; return s + a; }` — slot 1 is reference-typed. */
@@ -475,10 +476,10 @@ class InjectionVariableTest {
                 MethodInsnNode(
                     Opcodes.INVOKEVIRTUAL, "java/lang/String", "concat",
                     "(Ljava/lang/String;)Ljava/lang/String;", false,
-                )
+                ),
             )
             add(InsnNode(Opcodes.ARETURN))
-        }
+        },
     )
 
     /** `static Object objLocal(int a) { Object o = "t"; return o; }` — slot 1 is declared as Object. */
@@ -488,7 +489,7 @@ class InjectionVariableTest {
             add(VarInsnNode(Opcodes.ASTORE, 1))
             add(VarInsnNode(Opcodes.ALOAD, 1))
             add(InsnNode(Opcodes.ARETURN))
-        }
+        },
     )
 
     /** `static int argStore(int a) { a = a + 1; int x = a; return a + x; }` — slot 0 the parameter, slot 1 a local. */
@@ -504,7 +505,7 @@ class InjectionVariableTest {
             add(VarInsnNode(Opcodes.ILOAD, 1))
             add(InsnNode(Opcodes.IADD))
             add(InsnNode(Opcodes.IRETURN))
-        }
+        },
     )
 
     private fun classNode(vararg methods: MethodNode): ClassNode =

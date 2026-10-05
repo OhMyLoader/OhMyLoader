@@ -46,11 +46,11 @@ internal class LocalFrame(private val values: List<BasicValue?>) {
             val actualType = live(index)
                 ?: return LocalResolution.Missing(
                     "slot $index has no live value at the injection point" +
-                        " (dead slot / uninitialized / the second half of a long·double) ${context()}"
+                        " (dead slot / uninitialized / the second half of a long·double) ${context()}",
                 )
             if (declared != null && !compatible(declared, actualType)) {
                 return LocalResolution.Missing(
-                    "slot $index is ${actualType.descriptor} at the injection point, but the rule declared ${declared.descriptor}"
+                    "slot $index is ${actualType.descriptor} at the injection point, but the rule declared ${declared.descriptor}",
                 )
             }
             return LocalResolution.Found(index, declared ?: actualType)
@@ -63,7 +63,7 @@ internal class LocalFrame(private val values: List<BasicValue?>) {
         val slot = candidates.getOrNull(value.ordinal)
             ?: return LocalResolution.Missing(
                 "only ${candidates.size} locals of type ${declared.descriptor} at the injection point, " +
-                    "cannot take occurrence ${value.ordinal + 1}${context()}"
+                    "cannot take occurrence ${value.ordinal + 1}${context()}",
             )
         return LocalResolution.Found(
             slot,

@@ -39,7 +39,7 @@ publishing {
                 name.set(project.name)
                 description.set(
                     "OhMyLoader — a Minecraft mod loader that runs unmodified mods on the modern " +
-                        "Minecraft line (26.3) through a single, version-neutral API on one Java runtime."
+                        "Minecraft line (26.3) through a single, version-neutral API on one Java runtime.",
                 )
                 url.set("https://github.com/OhMyLoader/OhMyLoader")
 

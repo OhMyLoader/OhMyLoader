@@ -3,7 +3,7 @@ package org.ohmyloader.core.adapter
 import org.ohmyloader.api.event.*
 import org.ohmyloader.api.wrapper.OMLScreen
 import org.ohmyloader.api.wrapper.OMLWorld
-import java.util.Optional
+import java.util.*
 
 /**
  * Version-independent event dispatch: converts game hooks into unified events and fires them. Events whose

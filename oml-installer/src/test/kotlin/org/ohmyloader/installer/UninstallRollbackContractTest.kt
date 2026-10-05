@@ -98,7 +98,12 @@ class UninstallRollbackContractTest {
         writeJar(File(versionDir, "my-OML.jar"))
         writeJar(File(versionDir, "natives/oml-native.so"))
         writeJar(File(gameDir, "libraries/org/ohmyloader/oml-core/my-OML/oml-core-my-OML.jar"))
-        writeJar(File(gameDir, "libraries/org/ohmyloader/oml-native/0.1.0-SNAPSHOT/oml-native-0.1.0-SNAPSHOT-natives-windows.jar"))
+        writeJar(
+            File(
+                gameDir,
+                "libraries/org/ohmyloader/oml-native/0.1.0-SNAPSHOT/oml-native-0.1.0-SNAPSHOT-natives-windows.jar",
+            ),
+        )
         // vanilla content in the same tree: never ours
         writeJar(File(gameDir, "libraries/com/mojang/brigadier/brigadier-1.0.jar"))
         File(versionDir, "my-OML.json").writeText(
@@ -144,7 +149,10 @@ class UninstallRollbackContractTest {
         val hint = Uninstaller.perform(UninstallContext(StandardLauncherTarget, gameDir, "my-OML") { removed += it })
 
         assertContains(hint, "my-OML")
-        assertFalse(File(gameDir, "libraries/org/ohmyloader/oml-core").exists(), "the layer jar is gone, its empty Maven branch pruned")
+        assertFalse(
+            File(gameDir, "libraries/org/ohmyloader/oml-core").exists(),
+            "the layer jar is gone, its empty Maven branch pruned",
+        )
         assertFalse(File(gameDir, "libraries/org/ohmyloader/oml-native").exists(), "the classified native jar is gone")
         assertTrue(File(gameDir, "libraries/com/mojang/brigadier/brigadier-1.0.jar").isFile, "vanilla libraries stay")
         assertTrue(File(versionDir, "mods/my-mod.jar").isFile, "the isolated mods dir is user data and survives")
@@ -212,8 +220,14 @@ class UninstallRollbackContractTest {
 
         assertFalse(File(instance, "patches/org.ohmyloader.json").exists(), "the component patch is gone")
         assertFalse(File(instance, "libraries/oml-core-my-OML.jar").exists(), "local layer jars are gone")
-        assertFalse(File(instance, "libraries/oml-native-0.1.0-SNAPSHOT-natives-windows.jar").exists(), "the classified native jar is gone")
-        assertFalse(File(instance, "mmc-pack.json.bak").exists(), "the install-time backup is ours and no longer needed")
+        assertFalse(
+            File(instance, "libraries/oml-native-0.1.0-SNAPSHOT-natives-windows.jar").exists(),
+            "the classified native jar is gone",
+        )
+        assertFalse(
+            File(instance, "mmc-pack.json.bak").exists(),
+            "the install-time backup is ours and no longer needed",
+        )
         assertTrue(File(instance, "minecraft/saves/world/level.dat").isFile, "the instance's user data stays")
 
         val pack = File(instance, "mmc-pack.json").readText()

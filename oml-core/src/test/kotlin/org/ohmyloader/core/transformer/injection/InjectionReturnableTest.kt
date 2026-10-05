@@ -153,12 +153,12 @@ class InjectionReturnableTest {
         val spec = returnableSpec("answer", "()I", capturesTargetArg = false, handler = "returnInt")
         val node = targetClass(
             MethodNode(
-                Opcodes.ACC_PUBLIC, "answer", "()I", null, null
+                Opcodes.ACC_PUBLIC, "answer", "()I", null, null,
             ).apply {
                 instructions.insn(Opcodes.ICONST_1, Opcodes.IRETURN)
                 maxStack = 1
                 maxLocals = 1
-            }
+            },
         )
         val clazz = define(node, spec)
         val instance = clazz.getDeclaredConstructor().newInstance()
@@ -228,7 +228,7 @@ class InjectionReturnableTest {
         val problems = spec.verify()
         assertTrue(
             problems.any { it.contains("CancellableReturn only supports method-entry anchors") },
-            problems.toString()
+            problems.toString(),
         )
     }
 
@@ -341,13 +341,13 @@ class InjectionReturnableTest {
                     instructions.add(VarInsnNode(Opcodes.ALOAD, 0))
                     instructions.add(
                         MethodInsnNode(
-                            Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false
-                        )
+                            Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false,
+                        ),
                     )
                     instructions.add(InsnNode(Opcodes.RETURN))
                     maxStack = 1
                     maxLocals = 1
-                }
+                },
             )
             this.methods.addAll(methods)
         }

@@ -46,7 +46,7 @@ internal object InjectionVerifier {
         }
 
         val isConstructor = rule.selector.names.contains("<init>")
-        for ((point, payload) in rule.points) {
+        for ([point, payload] in rule.points) {
             problems += verifyAnchor(where, point, isConstructor)
             problems += verifyPayload(where, point, payload, isConstructor, loader)
         }
@@ -307,7 +307,7 @@ internal object InjectionVerifier {
         if (isConstructor && point is InjectionPoint.Head) {
             listOf(
                 "$where — $kind cannot use HEAD in a constructor: returning early before super()/this() is illegal bytecode, " +
-                    "use CTOR_HEAD (after the delegating call) instead"
+                    "use CTOR_HEAD (after the delegating call) instead",
             )
         } else {
             emptyList()
@@ -374,7 +374,7 @@ internal object InjectionVerifier {
                             payload.desc,
                             0,
                             1,
-                            "[Ljava/lang/Object;"
+                            "[Ljava/lang/Object;",
                         )
                     }
 
@@ -524,7 +524,7 @@ internal object InjectionVerifier {
                     payload.owner,
                     payload.method,
                     payload.desc,
-                    loader
+                    loader,
                 )
             }
 
@@ -577,7 +577,7 @@ internal object InjectionVerifier {
                     problems += "$where — ModifyConstant requires an afterConstant(...) anchor" +
                         " (only after the constant is loaded is the value on the stack, ready for the handler), now ${
                             AnchorResolver.describe(
-                                point
+                                point,
                             )
                         }"
                 }
@@ -602,7 +602,7 @@ internal object InjectionVerifier {
                     problems += "$where — ModifyExpressionValue changes the value the expression **produces**, " +
                         "so the anchor must come after it (at beforeXxx the value is not yet on the stack): now ${
                             AnchorResolver.describe(
-                                point
+                                point,
                             )
                         }"
                 }
@@ -616,7 +616,7 @@ internal object InjectionVerifier {
                         "the first parameter should equal the return type ${desc.returnType.className}"
                 }
                 problems += checkHandler(
-                    where, "ModifyExpressionValue", payload.owner, payload.method, payload.desc, loader
+                    where, "ModifyExpressionValue", payload.owner, payload.method, payload.desc, loader,
                 )
             }
 
@@ -649,7 +649,7 @@ internal object InjectionVerifier {
                         "${
                             payload.handlerOwner.replace(
                                 '/',
-                                '.'
+                                '.',
                             )
                         }.${payload.handlerMethod} (no descriptor with that name)"
                 }
@@ -719,7 +719,7 @@ internal object InjectionVerifier {
         } else {
             listOf(
                 "$where — the descriptor of $kind's handler does not match: expected $desc, " +
-                    "actually present ${byName.map { Type.getMethodDescriptor(it) }.distinct().joinToString(", ")}"
+                    "actually present ${byName.map { Type.getMethodDescriptor(it) }.distinct().joinToString(", ")}",
             )
         }
     }
@@ -729,7 +729,7 @@ internal object InjectionVerifier {
         "$where — the host class of the $kind handler is not loaded yet, skipping verification: ${
             owner.replace(
                 '/',
-                '.'
+                '.',
             )
         }"
 

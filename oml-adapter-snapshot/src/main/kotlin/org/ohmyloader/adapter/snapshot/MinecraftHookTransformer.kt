@@ -32,8 +32,8 @@ class MinecraftHookTransformer : InjectingTransformer(
                                 "org/ohmyloader/core/OMLCore",
                                 "debugOnCrash",
                                 "(Ljava/lang/Throwable;Ljava/lang/String;)V",
-                                false
-                            )
+                                false,
+                            ),
                         )
                     }
                 }
@@ -109,7 +109,7 @@ class MinecraftHookTransformer : InjectingTransformer(
                 beforeCall(
                     owner = "com/mojang/blaze3d/platform/Window",
                     name = "setTitle",
-                    desc = "(Ljava/lang/String;)V"
+                    desc = "(Ljava/lang/String;)V",
                 ) {
                     modifyArg(
                         owner = "org/ohmyloader/core/OMLCore",
@@ -128,7 +128,7 @@ class MinecraftHookTransformer : InjectingTransformer(
                 atHead {
                     cancellableCall(
                         "org/ohmyloader/adapter/v26_3/EventBridge", "onGuiOpen", "(Ljava/lang/Object;)Z",
-                        args = listOf(DslValue.Arg(0))
+                        args = listOf(DslValue.Arg(0)),
                     )
                 }
             }
@@ -139,7 +139,7 @@ class MinecraftHookTransformer : InjectingTransformer(
                 atHead {
                     call(
                         "org/ohmyloader/adapter/v26_3/EventBridge", "onWorldLoad", "(Ljava/lang/Object;)V",
-                        args = listOf(DslValue.Arg(0))
+                        args = listOf(DslValue.Arg(0)),
                     )
                 }
             }
@@ -162,7 +162,7 @@ class MinecraftHookTransformer : InjectingTransformer(
                     transformReturn(
                         owner = "org/ohmyloader/adapter/v26_3/EventBridge",
                         method = "onFrameLimit",
-                        desc = "(I)I"
+                        desc = "(I)I",
                     )
                 }
             }
@@ -178,7 +178,7 @@ class MinecraftHookTransformer : InjectingTransformer(
                     name = "freeze",
                     desc = "()V",
                     handlerOwner = "org/ohmyloader/adapter/v26_3/EventBridge",
-                    handlerMethod = "onRegistryFreeze"
+                    handlerMethod = "onRegistryFreeze",
                 )
             }
         }
@@ -227,7 +227,7 @@ class MinecraftHookTransformer : InjectingTransformer(
                 atHead {
                     call(
                         "org/ohmyloader/adapter/v26_3/EventBridge", "onPackRepositoryReload", "(Ljava/lang/Object;)V",
-                        args = listOf(DslValue.This)
+                        args = listOf(DslValue.This),
                     )
                 }
             }
@@ -238,7 +238,7 @@ class MinecraftHookTransformer : InjectingTransformer(
                 atHead {
                     cancellableCall(
                         "org/ohmyloader/adapter/v26_3/EventBridge", "onChatSent", "(Ljava/lang/String;)Z",
-                        args = listOf(DslValue.Arg(0))
+                        args = listOf(DslValue.Arg(0)),
                     )
                 }
             }
@@ -248,7 +248,7 @@ class MinecraftHookTransformer : InjectingTransformer(
                 atHead {
                     cancellableCall(
                         "org/ohmyloader/adapter/v26_3/EventBridge", "onChatReceived", "(Ljava/lang/Object;)Z",
-                        args = listOf(DslValue.Arg(0))
+                        args = listOf(DslValue.Arg(0)),
                     )
                 }
             }
@@ -256,18 +256,18 @@ class MinecraftHookTransformer : InjectingTransformer(
                 atHead {
                     cancellableCall(
                         "org/ohmyloader/adapter/v26_3/EventBridge", "onChatReceived", "(Ljava/lang/Object;)Z",
-                        args = listOf(DslValue.Arg(0))
+                        args = listOf(DslValue.Arg(0)),
                     )
                 }
             }
             method(
                 "handleDisguisedChat",
-                desc = "(Lnet/minecraft/network/protocol/game/ClientboundDisguisedChatPacket;)V"
+                desc = "(Lnet/minecraft/network/protocol/game/ClientboundDisguisedChatPacket;)V",
             ) {
                 atHead {
                     cancellableCall(
                         "org/ohmyloader/adapter/v26_3/EventBridge", "onChatReceived", "(Ljava/lang/Object;)Z",
-                        args = listOf(DslValue.Arg(0))
+                        args = listOf(DslValue.Arg(0)),
                     )
                 }
             }

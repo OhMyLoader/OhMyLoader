@@ -60,7 +60,7 @@ object OmlNativeZstd {
             "oml_zstd_get_frame_content_size",
             ValueLayout.JAVA_LONG,
             ValueLayout.ADDRESS,
-            ValueLayout.JAVA_LONG
+            ValueLayout.JAVA_LONG,
         )
 
         // downcallVoid in the DSL covers the no-return case; here the C `unsigned int` widens to

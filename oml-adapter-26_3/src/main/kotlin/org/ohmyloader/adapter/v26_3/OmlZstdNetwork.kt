@@ -1,6 +1,5 @@
 package org.ohmyloader.adapter.v26_3
 
-import org.ohmyloader.api.OmlLog
 import io.netty.channel.Channel
 import io.netty.channel.ChannelHandlerContext
 import io.netty.util.AttributeKey
@@ -13,6 +12,7 @@ import net.minecraft.network.protocol.login.custom.CustomQueryAnswerPayload
 import net.minecraft.network.protocol.login.custom.CustomQueryPayload
 import net.minecraft.resources.Identifier
 import net.minecraft.server.network.ServerLoginPacketListenerImpl
+import org.ohmyloader.api.OmlLog
 import org.ohmyloader.core.adapter.Refl
 
 /**
@@ -104,7 +104,7 @@ object OmlZstdNetwork {
     @JvmStatic
     fun onServerQueryAnswer(
         listener: ServerLoginPacketListenerImpl,
-        packet: ServerboundCustomQueryAnswerPacket
+        packet: ServerboundCustomQueryAnswerPacket,
     ): Boolean {
         if (packet.transactionId() != QUERY_ID) return false
         if (packet.payload() === SERVER_MARKER) {
@@ -153,7 +153,7 @@ object OmlZstdNetwork {
         if (conn != null) {
             val channel = channel(conn)
             // If compression is already configured (query arrived late), answer at once — the
-            // negotiated encoder emits zstd and the server sniffs it. Otherwise hold the answer:
+            // negotiated encoder emits zstd and the server sniffs it. Otherwise, hold the answer:
             // vanilla's own empty answer must still be suppressed, so cancel regardless.
             if (channel != null && java.lang.Boolean.TRUE == channel.attr(COMPRESSION_READY).get()) {
                 conn.send(ServerboundCustomQueryAnswerPacket(packet.transactionId(), CLIENT_ANSWER))

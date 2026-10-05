@@ -72,7 +72,7 @@ internal class MixinTransformer(
                     result.problems.forEach { OmlLog.error("Mixin", "merge problem: $it") }
                     throw InjectionError(
                         "Mixin class merge failed (${mixin.className} → ${context.internalName}):\n" +
-                            result.problems.joinToString("\n")
+                            result.problems.joinToString("\n"),
                     )
                 }
                 if (result.changed) changed = true
@@ -87,7 +87,7 @@ internal class MixinTransformer(
                     " @Shadow validated $shadows, collision auto-renamed $renamed" +
                     (if (accessors > 0) ", @Accessor synthesized $accessors" else "") +
                     (if (invokers > 0) ", @Invoker synthesized $invokers" else "") +
-                    (if (constructors > 0) ", constructors merged $constructors" else "") + ")"
+                    (if (constructors > 0) ", constructors merged $constructors" else "") + ")",
             )
             Diagnostics.recordPhase("merge", System.nanoTime() - mergeStarted)
         }

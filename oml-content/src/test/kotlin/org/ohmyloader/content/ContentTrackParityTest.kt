@@ -42,9 +42,11 @@ class ContentTrackParityTest {
             maxDamage = 250
             attackDamage = 5.0
         }
-        code.forNamespace("ruby").declareSmelting(input = "raw_ruby", result = "ruby", experience = 0.7, cookingTime = 100)
+        code.forNamespace("ruby")
+            .declareSmelting(input = "raw_ruby", result = "ruby", experience = 0.7, cookingTime = 100)
         code.forNamespace("ruby").declareBlockDrop(block = "ruby_ore", drop = "raw_ruby")
-        code.forNamespace("ruby").declareShapelessCrafting(result = "ruby", ingredients = listOf("raw_ruby", "raw_ruby"))
+        code.forNamespace("ruby")
+            .declareShapelessCrafting(result = "ruby", ingredients = listOf("raw_ruby", "raw_ruby"))
 
         TomlContentLoader.load(
             "ruby",

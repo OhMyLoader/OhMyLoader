@@ -1,9 +1,9 @@
 package org.ohmyloader.core.transformer.injection
 
-import org.ohmyloader.api.OmlLog
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.*
+import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.inject.*
 import org.ohmyloader.core.transformer.injection.PayloadEmitter.emitCancellableReturn
 import org.ohmyloader.core.transformer.injection.PayloadEmitter.emitValue
@@ -58,7 +58,7 @@ internal object PayloadEmitter {
                 OmlLog.error(
                     "Injection",
                     "TransformReturn handler shape mismatch: target ${method.name}${method.desc} " +
-                        "returns $ret; handler should be shaped ($ret[, extras...])$ret, actual ${payload.desc}"
+                        "returns $ret; handler should be shaped ($ret[, extras...])$ret, actual ${payload.desc}",
                 )
                 return null
             }
@@ -106,7 +106,8 @@ internal object PayloadEmitter {
         // Anchor-related: needs the anchor instruction to compute (whether/which type of value is on the stack is
         // decided by that instruction), so applyToMethod calls emitModify* / emitInPlaceValue directly
         is Payload.ModifyArg, is Payload.ModifyArgs, is Payload.ModifyVariable,
-        is Payload.ModifyConstant, is Payload.ModifyExpressionValue ->
+        is Payload.ModifyConstant, is Payload.ModifyExpressionValue,
+            ->
             error("${payload.javaClass.simpleName} needs the anchor instruction; the engine calls emitModify*/emitInPlaceValue directly")
 
         is Payload.Raw -> InsnList().apply { payload.build(this, method, owner) }
@@ -128,7 +129,7 @@ internal object PayloadEmitter {
     ): InsnList? {
         if (payload.variant != HandlerVariant.NOTIFY) {
             throw InjectionError(
-                "[injection] a value-modifying handler must not call back the handle (HandlerVariant must be NOTIFY): ${payload.desc}"
+                "[injection] a value-modifying handler must not call back the handle (HandlerVariant must be NOTIFY): ${payload.desc}",
             )
         }
         return emitInPlaceValue(
@@ -164,13 +165,13 @@ internal object PayloadEmitter {
         if (valueParam == null || !ProducedValue.sameValueType(valueParam, value)) {
             throw InjectionError(
                 "[injection] the handler's first parameter type of $rule must be **the value's type** ${value.className}" +
-                    " (decided by the anchor): actual ${valueParam?.className ?: "no parameters"} ($handlerDesc)"
+                    " (decided by the anchor): actual ${valueParam?.className ?: "no parameters"} ($handlerDesc)",
             )
         }
         if (handler.returnType != value) {
             throw InjectionError(
                 "[injection] the handler of $rule must return ${value.className} (the value's type, to be put back on the stack): " +
-                    "actual ${handler.returnType.className} ($handlerDesc)"
+                    "actual ${handler.returnType.className} ($handlerDesc)",
             )
         }
         validateArgTypes(handlerDesc, extras, 1, method, owner, locals, "$rule.extras")
@@ -186,7 +187,7 @@ internal object PayloadEmitter {
             MethodInsnNode(
                 if (instance) Opcodes.INVOKEVIRTUAL else Opcodes.INVOKESTATIC,
                 handlerOwner, handlerMethod, handlerDesc, false,
-            )
+            ),
         )
         return list
     }
@@ -210,7 +211,7 @@ internal object PayloadEmitter {
         if ((method.access and Opcodes.ACC_STATIC) != 0) {
             throw InjectionError(
                 "[injection] HandlerCall can only be injected into **instance methods**: ${method.name}${method.desc} is a static method, " +
-                    "the handler cannot get this (the target instance) — use a static handler (StaticCall/CheckCall) then"
+                    "the handler cannot get this (the target instance) — use a static handler (StaticCall/CheckCall) then",
             )
         }
         val ret = Type.getReturnType(method.desc)
@@ -219,14 +220,14 @@ internal object PayloadEmitter {
             HandlerVariant.CANCELLABLE -> if (ret != Type.VOID_TYPE) {
                 throw InjectionError(
                     "[injection] the CANCELLABLE form is only for void targets (for non-void use RETURNABLE): " +
-                        "${method.name}${method.desc} returns ${ret.className}"
+                        "${method.name}${method.desc} returns ${ret.className}",
                 )
             }
 
             HandlerVariant.RETURNABLE -> if (ret == Type.VOID_TYPE) {
                 throw InjectionError(
                     "[injection] the RETURNABLE form requires a non-void target (for a void target use CANCELLABLE): " +
-                        "${method.name}${method.desc}"
+                        "${method.name}${method.desc}",
                 )
             }
         }
@@ -235,7 +236,7 @@ internal object PayloadEmitter {
         if (!payload.desc.endsWith("$handleDesc)V")) {
             throw InjectionError(
                 "[injection] the HandlerCall descriptor must end with " + handleDesc + ")V" +
-                    " (captured arguments + handle, returning void): ${method.name}${method.desc} uses ${payload.desc}"
+                    " (captured arguments + handle, returning void): ${method.name}${method.desc} uses ${payload.desc}",
             )
         }
         // desc params = capture args + trailing handle ⇒ the pushed captures only map to the first n-1
@@ -308,7 +309,7 @@ internal object PayloadEmitter {
         if (!payload.desc.endsWith(CALLBACK_RETURNABLE_TAIL)) {
             throw InjectionError(
                 "[injection] the bridge descriptor of CancellableReturn must end with ${CALLBACK_RETURNABLE_DESC})V" +
-                    " (captured arguments, id, and callback handle pushed in order): ${method.name}${method.desc} uses ${payload.desc}"
+                    " (captured arguments, id, and callback handle pushed in order): ${method.name}${method.desc} uses ${payload.desc}",
             )
         }
         // bridgeArgs are all the args the engine pushes (captures + id); the descriptor has one extra trailing handle,
@@ -422,7 +423,7 @@ internal object PayloadEmitter {
         if (args.size != expected.size - headSkip - tailSkip) {
             throw InjectionError(
                 "[injection] $what argument count does not match the handler descriptor: ${method.name}${method.desc} calls $desc, " +
-                    "pushes ${args.size} but the descriptor requires ${expected.size - headSkip - tailSkip}"
+                    "pushes ${args.size} but the descriptor requires ${expected.size - headSkip - tailSkip}",
             )
         }
         args.forEachIndexed { i, value ->
@@ -432,7 +433,7 @@ internal object PayloadEmitter {
             if (problem != null) {
                 throw InjectionError(
                     "[injection] $what argument type does not match the handler descriptor: argument ${i + headSkip + 1} of ${method.name}${method.desc} calling $desc " +
-                        "expects ${want.className}, actually pushed ${actual.className} ($problem; $value)"
+                        "expects ${want.className}, actually pushed ${actual.className} ($problem; $value)",
                 )
             }
         }
@@ -552,7 +553,7 @@ internal object PayloadEmitter {
         if (targetArgs.isEmpty()) {
             OmlLog.error(
                 "Injection",
-                "the target call ${invoke.owner}.${invoke.name}${invoke.desc} of ModifyArg has no arguments: ${method.name}"
+                "the target call ${invoke.owner}.${invoke.name}${invoke.desc} of ModifyArg has no arguments: ${method.name}",
             )
             return null
         }
@@ -576,14 +577,14 @@ internal object PayloadEmitter {
             throw InjectionError(
                 "[injection] the handler return type of ModifyArg must equal the type of the modified argument: " +
                     "${invoke.owner}.${invoke.name}${invoke.desc} argument ${index + 1} is " +
-                    "${targetArgs[index].className}, handler returns ${handlerRet.className} ($handlerDesc)"
+                    "${targetArgs[index].className}, handler returns ${handlerRet.className} ($handlerDesc)",
             )
         }
         if (singleArgMode) {
             if (handlerArgs[0] != targetArgs[index]) {
                 throw InjectionError(
                     "[injection] the handler parameter type of ModifyArg's single-argument mode must equal the type of the modified argument: " +
-                        "expected ${targetArgs[index].className}, actual ${handlerArgs[0].className} ($handlerDesc)"
+                        "expected ${targetArgs[index].className}, actual ${handlerArgs[0].className} ($handlerDesc)",
                 )
             }
         } else {
@@ -591,14 +592,14 @@ internal object PayloadEmitter {
                 throw InjectionError(
                     "[injection] the handler value-parameter count of ModifyArg's multi-argument mode must equal the target call's argument count: " +
                         "${invoke.owner}.${invoke.name}${invoke.desc} has ${targetArgs.size} " +
-                        "but the handler provides $argCount ($handlerDesc)"
+                        "but the handler provides $argCount ($handlerDesc)",
                 )
             }
             for (i in targetArgs.indices) {
                 if (handlerArgs[i] != targetArgs[i]) {
                     throw InjectionError(
                         "[injection] ModifyArg multi-argument mode parameter ${i + 1} type mismatch: expected " +
-                            "${targetArgs[i].className}, actual ${handlerArgs[i].className} ($handlerDesc)"
+                            "${targetArgs[i].className}, actual ${handlerArgs[i].className} ($handlerDesc)",
                     )
                 }
             }
@@ -626,7 +627,7 @@ internal object PayloadEmitter {
             MethodInsnNode(
                 if (instance) Opcodes.INVOKEVIRTUAL else Opcodes.INVOKESTATIC,
                 handlerOwner, handlerMethod, handlerDesc, false,
-            )
+            ),
         )
         list.add(VarInsnNode(Boxing.storeOpcode(targetArgs[index]), slots[index]))
 
@@ -698,7 +699,7 @@ internal object PayloadEmitter {
     ): InsnList? {
         if (payload.variant != HandlerVariant.NOTIFY) {
             throw InjectionError(
-                "[injection] a value-modifying handler must not call back the handle (HandlerVariant must be NOTIFY): ${payload.desc}"
+                "[injection] a value-modifying handler must not call back the handle (HandlerVariant must be NOTIFY): ${payload.desc}",
             )
         }
         return emitModifyArg(
@@ -752,7 +753,7 @@ internal object PayloadEmitter {
     ): InsnList? {
         if (payload.variant != HandlerVariant.NOTIFY) {
             throw InjectionError(
-                "[injection] a value-modifying handler must not call back the handle (HandlerVariant must be NOTIFY): ${payload.desc}"
+                "[injection] a value-modifying handler must not call back the handle (HandlerVariant must be NOTIFY): ${payload.desc}",
             )
         }
         return emitModifyArgs(
@@ -791,7 +792,7 @@ internal object PayloadEmitter {
         if (targetArgs.isEmpty()) {
             OmlLog.error(
                 "Injection",
-                "the target call ${invoke.owner}.${invoke.name}${invoke.desc} of ModifyArgs has no arguments: ${method.name}"
+                "the target call ${invoke.owner}.${invoke.name}${invoke.desc} of ModifyArgs has no arguments: ${method.name}",
             )
             return null
         }
@@ -799,7 +800,7 @@ internal object PayloadEmitter {
         val ret = Type.getReturnType(handlerDesc)
         if (ret != Type.VOID_TYPE) {
             throw InjectionError(
-                "[injection] the handler of ModifyArgs must return void (the modified arguments are read back by the engine): $handlerDesc"
+                "[injection] the handler of ModifyArgs must return void (the modified arguments are read back by the engine): $handlerDesc",
             )
         }
         // The two forms have different **value-param** descriptors (the instance form uses a bare `Object[]`),
@@ -812,7 +813,7 @@ internal object PayloadEmitter {
                     "[injection] an instance-form ModifyArgs handler must be shaped (Object[][, captures…])V: $handlerDesc"
                 } else {
                     "[injection] the first parameter of the ModifyArgs handler must be $ARGS_DESC (the argument list): $handlerDesc"
-                }
+                },
             )
         }
         validateArgTypes(handlerDesc, extras, 1, method, owner, locals, "ModifyArgs.extras")
@@ -874,7 +875,7 @@ internal object PayloadEmitter {
             MethodInsnNode(
                 if (instance) Opcodes.INVOKEVIRTUAL else Opcodes.INVOKESTATIC,
                 handlerOwner, handlerMethod, handlerDesc, false,
-            )
+            ),
         )
 
         // Read back: the values are in that `Object[]`, unbox each and return it to the temp slot
@@ -930,7 +931,7 @@ internal object PayloadEmitter {
     ): InsnList? {
         if (payload.variant != HandlerVariant.NOTIFY) {
             throw InjectionError(
-                "[injection] a value-modifying handler must not call back the handle (HandlerVariant must be NOTIFY): ${payload.desc}"
+                "[injection] a value-modifying handler must not call back the handle (HandlerVariant must be NOTIFY): ${payload.desc}",
             )
         }
         return emitModifyVariable(
@@ -969,14 +970,14 @@ internal object PayloadEmitter {
         val type = handler.returnType
         if (type == Type.VOID_TYPE) {
             throw InjectionError(
-                "[injection] the handler of ModifyVariable must not return void (it must return the new value): $handlerDesc"
+                "[injection] the handler of ModifyVariable must not return void (it must return the new value): $handlerDesc",
             )
         }
         if (handler.argumentTypes.isEmpty() || handler.argumentTypes[0] != type) {
             throw InjectionError(
                 "[injection] the handler of ModifyVariable must be shaped (T[, captures...])T: " +
                     "the first parameter should equal the return type ${type.className}, actual " +
-                    "${handler.argumentTypes.firstOrNull()?.className ?: "no parameters"} ($handlerDesc)"
+                    "${handler.argumentTypes.firstOrNull()?.className ?: "no parameters"} ($handlerDesc)",
             )
         }
         validateArgTypes(handlerDesc, extras, 1, method, owner, locals, "ModifyVariable.extras")
@@ -991,7 +992,7 @@ internal object PayloadEmitter {
             throw InjectionError(
                 "[injection] the value type of ModifyVariable does not match the local variable: ${method.name}${method.desc} " +
                     "slot $slot is ${actual.descriptor}, but the handler declared ${type.descriptor}" +
-                    " ($handlerDesc)"
+                    " ($handlerDesc)",
             )
         }
         // The write-back **widens** that slot's type to the type declared by the handler (the JVM frames count the value
@@ -1005,7 +1006,7 @@ internal object PayloadEmitter {
                 "Injection",
                 "ModifyVariable writes ${type.descriptor} back to slot $slot (originally ${actual.descriptor}): " +
                     "that slot's type in the following code is widened to ${type.descriptor}; if it is still used as the original type it will VerifyError. " +
-                    "(${method.name}${method.desc}; make the handler return the original type, or confirm the code after no longer uses it as the original type)"
+                    "(${method.name}${method.desc}; make the handler return the original type, or confirm the code after no longer uses it as the original type)",
             )
         }
 
@@ -1017,7 +1018,7 @@ internal object PayloadEmitter {
             MethodInsnNode(
                 if (instance) Opcodes.INVOKEVIRTUAL else Opcodes.INVOKESTATIC,
                 handlerOwner, handlerMethod, handlerDesc, false,
-            )
+            ),
         )
         list.add(VarInsnNode(Boxing.storeOpcode(type), slot))
         return list
@@ -1053,7 +1054,7 @@ internal object PayloadEmitter {
             if (handlerIndex >= targetArgs.size) {
                 throw InjectionError(
                     "[injection] index=$handlerIndex of ModifyArg is out of bounds: " +
-                        "${invoke.owner}.${invoke.name}${invoke.desc} has only ${targetArgs.size} arguments"
+                        "${invoke.owner}.${invoke.name}${invoke.desc} has only ${targetArgs.size} arguments",
                 )
             }
             return handlerIndex
@@ -1067,7 +1068,7 @@ internal object PayloadEmitter {
             } else {
                 "[injection] ModifyArg auto-locates multiple candidates by type (positions ${matches.map { it + 1 }}, type " +
                     "${ret.className}) — give the index explicitly"
-            }
+            },
         )
     }
 
@@ -1128,7 +1129,7 @@ internal object PayloadEmitter {
         for ([slot, value] in extraLocals) locals[slot] = value
         return FrameNode(
             Opcodes.F_NEW, locals.size, locals.toTypedArray(),
-            0, emptyArray<Any>()
+            0, emptyArray<Any>(),
         )
     }
 
@@ -1152,7 +1153,10 @@ internal object PayloadEmitter {
         when (value) {
             is DslValue.This -> {
                 if ((method.access and Opcodes.ACC_STATIC) != 0) {
-                    OmlLog.error("Injection", "This can only be used in instance methods, skipped: ${method.name}${method.desc}")
+                    OmlLog.error(
+                        "Injection",
+                        "This can only be used in instance methods, skipped: ${method.name}${method.desc}",
+                    )
                     return false
                 }
                 list.add(VarInsnNode(Opcodes.ALOAD, 0))
@@ -1160,7 +1164,10 @@ internal object PayloadEmitter {
 
             is DslValue.Arg -> {
                 val slot = argumentSlot(method, value.index) ?: run {
-                    OmlLog.error("Injection", "argument index out of bounds: ${method.name}${method.desc} arg=${value.index}")
+                    OmlLog.error(
+                        "Injection",
+                        "argument index out of bounds: ${method.name}${method.desc} arg=${value.index}",
+                    )
                     return false
                 }
                 list.add(VarInsnNode(loadOpcode(method, value.index), slot))
@@ -1173,7 +1180,7 @@ internal object PayloadEmitter {
                         "Injection",
                         "cannot read the local variable at the injection point ($value): ${method.name}${method.desc} — " +
                             (locals?.explain()
-                                ?: "this payload did not request a local-variable snapshot (engine internal error)")
+                                ?: "this payload did not request a local-variable snapshot (engine internal error)"),
                     )
                     return false
                 }
@@ -1191,12 +1198,12 @@ internal object PayloadEmitter {
                         if (value.index != null || value.strict) {
                             throw InjectionError(
                                 "[injection] local-variable read contradicts the dataflow analysis: " +
-                                    "${method.name}${method.desc} $value — ${resolution.reason}"
+                                    "${method.name}${method.desc} $value — ${resolution.reason}",
                             )
                         }
                         OmlLog.error(
                             "Injection",
-                            "local-variable read skipped: ${method.name}${method.desc} $value — ${resolution.reason}"
+                            "local-variable read skipped: ${method.name}${method.desc} $value — ${resolution.reason}",
                         )
                         return false
                     }

@@ -31,7 +31,7 @@ class HookShapeTest {
         "server" to ServerHookTransformer().rules,
     )
 
-    private fun classNode(jar: JarFile, internalName: String): ClassNode? =
+    private fun classNode(jar: JarFile, internalName: String): ClassNode =
         jar.getInputStream(jar.getJarEntry("$internalName.class")).use { stream ->
             ClassNode().also { ClassReader(stream.readAllBytes()).accept(it, 0) }
         }
@@ -52,7 +52,7 @@ class HookShapeTest {
     fun `client jar is present`() {
         assertTrue(
             clientJar.isFile,
-            "missing client jar at ${clientJar.absolutePath} — run :oml-adapter-snapshot:fetchClientJar"
+            "missing client jar at ${clientJar.absolutePath} — run :oml-adapter-snapshot:fetchClientJar",
         )
     }
 

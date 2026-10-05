@@ -59,7 +59,7 @@ class MinimalTomlTest {
     fun `array of inline tables with trailing comma`() {
         val root =
             parse("""mines_and_drops = [ { block = "minecraft:stone", speed = 8.0 }, { block = "x:y", speed = 2 }, ]""").getValue(
-                ""
+                "",
             )
         val list = root["mines_and_drops"] as List<*>
         assertEquals(2, list.size)

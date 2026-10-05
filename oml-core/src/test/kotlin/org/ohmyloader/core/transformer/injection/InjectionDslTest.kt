@@ -21,7 +21,7 @@ class InjectionDslTest {
         name: String,
         desc: String,
         isStatic: Boolean = false,
-        build: InsnList.() -> Unit
+        build: InsnList.() -> Unit,
     ): MethodNode =
         MethodNode(Opcodes.ACC_PUBLIC or if (isStatic) Opcodes.ACC_STATIC else 0, name, desc, null, null)
             .apply { instructions.build() }
@@ -38,10 +38,13 @@ class InjectionDslTest {
         }
         val ret1 = InsnNode(Opcodes.RETURN)
         val ret2 = InsnNode(Opcodes.RETURN)
-        val cls = classNode("a/B", methodNode("m", "()V") {
-            add(ret1)
-            add(ret2)
-        })
+        val cls = classNode(
+            "a/B",
+            methodNode("m", "()V") {
+                add(ret1)
+                add(ret2)
+            },
+        )
 
         val changed = spec.transform(TransformContext("a/B", cls))
 
@@ -66,10 +69,13 @@ class InjectionDslTest {
         }
         val ret1 = InsnNode(Opcodes.RETURN)
         val ret2 = InsnNode(Opcodes.RETURN)
-        val cls = classNode("a/B", methodNode("m", "()V") {
-            add(ret1)
-            add(ret2)
-        })
+        val cls = classNode(
+            "a/B",
+            methodNode("m", "()V") {
+                add(ret1)
+                add(ret2)
+            },
+        )
 
         assertTrue(spec.transform(TransformContext("a/B", cls)))
 
@@ -88,10 +94,13 @@ class InjectionDslTest {
         }
         val ret1 = InsnNode(Opcodes.RETURN)
         val ret2 = InsnNode(Opcodes.RETURN)
-        val cls = classNode("a/B", methodNode("m", "()V") {
-            add(ret1)
-            add(ret2)
-        })
+        val cls = classNode(
+            "a/B",
+            methodNode("m", "()V") {
+                add(ret1)
+                add(ret2)
+            },
+        )
 
         assertTrue(spec.transform(TransformContext("a/B", cls)))
 
@@ -110,10 +119,13 @@ class InjectionDslTest {
         }
         val ret = InsnNode(Opcodes.RETURN)
         val alien = InsnNode(Opcodes.IRETURN)
-        val cls = classNode("a/B", methodNode("m", "()V") {
-            add(alien)
-            add(ret)
-        })
+        val cls = classNode(
+            "a/B",
+            methodNode("m", "()V") {
+                add(alien)
+                add(ret)
+            },
+        )
 
         assertTrue(spec.transform(TransformContext("a/B", cls)))
 
@@ -131,10 +143,13 @@ class InjectionDslTest {
                 method("m", desc = "()V") { atHead { call("x/Y", "go", "()V") } }
             }
         }
-        val cls = classNode("a/B", methodNode("m", "()V") {
-            add(LdcInsnNode("payload"))
-            add(InsnNode(Opcodes.RETURN))
-        })
+        val cls = classNode(
+            "a/B",
+            methodNode("m", "()V") {
+                add(LdcInsnNode("payload"))
+                add(InsnNode(Opcodes.RETURN))
+            },
+        )
 
         spec.transform(TransformContext("a/B", cls))
 
@@ -147,10 +162,13 @@ class InjectionDslTest {
     @Test
     fun `call site injection brackets the target invocation`() {
         val target = MethodInsnNode(Opcodes.INVOKESTATIC, "game/Foo", "tick", "()V", false)
-        val cls = classNode("a/B", methodNode("m", "()V") {
-            add(target)
-            add(InsnNode(Opcodes.RETURN))
-        })
+        val cls = classNode(
+            "a/B",
+            methodNode("m", "()V") {
+                add(target)
+                add(InsnNode(Opcodes.RETURN))
+            },
+        )
         val spec = spec {
             classTarget("a/B") {
                 method("m", desc = "()V") {
@@ -170,9 +188,12 @@ class InjectionDslTest {
 
     @Test
     fun `arg values load correct local slots`() {
-        val cls = classNode("a/B", methodNode("m", "(IJLjava/lang/String;)V", isStatic = true) {
-            add(InsnNode(Opcodes.RETURN))
-        })
+        val cls = classNode(
+            "a/B",
+            methodNode("m", "(IJLjava/lang/String;)V", isStatic = true) {
+                add(InsnNode(Opcodes.RETURN))
+            },
+        )
         val spec = spec {
             classTarget("a/B") {
                 method("m", desc = "(IJLjava/lang/String;)V") {
@@ -181,7 +202,7 @@ class InjectionDslTest {
                             "x/Y",
                             "go",
                             "(IJLjava/lang/String;)V",
-                            args = listOf(DslValue.Arg(0), DslValue.Arg(1), DslValue.Arg(2))
+                            args = listOf(DslValue.Arg(0), DslValue.Arg(1), DslValue.Arg(2)),
                         )
                     }
                 }
@@ -193,7 +214,8 @@ class InjectionDslTest {
         val loads = cls.methods[0].instructions.toArray().filterIsInstance<VarInsnNode>()
         assertEquals(
             listOf(Triple(Opcodes.ILOAD, 0, null), Triple(Opcodes.LLOAD, 1, null), Triple(Opcodes.ALOAD, 3, null)),
-            loads.map { Triple(it.opcode, it.`var`, null) })
+            loads.map { Triple(it.opcode, it.`var`, null) },
+        )
     }
 
     // ---- missed rules must be reported explicitly and count as not modified ----
@@ -217,10 +239,13 @@ class InjectionDslTest {
 
     @Test
     fun `transformReturn pipes returned value through handler`() {
-        val cls = classNode("a/B", methodNode("m", "()Ljava/lang/String;") {
-            add(LdcInsnNode("hello"))
-            add(InsnNode(Opcodes.ARETURN))
-        })
+        val cls = classNode(
+            "a/B",
+            methodNode("m", "()Ljava/lang/String;") {
+                add(LdcInsnNode("hello"))
+                add(InsnNode(Opcodes.ARETURN))
+            },
+        )
         val spec = spec {
             classTarget("a/B") {
                 method("m", desc = "()Ljava/lang/String;") {
@@ -239,10 +264,13 @@ class InjectionDslTest {
 
     @Test
     fun `transformReturn skips handler with wrong shape`() {
-        val cls = classNode("a/B", methodNode("m", "()I") {
-            add(InsnNode(Opcodes.ICONST_1))
-            add(InsnNode(Opcodes.IRETURN))
-        })
+        val cls = classNode(
+            "a/B",
+            methodNode("m", "()I") {
+                add(InsnNode(Opcodes.ICONST_1))
+                add(InsnNode(Opcodes.IRETURN))
+            },
+        )
         val spec = spec {
             classTarget("a/B") {
                 method("m", desc = "()I") {
@@ -259,17 +287,20 @@ class InjectionDslTest {
     @Test
     fun `transformReturn accepts extras pushed after the value`() {
         // Target: instance method (I)J returning long; handler (JLa/B;I)J — original value + this + parameter arg0
-        val cls = classNode("a/B", methodNode("m", "(I)J") {
-            add(LdcInsnNode(5L))
-            add(InsnNode(Opcodes.LRETURN))
-        })
+        val cls = classNode(
+            "a/B",
+            methodNode("m", "(I)J") {
+                add(LdcInsnNode(5L))
+                add(InsnNode(Opcodes.LRETURN))
+            },
+        )
         val spec = spec {
             classTarget("a/B") {
                 method("m", desc = "(I)J") {
                     atTail {
                         transformReturn(
                             "x/Y", "tweak", "(JLa/B;I)J",
-                            extras = listOf(DslValue.This, DslValue.Arg(0))
+                            extras = listOf(DslValue.This, DslValue.Arg(0)),
                         )
                     }
                 }
@@ -296,11 +327,14 @@ class InjectionDslTest {
     @Test
     fun `redirect on an instance call takes the receiver as a parameter`() {
         val original = MethodInsnNode(Opcodes.INVOKEVIRTUAL, "game/Foo", "bar", "(I)V", false)
-        val cls = classNode("a/B", methodNode("m", "(I)V") {
-            add(VarInsnNode(Opcodes.ALOAD, 0))
-            add(original)
-            add(InsnNode(Opcodes.RETURN))
-        })
+        val cls = classNode(
+            "a/B",
+            methodNode("m", "(I)V") {
+                add(VarInsnNode(Opcodes.ALOAD, 0))
+                add(original)
+                add(InsnNode(Opcodes.RETURN))
+            },
+        )
         val spec = spec {
             classTarget("a/B") {
                 method("m", desc = "(I)V") {
@@ -326,10 +360,13 @@ class InjectionDslTest {
     @Test
     fun `redirect refuses constructor call sites`() {
         val ctor = MethodInsnNode(Opcodes.INVOKESPECIAL, "game/Foo", "<init>", "()V", false)
-        val cls = classNode("a/B", methodNode("m", "()V") {
-            add(ctor)
-            add(InsnNode(Opcodes.RETURN))
-        })
+        val cls = classNode(
+            "a/B",
+            methodNode("m", "()V") {
+                add(ctor)
+                add(InsnNode(Opcodes.RETURN))
+            },
+        )
         val spec = spec {
             classTarget("a/B") {
                 method("m", desc = "()V") {
@@ -367,9 +404,12 @@ class InjectionDslTest {
 
     @Test
     fun `cancellableCall short-circuits void method with entry frame`() {
-        val cls = classNode("a/B", methodNode("m", "(I)V") {
-            add(InsnNode(Opcodes.RETURN))
-        })
+        val cls = classNode(
+            "a/B",
+            methodNode("m", "(I)V") {
+                add(InsnNode(Opcodes.RETURN))
+            },
+        )
         val spec = spec {
             classTarget("a/B") {
                 method("m", desc = "(I)V") {
@@ -400,10 +440,13 @@ class InjectionDslTest {
 
     @Test
     fun `cancellableCall on non-void target is rejected`() {
-        val cls = classNode("a/B", methodNode("m", "()I") {
-            add(InsnNode(Opcodes.ICONST_1))
-            add(InsnNode(Opcodes.IRETURN))
-        })
+        val cls = classNode(
+            "a/B",
+            methodNode("m", "()I") {
+                add(InsnNode(Opcodes.ICONST_1))
+                add(InsnNode(Opcodes.IRETURN))
+            },
+        )
         val spec = spec {
             classTarget("a/B") {
                 method("m", desc = "()I") {

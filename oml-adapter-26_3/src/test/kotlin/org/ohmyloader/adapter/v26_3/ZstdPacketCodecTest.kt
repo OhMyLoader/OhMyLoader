@@ -95,7 +95,7 @@ class ZstdPacketCodecTest {
         assertNotEquals(
             wire.getIntLE(wire.readerIndex()),
             OmlNativeZstd.FRAME_MAGIC_LE,
-            "an un-negotiated connection must never emit zstd"
+            "an un-negotiated connection must never emit zstd",
         )
         assertEquals(message, roundTrip(ch, message))
     }

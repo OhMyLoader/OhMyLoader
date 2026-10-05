@@ -1,12 +1,12 @@
 package org.ohmyloader.core.mixin
 
-import org.ohmyloader.api.OmlLog
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.AnnotationNode
 import org.objectweb.asm.tree.ClassNode
 import org.objectweb.asm.tree.MethodNode
+import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.inject.*
 import org.ohmyloader.api.mixin.LocalCapture
 import org.ohmyloader.core.mixin.MixinScanner.parseRedirect
@@ -132,8 +132,11 @@ object MixinScanner {
             }
         }.merge(extraRules)
         if (rules.isEmpty() && problems.isNotEmpty()) {
-            OmlLog.error("Mixin", "the front-end produced no injection rules, but there are ${problems.size} problems:\n" +
-                problems.joinToString("\n") { "  $it" })
+            OmlLog.error(
+                "Mixin",
+                "the front-end produced no injection rules, but there are ${problems.size} problems:\n" +
+                    problems.joinToString("\n") { "  $it" },
+            )
         }
         return MixinTransformer(
             id = "mixin",
@@ -409,7 +412,7 @@ object MixinScanner {
                 policy,
                 slices,
                 rules,
-                problems
+                problems,
             )
             return
         }
@@ -536,14 +539,14 @@ object MixinScanner {
                     where,
                     policy,
                     rules,
-                    problems
+                    problems,
                 )
             }
 
             MODIFY_ARG_DESC -> if (mergedInstance) {
                 parseMergedModify(
                     method, annotation, anchor, targetInternal, methodNames, methodDesc,
-                    modId, mergeInto, handlers, HandlerKind.MODIFY_ARG, rules, problems
+                    modId, mergeInto, handlers, HandlerKind.MODIFY_ARG, rules, problems,
                 )
             } else {
                 parseModifyArg(
@@ -558,14 +561,14 @@ object MixinScanner {
                     where,
                     policy,
                     rules,
-                    problems
+                    problems,
                 )
             }
 
             MODIFY_ARGS_DESC -> if (mergedInstance) {
                 parseMergedModify(
                     method, annotation, anchor, targetInternal, methodNames, methodDesc,
-                    modId, mergeInto, handlers, HandlerKind.MODIFY_ARGS, rules, problems
+                    modId, mergeInto, handlers, HandlerKind.MODIFY_ARGS, rules, problems,
                 )
             } else {
                 parseModifyArgs(
@@ -579,7 +582,7 @@ object MixinScanner {
                     where,
                     policy,
                     rules,
-                    problems
+                    problems,
                 )
             }
         }
@@ -843,19 +846,19 @@ object MixinScanner {
                 !entryAnchor -> OmlLog.warn(
                     "Mixin",
                     "short-circuiting only supports method-entry anchors (HEAD / CTOR_HEAD), degraded to notify: " +
-                        "${methodNames.first()} at=${AnchorResolver.describe(anchor)} (mod=$modId)"
+                        "${methodNames.first()} at=${AnchorResolver.describe(anchor)} (mod=$modId)",
                 )
 
                 tail == Tail.RETURNABLE && methodDesc == null -> OmlLog.warn(
                     "Mixin",
                     "value short-circuiting must fix the target descriptor (otherwise the return type is unknown), degraded to notify: " +
-                        "${methodNames.first()} (mod=$modId)"
+                        "${methodNames.first()} (mod=$modId)",
                 )
 
                 tail == Tail.RETURNABLE && targetIsVoid -> OmlLog.warn(
                     "Mixin",
                     "target ${methodNames.first()}$methodDesc returns void, the handler should use CallbackInfo instead," +
-                        " degraded to notify (mod=$modId)"
+                        " degraded to notify (mod=$modId)",
                 )
 
                 tail == Tail.RETURNABLE -> returnsValue = true
@@ -863,14 +866,14 @@ object MixinScanner {
                 !targetIsVoid -> OmlLog.warn(
                     "Mixin",
                     "target ${methodNames.first()}$methodDesc returns non-void, the short-circuiting handler should use " +
-                        "CallbackInfoReturnable to supply the return value, degraded to notify (mod=$modId)"
+                        "CallbackInfoReturnable to supply the return value, degraded to notify (mod=$modId)",
                 )
             }
         } else if (tail == Tail.RETURNABLE) {
             OmlLog.warn(
                 "Mixin",
                 "the handler takes CallbackInfoReturnable but did not declare cancellable = true:" +
-                    " only registers as notify (setReturnValue will not take effect): ${methodNames.first()} (mod=$modId)"
+                    " only registers as notify (setReturnValue will not take effect): ${methodNames.first()} (mod=$modId)",
             )
         }
 
@@ -1394,7 +1397,7 @@ object MixinScanner {
             OmlLog.info(
                 "Mixin",
                 "$where declares locals = PRINT: should be able to capture at the injection point " +
-                    captures.joinToString(", ") { "${it.type}#${it.ordinal}" } + " (mod=$modId)"
+                    captures.joinToString(", ") { "${it.type}#${it.ordinal}" } + " (mod=$modId)",
             )
         }
         // With NO_CAPTURE, captureTypes is necessarily empty ("capture params but NO_CAPTURE" was already rejected above)

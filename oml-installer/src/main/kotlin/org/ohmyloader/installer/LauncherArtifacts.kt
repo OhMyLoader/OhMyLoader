@@ -228,7 +228,7 @@ fun installOmlNativePackages(
                 if (mavenTree) LayerLayout.classifiedMavenPath(
                     "oml-native",
                     it.coordinateVersion,
-                    "natives-${it.classifier}"
+                    "natives-${it.classifier}",
                 )
                 else it.fileName
             val written = writeAtomic(File(librariesRoot, relative), journal) { it.open() }

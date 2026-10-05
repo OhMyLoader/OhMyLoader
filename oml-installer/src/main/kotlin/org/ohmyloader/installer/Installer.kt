@@ -148,7 +148,8 @@ object Installer {
                     Messages.t(
                         "err.versionNotBundled",
                         version,
-                        VersionCatalog.versions().joinToString(", ") { it.version })
+                        VersionCatalog.versions().joinToString(", ") { it.version },
+                    ),
                 )
             val resolved = resolveSnapshotAlias(supported)
             return InstallContext(
@@ -171,7 +172,8 @@ object Installer {
                 "--target", "--version", "--dir", "--id", "--isolation", "--side",
                 "--layer-jar", "--shell-jar", "--native-jar", "--proxy", "--mods-dir-name",
             )
-            private val BOOLEAN_FLAGS = setOf("--accept-eula", "--accept-shared-mods", "--add-prism-component", "--uninstall")
+            private val BOOLEAN_FLAGS =
+                setOf("--accept-eula", "--accept-shared-mods", "--add-prism-component", "--uninstall")
 
             fun parse(args: Array<String>): Options {
                 val values = HashMap<String, MutableList<String>>()
@@ -304,7 +306,7 @@ private fun resolveTarget(targetId: String?, side: String): InstallationTarget {
     if (targetId != null) {
         return InstallationTarget.byId(targetId)
             ?: throw InstallationException(
-                Messages.t("cli.targetUnknown", targetId, InstallationTarget.ALL.joinToString(" | ") { it.id })
+                Messages.t("cli.targetUnknown", targetId, InstallationTarget.ALL.joinToString(" | ") { it.id }),
             )
     }
     return if (side == "server") DedicatedServerTarget else StandardLauncherTarget

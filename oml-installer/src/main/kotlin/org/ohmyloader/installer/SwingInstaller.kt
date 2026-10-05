@@ -73,7 +73,11 @@ object SwingInstaller {
     /** Which game versions this installer can actually serve, by checking the embedded layer is present. */
     private fun availableVersions(): List<SupportedVersion> =
         VersionCatalog.versions().filter { v ->
-            runCatching { FatJarArtifactSource(v.version, v.adapterArtifact).use { it.layerJars().isNotEmpty() } }.getOrDefault(false)
+            runCatching {
+                FatJarArtifactSource(v.version, v.adapterArtifact).use {
+                    it.layerJars().isNotEmpty()
+                }
+            }.getOrDefault(false)
         }
 
     private fun build() {
@@ -171,15 +175,18 @@ object SwingInstaller {
             add(prismCard, PRISM)
             add(serverCard, SERVER)
         }
-        formPanel.add(cardsPanel, GridBagConstraints().apply {
-            insets = Insets(5, 5, 5, 5)
-            anchor = GridBagConstraints.WEST
-            gridx = 0
-            gridy = 4
-            gridwidth = 2
-            weightx = 1.0
-            fill = GridBagConstraints.HORIZONTAL
-        })
+        formPanel.add(
+            cardsPanel,
+            GridBagConstraints().apply {
+                insets = Insets(5, 5, 5, 5)
+                anchor = GridBagConstraints.WEST
+                gridx = 0
+                gridy = 4
+                gridwidth = 2
+                weightx = 1.0
+                fill = GridBagConstraints.HORIZONTAL
+            },
+        )
         addFormRow(formPanel, gbc, 5, Messages.t("ui.label.proxy"), proxyField)
 
         // ---- helpers ---------------------------------------------------------------------------
@@ -375,10 +382,13 @@ object SwingInstaller {
         val rootPanel = JPanel(BorderLayout(0, 10)).apply {
             border = EmptyBorder(12, 14, 12, 14)
             add(formPanel, BorderLayout.NORTH)
-            add(JScrollPane(log).apply {
-                border = BorderFactory.createTitledBorder(Messages.t("ui.log.title"))
-                preferredSize = Dimension(720, 260)
-            }, BorderLayout.CENTER)
+            add(
+                JScrollPane(log).apply {
+                    border = BorderFactory.createTitledBorder(Messages.t("ui.log.title"))
+                    preferredSize = Dimension(720, 260)
+                },
+                BorderLayout.CENTER,
+            )
 
             val actionPanel = JPanel(BorderLayout(10, 0)).apply {
                 add(progressBar, BorderLayout.CENTER)

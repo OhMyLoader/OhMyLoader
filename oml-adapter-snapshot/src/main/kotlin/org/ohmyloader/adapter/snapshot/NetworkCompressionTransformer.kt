@@ -22,7 +22,7 @@ class NetworkCompressionTransformer : InjectingTransformer(
                 atTail {
                     call(
                         bridge, "onServerHello", "(Lnet/minecraft/server/network/ServerLoginPacketListenerImpl;)V",
-                        args = listOf(DslValue.This)
+                        args = listOf(DslValue.This),
                     )
                 }
             }
@@ -87,7 +87,7 @@ class NetworkCompressionTransformer : InjectingTransformer(
                 atTail {
                     call(
                         bridge, "onCompressionReady", "(Lnet/minecraft/network/Connection;IZ)V",
-                        args = listOf(DslValue.This, DslValue.Arg(0), DslValue.Arg(1))
+                        args = listOf(DslValue.This, DslValue.Arg(0), DslValue.Arg(1)),
                     )
                 }
             }

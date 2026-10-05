@@ -39,7 +39,7 @@ class InjectionAnchorTest {
         val cls = classNode(
             methodNode("m", "()V") {
                 add(first); add(second); add(InsnNode(Opcodes.RETURN))
-            }
+            },
         )
 
         assertTrue(spec.transform(TransformContext(owner, cls)))
@@ -64,7 +64,7 @@ class InjectionAnchorTest {
         val cls = classNode(
             methodNode("m", "()V") {
                 add(read); add(write); add(other); add(InsnNode(Opcodes.RETURN))
-            }
+            },
         )
 
         assertTrue(spec.transform(TransformContext(owner, cls)))
@@ -87,7 +87,7 @@ class InjectionAnchorTest {
         val cls = classNode(
             methodNode("m", "()V") {
                 add(read); add(InsnNode(Opcodes.POP)); add(InsnNode(Opcodes.RETURN))
-            }
+            },
         )
 
         assertTrue(spec.transform(TransformContext(owner, cls)))
@@ -109,7 +109,7 @@ class InjectionAnchorTest {
         val target = TypeInsnNode(Opcodes.NEW, "java/util/ArrayList")
         val other = TypeInsnNode(Opcodes.NEW, "java/lang/Object")
         val cls = classNode(
-            methodNode("m", "()V") { add(target); add(other); add(InsnNode(Opcodes.RETURN)) }
+            methodNode("m", "()V") { add(target); add(other); add(InsnNode(Opcodes.RETURN)) },
         )
 
         assertTrue(spec.transform(TransformContext(owner, cls)))
@@ -149,7 +149,7 @@ class InjectionAnchorTest {
         val cls = classNode(
             methodNode("m", "()V") {
                 add(iconst); add(ldcLong); add(bipush); add(InsnNode(Opcodes.RETURN))
-            }
+            },
         )
 
         assertTrue(spec.transform(TransformContext(owner, cls)))
@@ -169,7 +169,7 @@ class InjectionAnchorTest {
         }
         val nullConst = InsnNode(Opcodes.ACONST_NULL)
         val cls = classNode(
-            methodNode("m", "()V") { add(nullConst); add(InsnNode(Opcodes.RETURN)) }
+            methodNode("m", "()V") { add(nullConst); add(InsnNode(Opcodes.RETURN)) },
         )
 
         assertTrue(spec.transform(TransformContext(owner, cls)))
@@ -188,7 +188,7 @@ class InjectionAnchorTest {
         val wanted = LdcInsnNode("textures/x.png")
         val other = LdcInsnNode("textures/y.png")
         val cls = classNode(
-            methodNode("m", "()V") { add(wanted); add(other); add(InsnNode(Opcodes.RETURN)) }
+            methodNode("m", "()V") { add(wanted); add(other); add(InsnNode(Opcodes.RETURN)) },
         )
 
         assertTrue(spec.transform(TransformContext(owner, cls)))
@@ -212,7 +212,7 @@ class InjectionAnchorTest {
                             Handlers.OWNER,
                             "onConstructed",
                             "(Ljava/lang/Object;)V",
-                            listOf(DslValue.This)
+                            listOf(DslValue.This),
                         )
                     }
                 }
@@ -352,7 +352,7 @@ class InjectionAnchorTest {
                 add(retInside)
                 add(end)
                 add(retAfter)
-            }
+            },
         )
 
         assertTrue(spec.transform(TransformContext(owner, cls)))
@@ -381,7 +381,7 @@ class InjectionAnchorTest {
         val cls = classNode(
             methodNode("m", "()V") {
                 add(retBefore); add(begin); add(retAfter1); add(retAfter2)
-            }
+            },
         )
 
         assertTrue(spec.transform(TransformContext(owner, cls)))
@@ -411,7 +411,7 @@ class InjectionAnchorTest {
         val cls = classNode(
             methodNode("m", "()V") {
                 add(retOutside); add(begin); add(retIn1); add(retIn2)
-            }
+            },
         )
 
         assertTrue(spec.transform(TransformContext(owner, cls)))
@@ -477,7 +477,7 @@ class InjectionAnchorTest {
         val cls = classNode(
             methodNode("m", "()V") {
                 add(begin1); add(retEarly); add(begin2); add(retLate)
-            }
+            },
         )
 
         assertTrue(spec.transform(TransformContext(owner, cls)))

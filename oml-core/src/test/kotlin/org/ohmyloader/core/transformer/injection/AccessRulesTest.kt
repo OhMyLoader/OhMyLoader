@@ -57,7 +57,7 @@ class AccessRulesTest {
         val field = target.clazz.getDeclaredField("VERSION")
         assertFalse(
             Modifier.isFinal(field.modifiers),
-            "should no longer be final: ${Modifier.toString(field.modifiers)}"
+            "should no longer be final: ${Modifier.toString(field.modifiers)}",
         )
 
         // A static final field is unwritable even with setAccessible — so to write it, ACC_FINAL must
@@ -123,7 +123,7 @@ class AccessRulesTest {
         val target = build(null, node = target(finalClass = false))
         assertEquals(
             Opcodes.ACC_PROTECTED or Opcodes.ACC_FINAL,
-            target.node.methods.first { it.name == "locked" }.access and (Opcodes.ACC_FINAL or Opcodes.ACC_PROTECTED)
+            target.node.methods.first { it.name == "locked" }.access and (Opcodes.ACC_FINAL or Opcodes.ACC_PROTECTED),
         )
 
         val failure = assertFails { subclass(target.loader, override = true) }
@@ -145,7 +145,7 @@ class AccessRulesTest {
         val self = node.innerClasses.first { it.name == INNER }
         assertTrue(
             self.access and Opcodes.ACC_PUBLIC != 0,
-            "the InnerClasses self-entry must change too (reflection reads that one)"
+            "the InnerClasses self-entry must change too (reflection reads that one)",
         )
 
         val clazz = define(node)
@@ -194,8 +194,8 @@ class AccessRulesTest {
                 dropFinal.transform(
                     TransformContext(
                         "omlacc/IAccess",
-                        node
-                    )
+                        node,
+                    ),
                 )
             }.message.orEmpty(),
             "interface fields",
@@ -207,8 +207,8 @@ class AccessRulesTest {
                 narrow.transform(
                     TransformContext(
                         "omlacc/IAccess",
-                        node
-                    )
+                        node,
+                    ),
                 )
             }.message.orEmpty(),
             "interface fields",
@@ -228,7 +228,7 @@ class AccessRulesTest {
                 classTarget("omlacc/IAccess") {
                     methodAccess(
                         "run",
-                        "()I"
+                        "()I",
                     ) { makePackagePrivate(); require(1) }
                 }
             },
@@ -242,7 +242,7 @@ class AccessRulesTest {
         assertEquals(
             before,
             node.methods.first { it.name == "run" }.access,
-            "the rejected rule must not change a single byte"
+            "the rejected rule must not change a single byte",
         )
     }
 
@@ -402,11 +402,11 @@ class AccessRulesTest {
 
         assertFalse(
             spec.transform(TransformContext(OWNER, node)),
-            "if the flags did not change, it must not report changed"
+            "if the flags did not change, it must not report changed",
         )
         assertEquals(
             Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC or Opcodes.ACC_FINAL,
-            node.fields.first { it.name == "STABLE" }.access
+            node.fields.first { it.name == "STABLE" }.access,
         )
     }
 
@@ -519,7 +519,7 @@ class AccessRulesTest {
     /** Nested class: the class file's own flags and the InnerClasses self-entry are both initially `private static`. */
     private fun nested(): ClassNode = node(Opcodes.ACC_SUPER, INNER, "java/lang/Object").apply {
         innerClasses.add(
-            InnerClassNode(INNER, "omlacc/AccessTarget", "Inner", Opcodes.ACC_PRIVATE or Opcodes.ACC_STATIC)
+            InnerClassNode(INNER, "omlacc/AccessTarget", "Inner", Opcodes.ACC_PRIVATE or Opcodes.ACC_STATIC),
         )
         ctor("java/lang/Object")
     }

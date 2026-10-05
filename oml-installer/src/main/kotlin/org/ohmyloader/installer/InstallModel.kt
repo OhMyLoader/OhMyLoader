@@ -348,7 +348,7 @@ object VersionCatalog {
     private class FileModel(
         val format: Int = 0,
         val requiredJavaMajor: Int = 0,
-        val versions: List<Entry> = emptyList()
+        val versions: List<Entry> = emptyList(),
     )
 
     @Serializable

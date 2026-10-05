@@ -333,8 +333,8 @@ class MethodRuleBuilder @PublishedApi internal constructor(
                 desc,
                 after = false,
                 ordinal = ordinal,
-                isStatic = opcode.isStaticCall()
-            )
+                isStatic = opcode.isStaticCall(),
+            ),
         ) to
             payloadOf(block)
     }
@@ -355,8 +355,8 @@ class MethodRuleBuilder @PublishedApi internal constructor(
                 desc,
                 after = true,
                 ordinal = ordinal,
-                isStatic = opcode.isStaticCall()
-            )
+                isStatic = opcode.isStaticCall(),
+            ),
         ) to
             payloadOf(block)
     }

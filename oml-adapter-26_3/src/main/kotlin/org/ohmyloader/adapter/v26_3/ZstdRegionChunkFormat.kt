@@ -1,7 +1,7 @@
 package org.ohmyloader.adapter.v26_3
 
-import org.ohmyloader.api.OmlLog
 import net.minecraft.world.level.chunk.storage.RegionFileVersion
+import org.ohmyloader.api.OmlLog
 import org.ohmyloader.core.compression.OmlNativeZstd
 import org.ohmyloader.core.compression.OmlZstdInputStream
 import org.ohmyloader.core.compression.OmlZstdOutputStream
@@ -107,7 +107,7 @@ object ZstdRegionChunkFormat {
                 "OMLZstd",
                 "RegionFileVersion: registered Zstd (id $VERSION_ID, level $LEVEL, " +
                     "oml-native) — new region-file chunks will be written as Zstd; " +
-                    "vanilla ids 1/2/3/4 keep reading unchanged"
+                    "vanilla ids 1/2/3/4 keep reading unchanged",
             )
         } catch (t: Throwable) {
             registered = null
@@ -115,7 +115,7 @@ object ZstdRegionChunkFormat {
                 "OMLZstd",
                 "Zstd region-file registration failed — falling back to vanilla " +
                     "deflate (old worlds are unaffected, new chunks will not be Zstd)",
-                t
+                t,
             )
         }
     }

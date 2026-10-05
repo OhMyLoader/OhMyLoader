@@ -57,7 +57,7 @@ class ServerHookTransformer : InjectingTransformer(
                     name = "freeze",
                     desc = "()V",
                     handlerOwner = "org/ohmyloader/adapter/v26_3/EventBridge",
-                    handlerMethod = "onRegistryFreeze"
+                    handlerMethod = "onRegistryFreeze",
                 )
             }
         }

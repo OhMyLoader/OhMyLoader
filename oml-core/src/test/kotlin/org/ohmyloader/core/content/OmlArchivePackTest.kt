@@ -1,12 +1,6 @@
 package org.ohmyloader.core.content
 
-import org.ohmyloader.api.content.ContentRegistry
-import org.ohmyloader.api.content.ContentRegistryFactory
-import org.ohmyloader.api.content.Furnace
-import org.ohmyloader.api.content.OMLBlock
-import org.ohmyloader.api.content.OMLBlockDeclaration
-import org.ohmyloader.api.content.OMLItem
-import org.ohmyloader.api.content.OMLItemDeclaration
+import org.ohmyloader.api.content.*
 import org.ohmyloader.content.AbstractContentRegistry
 import org.ohmyloader.core.OMLCore
 import java.io.File
@@ -40,7 +34,15 @@ class OmlArchivePackTest {
             return OMLItem(id) { "item-platform" }
         }
 
-        override fun declareSmelting(input: String, result: String, furnace: Furnace, experience: Double, cookingTime: Int) {}
+        override fun declareSmelting(
+            input: String,
+            result: String,
+            furnace: Furnace,
+            experience: Double,
+            cookingTime: Int,
+        ) {
+        }
+
         override fun declareBlockDrop(block: String, drop: String, dropCountMin: Int, dropCountMax: Int) {}
         val shaped = mutableListOf<Pair<String, List<String>>>()
 
@@ -57,7 +59,12 @@ class OmlArchivePackTest {
     }
 
     /** Builds `<dir>/<name>.oml` and returns the archive file. */
-    private fun writeArchive(dir: File, name: String, contentToml: String, vararg extra: Pair<String, ByteArray>): File {
+    private fun writeArchive(
+        dir: File,
+        name: String,
+        contentToml: String,
+        vararg extra: Pair<String, ByteArray>,
+    ): File {
         val archive = File(dir, "$name.oml")
         ZipOutputStream(archive.outputStream()).use { zip ->
             zip.putNextEntry(ZipEntry("content.toml"))

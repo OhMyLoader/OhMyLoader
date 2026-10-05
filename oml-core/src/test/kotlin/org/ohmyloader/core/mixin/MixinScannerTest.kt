@@ -92,7 +92,7 @@ class MixinScannerTest {
         assertEquals(InjectionPoint.Constant("hi", null, false), parse("CONSTANT", args = listOf("stringValue=hi")))
         assertEquals(
             InjectionPoint.Constant(null, 1, false),
-            parse("CONSTANT", args = listOf("nullValue=true", "ordinal=1"))
+            parse("CONSTANT", args = listOf("nullValue=true", "ordinal=1")),
         )
     }
 
@@ -111,9 +111,10 @@ class MixinScannerTest {
                 handler(
                     "h",
                     "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V",
-                    at = "JUMP"
-                )
-            ), "m"
+                    at = "JUMP",
+                ),
+            ),
+            "m",
         )
         assertTrue(parsed.rules.isEmpty())
         assertTrue(parsed.problems.single().contains("is not a recognized injection point"), parsed.problems.toString())
@@ -151,7 +152,7 @@ class MixinScannerTest {
     fun `hit policy fields are carried over`() {
         val parsed = MixinScanner.parseMixinClass(
             injectClass(
-                handler("h", "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V", require = 1, expect = 2, allow = 3)
+                handler("h", "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V", require = 1, expect = 2, allow = 3),
             ),
             "m",
         )
@@ -188,7 +189,7 @@ class MixinScannerTest {
                 handler(
                     "h", "(Ljava/lang/String;ILjava/lang/String;Lorg/ohmyloader/api/mixin/CallbackInfo;)V",
                     locals = "CAPTURE_FAILHARD",
-                )
+                ),
             ),
             "m",
         )
@@ -212,7 +213,7 @@ class MixinScannerTest {
                 handler(
                     "h", "(ZLorg/ohmyloader/api/mixin/CallbackInfo;)V",
                     locals = "CAPTURE_FAILSOFT",
-                )
+                ),
             ),
             "m",
         )
@@ -252,7 +253,7 @@ class MixinScannerTest {
     fun `cancellable on a non entry anchor degrades to notify`() {
         val parsed = MixinScanner.parseMixinClass(
             injectClass(
-                handler("h", "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V", cancellable = true, at = "RETURN")
+                handler("h", "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V", cancellable = true, at = "RETURN"),
             ),
             "m",
         )
@@ -264,7 +265,7 @@ class MixinScannerTest {
     fun `cancellable entry anchor uses the cancellable payload`() {
         val parsed = MixinScanner.parseMixinClass(
             injectClass(
-                handler("h", "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V", cancellable = true)
+                handler("h", "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V", cancellable = true),
             ),
             "m",
         )
@@ -454,7 +455,7 @@ class MixinScannerTest {
 
         assertTrue(
             parsed.problems.single().contains("does not support locating by variable name"),
-            parsed.problems.toString()
+            parsed.problems.toString(),
         )
     }
 
@@ -526,7 +527,7 @@ class MixinScannerTest {
                 valueHandler(
                     "onProxy", "(Ljava/lang/Object;)Ljava/lang/Object;", modifyExpressionValue, "runTick",
                     atNode("INVOKE", target = "Lnet/minecraft/client/Minecraft;getProxy()Ljava/net/Proxy;"),
-                )
+                ),
             )
         }
 
@@ -560,7 +561,7 @@ class MixinScannerTest {
     fun `modify expression value rejects an anchor that produces no value`() {
         val node = mergeMixin().apply {
             methods.add(
-                valueHandler("onTick", "(I)I", modifyExpressionValue, "runTick", atNode("HEAD"))
+                valueHandler("onTick", "(I)I", modifyExpressionValue, "runTick", atNode("HEAD")),
             )
         }
 
@@ -574,7 +575,7 @@ class MixinScannerTest {
         // Non-merged mixin: the handler stays in the mixin and is called through the bridge — the payload
         // is the static form with "the value already on the stack"
         val node = mixinClass(
-            valueHandler("onReturn", "(I)I", modifyReturnValue, "getFramerateLimit")
+            valueHandler("onReturn", "(I)I", modifyReturnValue, "getFramerateLimit"),
         )
 
         val parsed = MixinScanner.parseMixinClass(node, "m")
@@ -589,7 +590,7 @@ class MixinScannerTest {
             valueHandler(
                 "onProxy", "(Ljava/lang/Object;)Ljava/lang/Object;", modifyExpressionValue, "runTick",
                 atNode("INVOKE", target = "Lnet/minecraft/client/Minecraft;getProxy()Ljava/net/Proxy;"),
-            )
+            ),
         )
 
         val parsed = MixinScanner.parseMixinClass(node, "m")
@@ -674,7 +675,7 @@ class MixinScannerTest {
         // are pushed on the stack
         val node = mergeMixin().apply {
             methods.add(
-                handler("onTick", "(ILorg/ohmyloader/api/mixin/CallbackInfo;)V", locals = "CAPTURE_FAILHARD")
+                handler("onTick", "(ILorg/ohmyloader/api/mixin/CallbackInfo;)V", locals = "CAPTURE_FAILHARD"),
             )
         }
 
@@ -703,9 +704,9 @@ class MixinScannerTest {
                                 "method", "runTick", "at",
                                 atNode("INVOKE", target = "Lnet/minecraft/client/Minecraft;runTick()V"),
                             )
-                        }
+                        },
                     )
-                }
+                },
             )
         }
 
@@ -743,7 +744,7 @@ class MixinScannerTest {
                             ),
                         )
                     },
-                )
+                ),
             )
         }
 
@@ -760,7 +761,7 @@ class MixinScannerTest {
     fun `slice becomes a search window on the anchor`() {
         val node = injectClass(handler("h", "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V", at = "RETURN"))
         (node.methods[0].visibleAnnotations[0].values as MutableList<Any?>).addAll(
-            listOf("slice", sliceNode("HEAD", "INVOKE", "Lnet/minecraft/Foo;end()V"))
+            listOf("slice", sliceNode("HEAD", "INVOKE", "Lnet/minecraft/Foo;end()V")),
         )
         val parsed = MixinScanner.parseMixinClass(node, "m")
 
@@ -994,7 +995,7 @@ class MixinScannerTest {
         visibleAnnotations = listOf(
             AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/mixin/Mixin;").apply {
                 values = listOf("target", "net.minecraft.client.Minecraft")
-            }
+            },
         )
         this.methods.addAll(methods)
     }
@@ -1034,7 +1035,7 @@ class MixinScannerTest {
                 AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/mixin/Redirect;").apply {
                     values = mutableListOf<Any?>("method", "runTick", "at", atNode(at, target = target))
                 },
-            )
+            ),
         )
 
     private fun modifyClass(
@@ -1095,12 +1096,12 @@ class MixinScannerTest {
             maxStack = 1
             maxLocals = 1
             visibleAnnotations = listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/mixin/Overwrite;"))
-        }
+        },
     ).apply {
         fields.add(
             FieldNode(Opcodes.ACC_PRIVATE, "player", "Ljava/lang/Object;", null, null).apply {
                 visibleAnnotations = listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/mixin/Shadow;"))
-            }
+            },
         )
     }
 

@@ -1,9 +1,9 @@
 package org.ohmyloader.core.transformer.injection
 
-import org.ohmyloader.api.OmlLog
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.*
+import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.inject.InjectionPoint
 import org.ohmyloader.core.transformer.injection.AnchorResolver.NOT_CONSTANT
 import org.ohmyloader.core.transformer.injection.AnchorResolver.applyOrdinal
@@ -97,7 +97,7 @@ internal object AnchorResolver {
             point.localOrdinal,
             point.argsOnly,
             store = true,
-            frames = frames
+            frames = frames,
         )
 
         is InjectionPoint.Load -> varAccesses(
@@ -107,7 +107,7 @@ internal object AnchorResolver {
             point.localOrdinal,
             point.argsOnly,
             store = false,
-            frames = frames
+            frames = frames,
         )
 
         // Nested within: the inner window is trimmed first, then the outer trims again (intersection, equal to a narrower range)
@@ -147,7 +147,7 @@ internal object AnchorResolver {
                 OmlLog.error(
                     "Injection",
                     "within start anchor not found: ${describe(from)} in ${method.name}${method.desc}" +
-                        " — not injecting (ignoring the bound would silently widen the range to the whole method)"
+                        " — not injecting (ignoring the bound would silently widen the range to the whole method)",
                 )
                 return emptyList()
             }
@@ -162,7 +162,7 @@ internal object AnchorResolver {
                 OmlLog.error(
                     "Injection",
                     "within end anchor not found: ${describe(to)} in ${method.name}${method.desc}" +
-                        " — not injecting (ignoring the bound would silently widen the range to the whole method)"
+                        " — not injecting (ignoring the bound would silently widen the range to the whole method)",
                 )
                 return emptyList()
             }
@@ -243,7 +243,7 @@ internal object AnchorResolver {
         OmlLog.error(
             "Injection",
             "no delegating call (super()/this()) found for constructor ${owner}.${method.name}${method.desc}, " +
-                "CTOR_HEAD anchor cannot be resolved — not injecting (no fallback to the method head: that would use this before it is initialized)"
+                "CTOR_HEAD anchor cannot be resolved — not injecting (no fallback to the method head: that would use this before it is initialized)",
         )
         return null
     }
@@ -388,7 +388,7 @@ internal object AnchorResolver {
                 OmlLog.error(
                     "Injection",
                     "local-variable read/write anchor: only " +
-                        "${slots.size} slots in ${method.name}${method.desc} match that type ($slots), cannot take occurrence ${localOrdinal + 1} — not injecting"
+                        "${slots.size} slots in ${method.name}${method.desc} match that type ($slots), cannot take occurrence ${localOrdinal + 1} — not injecting",
                 )
                 return emptyList()
             }
@@ -479,7 +479,7 @@ internal object AnchorResolver {
             point.type,
             point.localOrdinal,
             point.ordinal,
-            point.argsOnly
+            point.argsOnly,
         )
 
         is InjectionPoint.Load -> varAnchor(
@@ -488,7 +488,7 @@ internal object AnchorResolver {
             point.type,
             point.localOrdinal,
             point.ordinal,
-            point.argsOnly
+            point.argsOnly,
         )
 
         is InjectionPoint.Sliced -> describe(point.inner) + " within(" +

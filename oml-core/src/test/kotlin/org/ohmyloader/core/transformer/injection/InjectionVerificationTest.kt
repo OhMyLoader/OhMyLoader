@@ -168,10 +168,13 @@ class InjectionVerificationTest {
 
     @Test
     fun `transformReturn extras type mismatch fails hard`() {
-        val cls = classNode("a/B", methodNode("m", "(I)J") {
-            add(InsnNode(Opcodes.LCONST_0))
-            add(InsnNode(Opcodes.LRETURN))
-        })
+        val cls = classNode(
+            "a/B",
+            methodNode("m", "(I)J") {
+                add(InsnNode(Opcodes.LCONST_0))
+                add(InsnNode(Opcodes.LRETURN))
+            },
+        )
         val spec = spec {
             classTarget("a/B") {
                 method("m", desc = "(I)J") {

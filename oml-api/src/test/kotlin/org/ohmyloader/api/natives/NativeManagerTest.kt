@@ -180,7 +180,7 @@ class NativeManagerTest {
         } finally {
             if (previous == null) System.clearProperty("oml.natives.dir") else System.setProperty(
                 "oml.natives.dir",
-                previous
+                previous,
             )
             NativeManager.clearCache()
         }

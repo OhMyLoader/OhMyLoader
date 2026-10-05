@@ -1,8 +1,8 @@
 package org.ohmyloader.core.transformer.injection
 
-import org.ohmyloader.api.OmlLog
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.*
+import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.inject.*
 import org.ohmyloader.core.transformer.TransformContext
 
@@ -109,7 +109,7 @@ class InjectionSpec internal constructor(
                     context.node,
                     rule,
                     named,
-                    injectable
+                    injectable,
                 ) else emptyList(),
             )
             if (hits > 0) changed = true
@@ -142,23 +142,26 @@ class InjectionSpec internal constructor(
         when {
             require != null && hits < require ->
                 throw InjectionError(
-                    "Rule hit count too low: $where declares require=$require (minimum), but got $hits$block"
+                    "Rule hit count too low: $where declares require=$require (minimum), but got $hits$block",
                 )
 
             allow != null && hits > allow ->
                 throw InjectionError(
                     "Rule hit count exceeded: $where declares allow=$allow (maximum), but got $hits" +
-                        " (the selector may be written too broadly, hitting an unexpected place)$block"
+                        " (the selector may be written too broadly, hitting an unexpected place)$block",
                 )
 
             expect != null && hits != expect ->
-                OmlLog.error("Injection", "hit count does not match expect: $where expects $expect, but got $hits$block")
+                OmlLog.error(
+                    "Injection",
+                    "hit count does not match expect: $where expects $expect, but got $hits$block",
+                )
 
             require == null && allow == null && expect == null && hits == 0 && !optional ->
                 OmlLog.error(
                     "Injection",
                     "rule hit nothing: $where" +
-                        " (if intentional, mark optional() to silence; if it must hit, mark require(1) to hard-fail)$block"
+                        " (if intentional, mark optional() to silence; if it must hit, mark require(1) to hard-fail)$block",
                 )
         }
     }
@@ -197,14 +200,14 @@ class InjectionSpec internal constructor(
             is FrameRepair.Result.Fixed -> OmlLog.error(
                 "Injection",
                 "the stack frame at the injection point did not declare locals ${repair.slots.joinToString()}," +
-                    " restored from dataflow: ${method.name}${method.desc}"
+                    " restored from dataflow: ${method.name}${method.desc}",
             )
 
             is FrameRepair.Result.Failed -> {
                 OmlLog.error(
                     "Injection",
                     "injection skipped: the stack frame at ${method.name}${method.desc} cannot carry this code — " +
-                        repair.reason
+                        repair.reason,
                 )
                 return false
             }
@@ -231,7 +234,7 @@ class InjectionSpec internal constructor(
                 OmlLog.error(
                     "Injection",
                     "anchor not found: ${AnchorResolver.describe(point)} in " +
-                        "${owner.substringAfterLast('/')}.${method.name}${method.desc}"
+                        "${owner.substringAfterLast('/')}.${method.name}${method.desc}",
                 )
                 continue
             }
@@ -244,14 +247,14 @@ class InjectionSpec internal constructor(
                             OmlLog.error(
                                 "Injection",
                                 "CheckCall only supports method-entry anchors (HEAD / CTOR_HEAD), " +
-                                    "currently ${AnchorResolver.describe(point)}: ${method.name}"
+                                    "currently ${AnchorResolver.describe(point)}: ${method.name}",
                             )
                             continue
                         }
                         if (org.objectweb.asm.Type.getReturnType(method.desc) != org.objectweb.asm.Type.VOID_TYPE) {
                             OmlLog.error(
                                 "Injection",
-                                "CheckCall only supports void targets: ${method.name}${method.desc}"
+                                "CheckCall only supports void targets: ${method.name}${method.desc}",
                             )
                             continue
                         }
@@ -265,7 +268,7 @@ class InjectionSpec internal constructor(
                             OmlLog.error(
                                 "Injection",
                                 "CancellableReturn only supports method-entry anchors (HEAD / CTOR_HEAD), " +
-                                    "currently ${AnchorResolver.describe(point)}: ${method.name}"
+                                    "currently ${AnchorResolver.describe(point)}: ${method.name}",
                             )
                             continue
                         }
@@ -273,7 +276,7 @@ class InjectionSpec internal constructor(
                             OmlLog.error(
                                 "Injection",
                                 "CancellableReturn requires a non-void target (for a void target use CheckCall): " +
-                                    "${method.name}${method.desc}"
+                                    "${method.name}${method.desc}",
                             )
                             continue
                         }
@@ -287,7 +290,7 @@ class InjectionSpec internal constructor(
                             OmlLog.error(
                                 "Injection",
                                 "the anchor of ModifyArg must be a method call, currently " +
-                                    "${AnchorResolver.describe(point)}: ${method.name}"
+                                    "${AnchorResolver.describe(point)}: ${method.name}",
                             )
                             continue
                         }
@@ -301,7 +304,7 @@ class InjectionSpec internal constructor(
                             OmlLog.error(
                                 "Injection",
                                 "the anchor of ModifyArgs must be a method call, currently " +
-                                    "${AnchorResolver.describe(point)}: ${method.name}"
+                                    "${AnchorResolver.describe(point)}: ${method.name}",
                             )
                             continue
                         }
@@ -317,7 +320,7 @@ class InjectionSpec internal constructor(
                             OmlLog.error(
                                 "Injection",
                                 "the anchor of ModifyVariable must be a local-variable write/read instruction" +
-                                    " (STORE / LOAD), currently ${AnchorResolver.describe(point)}: ${method.name}"
+                                    " (STORE / LOAD), currently ${AnchorResolver.describe(point)}: ${method.name}",
                             )
                             continue
                         }
@@ -347,7 +350,7 @@ class InjectionSpec internal constructor(
                                     OmlLog.error(
                                         "Injection",
                                         "the anchor of HandlerCall(MODIFY_ARG) must be a method call, currently " +
-                                            "${AnchorResolver.describe(point)}: ${method.name}"
+                                            "${AnchorResolver.describe(point)}: ${method.name}",
                                     )
                                     continue
                                 }
@@ -362,7 +365,7 @@ class InjectionSpec internal constructor(
                                     OmlLog.error(
                                         "Injection",
                                         "the anchor of HandlerCall(MODIFY_ARGS) must be a method call, currently " +
-                                            "${AnchorResolver.describe(point)}: ${method.name}"
+                                            "${AnchorResolver.describe(point)}: ${method.name}",
                                     )
                                     continue
                                 }
@@ -376,10 +379,10 @@ class InjectionSpec internal constructor(
                                 // The constant is already on the stack: its type is given by that loading
                                 // instruction, verified against the handler's declared type
                                 val value = ProducedValue.requireReadable(
-                                    "@ModifyConstant", point, anchor, method
+                                    "@ModifyConstant", point, anchor, method,
                                 )
                                 val list = PayloadEmitter.emitInPlaceHandler(
-                                    payload, "@ModifyConstant", value, method, owner, locals
+                                    payload, "@ModifyConstant", value, method, owner, locals,
                                 ) ?: continue
                                 if (!insertBlock(method, anchor, list, point.after, frames)) continue
                                 inserted++
@@ -394,18 +397,18 @@ class InjectionSpec internal constructor(
                                     throw InjectionError(
                                         "[injection] the anchor of @ModifyReturnValue must be RETURN (every return)" +
                                             " or TAIL (the last return): currently " +
-                                            AnchorResolver.describe(point)
+                                            AnchorResolver.describe(point),
                                     )
                                 }
                                 val value = org.objectweb.asm.Type.getReturnType(method.desc)
                                 if (value == org.objectweb.asm.Type.VOID_TYPE) {
                                     throw InjectionError(
                                         "[injection] the target method of @ModifyReturnValue returns void, no return value to modify: " +
-                                            "${method.name}${method.desc} (for entry types use @Inject)"
+                                            "${method.name}${method.desc} (for entry types use @Inject)",
                                     )
                                 }
                                 val list = PayloadEmitter.emitInPlaceHandler(
-                                    payload, "@ModifyReturnValue", value, method, owner, locals
+                                    payload, "@ModifyReturnValue", value, method, owner, locals,
                                 ) ?: continue
                                 if (!insertBlock(method, anchor, list, point.after, frames)) continue
                                 inserted++
@@ -414,10 +417,10 @@ class InjectionSpec internal constructor(
                             HandlerKind.MODIFY_EXPR_VALUE -> {
                                 // The expression value: its type and whether it is on the stack are both determined by that instruction
                                 val value = ProducedValue.requireReadable(
-                                    "@ModifyExpressionValue", point, anchor, method
+                                    "@ModifyExpressionValue", point, anchor, method,
                                 )
                                 val list = PayloadEmitter.emitInPlaceHandler(
-                                    payload, "@ModifyExpressionValue", value, method, owner, locals
+                                    payload, "@ModifyExpressionValue", value, method, owner, locals,
                                 ) ?: continue
                                 if (!insertBlock(method, anchor, list, point.after, frames)) continue
                                 inserted++
@@ -429,7 +432,7 @@ class InjectionSpec internal constructor(
                                         "Injection",
                                         "the anchor of HandlerCall(MODIFY_VAR) must be a local-variable" +
                                             " write/read instruction (STORE / LOAD), currently " +
-                                            "${AnchorResolver.describe(point)}: ${method.name}"
+                                            "${AnchorResolver.describe(point)}: ${method.name}",
                                     )
                                     continue
                                 }
@@ -453,7 +456,7 @@ class InjectionSpec internal constructor(
                                     OmlLog.error(
                                         "Injection",
                                         "the anchor of HandlerCall(REDIRECT) must be a method call, currently " +
-                                            "${AnchorResolver.describe(point)}: ${method.name}"
+                                            "${AnchorResolver.describe(point)}: ${method.name}",
                                     )
                                     continue
                                 }
@@ -461,7 +464,7 @@ class InjectionSpec internal constructor(
                                     throw InjectionError(
                                         "[injection] HandlerCall(REDIRECT) is only for **instance calls**: " +
                                             "${anchor.owner}.${anchor.name} is a static call, the handler is an instance method / " +
-                                            "has no receiver to receive it (use a static handler instead)"
+                                            "has no receiver to receive it (use a static handler instead)",
                                     )
                                 }
                                 // Parameter list = (the replaced call's receiver, the original args…[, captures…]).
@@ -480,7 +483,7 @@ class InjectionSpec internal constructor(
                                         "[injection] the handler parameter list of HandlerCall(REDIRECT) must start with " +
                                             "\"receiver + the replaced call's arguments\": expected " +
                                             "${expected.joinToString(", ") { it.descriptor }} " +
-                                            "actual ${payload.desc} (${method.name}${method.desc})"
+                                            "actual ${payload.desc} (${method.name}${method.desc})",
                                     )
                                 }
                                 val list = PayloadEmitter.emitRedirect(
@@ -521,7 +524,7 @@ class InjectionSpec internal constructor(
                             OmlLog.error(
                                 "Injection",
                                 "the anchor of Redirect must be a method call, currently " +
-                                    "${AnchorResolver.describe(point)}: ${method.name}"
+                                    "${AnchorResolver.describe(point)}: ${method.name}",
                             )
                             continue
                         }
@@ -539,7 +542,7 @@ class InjectionSpec internal constructor(
                             "(${org.objectweb.asm.Type.getObjectType(anchor.owner).descriptor}${anchor.desc.substring(1)}"
                         }
                         val replacement = MethodInsnNode(
-                            Opcodes.INVOKESTATIC, payload.handlerOwner, payload.handlerMethod, desc, false
+                            Opcodes.INVOKESTATIC, payload.handlerOwner, payload.handlerMethod, desc, false,
                         )
                         val block = InsnList().apply { add(replacement) }
                         if (!insertBlock(method, anchor, block, after = true, frames)) continue

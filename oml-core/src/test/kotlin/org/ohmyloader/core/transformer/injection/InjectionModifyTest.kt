@@ -133,7 +133,7 @@ class InjectionModifyTest {
                     beforeCall(
                         owner = "java/lang/StringBuilder",
                         name = "append",
-                        desc = "(I)Ljava/lang/StringBuilder;"
+                        desc = "(I)Ljava/lang/StringBuilder;",
                     ) {
                         modifyArg(ModifyHandlers.OWNER, "times100", "(I)I", index = 0)
                     }
@@ -186,7 +186,7 @@ class InjectionModifyTest {
         assertEquals(
             listOf<Any?>(7, "orig", 100L),
             CallSink.calls.single(),
-            "the boxing round-trip must not change the original value"
+            "the boxing round-trip must not change the original value",
         )
     }
 
@@ -198,7 +198,7 @@ class InjectionModifyTest {
                     beforeCall(
                         owner = "java/lang/StringBuilder",
                         name = "append",
-                        desc = "(I)Ljava/lang/StringBuilder;"
+                        desc = "(I)Ljava/lang/StringBuilder;",
                     ) {
                         modifyArgs(ModifyHandlers.OWNER, "setFirst", "(Lorg/ohmyloader/api/mixin/Args;)V", emptyList())
                     }
@@ -231,7 +231,7 @@ class InjectionModifyTest {
                 methodNode("seven", "()I") {
                     add(IntInsnNode(Opcodes.BIPUSH, 7))
                     add(InsnNode(Opcodes.IRETURN))
-                }
+                },
             ),
         )
 
@@ -255,7 +255,7 @@ class InjectionModifyTest {
                 methodNode("big", "()J") {
                     add(LdcInsnNode(5L))
                     add(InsnNode(Opcodes.LRETURN))
-                }
+                },
             ),
         )
 
@@ -279,7 +279,7 @@ class InjectionModifyTest {
                 methodNode("text", "()Ljava/lang/String;") {
                     add(LdcInsnNode("hello"))
                     add(InsnNode(Opcodes.ARETURN))
-                }
+                },
             ),
         )
 
@@ -363,7 +363,7 @@ class InjectionModifyTest {
                             ModifyHandlers.OWNER,
                             "patchString",
                             "(Ljava/lang/String;)Ljava/lang/String;",
-                            index = 0
+                            index = 0,
                         )
                     }
                 }
@@ -394,7 +394,7 @@ class InjectionModifyTest {
                 add(InsnNode(Opcodes.ICONST_2))
                 add(MethodInsnNode(Opcodes.INVOKESTATIC, CallSink.OWNER, "pair", "(II)V", false))
                 add(InsnNode(Opcodes.RETURN))
-            }
+            },
         )
 
         val error = assertFailsWith<InjectionError> { spec.transform(TransformContext(owner, node)) }
@@ -431,7 +431,7 @@ class InjectionModifyTest {
             add(MethodInsnNode(Opcodes.INVOKESTATIC, CallSink.OWNER, "record", "(ILjava/lang/String;J)V", false))
             add(InsnNode(Opcodes.ICONST_0))
             add(InsnNode(Opcodes.IRETURN))
-        }
+        },
     )
 
     /** `static String sb() { StringBuilder b = new StringBuilder(); b.append(5); return b.toString(); }` */
@@ -447,7 +447,7 @@ class InjectionModifyTest {
                 MethodInsnNode(
                     Opcodes.INVOKEVIRTUAL, "java/lang/StringBuilder", "append",
                     "(I)Ljava/lang/StringBuilder;", false,
-                )
+                ),
             )
             add(InsnNode(Opcodes.POP))
             add(VarInsnNode(Opcodes.ALOAD, 0))
@@ -455,10 +455,10 @@ class InjectionModifyTest {
                 MethodInsnNode(
                     Opcodes.INVOKEVIRTUAL, "java/lang/StringBuilder", "toString",
                     "()Ljava/lang/String;", false,
-                )
+                ),
             )
             add(InsnNode(Opcodes.ARETURN))
-        }
+        },
     )
 
     private fun methodNode(name: String, desc: String, build: InsnList.() -> Unit): MethodNode =

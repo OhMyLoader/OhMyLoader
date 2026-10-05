@@ -1,13 +1,13 @@
 package org.ohmyloader.adapter.snapshot
 
+import net.minecraft.world.level.storage.ValueInput
+import net.minecraft.world.level.storage.ValueOutput
+import org.ohmyloader.api.content.OMLBlockData
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
-import java.util.Base64
-import net.minecraft.world.level.storage.ValueInput
-import net.minecraft.world.level.storage.ValueOutput
-import org.ohmyloader.api.content.OMLBlockData
+import java.util.*
 
 /**
  * The [OMLBlockData] implementation over a plain map. 26.4-snapshot-2's `ValueInput` cannot enumerate its

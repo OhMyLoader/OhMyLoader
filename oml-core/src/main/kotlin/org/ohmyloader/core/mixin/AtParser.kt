@@ -107,7 +107,7 @@ internal object AtParser {
     /** Method target: `Lowner;name(args)ret` / `name(args)ret` / `name` / empty (all wildcard). */
     fun methodTarget(target: String): MethodTarget {
         if (target.isBlank()) return MethodTarget(null, null, null)
-        val (owner, member) = splitOwner(target)
+        val [owner, member] = splitOwner(target)
         if (member.isBlank()) return MethodTarget(owner, null, null)
         val paren = member.indexOf('(')
         if (paren < 0) return MethodTarget(owner, member, null)
@@ -119,7 +119,7 @@ internal object AtParser {
     /** Field target: `Lowner;name:desc` / `name:desc` / `name` / empty. */
     fun fieldTarget(target: String): FieldTarget {
         if (target.isBlank()) return FieldTarget(null, null, null)
-        val (owner, member) = splitOwner(target)
+        val [owner, member] = splitOwner(target)
         if (member.isBlank()) return FieldTarget(owner, null, null)
         val colon = member.indexOf(':')
         if (colon < 0) return FieldTarget(owner, member, null)
@@ -138,7 +138,7 @@ internal object AtParser {
         if (target.startsWith("(")) {
             return TypeTarget(null, target.takeIf { isValidMethodDesc(it) })
         }
-        val (owner, member) = splitOwner(target)
+        val [owner, member] = splitOwner(target)
         return TypeTarget(owner, member.takeIf { it.startsWith("(") && isValidMethodDesc(it) })
     }
 

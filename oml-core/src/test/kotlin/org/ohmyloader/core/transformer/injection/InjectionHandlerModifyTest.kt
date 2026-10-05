@@ -46,7 +46,7 @@ class InjectionHandlerModifyTest {
         assertEquals(
             4,
             (result as Number).toInt(),
-            "the replaced call should return the value given by the handler (tag.length())"
+            "the replaced call should return the value given by the handler (tag.length())",
         )
     }
 
@@ -169,7 +169,7 @@ class InjectionHandlerModifyTest {
         assertEquals(
             OWNER,
             call.owner,
-            "the handler has been merged into the target class, so the injection point should call the target class itself"
+            "the handler has been merged into the target class, so the injection point should call the target class itself",
         )
         // `ALOAD 0` is the **receiver** of this INVOKEVIRTUAL (the handler's `this`), **not part of the
         // parameter table** ⇒ the table holds only the value being changed
@@ -273,7 +273,7 @@ class InjectionHandlerModifyTest {
         assertEquals(
             2,
             PayloadEmitter.allocLocalSlot(method),
-            "a slot handed out must be claimed immediately, otherwise the next injection would get the same one"
+            "a slot handed out must be claimed immediately, otherwise the next injection would get the same one",
         )
         assertEquals(3, PayloadEmitter.allocLocalSlot(method, size = 2), "a long/double occupies two slots")
     }
@@ -475,7 +475,7 @@ class InjectionHandlerModifyTest {
                     instructions.add(InsnNode(Opcodes.RETURN))
                     maxStack = 1
                     maxLocals = 1
-                }
+                },
             )
             // int value() — constant 1; the redirect cases use "return not 1" to prove the call was really replaced
             methods.add(
@@ -484,7 +484,7 @@ class InjectionHandlerModifyTest {
                     instructions.add(InsnNode(Opcodes.IRETURN))
                     maxStack = 1
                     maxLocals = 1
-                }
+                },
             )
             // static int staticValue() — only used as the anchor for "an instance handler cannot target a static call"
             methods.add(
@@ -493,7 +493,7 @@ class InjectionHandlerModifyTest {
                     instructions.add(InsnNode(Opcodes.IRETURN))
                     maxStack = 1
                     maxLocals = 0
-                }
+                },
             )
             // void sink(int) / three(int,int,int) / pair(int,int) — record the received arguments
             for ([n, d] in listOf("sink" to "(I)V", "three" to "(III)V", "pair" to "(II)V")) {
@@ -509,12 +509,12 @@ class InjectionHandlerModifyTest {
                             MethodInsnNode(
                                 Opcodes.INVOKESTATIC, RECORDER, n,
                                 "(${args.joinToString("") { it.descriptor }})V", false,
-                            )
+                            ),
                         )
                         instructions.add(InsnNode(Opcodes.RETURN))
                         maxStack = args.size
                         maxLocals = slot
-                    }
+                    },
                 )
             }
         }
@@ -617,7 +617,7 @@ class InjectionHandlerModifyTest {
                     instructions.add(InsnNode(Opcodes.RETURN))
                     maxStack = 3
                     maxLocals = 1
-                }
+                },
             )
             block()
         }
@@ -659,7 +659,7 @@ class InjectionHandlerModifyTest {
         fields.add(
             FieldNode(Opcodes.ACC_PRIVATE, "tag", "Ljava/lang/String;", null, null).apply {
                 visibleAnnotations = listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/mixin/Shadow;"))
-            }
+            },
         )
 
         if (signaturesOnly) {
@@ -688,7 +688,7 @@ class InjectionHandlerModifyTest {
                         }
                         maxStack = 1
                         maxLocals = 1 + org.objectweb.asm.Type.getArgumentTypes(d).sumOf { it.size }
-                    }
+                    },
                 )
             }
             return@apply
@@ -705,7 +705,7 @@ class InjectionHandlerModifyTest {
                 add(FieldInsnNode(Opcodes.GETFIELD, MIXIN, "tag", "Ljava/lang/String;"))
                 add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, "java/lang/String", "length", "()I", false))
                 add(InsnNode(Opcodes.IRETURN))
-            }
+            },
         )
 
         // @ModifyArg single argument: value * 2 + tag.length() — slot 1 holds that value (slot 0 is this)
@@ -719,7 +719,7 @@ class InjectionHandlerModifyTest {
                 add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, "java/lang/String", "length", "()I", false))
                 add(InsnNode(Opcodes.IADD))
                 add(InsnNode(Opcodes.IRETURN))
-            }
+            },
         )
 
         // @ModifyArg multi-argument: returns 1st + 3rd (proving sibling arguments are readable and only the specified one is changed)
@@ -729,7 +729,7 @@ class InjectionHandlerModifyTest {
                 add(VarInsnNode(Opcodes.ILOAD, 3))
                 add(InsnNode(Opcodes.IADD))
                 add(InsnNode(Opcodes.IRETURN))
-            }
+            },
         )
 
         // @ModifyArgs: adds 100 to both entries of the Object[] (bare array, slot 1)
@@ -739,14 +739,14 @@ class InjectionHandlerModifyTest {
                     listAddBox100(this, i)
                 }
                 add(InsnNode(Opcodes.RETURN))
-            }
+            },
         )
         // Changes nothing but is still read back by the engine — proves the original values pass through
         // untouched when the handler does not change them
         methods.add(
             instance("onArgsNoop", "([Ljava/lang/Object;)V") {
                 add(InsnNode(Opcodes.RETURN))
-            }
+            },
         )
 
         // @ModifyConstant: value + tag.length()
@@ -758,7 +758,7 @@ class InjectionHandlerModifyTest {
                 add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, "java/lang/String", "length", "()I", false))
                 add(InsnNode(Opcodes.IADD))
                 add(InsnNode(Opcodes.IRETURN))
-            }
+            },
         )
 
         // @ModifyVariable: value * 3
@@ -768,7 +768,7 @@ class InjectionHandlerModifyTest {
                 add(InsnNode(Opcodes.ICONST_3))
                 add(InsnNode(Opcodes.IMUL))
                 add(InsnNode(Opcodes.IRETURN))
-            }
+            },
         )
     }
 

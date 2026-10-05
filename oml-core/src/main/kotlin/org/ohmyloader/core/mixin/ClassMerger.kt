@@ -402,7 +402,7 @@ internal object ClassMerger {
                 }
                 val fieldName = inferMemberName(
                     method.name, accessor,
-                    prefixes = if (argTypes.isEmpty()) listOf("get", "is") else listOf("set")
+                    prefixes = if (argTypes.isEmpty()) listOf("get", "is") else listOf("set"),
                 )
                 val targetField = target.fields.firstOrNull {
                     it.name == fieldName && it.desc == (if (argTypes.isEmpty()) retType else argTypes[0]).descriptor
@@ -477,7 +477,8 @@ internal object ClassMerger {
             val concrete = (method.access and Opcodes.ACC_ABSTRACT.inv()) or Opcodes.ACC_SYNTHETIC
             val body = buildMethod(
                 concrete, method.name, method.desc,
-                1 + argTypes.sumOf { it.size }, 1 + argTypes.sumOf { it.size } + retType.size) {
+                1 + argTypes.sumOf { it.size }, 1 + argTypes.sumOf { it.size } + retType.size,
+            ) {
                 add(VarInsnNode(Opcodes.ALOAD, 0))
                 var slot = 1
                 for (t in argTypes) {

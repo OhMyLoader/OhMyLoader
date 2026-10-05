@@ -104,7 +104,7 @@ class ClassMergerTest {
                 overwriteMethod("nope", "()I") {
                     add(InsnNode(Opcodes.ICONST_1))
                     add(InsnNode(Opcodes.IRETURN))
-                }
+                },
             )
         }
 
@@ -112,7 +112,7 @@ class ClassMergerTest {
 
         assertTrue(
             result.problems.single().contains("has no corresponding method in the target class"),
-            result.problems.toString()
+            result.problems.toString(),
         )
     }
 
@@ -174,7 +174,7 @@ class ClassMergerTest {
                 instanceMethod("extra", "()I") {
                     add(IntInsnNode(Opcodes.BIPUSH, 9))
                     add(InsnNode(Opcodes.IRETURN))
-                }
+                },
             )
         }
         val m = plainMixin().apply {
@@ -182,14 +182,14 @@ class ClassMergerTest {
                 instanceMethod("extra", "()I") {
                     add(IntInsnNode(Opcodes.BIPUSH, 5))
                     add(InsnNode(Opcodes.IRETURN))
-                }
+                },
             )
             methods.add(
                 instanceMethod("callExtra", "()I") {
                     add(VarInsnNode(Opcodes.ALOAD, 0))
                     add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, mixinName, "extra", "()I", false))
                     add(InsnNode(Opcodes.IRETURN))
-                }
+                },
             )
         }
 
@@ -243,7 +243,7 @@ class ClassMergerTest {
         assertEquals(
             2,
             result.constructors,
-            "every super() constructor must be merged in: whichever path creates the object needs the initial value"
+            "every super() constructor must be merged in: whichever path creates the object needs the initial value",
         )
 
         val clazz = define(merged)
@@ -265,7 +265,7 @@ class ClassMergerTest {
         assertEquals(
             2,
             result.constructors,
-            "the one delegated via this() is skipped (merging it in would run it twice)"
+            "the one delegated via this() is skipped (merging it in would run it twice)",
         )
 
         // But the this() path still gets its initial value — it eventually lands in the delegated
@@ -342,7 +342,7 @@ class ClassMergerTest {
 
         assertTrue(
             result.problems.single().contains("delegates to another constructor with `this(...)`"),
-            result.problems.toString()
+            result.problems.toString(),
         )
     }
 
@@ -360,7 +360,7 @@ class ClassMergerTest {
                     )
                     addAbsCall(instructions)
                     instructions.add(InsnNode(Opcodes.RETURN))
-                }
+                },
             )
         }
 
@@ -384,7 +384,7 @@ class ClassMergerTest {
 
         assertTrue(
             result.problems.single().contains("constructor does not support @Overwrite"),
-            result.problems.toString()
+            result.problems.toString(),
         )
     }
 
@@ -447,7 +447,7 @@ class ClassMergerTest {
     fun `accessor getter reads the private field without reflection`() {
         val [merged, result] = mergeInto(
             target(),
-            accessorMixin(abstractMethod("readPayload", "()Ljava/lang/String;", ACCESSOR, "payload"))
+            accessorMixin(abstractMethod("readPayload", "()Ljava/lang/String;", ACCESSOR, "payload")),
         )
 
         assertEquals(emptyList(), result.problems, result.problems.toString())
@@ -484,7 +484,7 @@ class ClassMergerTest {
         // `value` is left empty: getPayload() → target field payload (matching Mixin's prefix convention)
         val [merged, result] = mergeInto(
             target(),
-            accessorMixin(abstractMethod("getPayload", "()Ljava/lang/String;", ACCESSOR))
+            accessorMixin(abstractMethod("getPayload", "()Ljava/lang/String;", ACCESSOR)),
         )
 
         assertEquals(emptyList(), result.problems, result.problems.toString())
@@ -504,7 +504,7 @@ class ClassMergerTest {
     fun `invoker forwards to a private target method`() {
         val [merged, result] = mergeInto(
             targetWithSecret(),
-            accessorMixin(abstractMethod("callSecret", "(I)I", INVOKER, "secret"))
+            accessorMixin(abstractMethod("callSecret", "(I)I", INVOKER, "secret")),
         )
         assertEquals(emptyList(), result.problems, result.problems.toString())
         assertEquals(1, result.invokers)
@@ -522,7 +522,7 @@ class ClassMergerTest {
         // reported rather than silently generating a broken call
         val [_, result] = mergeInto(
             targetWithSecret(),
-            accessorMixin(abstractMethod("callSecret", "(J)I", INVOKER, "secret"))
+            accessorMixin(abstractMethod("callSecret", "(J)I", INVOKER, "secret")),
         )
 
         assertTrue(result.problems.single().contains("could not find the method"), result.problems.toString())
@@ -550,7 +550,7 @@ class ClassMergerTest {
                 visibleAnnotations = listOf(
                     AnnotationNode(Opcodes.ASM9, annotation).also {
                         if (value.isNotEmpty()) it.values = mutableListOf<Any?>("value", value)
-                    }
+                    },
                 )
             }
         }
@@ -563,7 +563,7 @@ class ClassMergerTest {
                 add(InsnNode(Opcodes.ICONST_1))
                 add(InsnNode(Opcodes.IADD))
                 add(InsnNode(Opcodes.IRETURN))
-            }
+            },
         )
     }
 
@@ -616,7 +616,7 @@ class ClassMergerTest {
                         false,
                     ),
                     "x",
-                )
+                ),
             )
             instructions.add(InsnNode(Opcodes.RETURN))
             maxStack = 1
@@ -669,20 +669,20 @@ class ClassMergerTest {
                 instructions.add(InsnNode(Opcodes.RETURN))
                 maxStack = 4
                 maxLocals = 8
-            }
+            },
         )
         methods.add(
             instanceMethod("payload", "()Ljava/lang/String;") {
                 add(VarInsnNode(Opcodes.ALOAD, 0))
                 add(FieldInsnNode(Opcodes.GETFIELD, targetName, fieldName, "Ljava/lang/String;"))
                 add(InsnNode(Opcodes.ARETURN))
-            }
+            },
         )
         methods.add(
             instanceMethod("value", "()I", Opcodes.ACC_PUBLIC or Opcodes.ACC_FINAL) {
                 add(InsnNode(Opcodes.ICONST_1))
                 add(InsnNode(Opcodes.IRETURN))
-            }
+            },
         )
     }
 
@@ -715,18 +715,18 @@ class ClassMergerTest {
                 instructions.add(InsnNode(Opcodes.RETURN))
                 maxStack = 1
                 maxLocals = 0
-            }
+            },
         )
         // @Shadow method: the target already has it ⇒ only declared, not merged (hence the body is abstract)
         methods.add(
             MethodNode(Opcodes.ACC_PUBLIC or Opcodes.ACC_ABSTRACT, "payload", "()Ljava/lang/String;", null, null)
-                .apply { visibleAnnotations = listOf(shadowAnnotation(emptyList())) }
+                .apply { visibleAnnotations = listOf(shadowAnnotation(emptyList())) },
         )
         methods.add(
             overwriteMethod("value", "()I") {
                 add(InsnNode(Opcodes.ICONST_2))
                 add(InsnNode(Opcodes.IRETURN))
-            }
+            },
         )
         // Read the target class's field (via @Shadow) — the reference must be re-owned to the target class
         methods.add(
@@ -734,14 +734,14 @@ class ClassMergerTest {
                 add(VarInsnNode(Opcodes.ALOAD, 0))
                 add(FieldInsnNode(Opcodes.GETFIELD, mixinName, "payload", "Ljava/lang/String;"))
                 add(InsnNode(Opcodes.ARETURN))
-            }
+            },
         )
         // Read its own static field merged in (the value comes from the spliced <clinit>)
         methods.add(
             instanceMethod("readExtra", "()I") {
                 add(FieldInsnNode(Opcodes.GETSTATIC, mixinName, "extra", "I"))
                 add(InsnNode(Opcodes.IRETURN))
-            }
+            },
         )
         // Call another method of the same class — the self-reference is re-owned
         methods.add(
@@ -749,7 +749,7 @@ class ClassMergerTest {
                 add(VarInsnNode(Opcodes.ALOAD, 0))
                 add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, mixinName, "readExtra", "()I", false))
                 add(InsnNode(Opcodes.IRETURN))
-            }
+            },
         )
     }
 
@@ -808,7 +808,7 @@ class ClassMergerTest {
             fields.add(FieldNode(Opcodes.ACC_PRIVATE, "marker", "I", null, null))
 
             methods.add(
-                superDelegatingCtor("()V") { add(IntInsnNode(Opcodes.BIPUSH, 41)) }
+                superDelegatingCtor("()V") { add(IntInsnNode(Opcodes.BIPUSH, 41)) },
             )
             if (twoCtors) {
                 methods.add(superDelegatingCtor("(I)V") { add(VarInsnNode(Opcodes.ILOAD, 1)) })

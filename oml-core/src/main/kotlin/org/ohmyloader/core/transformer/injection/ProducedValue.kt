@@ -114,17 +114,17 @@ internal object ProducedValue {
      */
     fun requireReadable(rule: String, point: InjectionPoint, anchor: AbstractInsnNode, method: MethodNode): Type {
         val value = typeOf(anchor) ?: throw InjectionError(
-            "[injection] anchor of $rule produces no usable value: ${whyFruitless(anchor)} (${method.name}${method.desc})"
+            "[injection] anchor of $rule produces no usable value: ${whyFruitless(anchor)} (${method.name}${method.desc})",
         )
         if (!isValueOnStack(point)) {
             throw InjectionError(
                 "[injection] the anchor of $rule must land where the value has **already been produced**: afterCall / afterField / afterConstant, " +
                     "or atReturn (the return value is consumed by RETURN itself). Currently it is ${
                         AnchorResolver.describe(
-                            point
+                            point,
                         )
                     } — " +
-                    "the stack top there is not yet that value (${method.name}${method.desc})"
+                    "the stack top there is not yet that value (${method.name}${method.desc})",
             )
         }
         return value

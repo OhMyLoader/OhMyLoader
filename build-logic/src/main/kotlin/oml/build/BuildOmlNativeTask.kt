@@ -21,7 +21,7 @@ import javax.inject.Inject
  * `build/<plat>/<arch>/release/` layout consumers resolve (`x64` on Windows, `x86_64` elsewhere,
  * `macosx` on macOS): every target installs into the same `zig-out/`, so a later target would
  * overwrite an earlier one of the same kind. zig prefixes the library name on Unix and splits
- * Windows into `bin/` + `lib/`; consumers know only the bare name, so the deploy searches both and
+ * Windows into `bin/` + `lib/`; consumers know only the bare name, so the deployment searches both and
  * renames on the way in.
  */
 @CacheableTask
@@ -34,7 +34,7 @@ abstract class BuildOmlNativeTask : DefaultTask() {
     @get:Internal
     abstract val nativeProjectDir: DirectoryProperty
 
-    /** Everything that goes into the library: the zig sources and the build recipe itself. */
+    /** Everything that goes into the library: the Zig sources and the build recipe itself. */
     @get:InputFiles
     @get:PathSensitive(PathSensitivity.RELATIVE)
     abstract val sourceFiles: ConfigurableFileCollection
@@ -51,7 +51,7 @@ abstract class BuildOmlNativeTask : DefaultTask() {
             val result = exec.exec {
                 workingDir = dir
                 executable = "zig"
-                // zig's standardOptimizeOption defaults to Debug; ReleaseFast must be explicit.
+                // Zig's standardOptimizeOption defaults to Debug; ReleaseFast must be explicit.
                 args("build", "-Dtarget=${target.triple}", "-Doptimize=ReleaseFast")
                 isIgnoreExitValue = true
             }
@@ -67,7 +67,7 @@ abstract class BuildOmlNativeTask : DefaultTask() {
             "oml-native rebuilt via zig: {} targets ({}), deployed under {}/build",
             matrix.size,
             matrix.joinToString(" ") { it.triple },
-            dir
+            dir,
         )
     }
 

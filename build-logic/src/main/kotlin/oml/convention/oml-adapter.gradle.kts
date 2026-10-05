@@ -53,7 +53,7 @@ afterEvaluate {
 
     // The module script's file dependency on the jar cannot carry builtBy (it evaluates before this
     // afterEvaluate), so every compile task declares the dependency instead: a fresh checkout
-    // fetches on first compile, and afterwards the task is up-to-date and adds nothing.
+    // fetches on first compile, and afterward the task is up-to-date and adds nothing.
     tasks.withType<JavaCompile>().configureEach {
         dependsOn(fetchClientJar)
     }

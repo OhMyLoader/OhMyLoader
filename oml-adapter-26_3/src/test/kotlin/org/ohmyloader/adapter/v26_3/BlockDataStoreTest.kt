@@ -1,10 +1,6 @@
 package org.ohmyloader.adapter.v26_3
 
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 /**
  * The persistent store's payload framing, exercised as a pure encode/decode roundtrip: the game's
@@ -59,7 +55,7 @@ class BlockDataStoreTest {
         val corrupted = java.util.Base64.getEncoder()
             .encodeToString(byteArrayOf(0, 0, 0, 1, 0, 1, 'k'.code.toByte(), 99))
         val store = OMLBlockDataStore()
-        val error = kotlin.test.assertFailsWith<IllegalStateException> { store.decode(corrupted) }
+        val error = assertFailsWith<IllegalStateException> { store.decode(corrupted) }
         assertTrue("unknown type tag" in error.message!!)
     }
 }

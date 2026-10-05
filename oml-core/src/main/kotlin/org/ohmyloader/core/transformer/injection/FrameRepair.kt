@@ -60,7 +60,7 @@ internal object FrameRepair {
         if (unresolved.isNotEmpty()) {
             return Result.Failed(
                 "they are neither declared by this frame nor written between the frame and the injection point, " +
-                    "and dataflow cannot infer a type (possibly an uninitialized object): slots ${unresolved.joinToString()}"
+                    "and dataflow cannot infer a type (possibly an uninitialized object): slots ${unresolved.joinToString()}",
             )
         }
 

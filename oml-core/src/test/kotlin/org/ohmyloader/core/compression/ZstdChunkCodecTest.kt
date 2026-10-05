@@ -160,7 +160,7 @@ class ZstdChunkCodecTest {
         val frame = compress(payload)
         assertTrue(
             frame.size < payload.size / 2,
-            "repetitive NBT should compress well: ${payload.size} -> ${frame.size}"
+            "repetitive NBT should compress well: ${payload.size} -> ${frame.size}",
         )
     }
 

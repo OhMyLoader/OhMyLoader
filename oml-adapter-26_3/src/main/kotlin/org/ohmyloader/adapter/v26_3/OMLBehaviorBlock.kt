@@ -5,7 +5,6 @@ import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.Block
-import net.minecraft.world.level.block.state.BlockBehaviour
 import net.minecraft.world.level.block.state.BlockState
 import org.ohmyloader.api.content.OMLBlockHitEvent
 import org.ohmyloader.api.content.OMLStepOnEvent
@@ -18,7 +17,7 @@ import org.ohmyloader.api.content.OMLStepOnEvent
  * handler exception surfaces as the game crash it is. Open because the block-entity variant
  * ([OMLBlockEntityBlock]) extends it with the ticker and the persistent data store.
  */
-open class OMLBehaviorBlock(properties: BlockBehaviour.Properties) : Block(properties) {
+open class OMLBehaviorBlock(properties: Properties) : Block(properties) {
 
     var stepOnHandlers: List<(OMLStepOnEvent) -> Unit> = emptyList()
     var hitHandlers: List<(OMLBlockHitEvent) -> Unit> = emptyList()

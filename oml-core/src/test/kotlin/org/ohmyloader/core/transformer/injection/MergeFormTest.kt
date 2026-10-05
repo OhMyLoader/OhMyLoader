@@ -46,7 +46,7 @@ class MergeFormTest {
         assertEquals(
             target,
             payload.owner,
-            "the merged handler lives in the target class, so owner must be the target class"
+            "the merged handler lives in the target class, so owner must be the target class",
         )
         assertEquals("onProbe", payload.method)
         assertEquals(HandlerKind.INJECT, payload.kind)

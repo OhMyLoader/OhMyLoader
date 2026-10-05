@@ -64,7 +64,7 @@ class DegenerateFrameTest {
         val covering = insns.take(hookIndex).lastOrNull { it is FrameNode } as? FrameNode
         assertNotNull(
             covering,
-            "there should be that frame (whose this was originally dropped) before the injection point"
+            "there should be that frame (whose this was originally dropped) before the injection point",
         )
         assertEquals(
             OWNER, covering.local?.firstOrNull(),
@@ -82,14 +82,14 @@ class DegenerateFrameTest {
         assertEquals(
             60,
             clazz.getMethod("getLimit").invoke(instance),
-            "the return value is unaffected by the injection"
+            "the return value is unaffected by the injection",
         )
 
         assertEquals(1, FrameHooks.seen.size, "the injected block should run exactly once")
         assertSame(
             instance,
             FrameHooks.seen[0],
-            "the this received by the injected block must be the target instance itself"
+            "the this received by the injected block must be the target instance itself",
         )
     }
 
@@ -131,7 +131,7 @@ class DegenerateFrameTest {
         ).apply {
             instructions.add(VarInsnNode(Opcodes.ALOAD, 0))
             instructions.add(
-                MethodInsnNode(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false)
+                MethodInsnNode(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false),
             )
             for ([slot, field] in listOf(1 to "a", 2 to "b", 3 to "c")) {
                 instructions.add(VarInsnNode(Opcodes.ALOAD, 0))

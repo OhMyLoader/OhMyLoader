@@ -54,7 +54,7 @@ class InjectionHandlerCallTest {
         val handler = target.methods.first { it.name == "onGreet" }
         assertTrue(
             handler.access and Opcodes.ACC_PUBLIC != 0,
-            "the handler's access flags should be raised to public: ${handler.access}"
+            "the handler's access flags should be raised to public: ${handler.access}",
         )
         assertEquals(0, handler.access and Opcodes.ACC_PRIVATE)
     }
@@ -78,7 +78,7 @@ class InjectionHandlerCallTest {
                     instructions.add(InsnNode(Opcodes.RETURN))
                     maxStack = 0
                     maxLocals = 2
-                }
+                },
             )
         }
 
@@ -156,7 +156,7 @@ class InjectionHandlerCallTest {
                     instructions.add(InsnNode(Opcodes.RETURN))
                     maxStack = 0
                     maxLocals = 0
-                }
+                },
             )
         }
         ClassMerger.merge(mixinCandidate(), target, mutableMapOf())
@@ -242,18 +242,19 @@ class InjectionHandlerCallTest {
                 instructions.add(InsnNode(Opcodes.RETURN))
                 maxStack = 2
                 maxLocals = 1
-            }
+            },
         )
         methods.add(
             instance(
                 "greet",
-                "()Ljava/lang/String;"
-            ) { add(LdcInsnNode("hello")); add(InsnNode(Opcodes.ARETURN)) })
+                "()Ljava/lang/String;",
+            ) { add(LdcInsnNode("hello")); add(InsnNode(Opcodes.ARETURN)) },
+        )
         methods.add(
             instance("bump", "()V") {
                 add(MethodInsnNode(Opcodes.INVOKESTATIC, RECORDER, "body", "()V", false))
                 add(InsnNode(Opcodes.RETURN))
-            }
+            },
         )
         methods.add(instance("count", "()I") { add(IntInsnNode(Opcodes.BIPUSH, 7)); add(InsnNode(Opcodes.IRETURN)) })
     }
@@ -296,7 +297,7 @@ class InjectionHandlerCallTest {
         fields.add(
             FieldNode(Opcodes.ACC_PRIVATE, "tag", "Ljava/lang/String;", null, null).apply {
                 visibleAnnotations = listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/mixin/Shadow;"))
-            }
+            },
         )
         // Notifier: reads this.tag (through the @Shadow field) and records it — proving the handler's
         // `this` is the target instance
@@ -306,7 +307,7 @@ class InjectionHandlerCallTest {
                 add(FieldInsnNode(Opcodes.GETFIELD, mixinName, "tag", "Ljava/lang/String;"))
                 add(MethodInsnNode(Opcodes.INVOKESTATIC, RECORDER, "record", "(Ljava/lang/String;)V", false))
                 add(InsnNode(Opcodes.RETURN))
-            }
+            },
         )
         // Cancellable: ci.cancel()
         methods.add(
@@ -314,11 +315,11 @@ class InjectionHandlerCallTest {
                 add(VarInsnNode(Opcodes.ALOAD, 1))
                 add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, CALLBACK_INFO, "cancel", "()V", false))
                 add(InsnNode(Opcodes.RETURN))
-            }
+            },
         )
         // Cancellable but does not cancel: does nothing
         methods.add(
-            instance("onBumpPass", "($callbackInfo)V", Opcodes.ACC_PRIVATE) { add(InsnNode(Opcodes.RETURN)) }
+            instance("onBumpPass", "($callbackInfo)V", Opcodes.ACC_PRIVATE) { add(InsnNode(Opcodes.RETURN)) },
         )
         // Returner: cir.setReturnValue(42)
         methods.add(
@@ -331,21 +332,21 @@ class InjectionHandlerCallTest {
                         "java/lang/Integer",
                         "valueOf",
                         "(I)Ljava/lang/Integer;",
-                        false
-                    )
+                        false,
+                    ),
                 )
                 add(
                     MethodInsnNode(
                         Opcodes.INVOKEVIRTUAL, CALLBACK_RETURNABLE, "setReturnValue",
                         "(Ljava/lang/Object;)V", false,
-                    )
+                    ),
                 )
                 add(InsnNode(Opcodes.RETURN))
-            }
+            },
         )
         // Returner but does not set a value: does nothing
         methods.add(
-            instance("onCountPass", "($callbackReturnable)V", Opcodes.ACC_PRIVATE) { add(InsnNode(Opcodes.RETURN)) }
+            instance("onCountPass", "($callbackReturnable)V", Opcodes.ACC_PRIVATE) { add(InsnNode(Opcodes.RETURN)) },
         )
     }
 

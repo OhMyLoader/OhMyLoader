@@ -135,14 +135,14 @@ class MessagesTest {
         // shell semantics that must survive translation
         assertContains(
             sh,
-            """exec java -XX:MaxRAMPercentage=75.0 -XX:+AlwaysPreTouch -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -jar oml-launcher.jar "$@""""
+            """exec java -XX:MaxRAMPercentage=75.0 -XX:+AlwaysPreTouch -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -jar oml-launcher.jar "$@"""",
         )
         assertTrue(sh.startsWith("#!/usr/bin/env sh"), "run.sh needs a shebang")
         assertContains(bat, "chcp 65001")
         assertContains(bat, "%%g", message = "a batch for-loop variable must stay escaped as %%g")
         assertContains(
             bat,
-            """java -XX:MaxRAMPercentage=75.0 -XX:+AlwaysPreTouch -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -jar oml-launcher.jar %*"""
+            """java -XX:MaxRAMPercentage=75.0 -XX:+AlwaysPreTouch -XX:+ExitOnOutOfMemoryError -XX:+UseStringDeduplication -jar oml-launcher.jar %*""",
         )
 
         // the batch version check must compare against the required major, and neither script may keep an

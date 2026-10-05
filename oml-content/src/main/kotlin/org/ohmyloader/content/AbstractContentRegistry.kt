@@ -164,7 +164,10 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                 val full = recipeJson(input, result, namespace, furnace, experience, cookingTime)
                 collectedRecipes += RecipeDecl(
                     namespace,
-                    uniqueKey(collectedRecipes.mapTo(HashSet()) { it.key }, qualify(namespace, input).replace(':', '_')),
+                    uniqueKey(
+                        collectedRecipes.mapTo(HashSet()) { it.key },
+                        qualify(namespace, input).replace(':', '_'),
+                    ),
                     furnace.recipePath, full, reloadable,
                 )
             }
@@ -185,13 +188,19 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                 val json = "{\"type\":\"minecraft:crafting_shaped\",\"category\":\"misc\",\"group\":\"\"," +
                     "\"pattern\":" + patternJson + ",\"key\":{" + keyJson + "}," +
                     "\"result\":{\"id\":\"" + resultId + "\"" + resultCount + "}}"
-                collectedRecipes += RecipeDecl(namespace, craftingKey(namespace, result), "crafting_shaped", json, reloadable)
+                collectedRecipes += RecipeDecl(
+                    namespace,
+                    craftingKey(namespace, result),
+                    "crafting_shaped",
+                    json,
+                    reloadable,
+                )
             }
 
             override fun declareShapelessCrafting(result: String, ingredients: List<String>, count: Int) {
                 if (ingredients.isEmpty() || ingredients.size > 9) {
                     throw IllegalStateException(
-                        "shapeless crafting for '$result' needs 1-9 ingredients (got ${ingredients.size})"
+                        "shapeless crafting for '$result' needs 1-9 ingredients (got ${ingredients.size})",
                     )
                 }
                 if (count < 1) throw IllegalStateException("crafting result count must be >= 1 (got $count)")
@@ -201,7 +210,13 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                 val json = "{\"type\":\"minecraft:crafting_shapeless\",\"category\":\"misc\",\"group\":\"\"," +
                     "\"ingredients\":[" + ingredientsJson + "]," +
                     "\"result\":{\"id\":\"" + resultId + "\"" + resultCount + "}}"
-                collectedRecipes += RecipeDecl(namespace, craftingKey(namespace, result), "crafting_shapeless", json, reloadable)
+                collectedRecipes += RecipeDecl(
+                    namespace,
+                    craftingKey(namespace, result),
+                    "crafting_shapeless",
+                    json,
+                    reloadable,
+                )
             }
 
             override fun declareBlockDrop(block: String, drop: String, dropCountMin: Int, dropCountMax: Int) {
@@ -210,7 +225,10 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                 // second declaration cannot also take effect — suffixing would emit an orphan table
                 // nothing references. Keep the first, say so loudly.
                 if (collectedLoot.any { it.namespace == namespace && it.key == key }) {
-                    OmlLog.warn("Content", "block drop for '$block' declared more than once; keeping the first, ignoring this one")
+                    OmlLog.warn(
+                        "Content",
+                        "block drop for '$block' declared more than once; keeping the first, ignoring this one",
+                    )
                     return
                 }
                 val full = lootJson(block, drop, namespace, dropCountMin, dropCountMax)
@@ -268,7 +286,7 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
         val widths = pattern.map { it.length }
         if (widths.distinct().size > 1 || widths[0] !in 1..3) {
             throw IllegalStateException(
-                "shaped crafting pattern rows must all be 1-3 cells wide (got $widths)"
+                "shaped crafting pattern rows must all be 1-3 cells wide (got $widths)",
             )
         }
         for (row in pattern) {
@@ -276,7 +294,7 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                 if (c == ' ') continue
                 if (c !in key) {
                     throw IllegalStateException(
-                        "shaped crafting pattern character '$c' has no key entry — add it to the key map"
+                        "shaped crafting pattern character '$c' has no key entry — add it to the key map",
                     )
                 }
             }
