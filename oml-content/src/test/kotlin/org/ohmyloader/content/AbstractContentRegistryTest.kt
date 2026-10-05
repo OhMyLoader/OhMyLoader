@@ -57,8 +57,8 @@ class AbstractContentRegistryTest {
             ?: fail("the crafting recipe must be served as datapack json")
         assertTrue("\"type\":\"minecraft:crafting_shaped\"" in json)
         assertTrue("\"pattern\":[\"RR\",\"RR\"]" in json)
-        assertTrue("\"R\":{\"item\":\"mymod:ruby\"}" in json, "bare ingredient ids must be qualified")
-        assertTrue("\"result\":{\"id\":\"mymod:ruby_block\",\"count\":1}" in json)
+        assertTrue("\"R\":\"mymod:ruby\"" in json, "bare ingredient ids must be qualified (26.3: plain-string keys)")
+        assertTrue("\"result\":{\"id\":\"mymod:ruby_block\"}" in json)
     }
 
     @Test
@@ -76,7 +76,7 @@ class AbstractContentRegistryTest {
         val json = registry.recipeJsonFor("mymod", "minecraft_ruby")
             ?: fail("the crafting recipe must be served as datapack json")
         assertTrue("\"type\":\"minecraft:crafting_shapeless\"" in json)
-        assertTrue("\"ingredients\":[{\"item\":\"mymod:ruby\"},{\"item\":\"minecraft:stick\"}]" in json)
+        assertTrue("\"ingredients\":[\"mymod:ruby\",\"minecraft:stick\"]" in json)
         assertTrue("\"count\":2" in json)
     }
 

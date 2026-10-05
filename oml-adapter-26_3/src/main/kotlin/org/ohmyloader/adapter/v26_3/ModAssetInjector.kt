@@ -440,19 +440,26 @@ object ModAssetInjector {
             accept.invoke(output, identifier, ioSupplierOf(ioSupplierClass, loader, bytes))
         }
 
-        // declared ore generation: the mod namespace's feature files, and the merged vanilla biome
-        // files under minecraft — the datapack loader only reads what a pack lists
-        if (isDataPath(path)) {
-            val dir = path.trimEnd('/')
-            if (namespace == "minecraft" && (dir == "worldgen/biome" || dir.startsWith("worldgen/biome/"))) {
-                MinecraftContentRegistry.oreTargetedBiomes().forEach { emit("worldgen/biome/$it.json") }
-            }
-            if (dir == "worldgen/feature" || dir.startsWith("worldgen/feature/")) {
-                MinecraftContentRegistry.oreGenKeysFor(namespace).forEach { emit("worldgen/feature/$it.json") }
-            }
-            if (dir == "worldgen/placed_feature" || dir.startsWith("worldgen/placed_feature/")) {
-                MinecraftContentRegistry.oreGenKeysFor(namespace).forEach { emit("worldgen/placed_feature/$it.json") }
-            }
+        // Synthetic datapack files: the datapack loader only reads what a pack LISTS, and these
+        // exist in no jar. The listing contract is RECURSIVE over the requested directory — the
+        // loader asks for the bare roots (`recipe`, `loot_table`, `worldgen/biome`, …), and the
+        // old prefix checks (`isDataPath("recipe")` needs the slash, `loot_table/blocks` never
+        // arrives as a listing root) silently matched nothing: recipes never loaded at all.
+        val dir = path.trimEnd('/')
+        if (dir == "recipe") {
+            MinecraftContentRegistry.recipeIdsFor(namespace).forEach { emit("recipe/$it.json") }
+        }
+        if (dir == "loot_table" || dir == "loot_table/blocks") {
+            MinecraftContentRegistry.lootIdsFor(namespace).forEach { emit("loot_table/blocks/$it.json") }
+        }
+        if (namespace == "minecraft" && dir == "worldgen/biome") {
+            MinecraftContentRegistry.oreTargetedBiomes().forEach { emit("worldgen/biome/$it.json") }
+        }
+        if (dir == "worldgen/feature") {
+            MinecraftContentRegistry.oreGenKeysFor(namespace).forEach { emit("worldgen/feature/$it.json") }
+        }
+        if (dir == "worldgen/placed_feature") {
+            MinecraftContentRegistry.oreGenKeysFor(namespace).forEach { emit("worldgen/placed_feature/$it.json") }
         }
 
         // jar-shipped entries: the core index matches the requested directory as a prefix over the

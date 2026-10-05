@@ -253,7 +253,7 @@ object OMLCore {
         for (mod in loadedMods) {
             val instance = modInstance(mod)
             if (instance is OMLContentProvider) {
-                instance.declareContent(contentRegistry.forNamespace(mod.id.lowercase()))
+                instance.declareContent(contentRegistry.forNamespace(mod.id.lowercase(), reloadable = false))
             }
         }
 
@@ -274,7 +274,7 @@ object OMLCore {
                 val text = archiveDeclaration(pack)
                 contentPackFiles += pack
                 val summary =
-                    TomlContentLoader.load(namespace, pack.name, text, contentRegistry.forNamespace(namespace))
+                    TomlContentLoader.load(namespace, pack.name, text, contentRegistry.forNamespace(namespace, reloadable = true))
                 flatContentNamespaces += summary.namespace
             } catch (t: Throwable) {
                 OmlLog.error("OMLCore", "Failed to load content pack ${pack.name}", t)
@@ -327,7 +327,7 @@ object OMLCore {
                 contentPackFiles += pack
                 TomlContentLoader.loadDataDeclarations(
                     namespace, pack.name, archiveDeclaration(pack),
-                    contentRegistry.forNamespace(namespace),
+                    contentRegistry.forNamespace(namespace, reloadable = true),
                 )
             } catch (t: Throwable) {
                 OmlLog.error("OMLCore", "Failed to reload content pack ${pack.name}", t)

@@ -94,6 +94,13 @@ enum class Furnace(val recipePath: String) {
 /** Creates a mod-facing [ContentRegistry] for a namespace. Implemented by version adapters. */
 interface ContentRegistryFactory {
     fun forNamespace(namespace: String): ContentRegistry
+
+    /**
+     * [reloadable] marks declarations from TOML packs: they are re-collected from disk on every
+     * reload. Code-track declarations (a mod's `declareContent`) are frozen like the blocks they
+     * belong to and default to not reloadable.
+     */
+    fun forNamespace(namespace: String, reloadable: Boolean): ContentRegistry = forNamespace(namespace)
 }
 
 /** Handle for a registered block; [platform] is accessible after content registration completes. */

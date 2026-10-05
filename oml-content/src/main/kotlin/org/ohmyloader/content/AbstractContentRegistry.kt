@@ -33,10 +33,23 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
     protected val materializedItems: MutableMap<String, OMLItem> = mutableMapOf()
 
     /** Collected furnace-type recipe declaration: [key] is the datapack file's local id (input item). */
-    data class RecipeDecl(val namespace: String, val key: String, val kind: String, val json: String)
+    data class RecipeDecl(
+        val namespace: String,
+        val key: String,
+        val kind: String,
+        val json: String,
+        /** Reloadable declarations come from TOML packs (re-collected from disk on every reload);
+         *  code-track declarations are frozen like the blocks they belong to. */
+        val reloadable: Boolean,
+    )
 
     /** Collected block-drop loot table declaration: [key] is the datapack file's local id (the block). */
-    data class LootDecl(val namespace: String, val key: String, val json: String)
+    data class LootDecl(
+        val namespace: String,
+        val key: String,
+        val json: String,
+        val reloadable: Boolean,
+    )
 
     protected val collectedRecipes: MutableList<RecipeDecl> = mutableListOf()
     protected val collectedLoot: MutableList<LootDecl> = mutableListOf()
@@ -76,8 +89,10 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
      */
     @Synchronized
     fun clearDataDeclarations() {
-        collectedRecipes.clear()
-        collectedLoot.clear()
+        // only the reloadable (TOML-pack) declarations are re-collected from disk; the code
+        // track's recipes and loot belong to frozen blocks and would be lost forever here
+        collectedRecipes.removeAll { it.reloadable }
+        collectedLoot.removeAll { it.reloadable }
     }
 
     /** A collected ore-generation declaration, flattened to its two datapack files' JSON. */
@@ -127,6 +142,10 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
 
     /** Mod-facing facade: fixes the namespace binding, then lets the mod declare content. */
     final override fun forNamespace(namespace: String): ContentRegistry =
+        forNamespace(namespace, reloadable = false)
+
+    /** [reloadable] marks TOML-pack declarations: re-collected from disk on every reload. */
+    override fun forNamespace(namespace: String, reloadable: Boolean): ContentRegistry =
         object : ContentRegistry {
             override fun declareBlock(id: String, configure: OMLBlockDeclaration.() -> Unit): OMLBlock =
                 collect(namespace, id, OMLBlockDeclaration().apply(configure))
@@ -143,7 +162,7 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
             ) {
                 val key = qualify(namespace, input).replace(':', '_')
                 val full = recipeJson(input, result, namespace, furnace, experience, cookingTime)
-                collectedRecipes += RecipeDecl(namespace, key, furnace.recipePath, full)
+                collectedRecipes += RecipeDecl(namespace, key, furnace.recipePath, full, reloadable)
             }
 
             override fun declareShapedCrafting(
@@ -155,13 +174,14 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                 validateShaped(pattern, key, count)
                 val resultId = qualify(namespace, result)
                 val keyJson = key.entries.joinToString(",") { [c, id] ->
-                    "\"$c\":" + ingredientJson(qualify(namespace, id))
+                    "\"$c\":\"" + qualify(namespace, id) + "\""
                 }
                 val patternJson = pattern.joinToString(",", "[", "]") { "\"$it\"" }
+                val resultCount = if (count == 1) "" else ",\"count\":$count"
                 val json = "{\"type\":\"minecraft:crafting_shaped\",\"category\":\"misc\",\"group\":\"\"," +
                     "\"pattern\":" + patternJson + ",\"key\":{" + keyJson + "}," +
-                    "\"result\":{\"id\":\"" + resultId + "\",\"count\":" + count + "}}"
-                collectedRecipes += RecipeDecl(namespace, craftingKey(namespace, result), "crafting_shaped", json)
+                    "\"result\":{\"id\":\"" + resultId + "\"" + resultCount + "}}"
+                collectedRecipes += RecipeDecl(namespace, craftingKey(namespace, result), "crafting_shaped", json, reloadable)
             }
 
             override fun declareShapelessCrafting(result: String, ingredients: List<String>, count: Int) {
@@ -172,17 +192,18 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                 }
                 if (count < 1) throw IllegalStateException("crafting result count must be >= 1 (got $count)")
                 val resultId = qualify(namespace, result)
-                val ingredientsJson = ingredients.joinToString(",") { ingredientJson(qualify(namespace, it)) }
+                val ingredientsJson = ingredients.joinToString(",") { "\"" + qualify(namespace, it) + "\"" }
+                val resultCount = if (count == 1) "" else ",\"count\":$count"
                 val json = "{\"type\":\"minecraft:crafting_shapeless\",\"category\":\"misc\",\"group\":\"\"," +
                     "\"ingredients\":[" + ingredientsJson + "]," +
-                    "\"result\":{\"id\":\"" + resultId + "\",\"count\":" + count + "}}"
-                collectedRecipes += RecipeDecl(namespace, craftingKey(namespace, result), "crafting_shapeless", json)
+                    "\"result\":{\"id\":\"" + resultId + "\"" + resultCount + "}}"
+                collectedRecipes += RecipeDecl(namespace, craftingKey(namespace, result), "crafting_shapeless", json, reloadable)
             }
 
             override fun declareBlockDrop(block: String, drop: String, dropCountMin: Int, dropCountMax: Int) {
                 val key = qualify(namespace, block).replace(':', '_')
                 val full = lootJson(block, drop, namespace, dropCountMin, dropCountMax)
-                collectedLoot += LootDecl(namespace, key, full)
+                collectedLoot += LootDecl(namespace, key, full, reloadable)
             }
         }
 
@@ -203,14 +224,10 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
         // tracked here in the adapter instead — this field is *not* emitted in the final form).
         val resultId = qualify(namespace, result)
         val inputId = qualify(namespace, input)
-        val ingredient = ingredientJson(inputId)
-        return "{\"type\":\"minecraft:" + furnace.recipePath + "\",\"category\":\"misc\",\"group\":\"\",\"ingredient\":" +
-            ingredient + ",\"result\":{\"id\":\"" + resultId + "\",\"count\":1},\"experience\":" + experience +
+        return "{\"type\":\"minecraft:" + furnace.recipePath + "\",\"category\":\"misc\",\"group\":\"\",\"ingredient\":\"" +
+            inputId + "\",\"result\":{\"id\":\"" + resultId + "\"},\"experience\":" + experience +
             ",\"cookingtime\":" + cookingTime + "}"
     }
-
-    private fun ingredientJson(item: String): String =
-        """{"item":"$item"}"""
 
     /**
      * The datapack file id for a crafting recipe. Unlike furnace recipes (whose input doubles as
@@ -257,8 +274,12 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
     private fun lootJson(block: String, drop: String, namespace: String, min: Int, max: Int): String {
         val blockId = qualify(namespace, block)
         val dropId = qualify(namespace, drop)
+        // 26.3 loot shape: pool conditions are a single `condition` object and entry functions are
+        // `modifier` entries — both renamed from the pre-1.21 arrays this used to emit (a renamed
+        // field fails the loot codec and the override silently drops nothing).
+        val count = if (min == max) "$min" else "{\"type\":\"minecraft:uniform\",\"min\":$min,\"max\":$max}"
         return """
-            {"type":"minecraft:block","pools":[{"rolls":1,"bonus_rolls":0,"entries":[{"type":"minecraft:item","name":"$dropId","functions":[{"function":"minecraft:set_count","count":{"type":"minecraft:uniform","min":$min,"max":$max}}]}],"conditions":[{"condition":"minecraft:survives_explosion"}]}],"random_sequence":"$blockId"}
+            {"type":"minecraft:block","pools":[{"condition":{"type":"minecraft:survives_explosion"},"entries":[{"type":"minecraft:item","name":"$dropId","modifier":[{"type":"minecraft:set_count","count":$count}]}],"rolls":1}],"random_sequence":"$blockId"}
         """.trim()
     }
 
