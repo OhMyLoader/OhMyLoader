@@ -222,6 +222,32 @@ class MinecraftHookTransformer : InjectingTransformer(
         // `reloadResourcePacks` -> `reload()` -> `openAllSelected()`. Both call it *after* the
         // selection list has been applied from options, so the pack this hook adds is part of the
         // reload that is asking for it and is not overwritten afterwards.
+        // Mod commands: the SERVER half lives in the server transformer; the integrated server on
+        // this side builds its own dispatcher and needs the same registration (shared classes,
+        // same deliberate duplication as the freeze rule).
+        classTarget("net/minecraft/commands/Commands") {
+            method(
+                "performPrefixedCommand",
+                desc = "(Lnet/minecraft/commands/CommandSourceStack;Ljava/lang/String;)V",
+            ) {
+                atHead {
+                    call(
+                        "org/ohmyloader/adapter/v26_3/EventBridge", "onCommandsReady", "(Lnet/minecraft/commands/Commands;)V",
+                        args = listOf(DslValue.This),
+                    )
+                }
+            }
+        }
+        classTarget("net/minecraft/server/MinecraftServer") {
+            method("getCommands", desc = "()Lnet/minecraft/commands/Commands;") {
+                atTail {
+                    transformReturn(
+                        owner = "org/ohmyloader/adapter/v26_3/EventBridge", "onCommandsReadyReturn",
+                        desc = "(Lnet/minecraft/commands/Commands;)Lnet/minecraft/commands/Commands;",
+                    )
+                }
+            }
+        }
         classTarget("net/minecraft/server/packs/repository/PackRepository") {
             method("openAllSelected", desc = "()Ljava/util/List;") {
                 atHead {

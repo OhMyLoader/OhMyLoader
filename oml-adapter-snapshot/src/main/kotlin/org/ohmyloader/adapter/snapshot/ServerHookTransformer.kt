@@ -26,6 +26,35 @@ class ServerHookTransformer : InjectingTransformer(
                 }
             }
         }
+        // Mod commands join the Brigadier dispatcher, which is rebuilt per resource load — the
+        // constructor tail cannot pass `this` (self-check: uninit `this`) and nothing guarantees
+        // the dispatcher is assigned at ConstructorHead, so registration is lazy at the two
+        // points that hand the built Commands instance out. Both rules exist in BOTH
+        // transformers (shared bootstrap code, same deliberate duplication as the freeze rule);
+        // the identity dedup makes a double handover register exactly once.
+        classTarget("net/minecraft/commands/Commands") {
+            method(
+                "performPrefixedCommand",
+                desc = "(Lnet/minecraft/commands/CommandSourceStack;Ljava/lang/String;)V",
+            ) {
+                atHead {
+                    call(
+                        "org/ohmyloader/adapter/v26_3/EventBridge", "onCommandsReady", "(Lnet/minecraft/commands/Commands;)V",
+                        args = listOf(DslValue.This),
+                    )
+                }
+            }
+        }
+        classTarget("net/minecraft/server/MinecraftServer") {
+            method("getCommands", desc = "()Lnet/minecraft/commands/Commands;") {
+                atTail {
+                    transformReturn(
+                        owner = "org/ohmyloader/adapter/v26_3/EventBridge", "onCommandsReadyReturn",
+                        desc = "(Lnet/minecraft/commands/Commands;)Lnet/minecraft/commands/Commands;",
+                    )
+                }
+            }
+        }
         classTarget("net/minecraft/server/MinecraftServer") {
             // invoked once per logic tick of the dedicated server main loop
             method("tickServer", desc = "(Ljava/util/function/BooleanSupplier;)V") {

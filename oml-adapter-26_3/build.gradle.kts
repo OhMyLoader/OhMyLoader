@@ -28,6 +28,9 @@ dependencies {
     // The biome merge for declared ores parses the vanilla biome JSON (Gson): compile-time only,
     // the game's own libraries supply the same artifact at run time.
     compileOnly(libs.gson)
+
+    // The command bridge walks the game's Brigadier tree; the game supplies brigadier at run time.
+    compileOnly(libs.brigadier)
     // Codec round-trip tests instantiate our stream wrappers, whose supertypes live in the game jar.
     testImplementation(files("libs/26.3-client.jar"))
 

@@ -13,6 +13,17 @@ import org.ohmyloader.core.adapter.EventDispatch
  * accessor names and the registry freeze point.
  */
 object EventBridge {
+    /** [Commands handover] Registers the mod commands into a freshly built dispatcher (see the hook). */
+    @JvmStatic
+    fun onCommandsReady(commands: net.minecraft.commands.Commands) = OMLCommandBridge.register(commands)
+
+    /** Return-transform half of [onCommandsReady]: observes and passes the Commands instance through. */
+    @JvmStatic
+    fun onCommandsReadyReturn(commands: net.minecraft.commands.Commands): net.minecraft.commands.Commands {
+        OMLCommandBridge.register(commands)
+        return commands
+    }
+
 
     private val contentRegistry = MinecraftContentRegistry
 

@@ -4,6 +4,10 @@ import org.ohmyloader.api.ModContext
 import org.ohmyloader.api.OMLModInitializer
 import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.content.ContentRegistryFactory
+import org.ohmyloader.core.command.CommandDeclarations
+import org.ohmyloader.api.command.OMLCommandDeclaration
+import org.ohmyloader.api.command.OMLCommandProvider
+import org.ohmyloader.api.command.OMLCommandRegistry
 import org.ohmyloader.api.content.OMLContentProvider
 import org.ohmyloader.content.AbstractContentRegistry
 import org.ohmyloader.content.TomlContentLoader
@@ -539,6 +543,14 @@ object OMLCore {
         return ticks
     }
 
+    private fun commandRegistryFor(modId: String) = object : OMLCommandRegistry {
+        override fun register(name: String, configure: OMLCommandDeclaration.() -> Unit) {
+            CommandDeclarations.entries += CommandDeclarations.Entry(
+                modId, OMLCommandDeclaration(name, null).apply(configure),
+            )
+        }
+    }
+
     private fun modInstance(mod: ModContainer): Any = modInstances.getOrPut(mod.id) {
         Class.forName(mod.entryClass, true, primaryLoader).getDeclaredConstructor().newInstance()
     }
@@ -552,6 +564,9 @@ object OMLCore {
                     instance.onInitialize(ModContext(id, name, version))
                 } else {
                     OmlLog.warn("OMLCore", "Mod [$id] does not implement OMLModInitializer, skipping")
+                }
+                if (instance is OMLCommandProvider) {
+                    instance.declareCommands(commandRegistryFor(id))
                 }
             } catch (t: Throwable) {
                 OmlLog.error("OMLCore", "Mod [$id] initialization failed", t)
