@@ -49,6 +49,13 @@ object ZstdRegionChunkFormat {
     @JvmStatic
     fun onRegionFileVersionInitialized() {
         if (registered != null) return
+        // Registration is pure reflection and would always succeed, but the wrappers it installs
+        // dereference the native bindings on first use — registering without the library would
+        // swap a working vanilla deflate for a NullPointerException on every chunk save.
+        if (!OmlNativeZstd.available()) {
+            OmlLog.warn("OMLZstd", "oml-native unavailable — region files stay on vanilla deflate")
+            return
+        }
         try {
             val wrapperInterface = Class.forName(STREAM_WRAPPER_CLASS)
             val compressing: Any = Proxy.newProxyInstance(
