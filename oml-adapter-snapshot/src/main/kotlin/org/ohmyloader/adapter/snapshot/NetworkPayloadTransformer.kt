@@ -57,5 +57,5 @@ class NetworkPayloadTransformer : InjectingTransformer(
             }
         }
     },
-    id = "v26_3:network-payload",
+    id = "snapshot:network-payload",
 )

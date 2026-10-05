@@ -53,7 +53,7 @@ class MinecraftHookTransformer : InjectingTransformer(
                 atTail { omlCall("onMinecraftReady") }
             }
             method("runTick", desc = "(Z)V") {
-                atHead { call("org/ohmyloader/adapter/v26_3/EventBridge", "onClientTick", "()V") }
+                atHead { call("org/ohmyloader/adapter/snapshot/EventBridge", "onClientTick", "()V") }
             }
             // Local read: `runTick(boolean)` stores `DeltaTracker$Timer.advanceGameTime(J)I` into int
             // slot 2 (offset 96 istore_2, the method's only int-slot write at that point — the other
@@ -127,7 +127,7 @@ class MinecraftHookTransformer : InjectingTransformer(
             method("setScreenAndShow", desc = "(Lnet/minecraft/client/gui/screens/Screen;)V") {
                 atHead {
                     cancellableCall(
-                        "org/ohmyloader/adapter/v26_3/EventBridge", "onGuiOpen", "(Ljava/lang/Object;)Z",
+                        "org/ohmyloader/adapter/snapshot/EventBridge", "onGuiOpen", "(Ljava/lang/Object;)Z",
                         args = listOf(DslValue.Arg(0)),
                     )
                 }
@@ -138,7 +138,7 @@ class MinecraftHookTransformer : InjectingTransformer(
             method("setLevel", desc = "(Lnet/minecraft/client/multiplayer/ClientLevel;)V") {
                 atHead {
                     call(
-                        "org/ohmyloader/adapter/v26_3/EventBridge", "onWorldLoad", "(Ljava/lang/Object;)V",
+                        "org/ohmyloader/adapter/snapshot/EventBridge", "onWorldLoad", "(Ljava/lang/Object;)V",
                         args = listOf(DslValue.Arg(0)),
                     )
                 }
@@ -148,7 +148,7 @@ class MinecraftHookTransformer : InjectingTransformer(
             // ClientLevel, swaps in the progress/saving screen and finally a TitleScreen). Anchoring
             // its head fires the event while the world is still live, before any teardown.
             method("disconnectFromWorld", desc = "(Lnet/minecraft/network/chat/Component;)V") {
-                atHead { call("org/ohmyloader/adapter/v26_3/EventBridge", "onWorldDisconnect", "()V") }
+                atHead { call("org/ohmyloader/adapter/snapshot/EventBridge", "onWorldDisconnect", "()V") }
             }
         }
         classTarget("com/mojang/blaze3d/platform/FramerateLimitTracker") {
@@ -160,7 +160,7 @@ class MinecraftHookTransformer : InjectingTransformer(
             method("getFramerateLimit", desc = "()I") {
                 atTail {
                     transformReturn(
-                        owner = "org/ohmyloader/adapter/v26_3/EventBridge",
+                        owner = "org/ohmyloader/adapter/snapshot/EventBridge",
                         method = "onFrameLimit",
                         desc = "(I)I",
                     )
@@ -177,7 +177,7 @@ class MinecraftHookTransformer : InjectingTransformer(
                     owner = "net/minecraft/core/registries/BuiltInRegistries",
                     name = "freeze",
                     desc = "()V",
-                    handlerOwner = "org/ohmyloader/adapter/v26_3/EventBridge",
+                    handlerOwner = "org/ohmyloader/adapter/snapshot/EventBridge",
                     handlerMethod = "onRegistryFreeze",
                 )
             }
@@ -195,7 +195,7 @@ class MinecraftHookTransformer : InjectingTransformer(
             method("<clinit>", desc = "()V") {
                 atTail {
                     call(
-                        "org/ohmyloader/adapter/v26_3/ZstdRegionChunkFormat",
+                        "org/ohmyloader/adapter/snapshot/ZstdRegionChunkFormat",
                         "onRegionFileVersionInitialized", "()V",
                     )
                 }
@@ -203,7 +203,7 @@ class MinecraftHookTransformer : InjectingTransformer(
             method("getSelected", desc = "()Lnet/minecraft/world/level/chunk/storage/RegionFileVersion;") {
                 atTail {
                     transformReturn(
-                        owner = "org/ohmyloader/adapter/v26_3/ZstdRegionChunkFormat",
+                        owner = "org/ohmyloader/adapter/snapshot/ZstdRegionChunkFormat",
                         method = "onSelectedVersion",
                         desc = "(Lnet/minecraft/world/level/chunk/storage/RegionFileVersion;)Lnet/minecraft/world/level/chunk/storage/RegionFileVersion;",
                     )
@@ -232,7 +232,7 @@ class MinecraftHookTransformer : InjectingTransformer(
             ) {
                 atHead {
                     call(
-                        "org/ohmyloader/adapter/v26_3/EventBridge", "onCommandsReady", "(Lnet/minecraft/commands/Commands;)V",
+                        "org/ohmyloader/adapter/snapshot/EventBridge", "onCommandsReady", "(Lnet/minecraft/commands/Commands;)V",
                         args = listOf(DslValue.This),
                     )
                 }
@@ -242,7 +242,7 @@ class MinecraftHookTransformer : InjectingTransformer(
             method("getCommands", desc = "()Lnet/minecraft/commands/Commands;") {
                 atTail {
                     transformReturn(
-                        owner = "org/ohmyloader/adapter/v26_3/EventBridge", "onCommandsReadyReturn",
+                        owner = "org/ohmyloader/adapter/snapshot/EventBridge", "onCommandsReadyReturn",
                         desc = "(Lnet/minecraft/commands/Commands;)Lnet/minecraft/commands/Commands;",
                     )
                 }
@@ -252,7 +252,7 @@ class MinecraftHookTransformer : InjectingTransformer(
             method("openAllSelected", desc = "()Ljava/util/List;") {
                 atHead {
                     call(
-                        "org/ohmyloader/adapter/v26_3/EventBridge", "onPackRepositoryReload", "(Ljava/lang/Object;)V",
+                        "org/ohmyloader/adapter/snapshot/EventBridge", "onPackRepositoryReload", "(Ljava/lang/Object;)V",
                         args = listOf(DslValue.This),
                     )
                 }
@@ -263,7 +263,7 @@ class MinecraftHookTransformer : InjectingTransformer(
             method("sendChat", desc = "(Ljava/lang/String;)V") {
                 atHead {
                     cancellableCall(
-                        "org/ohmyloader/adapter/v26_3/EventBridge", "onChatSent", "(Ljava/lang/String;)Z",
+                        "org/ohmyloader/adapter/snapshot/EventBridge", "onChatSent", "(Ljava/lang/String;)Z",
                         args = listOf(DslValue.Arg(0)),
                     )
                 }
@@ -273,7 +273,7 @@ class MinecraftHookTransformer : InjectingTransformer(
             method("handleSystemChat", desc = "(Lnet/minecraft/network/protocol/game/ClientboundSystemChatPacket;)V") {
                 atHead {
                     cancellableCall(
-                        "org/ohmyloader/adapter/v26_3/EventBridge", "onChatReceived", "(Ljava/lang/Object;)Z",
+                        "org/ohmyloader/adapter/snapshot/EventBridge", "onChatReceived", "(Ljava/lang/Object;)Z",
                         args = listOf(DslValue.Arg(0)),
                     )
                 }
@@ -281,7 +281,7 @@ class MinecraftHookTransformer : InjectingTransformer(
             method("handlePlayerChat", desc = "(Lnet/minecraft/network/protocol/game/ClientboundPlayerChatPacket;)V") {
                 atHead {
                     cancellableCall(
-                        "org/ohmyloader/adapter/v26_3/EventBridge", "onChatReceived", "(Ljava/lang/Object;)Z",
+                        "org/ohmyloader/adapter/snapshot/EventBridge", "onChatReceived", "(Ljava/lang/Object;)Z",
                         args = listOf(DslValue.Arg(0)),
                     )
                 }
@@ -292,7 +292,7 @@ class MinecraftHookTransformer : InjectingTransformer(
             ) {
                 atHead {
                     cancellableCall(
-                        "org/ohmyloader/adapter/v26_3/EventBridge", "onChatReceived", "(Ljava/lang/Object;)Z",
+                        "org/ohmyloader/adapter/snapshot/EventBridge", "onChatReceived", "(Ljava/lang/Object;)Z",
                         args = listOf(DslValue.Arg(0)),
                     )
                 }
@@ -344,5 +344,5 @@ class MinecraftHookTransformer : InjectingTransformer(
             }
         }
     },
-    id = "v26_3:minecraft-hooks",
+    id = "snapshot:minecraft-hooks",
 )

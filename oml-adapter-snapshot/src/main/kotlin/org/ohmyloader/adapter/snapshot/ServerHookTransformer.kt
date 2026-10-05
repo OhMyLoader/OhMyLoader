@@ -20,7 +20,7 @@ class ServerHookTransformer : InjectingTransformer(
             method("openAllSelected", desc = "()Ljava/util/List;") {
                 atHead {
                     call(
-                        "org/ohmyloader/adapter/v26_3/EventBridge", "onPackRepositoryReload", "(Ljava/lang/Object;)V",
+                        "org/ohmyloader/adapter/snapshot/EventBridge", "onPackRepositoryReload", "(Ljava/lang/Object;)V",
                         args = listOf(DslValue.This),
                     )
                 }
@@ -39,7 +39,7 @@ class ServerHookTransformer : InjectingTransformer(
             ) {
                 atHead {
                     call(
-                        "org/ohmyloader/adapter/v26_3/EventBridge", "onCommandsReady", "(Lnet/minecraft/commands/Commands;)V",
+                        "org/ohmyloader/adapter/snapshot/EventBridge", "onCommandsReady", "(Lnet/minecraft/commands/Commands;)V",
                         args = listOf(DslValue.This),
                     )
                 }
@@ -49,7 +49,7 @@ class ServerHookTransformer : InjectingTransformer(
             method("getCommands", desc = "()Lnet/minecraft/commands/Commands;") {
                 atTail {
                     transformReturn(
-                        owner = "org/ohmyloader/adapter/v26_3/EventBridge", "onCommandsReadyReturn",
+                        owner = "org/ohmyloader/adapter/snapshot/EventBridge", "onCommandsReadyReturn",
                         desc = "(Lnet/minecraft/commands/Commands;)Lnet/minecraft/commands/Commands;",
                     )
                 }
@@ -58,7 +58,7 @@ class ServerHookTransformer : InjectingTransformer(
         classTarget("net/minecraft/server/MinecraftServer") {
             // invoked once per logic tick of the dedicated server main loop
             method("tickServer", desc = "(Ljava/util/function/BooleanSupplier;)V") {
-                atHead { call("org/ohmyloader/adapter/v26_3/EventBridge", "onServerTick", "()V") }
+                atHead { call("org/ohmyloader/adapter/snapshot/EventBridge", "onServerTick", "()V") }
                 require(1)
             }
 
@@ -85,7 +85,7 @@ class ServerHookTransformer : InjectingTransformer(
                     owner = "net/minecraft/core/registries/BuiltInRegistries",
                     name = "freeze",
                     desc = "()V",
-                    handlerOwner = "org/ohmyloader/adapter/v26_3/EventBridge",
+                    handlerOwner = "org/ohmyloader/adapter/snapshot/EventBridge",
                     handlerMethod = "onRegistryFreeze",
                 )
             }
@@ -100,7 +100,7 @@ class ServerHookTransformer : InjectingTransformer(
             method("<clinit>", desc = "()V") {
                 atTail {
                     call(
-                        "org/ohmyloader/adapter/v26_3/ZstdRegionChunkFormat",
+                        "org/ohmyloader/adapter/snapshot/ZstdRegionChunkFormat",
                         "onRegionFileVersionInitialized", "()V",
                     )
                 }
@@ -108,7 +108,7 @@ class ServerHookTransformer : InjectingTransformer(
             method("getSelected", desc = "()Lnet/minecraft/world/level/chunk/storage/RegionFileVersion;") {
                 atTail {
                     transformReturn(
-                        owner = "org/ohmyloader/adapter/v26_3/ZstdRegionChunkFormat",
+                        owner = "org/ohmyloader/adapter/snapshot/ZstdRegionChunkFormat",
                         method = "onSelectedVersion",
                         desc = "(Lnet/minecraft/world/level/chunk/storage/RegionFileVersion;)Lnet/minecraft/world/level/chunk/storage/RegionFileVersion;",
                     )
@@ -116,5 +116,5 @@ class ServerHookTransformer : InjectingTransformer(
             }
         }
     },
-    id = "v26_3:server-hooks",
+    id = "snapshot:server-hooks",
 )
