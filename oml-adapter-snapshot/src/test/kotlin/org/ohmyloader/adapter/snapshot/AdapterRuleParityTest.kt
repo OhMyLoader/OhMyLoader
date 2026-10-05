@@ -6,6 +6,7 @@ import org.ohmyloader.api.inject.RuleSet
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import org.ohmyloader.adapter.v26_3.MinecraftHookTransformer as StableClientHooks
+import org.ohmyloader.adapter.v26_3.NetworkPayloadTransformer as StablePayloadHooks
 import org.ohmyloader.adapter.v26_3.ServerHookTransformer as StableServerHooks
 
 /**
@@ -29,6 +30,10 @@ class AdapterRuleParityTest {
     @Test
     fun `the server rule surface is the same in both adapters`() =
         assertParity(surface(StableServerHooks().rules), surface(ServerHookTransformer().rules), "server")
+
+    @Test
+    fun `the payload rule surface is the same in both adapters`() =
+        assertParity(surface(StablePayloadHooks().rules), surface(NetworkPayloadTransformer().rules), "payload")
 
     private fun assertParity(stable: List<String>, snapshot: List<String>, side: String) {
         val stableCounts = stable.groupingBy { it }.eachCount()

@@ -14,7 +14,7 @@ import kotlin.test.fail
 /**
  * **Anti-drift shape assertions**: every hook this adapter declares is checked against the *real* `26.4-snapshot-2-client.jar` bytecode, so the
  * day Mojang renames or reshapes an anchor, this build fails instead of the game silently doing one thing less at launch.
- * The assertions are **derived from the live rule sets** (`MinecraftHookTransformer.rules` / `ServerHookTransformer.rules`), not a
+ * The assertions are **derived from the live rule sets** (`MinecraftHookTransformer.rules` / `ServerHookTransformer.rules` / `NetworkPayloadTransformer.rules`), not a
  * hand-copied list: the rule declarations are the single source of truth, and this test walks them — every targeted class, method
  * selector, call anchor and access-rewritten field must exist in the jar with the declared shape. Headline anchors also get explicit
  * named tests, so a regression in the most load-bearing hooks reads in the report by name. The client jar is a gitignored development
@@ -29,6 +29,7 @@ class HookShapeTest {
     private val ruleSets = listOf(
         "client" to MinecraftHookTransformer().rules,
         "server" to ServerHookTransformer().rules,
+        "payload" to NetworkPayloadTransformer().rules,
     )
 
     private fun classNode(jar: JarFile, internalName: String): ClassNode =

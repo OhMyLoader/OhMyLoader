@@ -26,15 +26,19 @@ class OMLAdapterSnapshot : IAdapter {
 
     override fun createTransformers(): List<IClassTransformer> = listOf(
         MinecraftHookTransformer(),
-        // Network compression is shared bootstrap code (both sides run the same unified jar),
-        // so the same transformer registers on the client and the server path.
+        // Network compression and mod payloads are shared bootstrap code (both sides run the same
+        // unified jar), so the same transformers register on the client and the server path.
         NetworkCompressionTransformer(),
+        NetworkPayloadTransformer(),
     )
 
     override fun createServerTransformers(): List<IClassTransformer> = listOf(
         ServerHookTransformer(),
         NetworkCompressionTransformer(),
+        NetworkPayloadTransformer(),
     )
 
     override fun createContentRegistry() = MinecraftContentRegistry
+
+    override fun createNetworkSender() = OMLNetworkBridge
 }
