@@ -25,7 +25,6 @@ internal object PayloadEmitter {
     /** Internal name and descriptor of `CallbackInfo` (the void-target handle) — needed by HandlerCall. */
     private const val CALLBACK_INFO = "org/ohmyloader/api/mixin/CallbackInfo"
     private const val CALLBACK_INFO_DESC = "Lorg/ohmyloader/api/mixin/CallbackInfo;"
-    private const val CALLBACK_INFO_TAIL = "${CALLBACK_INFO_DESC})V"
 
     /** Internal name and descriptor of `Args` (the "all arguments" handle). */
     private const val ARGS = "org/ohmyloader/api/mixin/Args"
