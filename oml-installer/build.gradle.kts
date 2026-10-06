@@ -30,13 +30,30 @@ tasks.jar { from(sourceSets.getByName("bootstrap").output) }
 // game version, the only per-version artifact. The adapter's file name (`oml-adapter-<version
 // with _ for .>`) is what the installer matches the user's version choice against. A fat jar may
 // not merge the layer: the jars must stay separate files to be extracted 1:1 into the launcher's
-// library layout. Adding a version = one embed configuration + one bundledAdapters entry.
+// library layout.
 val embedShared = configurations.create("embedShared")
 
-// Adapter only: its transitive closure IS the shared layer — embedding it transitively again
-// would duplicate every shared jar.
-val embed263 = configurations.create("embed263") { isTransitive = false }
-val embedSnapshot = configurations.create("embedSnapshot") { isTransitive = false }
+// The version catalogue (oml-versions.json) and the embed wiring are BOTH generated from this
+// map: game version -> adapter artifact id. The artifact id doubles as the project name (the thin
+// adapter modules publish under it) and as the file-name segment (`oml-adapter-<version with _>`)
+// the installer matches the user's version choice against. Adding a version = one entry here; the
+// configuration, the dependency, the packaged lib/ contents and the runtime catalogue all follow.
+// `snapshot` is an alias: the installer resolves it to the manifest's latest snapshot at install
+// time (AssetDownloader.resolveLatestSnapshotId) and installs under the real id.
+val bundledAdapters = mapOf(
+    "26.3" to "oml-adapter-26_3",
+    "snapshot" to "oml-adapter-snapshot",
+)
+
+// One embed configuration per bundled version, derived from `bundledAdapters` — the single
+// data source for "which versions exist". Adapter-only (not transitive): its
+// transitive closure IS the shared layer, embedding it transitively again would duplicate every
+// shared jar.
+fun embedConfigurationFor(versionKey: String) =
+    configurations.create("embedAdapter_${versionKey.replace('-', '_')}") { isTransitive = false }
+
+val adapterEmbeds: Map<String, Configuration> = bundledAdapters.keys
+    .associateWith(::embedConfigurationFor)
 
 dependencies {
     // The installer still reuses devtools' downloader (game jar / libraries).
@@ -48,10 +65,11 @@ dependencies {
     embedShared(project(":oml-core"))
     embedShared(project(":oml-launcher"))
     // The shared adapter implementation: version-independent, so it ships once in lib/ while the
-    // thin per-version adapters (embed263 / embedSnapshot) carry only their entry point.
+    // thin per-version adapters carry only their entry point.
     embedShared(project(":oml-adapter-common"))
-    embed263(project(":oml-adapter-26_3"))
-    embedSnapshot(project(":oml-adapter-snapshot"))
+    for ((version, adapter) in bundledAdapters) {
+        add(adapterEmbeds.getValue(version).name, project(":" + adapter))
+    }
 
     testImplementation(kotlin("test"))
 }
@@ -60,8 +78,9 @@ dependencies {
 // layer dependency would keep shipping in the fat jar forever.
 val embedBundled = tasks.register<Sync>("embedBundled") {
     from(embedShared)
-    from(embed263)
-    from(embedSnapshot)
+    for (embed in adapterEmbeds.values) {
+        from(embed)
+    }
     into(layout.buildDirectory.dir("resources/main/lib"))
 }
 
@@ -111,17 +130,6 @@ val embedNativesJars = tasks.register<Sync>("embedNativesJars") {
     from(omlNativeProject.layout.buildDirectory.dir("natives-jars"))
     into(layout.buildDirectory.dir("resources/main/natives-jars"))
 }
-
-// The version catalogue (oml-versions.json) is generated from this map: game version -> adapter
-// artifact id. The id is load-bearing twice — it names the embed configuration's dependency and
-// it is what the installer matches the user's version choice against (the only per-version
-// artifact under lib/). Adding a version = one entry here + one embed configuration below.
-// `snapshot` is an alias: the installer resolves it to the manifest's latest snapshot at install
-// time (AssetDownloader.resolveLatestSnapshotId) and installs under the real id.
-val bundledAdapters = mapOf(
-    "26.3" to "oml-adapter-26_3",
-    "snapshot" to "oml-adapter-snapshot",
-)
 
 /** Java major version OML requires. Written into the launcher version JSON and into every user-facing message. */
 val requiredJavaMajor = 27

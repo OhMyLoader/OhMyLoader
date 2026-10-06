@@ -369,15 +369,22 @@ class InstallerContractTest {
     }
 
     @Test
-    fun `the build embeds the snapshot adapter so the catalogue entry is installable`() {
+    fun `every catalogue version's adapter ships under lib in the fat jar layout`() {
         // The catalogue entry alone proves nothing: the fat jar must also carry the adapter jar
-        // under lib/, or a snapshot install dies with err.fatjar.noLayer. The writer half is the
-        // build script (same source-reading guard as the natives-layout test above).
-        val script = File("build.gradle.kts")
-        assertTrue(script.isFile, "this test must run from the oml-installer project directory")
-        val text = script.readText()
-        assertContains(text, "\"snapshot\" to \"oml-adapter-snapshot\"")
-        assertContains(text, "embedSnapshot(project(\":oml-adapter-snapshot\"))")
+        // under lib/, or that version's install dies with err.fatjar.noLayer. Both halves are
+        // generated from one map (bundledAdapters), so this asserts the generated halves against
+        // each other — a catalogue entry whose embed never materialized is exactly the failure a
+        // source-reading guard would miss (and did: the wiring behind this test outgrew its regex).
+        val libDir = File("build/resources/main/lib")
+        assertTrue(libDir.isDirectory, "this test must run from the oml-installer project directory")
+        val shipped = libDir.listFiles()!!.map { it.name }
+        for (entry in VersionCatalog.versions()) {
+            assertTrue(
+                shipped.any { it.startsWith("${entry.adapterArtifact}-") },
+                "lib/ lacks the adapter jar for catalogue version \"${entry.version}\" " +
+                    "(${entry.adapterArtifact}); shipped: $shipped",
+            )
+        }
     }
 
     // ------------------------------------------------------------------------------------------
