@@ -72,6 +72,11 @@ jobs:
       - run: ./gradlew -Poml_version="${GITHUB_REF_NAME#v}" build publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # The release is only as good as its asset: if a build-graph change ever drops shadowJar
+      # from `build`, this fails the job instead of publishing a release with nothing attached.
+      - name: The installer fat jar must exist before publishing
+        run: ls -l dist/oml-installer-*.jar
       - uses: softprops/action-gh-release@v3
         with:
           files: dist/oml-installer-*.jar
+          fail_on_unmatched_files: true
