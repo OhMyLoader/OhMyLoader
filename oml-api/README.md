@@ -9,7 +9,7 @@
 | 层 | 内容 | 承诺 |
 |----|------|------|
 | **契约层** | `@Mod` 入口、`OMLModInitializer` / `ModContext`、`Events` 全部事件、`ContentRegistry` 声明 DSL、注入 DSL（`@RuleSource` / `RuleSetProvider` / 锚点与改写原语） | 语义与签名按语义化版本向后兼容；破坏性变更必须先以弃用形式存在一个次版本 |
-| **已提供、仍在沉淀** | 命令 DSL（`command`）、配置（`config`）、网络（`network`）、按键 / HUD / 创造标签（`client`）、`ModContext.config` | 0.x 阶段允许随版本调整（调整记录进发布说明与 `docs/forensics.md`）；1.0 起升入契约层 |
+| **已提供、仍在沉淀** | 命令 DSL（`command`）、配置（`config`）、网络（`network`）、按键 / HUD / 创造标签（`client`）、世界与玩家投影（`world` / `access`）、主线程调度器（`tick`）、`ModContext.config` | 0.x 阶段允许随版本调整（调整记录进发布说明与 `docs/forensics.md`）；1.0 起升入契约层 |
 | **逃生舱（无稳定性承诺）** | 一切 `platform` 属性暴露的原生对象、`OMLCore` 的反射旁路（`gameClassLoader` / `serverInstance`） | 跟随游戏版本自由变动，任何版本都可能破坏——这是它们存在的目的：让 mod 作者在不等 OML 的情况下自救 |
 
 判断一个签名属于哪一层：它若把游戏类型藏在了 OML 自己的抽象后面，就是契约层；它若把游戏对象
