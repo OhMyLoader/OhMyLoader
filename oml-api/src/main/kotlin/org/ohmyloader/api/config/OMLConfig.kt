@@ -3,7 +3,7 @@ package org.ohmyloader.api.config
 /**
  * The mod's config file, declaratively defined. Entries are declared with defaults during mod
  * init ([define]); a value the file already carries wins over the default, and a missing file is
- * generated from the declarations on the first value read. Backed by
+ * generated from the declarations once `onInitialize` returns. Backed by
  * `<gameDir>/config/<mod id>.toml`; an existing file is never rewritten, so user edits survive.
  */
 interface OMLConfig {

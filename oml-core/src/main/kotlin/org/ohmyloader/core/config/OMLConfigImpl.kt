@@ -8,7 +8,8 @@ import java.io.File
 /**
  * The [OMLConfig] implementation over `<gameDir>/config/<modId>.toml`, parsed with the same
  * minimal TOML reader the content packs use. The file is read once at construction; a missing
- * file is generated from the declarations on the first value read, and an existing file is never
+ * file is generated from the declarations by [generateIfMissing], which the loader calls right
+ * after `onInitialize` returns, and an existing file is never
  * rewritten (user edits and comments survive). A value whose type does not match its declaration
  * is warned about and falls back to the default — a config typo must not crash the boot.
  */
