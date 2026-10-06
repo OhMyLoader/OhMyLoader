@@ -9,8 +9,8 @@ mod API、数据驱动的声明式内容注册，客户端与专用服务端双�
   启动期对全部规则做存在性 / 签名 / `require` 自检，杜绝"规则静默失效"。
 - **统一 mod API**：`@Mod` 入口 + 函数式事件注册（tick / 聊天 / GUI / 世界加载 / 帧率限制 …），
   面向高层语义编程，不接触版本内部结构；原生游戏对象随时可通过 `e.platform` 逃生舱访问。
-- **声明式内容注册**：`ContentRegistry` 声明方块 / 物品 / 配方，在注册表冻结点材料化为原生内容，
-  走 vanilla 自己的校验与数据包路径。
+- **声明式内容注册**：`ContentRegistry` 声明方块 / 物品 / 配方 / 行为钩子 / BlockEntity / 矿石世界生成，
+  在注册表冻结点材料化为原生内容，走 vanilla 自己的校验与数据包路径。
 - **自定义网络载荷**：`OMLNetworkProvider` 声明通道 + `OMLPacketBuffer` 自有编解码，双端按通道名路由
   （复用 vanilla 固定的两个 payload 包 id），单人集成服务端与专用服务端共用同一份声明。
 - **mod 资产注入**：每个 mod jar 的 `assets/` 经注入的资源包对游戏完整可见（任意命名空间、任意目录）。
@@ -92,15 +92,17 @@ JDK 27（Zulu）· Gradle 9.8.0 · Kotlin 2.5.0-Beta1（当前唯一声明 JVM 2
 
 - **模块结构**：`oml-core`（加载器内核：类加载 / 注入执行器 / Mixin 前端与类合并 / SPI）、
   `oml-api`（mod 面向的 API）、`oml-content`（版本无关的内容注册与 `.oml`/TOML 装载）、
-  `oml-launcher`（自举头）、`oml-adapter-26_3` 与 `oml-adapter-snapshot`
+  `oml-launcher`（自举头）、`oml-adapter-common`（各版本共享的钩子、事件桥、内容材料化与网络桥）、
+  `oml-adapter-26_3` 与 `oml-adapter-snapshot`
   （版本驱动层，薄）、`oml-native`（zig 构建的 C 库，Zstd 编解码）、`oml-devtools`（下载器）、
   `oml-installer`（安装器，含 Java 8 引导 Stub）。
 - **调试开关**：`-Doml.injection.verify=fail|warn|off`（注入规则自检，默认 fail）；
   `-Doml.diagnostics=<任意非 false 的值>`（改写耗时与规模统计，开关是布尔的，不取值）。
 - **installLauncher**：各 adapter 模块上的任务，把 OML 装进真实启动器（版本隔离必填：
   `-PomlIsolation=true|false`，安装 id 用 `-PomlInstallId`，服务端实例加 `-PomlSide=server`）。
-- **平台**：工具链覆盖 windows / linux / osx（含 arm64 变体）；端到端真机验证的基线是 Windows。
-- **路线图**：26.4 正式版适配（快照跟踪中）· 数据驱动内容轨 · 多版本矩阵（长期）。
+- **平台**：工具链覆盖 windows / linux / osx（含 arm64 变体）；双端 E2E 门禁在 Linux 上真机验证，
+  Windows 侧尚未实测。
+- **路线图**：26.4 正式版适配（快照跟踪中）· 多版本矩阵（长期）· 分发渠道。
 
 ## 许可证
 
