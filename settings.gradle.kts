@@ -33,6 +33,7 @@ include(":oml-content")
 include(":oml-devtools")
 include(":oml-native")
 include(":oml-installer")
+include(":oml-adapter-common")
 include(":oml-adapter-26_3")
 include(":oml-adapter-snapshot")
 

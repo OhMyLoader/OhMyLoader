@@ -47,6 +47,9 @@ dependencies {
     implementation(libs.flatlaf)
     embedShared(project(":oml-core"))
     embedShared(project(":oml-launcher"))
+    // The shared adapter implementation: version-independent, so it ships once in lib/ while the
+    // thin per-version adapters (embed263 / embedSnapshot) carry only their entry point.
+    embedShared(project(":oml-adapter-common"))
     embed263(project(":oml-adapter-26_3"))
     embedSnapshot(project(":oml-adapter-snapshot"))
 

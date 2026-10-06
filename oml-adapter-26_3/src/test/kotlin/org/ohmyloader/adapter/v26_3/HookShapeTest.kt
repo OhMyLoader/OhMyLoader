@@ -3,6 +3,9 @@ package org.ohmyloader.adapter.v26_3
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.tree.ClassNode
 import org.objectweb.asm.tree.MethodInsnNode
+import org.ohmyloader.adapter.common.MinecraftHookTransformer
+import org.ohmyloader.adapter.common.NetworkPayloadTransformer
+import org.ohmyloader.adapter.common.ServerHookTransformer
 import org.ohmyloader.api.inject.InjectionPoint
 import java.io.File
 import java.util.jar.JarFile
@@ -27,9 +30,9 @@ class HookShapeTest {
 
     /** Client and server transformers instantiate cleanly without any game class on the classpath: rules are pure data. */
     private val ruleSets = listOf(
-        "client" to MinecraftHookTransformer().rules,
-        "server" to ServerHookTransformer().rules,
-        "payload" to NetworkPayloadTransformer().rules,
+        "client" to MinecraftHookTransformer(idPrefix = "v26_3").rules,
+        "server" to ServerHookTransformer(idPrefix = "v26_3").rules,
+        "payload" to NetworkPayloadTransformer(idPrefix = "v26_3").rules,
     )
 
     private fun classNode(jar: JarFile, internalName: String): ClassNode =

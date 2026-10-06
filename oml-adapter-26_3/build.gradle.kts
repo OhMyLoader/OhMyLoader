@@ -9,41 +9,14 @@ plugins {
 // MinecraftHookTransformer / ServerHookTransformer operate directly on ASM instructions
 // (node types are needed when reusing the core injection executor)
 dependencies {
-    implementation(libs.bundles.asm)
+    // The thin entry point references the shared implementation only; game classes are not
+    // named here anymore, so no game jar is on the compile classpath.
+    implementation(project(":oml-adapter-common"))
 
-    // Zstd compression (region files id 127 + network packets) runs on our own zig-built
-    // `oml-native` library through the NativeManager FFM contract; no third-party binding.
-    // Packet-codec handlers extend Netty base classes: the game supplies netty at run time,
-    // tests need the real classes for EmbeddedChannel round-trips.
-    compileOnly(libs.nettyCodecBase)
-    compileOnly(libs.nettyTransport)
-    testImplementation(libs.nettyCodecBase)
-    testImplementation(libs.nettyTransport)
-
-    // Typed handlers and the RegionFileVersion.StreamWrapper implementations compile against the
-    // real 26.3 jar (unobfuscated, so names match exactly). compileOnly — at run time the game
-    // supplies these classes, and shipping them would be a second copy of Minecraft.
-    compileOnly(files("libs/26.3-client.jar"))
-
-    // The biome merge for declared ores parses the vanilla biome JSON (Gson): compile-time only,
-    // the game's own libraries supply the same artifact at run time.
-    compileOnly(libs.gson)
-
-    // The command bridge walks the game's Brigadier tree; the game supplies brigadier at run time.
-    compileOnly(libs.brigadier)
-    // Codec round-trip tests instantiate our stream wrappers, whose supertypes live in the game jar.
-    testImplementation(files("libs/26.3-client.jar"))
-
-    // HookShapeTest walks the live rule sets (kotlin.test) and reads the real client jar with ASM
-    // (already on the implementation classpath).
+    // HookShapeTest walks the live rule sets and reads the real game jar with ASM.
     testImplementation(kotlin("test"))
-
-    // The codec tests drive the real oml-native library through the SAME test wiring oml-core's
-    // own compression tests use — shared as test fixtures instead of a per-project copy that
-    // would drift.
-    testImplementation(testFixtures(project(":oml-core")))
+    testImplementation(libs.bundles.asm)
 }
-
 tasks.withType<Test>().configureEach {
     // The codec tests call FFM restricted methods (oml-native downcalls via NativeManager); JDK 25+
     // wants the native-access grant, the same one OmlJvmContract carries for a real launch.

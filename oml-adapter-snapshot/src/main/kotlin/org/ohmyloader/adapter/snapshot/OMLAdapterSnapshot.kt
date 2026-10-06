@@ -1,5 +1,11 @@
 package org.ohmyloader.adapter.snapshot
 
+import org.ohmyloader.adapter.common.MinecraftContentRegistry
+import org.ohmyloader.adapter.common.MinecraftHookTransformer
+import org.ohmyloader.adapter.common.NetworkCompressionTransformer
+import org.ohmyloader.adapter.common.NetworkPayloadTransformer
+import org.ohmyloader.adapter.common.OMLNetworkBridge
+import org.ohmyloader.adapter.common.ServerHookTransformer
 import org.ohmyloader.core.spi.IAdapter
 import org.ohmyloader.core.transformer.IClassTransformer
 
@@ -25,17 +31,17 @@ class OMLAdapterSnapshot : IAdapter {
     override val serverMainClass = "net.minecraft.server.Main"
 
     override fun createTransformers(): List<IClassTransformer> = listOf(
-        MinecraftHookTransformer(),
+        MinecraftHookTransformer(idPrefix = "snapshot"),
         // Network compression and mod payloads are shared bootstrap code (both sides run the same
         // unified jar), so the same transformers register on the client and the server path.
-        NetworkCompressionTransformer(),
-        NetworkPayloadTransformer(),
+        NetworkCompressionTransformer(idPrefix = "snapshot"),
+        NetworkPayloadTransformer(idPrefix = "snapshot"),
     )
 
     override fun createServerTransformers(): List<IClassTransformer> = listOf(
-        ServerHookTransformer(),
-        NetworkCompressionTransformer(),
-        NetworkPayloadTransformer(),
+        ServerHookTransformer(idPrefix = "snapshot"),
+        NetworkCompressionTransformer(idPrefix = "snapshot"),
+        NetworkPayloadTransformer(idPrefix = "snapshot"),
     )
 
     override fun createContentRegistry() = MinecraftContentRegistry

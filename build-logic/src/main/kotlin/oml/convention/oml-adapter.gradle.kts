@@ -101,7 +101,12 @@ afterEvaluate {
         workingDir = file("run")
         jvmArgs(stdoutEnc)
 
-        val ourProjects = listOf(project(":oml-launcher"), project(":oml-core"), project(":oml-api"), project)
+        val ourProjects = listOf(
+            project(":oml-launcher"), project(":oml-core"), project(":oml-api"),
+            // the shared adapter implementation travels with every adapter install
+            project(":oml-adapter-common"),
+            project,
+        )
         dependsOn(ourProjects.map { it.tasks.named("jar") })
         val ourJars = ourProjects.map { it.tasks.named<Jar>("jar").flatMap { t -> t.archiveFile } }
 
