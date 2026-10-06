@@ -58,7 +58,7 @@ fun writeAtomicText(target: File, text: String, journal: InstallJournal? = null)
     Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
 }
 
-fun sha1Of(file: File): String {
+internal fun sha1Of(file: File): String {
     val digest = MessageDigest.getInstance("SHA-1")
     file.inputStream().use { input ->
         val buffer = ByteArray(1 shl 16)
