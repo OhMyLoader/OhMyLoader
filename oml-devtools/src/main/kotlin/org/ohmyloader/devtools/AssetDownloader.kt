@@ -216,13 +216,6 @@ object AssetDownloader {
                 open(rest[0]).use { env -> downloadLibraries(env.state(), File(rest[1]), progress) }
             }
 
-            "--natives" -> {
-                requireArgs(rest, 3, "--natives <version> <librariesDir> <nativesDir>")
-                open(rest[0]).use { env ->
-                    extractNatives(env.state(), File(rest[1]), File(rest[2]), progress)
-                }
-            }
-
             else -> {
                 // asset fetch: <assetsDir> <assetIndex|--version> [version] [--baseUrl=…] [--force]
                 fetchAssetsFromCli(args, progress)
@@ -234,7 +227,6 @@ object AssetDownloader {
         usage:
           --clientJar      <targetJarPath> <version> [--force]
           --libraries      <version> <destDir>
-          --natives        <version> <librariesDir> <nativesDir>
           <assetsDir> <assetIndex|--version> [version] [--baseUrl=<mirror>] [--force]
     """.trimIndent()
 
