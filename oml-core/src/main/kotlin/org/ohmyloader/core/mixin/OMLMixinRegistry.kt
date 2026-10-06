@@ -8,6 +8,8 @@ import org.ohmyloader.api.mixin.CallbackInfo
 import org.ohmyloader.api.mixin.CallbackInfoReturnable
 import org.ohmyloader.core.transformer.injection.Boxing
 import java.lang.reflect.InvocationTargetException
+import java.lang.reflect.Method
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -64,7 +66,14 @@ object OMLMixinRegistry {
 
     private val nextId = AtomicInteger()
     private val handlers = mutableMapOf<Int, Handler>()
-    private val mixinInstances = mutableMapOf<String, Any>()
+    private val mixinInstances = ConcurrentHashMap<String, Any>()
+
+    /**
+     * Handler methods resolved per handler id. Resolution is deterministic (the mixin instance — and with it
+     * the handler class — is fixed at registration), so it happens once per handler; the dispatch path must not
+     * pay a `getMethods` clone per invocation. Cleared in [resetForTests] (ids restart from 1).
+     */
+    private val resolvedMethods = ConcurrentHashMap<Int, Method>()
     private var loader: ClassLoader? = null
     private var bridgeLoaded = false
 
@@ -197,6 +206,7 @@ object OMLMixinRegistry {
         synchronized(this) {
             nextId.set(0)
             handlers.clear()
+            resolvedMethods.clear()
             mixinInstances.clear()
             bridgeClass = null
             bridgeLoaded = false
@@ -357,8 +367,7 @@ object OMLMixinRegistry {
         var canceled = false
         try {
             val instance = mixinInstance(handler.mixinClass)
-            val method = resolveHandlerMethod(instance.javaClass, handler)
-                ?: throw NoSuchMethodException(handlerDescription(handler))
+            val method = handlerMethod(handler, instance.javaClass)
             val ci = CallbackInfo(handler.targetMethod, cancellable)
             method.invoke(instance, *(captures + ci))
             canceled = ci.canceled
@@ -381,8 +390,7 @@ object OMLMixinRegistry {
         val handler = handlers[id] ?: return
         try {
             val instance = mixinInstance(handler.mixinClass)
-            val method = resolveHandlerMethod(instance.javaClass, handler)
-                ?: throw NoSuchMethodException(handlerDescription(handler))
+            val method = handlerMethod(handler, instance.javaClass)
             method.invoke(instance, *(captures + callback))
             if (callback.canceled && callback.returnValue == null) {
                 // Canceled without setting a value: the engine will use the zero value for the return type
@@ -412,14 +420,22 @@ object OMLMixinRegistry {
     fun dispatchValue(captures: Array<Any?>, id: Int): Any? {
         val handler = handlers[id] ?: return null
         val instance = mixinInstance(handler.mixinClass)
-        val method = resolveHandlerMethod(instance.javaClass, handler)
-            ?: throw NoSuchMethodException(handlerDescription(handler))
+        val method = handlerMethod(handler, instance.javaClass)
         return try {
             method.invoke(instance, *captures)
         } catch (e: InvocationTargetException) {
             throw e.targetException
         }
     }
+
+    /**
+     * Resolve (and cache) the handler method for [handler] on [clazz]. Unresolvable handlers are **not**
+     * cached: they throw on every dispatch, matching the pre-cache failure behavior.
+     */
+    private fun handlerMethod(handler: Handler, clazz: Class<*>): Method =
+        resolvedMethods[handler.id]
+            ?: resolveHandlerMethod(clazz, handler)?.also { resolvedMethods[handler.id] = it }
+            ?: throw NoSuchMethodException(handlerDescription(handler))
 
     private fun handlerDescription(handler: Handler): String = when {
         handler.returnsValue -> "${handler.mixinClass}.${handler.handlerMethod} (expected ${handler.handlerParamCount} parameter(s)," +
@@ -451,7 +467,7 @@ object OMLMixinRegistry {
      * notify/short-circuit kinds end with the callback handle; [BridgeKind.MODIFY] / [BridgeKind.MIRROR] have
      * no handle, their parameters are captures + the return type.
      */
-    private fun resolveHandlerMethod(clazz: Class<*>, handler: Handler): java.lang.reflect.Method? {
+    private fun resolveHandlerMethod(clazz: Class<*>, handler: Handler): Method? {
         val wanted = when (kindOf(handler)) {
             BridgeKind.NOTIFY, BridgeKind.CANCELLABLE ->
                 "(${handler.captureTypes.joinToString("")}$CALLBACK_INFO_DESC)V"
@@ -478,14 +494,12 @@ object OMLMixinRegistry {
      * of class … with modifiers "private"`, which the exception-isolation mechanism swallows into one log line,
      * making it hard to see the problem is the constructor and not the handler.
      */
-    private fun mixinInstance(mixinClass: String): Any = synchronized(mixinInstances) {
-        mixinInstances.getOrPut(mixinClass) {
-            val cl = loader ?: throw IllegalStateException("the Mixin class loader is not ready yet")
-            val clazz = Class.forName(mixinClass, true, cl)
-            val ctor = clazz.getDeclaredConstructor()
-            ctor.isAccessible = true
-            ctor.newInstance()
-        }
+    private fun mixinInstance(mixinClass: String): Any = mixinInstances.computeIfAbsent(mixinClass) {
+        val cl = loader ?: throw IllegalStateException("the Mixin class loader is not ready yet")
+        val clazz = Class.forName(mixinClass, true, cl)
+        val ctor = clazz.getDeclaredConstructor()
+        ctor.isAccessible = true
+        ctor.newInstance()
     }
 
     private const val REGISTRY = "org/ohmyloader/core/mixin/OMLMixinRegistry"

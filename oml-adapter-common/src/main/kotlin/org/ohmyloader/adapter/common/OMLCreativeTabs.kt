@@ -8,7 +8,6 @@ import net.minecraft.world.item.CreativeModeTab
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.ItemLike
 import org.ohmyloader.core.OMLCore
-import java.util.function.Supplier
 
 /**
  * The shared `oml:main` creative tab, auto-populated with every materialized mod item. Registered
@@ -30,8 +29,8 @@ object OMLCreativeTabs {
         if (itemLikes.isEmpty()) return
         val tab = CreativeModeTab.builder(TAB_ROW, TAB_COLUMN)
             .title(Component.translatable("itemGroup.oml.main"))
-            .icon(Supplier { ItemStack(itemLikes.first()) })
-            .displayItems(CreativeModeTab.DisplayItemsGenerator { _, output ->
+            .icon { ItemStack(itemLikes.first()) }
+            .displayItems { _, output ->
                 // `Output` is a protected nested type in the game jar's InnerClasses attribute, so
                 // Kotlin cannot name it or reference its members; the receiver is driven through
                 // reflection, picking the ItemLike overload by parameter type.
@@ -40,7 +39,7 @@ object OMLCreativeTabs {
                         it.parameterTypes[0].name == "net.minecraft.world.level.ItemLike"
                 }.apply { isAccessible = true }
                 itemLikes.forEach { accept.invoke(output, it) }
-            })
+            }
             .build()
         val key = ResourceKey.create(
             Registries.CREATIVE_MODE_TAB,

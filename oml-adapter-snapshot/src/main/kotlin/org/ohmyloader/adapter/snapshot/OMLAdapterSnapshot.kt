@@ -1,11 +1,6 @@
 package org.ohmyloader.adapter.snapshot
 
-import org.ohmyloader.adapter.common.MinecraftContentRegistry
-import org.ohmyloader.adapter.common.MinecraftHookTransformer
-import org.ohmyloader.adapter.common.NetworkCompressionTransformer
-import org.ohmyloader.adapter.common.NetworkPayloadTransformer
-import org.ohmyloader.adapter.common.OMLNetworkBridge
-import org.ohmyloader.adapter.common.ServerHookTransformer
+import org.ohmyloader.adapter.common.*
 import org.ohmyloader.core.spi.IAdapter
 import org.ohmyloader.core.transformer.IClassTransformer
 

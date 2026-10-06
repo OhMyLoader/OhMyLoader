@@ -230,7 +230,9 @@ class MinecraftHookTransformer(private val idPrefix: String) : InjectingTransfor
             ) {
                 atHead {
                     call(
-                        "org/ohmyloader/adapter/common/EventBridge", "onCommandsReady", "(Lnet/minecraft/commands/Commands;)V",
+                        "org/ohmyloader/adapter/common/EventBridge",
+                        "onCommandsReady",
+                        "(Lnet/minecraft/commands/Commands;)V",
                         args = listOf(DslValue.This),
                     )
                 }

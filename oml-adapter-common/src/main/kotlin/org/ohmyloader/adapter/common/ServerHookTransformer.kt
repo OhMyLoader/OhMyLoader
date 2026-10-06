@@ -39,7 +39,9 @@ class ServerHookTransformer(private val idPrefix: String) : InjectingTransformer
             ) {
                 atHead {
                     call(
-                        "org/ohmyloader/adapter/common/EventBridge", "onCommandsReady", "(Lnet/minecraft/commands/Commands;)V",
+                        "org/ohmyloader/adapter/common/EventBridge",
+                        "onCommandsReady",
+                        "(Lnet/minecraft/commands/Commands;)V",
                         args = listOf(DslValue.This),
                     )
                 }

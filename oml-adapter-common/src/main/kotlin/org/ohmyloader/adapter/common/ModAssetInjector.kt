@@ -6,7 +6,9 @@ import org.ohmyloader.content.ModAssetIndex
 import org.ohmyloader.core.OMLCore
 import org.ohmyloader.core.adapter.Refl
 import java.io.ByteArrayInputStream
+import java.lang.reflect.Method
 import java.lang.reflect.Proxy
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 26.3 mod asset injection: a reflection-`Proxy` `PackResources` mounted into `PackRepository` (no compile-time game dependency). A shape mismatch here does not throw — it reads as "the mod silently has no assets", so every reflection point is written against the live jar shape.
@@ -36,6 +38,17 @@ object ModAssetInjector {
 
     /** Repositories the pack is already mounted into — the client and the (integrated or dedicated) server each have their own. */
     private val mountedRepos: MutableSet<Any> = java.util.Collections.newSetFromMap(java.util.IdentityHashMap())
+
+    /**
+     * `(getNamespace, getPath)` accessors for the identifier class the game passes into `getResource`,
+     * cached per class: every resource request would otherwise repeat the `getMethod` lookup.
+     */
+    private val identifierAccessCache = ConcurrentHashMap<Class<*>, Pair<Method, Method>>()
+
+    private fun identifierAccess(clazz: Class<*>): Pair<Method, Method> =
+        identifierAccessCache.getOrPut(clazz) {
+            clazz.getMethod("getNamespace") to clazz.getMethod("getPath")
+        }
 
     @Synchronized
     fun ensureInjected(repo: Any) {
@@ -187,7 +200,6 @@ object ModAssetInjector {
                     // loader.getResource("assets/minecraft/…") finds — the game jar's own copy,
                     // which ships 69-byte placeholder panorama textures where the real ones come
                     // from the downloaded asset index (the missing title-screen background).
-                    val serverData = packTypeClass.getField("SERVER_DATA").get(null)
                     if (args.getOrNull(0) == serverData &&
                         MinecraftContentRegistry.oreTargetedBiomes().isNotEmpty() && "minecraft" !in base
                     ) {
@@ -206,8 +218,9 @@ object ModAssetInjector {
                     // loads singleplayer datapacks asks with SERVER_RESOURCES from the same
                     // repository pipeline.
                     val identifier = args[1]
-                    val namespace = identifier.javaClass.getMethod("getNamespace").invoke(identifier) as String
-                    val path = identifier.javaClass.getMethod("getPath").invoke(identifier) as String
+                    val [getNamespace, getPath] = identifierAccess(identifier.javaClass)
+                    val namespace = getNamespace.invoke(identifier) as String
+                    val path = getPath.invoke(identifier) as String
                     resolveResource(namespace, path, loader)?.let { bytes ->
                         ioSupplierOf(ioSupplierClass, loader, bytes)
                     }
@@ -513,7 +526,7 @@ object ModAssetInjector {
         emptyList()
     }
 
-    private val blockIdCache = java.util.concurrent.ConcurrentHashMap<String, Set<String>>()
+    private val blockIdCache = ConcurrentHashMap<String, Set<String>>()
 
     /**
      * Block ids per namespace, cached: [resolveResource] consults them per asset request (block

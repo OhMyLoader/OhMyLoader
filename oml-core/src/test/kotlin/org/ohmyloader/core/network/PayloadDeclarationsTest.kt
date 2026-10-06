@@ -4,12 +4,7 @@ import org.ohmyloader.api.network.OMLNetworkContext
 import org.ohmyloader.api.network.OMLPacketBuffer
 import org.ohmyloader.api.network.OMLPayloadCodec
 import org.ohmyloader.api.network.OMLPayloadType
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 /**
  * The declaration contract of a custom-payload channel: namespacing, the two rejection rules that keep a
@@ -55,8 +50,11 @@ class PayloadDeclarationsTest {
         // Left unchecked, the game's identifier parser throws inside the payload registry's own
         // class initialization: a crash that names neither the mod nor the channel.
         val bad = assertFailsWith<IllegalArgumentException> {
-            PayloadDeclarations.add("ns2", type("NS2:Bad Name"), PayloadDeclarations.Direction.CLIENT_TO_SERVER) {
-                _, _ ->
+            PayloadDeclarations.add(
+                "ns2",
+                type("NS2:Bad Name"),
+                PayloadDeclarations.Direction.CLIENT_TO_SERVER,
+            ) { _, _ ->
             }
         }
         assertTrue(bad.message!!.contains("ns2"), "the message must name the mod: ${bad.message}")
@@ -66,8 +64,11 @@ class PayloadDeclarationsTest {
     fun `two claims of one channel in one direction are rejected`() {
         PayloadDeclarations.add("ns3", type("ns3:shared"), PayloadDeclarations.Direction.SERVER_TO_CLIENT) { _, _ -> }
         val clash = assertFailsWith<IllegalStateException> {
-            PayloadDeclarations.add("other", type("ns3:shared"), PayloadDeclarations.Direction.SERVER_TO_CLIENT) {
-                _, _ ->
+            PayloadDeclarations.add(
+                "other",
+                type("ns3:shared"),
+                PayloadDeclarations.Direction.SERVER_TO_CLIENT,
+            ) { _, _ ->
             }
         }
         assertTrue(clash.message!!.contains("[ns3]"), "the message must name the first claimant: ${clash.message}")

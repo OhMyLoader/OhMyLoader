@@ -24,7 +24,7 @@ class OMLConfigImpl(modId: String, configDir: File) : OMLConfig {
 
     init {
         if (file.isFile) {
-            fileValues = MinimalToml.parse(file.readText()).getValue("").mapValues { (_, v) -> unwrap(v) }
+            fileValues = MinimalToml.parse(file.readText()).getValue("").mapValues { [_, v] -> unwrap(v) }
         }
     }
 
@@ -54,7 +54,7 @@ class OMLConfigImpl(modId: String, configDir: File) : OMLConfig {
 
     private fun read(name: String): Any {
         val entry = entries[name] ?: error(
-            "config entry '$name' was never defined by ${file.nameWithoutExtension} — define it before reading"
+            "config entry '$name' was never defined by ${file.nameWithoutExtension} — define it before reading",
         )
         val value = fileValues[name]
         if (value != null && entry.type.isInstance(value)) return value

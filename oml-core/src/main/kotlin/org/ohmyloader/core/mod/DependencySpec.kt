@@ -45,7 +45,7 @@ data class DependencySpec(val modId: String, val op: Op?, val version: String?) 
             if (constraint.isEmpty()) throw IllegalStateException("dependency '$entry' has a constraint with no version")
             val symbol = OPS.firstOrNull { constraint.startsWith(it) }
                 ?: throw IllegalStateException(
-                    "dependency '$entry' has no readable constraint — expected one of >=, <=, >, <, = after '@'"
+                    "dependency '$entry' has no readable constraint — expected one of >=, <=, >, <, = after '@'",
                 )
             val version = constraint.removePrefix(symbol).trim()
             if (version.isEmpty()) throw IllegalStateException("dependency '$entry' has a constraint with no version")

@@ -22,7 +22,7 @@ import org.ohmyloader.core.adapter.Refl
 import org.ohmyloader.core.network.PayloadDeclarations
 import org.ohmyloader.core.network.PayloadDeclarations.Direction
 import org.ohmyloader.core.network.PayloadDeclarations.Entry
-import java.util.UUID
+import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -66,7 +66,7 @@ object OMLNetworkBridge : OMLNetworkSender {
     @JvmStatic
     fun onPayloadRegistration(list: Any?) {
         @Suppress("UNCHECKED_CAST")
-        val target = (list as? java.util.ArrayList<*>) as? MutableList<Any> ?: return
+        val target = (list as? ArrayList<*>) as? MutableList<Any> ?: return
         val taken = target.mapNotNull {
             (it as? CustomPacketPayload.TypeAndCodec<*, *>)?.type()?.id()?.toString()
         }.toSet()
@@ -92,10 +92,10 @@ object OMLNetworkBridge : OMLNetworkSender {
 
     /** The game's payload-type key for a channel; records compare by identifier, but one instance per channel is cheaper. */
     private fun typeOf(wireId: String): CustomPacketPayload.Type<Envelope<*>> =
-        payloadTypes.getOrPut(wireId) { CustomPacketPayload.Type<Envelope<*>>(identifierOf(wireId)) }
+        payloadTypes.getOrPut(wireId) { CustomPacketPayload.Type(identifierOf(wireId)) }
 
     private fun identifierOf(wireId: String): Identifier {
-        val (namespace, path) = wireId.split(':', limit = 2)
+        val [namespace, path] = wireId.split(':', limit = 2)
         return Identifier.fromNamespaceAndPath(namespace, path)
     }
 
@@ -129,7 +129,7 @@ object OMLNetworkBridge : OMLNetworkSender {
      */
     @JvmStatic
     fun onServerPayload(listener: ServerGamePacketListenerImpl, packet: ServerboundCustomPayloadPacket): Boolean =
-        deliverInbound(packet.payload(), Direction.CLIENT_TO_SERVER, listener.player?.scoreboardName, listener)
+        deliverInbound(packet.payload(), Direction.CLIENT_TO_SERVER, listener.player.scoreboardName, listener)
 
     /**
      * The routing mechanism: an OML envelope arriving in a direction nobody declared is left to vanilla

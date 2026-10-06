@@ -3,30 +3,26 @@ package org.ohmyloader.core
 import org.ohmyloader.api.ModContext
 import org.ohmyloader.api.OMLModInitializer
 import org.ohmyloader.api.OmlLog
-import org.ohmyloader.api.content.ContentRegistryFactory
-import org.ohmyloader.core.command.CommandDeclarations
+import org.ohmyloader.api.client.OMLKeyBindingProvider
+import org.ohmyloader.api.client.OMLKeyBindingRegistry
 import org.ohmyloader.api.command.OMLCommandDeclaration
 import org.ohmyloader.api.command.OMLCommandProvider
 import org.ohmyloader.api.command.OMLCommandRegistry
+import org.ohmyloader.api.content.ContentRegistryFactory
 import org.ohmyloader.api.content.OMLContentProvider
-import org.ohmyloader.api.network.OMLNetwork
-import org.ohmyloader.api.network.OMLNetworkContext
-import org.ohmyloader.api.network.OMLNetworkProvider
-import org.ohmyloader.api.network.OMLNetworkRegistry
-import org.ohmyloader.api.client.OMLKeyBindingProvider
-import org.ohmyloader.api.client.OMLKeyBindingRegistry
-import org.ohmyloader.core.client.KeyBindingDeclarations
-import org.ohmyloader.api.network.OMLPayloadType
-import org.ohmyloader.core.network.PayloadDeclarations
+import org.ohmyloader.api.network.*
 import org.ohmyloader.content.AbstractContentRegistry
 import org.ohmyloader.content.TomlContentLoader
 import org.ohmyloader.core.OMLCore.installLogFile
 import org.ohmyloader.core.classloader.OMLClassLoader
+import org.ohmyloader.core.client.KeyBindingDeclarations
+import org.ohmyloader.core.command.CommandDeclarations
 import org.ohmyloader.core.mixin.MixinScanner
 import org.ohmyloader.core.mixin.OMLMixinRegistry
 import org.ohmyloader.core.mod.ModContainer
 import org.ohmyloader.core.mod.ModGraph
 import org.ohmyloader.core.mod.ModScanner
+import org.ohmyloader.core.network.PayloadDeclarations
 import org.ohmyloader.core.ruleset.ModRuleSets
 import org.ohmyloader.core.spi.IAdapter
 import org.ohmyloader.core.transformer.IClassTransformer
@@ -630,12 +626,12 @@ object OMLCore {
         val mods = node("mods").apply {
             executes { source ->
                 source.reply("${initOrder.size} mod(s) loaded:")
-                for (mod in initOrder) {
-                    val failure = initFailures[mod.id]
+                for ((id, _, version) in initOrder) {
+                    val failure = initFailures[id]
                     if (failure == null) {
-                        source.reply("  ${mod.id} ${mod.version}")
+                        source.reply("  $id $version")
                     } else {
-                        source.replyError("  ${mod.id} ${mod.version} — FAILED: ${failure.message}")
+                        source.replyError("  $id $version — FAILED: ${failure.message}")
                     }
                 }
                 for (id in initFailures.keys - initOrder.map { it.id }.toSet()) {

@@ -22,7 +22,7 @@ class NetworkPayloadTransformer(private val idPrefix: String) : InjectingTransfo
         classTarget(payload) {
             method(
                 "codec",
-                desc = "(L$payload\$FallbackProvider;Ljava/util/List;)Lnet/minecraft/network/codec/StreamCodec;",
+                desc = $$"(L$$payload$FallbackProvider;Ljava/util/List;)Lnet/minecraft/network/codec/StreamCodec;",
             ) {
                 atHead {
                     call(bridge, "onPayloadRegistration", "(Ljava/lang/Object;)V", args = listOf(DslValue.Arg(1)))

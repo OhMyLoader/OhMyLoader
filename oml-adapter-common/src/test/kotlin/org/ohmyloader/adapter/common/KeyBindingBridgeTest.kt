@@ -19,7 +19,7 @@ class KeyBindingBridgeTest {
     @Test
     fun `a declaration becomes a live mapping under the oml category`() {
         KeyBindingDeclarations.entries += KeyBindingDeclarations.Entry("kb_shape", "probe", "key.keyboard.k") {}
-        val (mapping, _) = OMLKeyBindingsBridge.createPending().single()
+        val [mapping, _] = OMLKeyBindingsBridge.createPending().single()
         assertEquals("key.kb_shape.probe", mapping.name)
         assertEquals("oml:main", mapping.category.id().toString())
         assertEquals("key.keyboard.k", mapping.defaultKey.name)
@@ -30,7 +30,7 @@ class KeyBindingBridgeTest {
         // getKey(String) throws NumberFormatException on a non-numeric suffix after a known prefix;
         // the bridge must map that to InputConstants.UNKNOWN, not fail startup.
         KeyBindingDeclarations.entries += KeyBindingDeclarations.Entry("kb_bad", "probe", "key.keyboard.nope") {}
-        val (mapping, _) = OMLKeyBindingsBridge.createPending().single()
+        val [mapping, _] = OMLKeyBindingsBridge.createPending().single()
         assertTrue(mapping.isUnbound, "a bad default key must leave the mapping unbound")
     }
 
@@ -40,7 +40,7 @@ class KeyBindingBridgeTest {
         KeyBindingDeclarations.entries += KeyBindingDeclarations.Entry("kb_press", "probe", "key.keyboard.k") {
             presses++
         }
-        val (mapping, _) = OMLKeyBindingsBridge.createPending().single()
+        val [mapping, _] = OMLKeyBindingsBridge.createPending().single()
 
         // matches() compares the mapping's key value against the record's first component.
         OMLKeyBindingsBridge.dispatchPress(KeyEvent(mapping.defaultKey.value, 0, 0))
@@ -56,7 +56,7 @@ class KeyBindingBridgeTest {
         KeyBindingDeclarations.entries += KeyBindingDeclarations.Entry("kb_gate", "probe", "key.keyboard.k") {
             presses++
         }
-        val (mapping, _) = OMLKeyBindingsBridge.createPending().single()
+        val [mapping, _] = OMLKeyBindingsBridge.createPending().single()
         // Headless: Minecraft.getInstance() is null, so the screen gate is vacuous and the action
         // gate alone is under test. A real press uses action 1 (SDLEventHandler's press encoding).
         EventBridge.onKeyPress(0L, InputConstants.RELEASE, KeyEvent(mapping.defaultKey.value, 0, 0))

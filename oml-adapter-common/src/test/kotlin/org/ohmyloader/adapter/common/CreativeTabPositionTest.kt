@@ -2,13 +2,7 @@ package org.ohmyloader.adapter.common
 
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.Opcodes
-import org.objectweb.asm.tree.AbstractInsnNode
-import org.objectweb.asm.tree.ClassNode
-import org.objectweb.asm.tree.FieldInsnNode
-import org.objectweb.asm.tree.IntInsnNode
-import org.objectweb.asm.tree.InsnNode
-import org.objectweb.asm.tree.LdcInsnNode
-import org.objectweb.asm.tree.MethodInsnNode
+import org.objectweb.asm.tree.*
 import java.io.File
 import java.util.jar.JarFile
 import kotlin.test.Test
@@ -43,7 +37,7 @@ class CreativeTabPositionTest {
                 if (insn is MethodInsnNode && insn.owner == "net/minecraft/world/item/CreativeModeTab" &&
                     insn.name == "builder"
                 ) {
-                    // Stack shape at the call: [Row getstatic][column int push][builder]. 
+                    // Stack shape at the call: [Row getstatic][column int push][builder].
                     val row = prevPrev as? FieldInsnNode
                     val column = intPushed(prev)
                     if (row == null || column == null) {

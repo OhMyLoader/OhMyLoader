@@ -11,13 +11,8 @@ import org.ohmyloader.api.network.OMLPayloadCodec
 import org.ohmyloader.api.network.OMLPayloadType
 import org.ohmyloader.core.network.PayloadDeclarations
 import org.ohmyloader.core.network.PayloadDeclarations.Direction
-import java.util.UUID
-import kotlin.test.Test
-import kotlin.test.assertContentEquals
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertIs
-import kotlin.test.assertTrue
+import java.util.*
+import kotlin.test.*
 
 /**
  * The payload bridge against the game's own routing: a declared channel is appended to the real list
@@ -81,10 +76,11 @@ class NetworkPayloadBridgeTest {
     }
 
     /** Vanilla's own snapshot step, called the way a payload packet class's static init calls it. */
-    private fun dispatchOf(list: java.util.ArrayList<Any>): StreamCodec<FriendlyByteBuf, CustomPacketPayload> {
+    private fun dispatchOf(list: ArrayList<Any>): StreamCodec<FriendlyByteBuf, CustomPacketPayload> {
         val unknown = CustomPacketPayload.FallbackProvider<FriendlyByteBuf> { id ->
             error("the test sent a channel nobody registered: $id")
         }
+
         @Suppress("UNCHECKED_CAST")
         val channels = list as List<CustomPacketPayload.TypeAndCodec<in FriendlyByteBuf, *>>
         return CustomPacketPayload.codec(unknown, channels)
@@ -93,7 +89,7 @@ class NetworkPayloadBridgeTest {
     @Test
     fun `a declared channel travels the game's identifier routing with every field`() {
         declare("rt1", "ping")
-        val list = java.util.ArrayList<Any>().apply { add(vanillaBrandEntry()) }
+        val list = ArrayList<Any>().apply { add(vanillaBrandEntry()) }
         OMLNetworkBridge.onPayloadRegistration(list)
         assertTrue(
             OMLNetworkBridge.publishedChannels.contains("rt1:ping"),
@@ -117,14 +113,14 @@ class NetworkPayloadBridgeTest {
         val before = OMLNetworkBridge.publishedChannels
         // `List.of(…)` is what the config-phase codec of the same method passes: adding to it would throw
         // inside vanilla's payload class initialization — a bootstrap crash naming neither mod nor channel.
-        OMLNetworkBridge.onPayloadRegistration(java.util.List.of(vanillaBrandEntry()))
+        OMLNetworkBridge.onPayloadRegistration(listOf(vanillaBrandEntry()))
         assertEquals(before, OMLNetworkBridge.publishedChannels, "an immutable list must be skipped")
     }
 
     @Test
     fun `a channel the game already registers is skipped rather than duplicated`() {
         declare("minecraft", "brand")
-        val list = java.util.ArrayList<Any>().apply { add(vanillaBrandEntry()) }
+        val list = ArrayList<Any>().apply { add(vanillaBrandEntry()) }
         // The game's snapshot is Collectors.toUnmodifiableMap, which throws on a duplicate key.
         OMLNetworkBridge.onPayloadRegistration(list)
         val brands = list.count {
@@ -150,10 +146,8 @@ class NetworkPayloadBridgeTest {
 
     @Test
     fun `a payload OML does not own is left to vanilla`() {
-        val foreign = object : CustomPacketPayload {
-            override fun type(): CustomPacketPayload.Type<out CustomPacketPayload> =
-                CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("minecraft", "foreign"))
-        }
+        val foreign =
+            CustomPacketPayload { CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("minecraft", "foreign")) }
         assertFalse(OMLNetworkBridge.deliverInbound(foreign, Direction.CLIENT_TO_SERVER, null, "listener"))
         assertFalse(OMLNetworkBridge.deliverInbound(null, Direction.CLIENT_TO_SERVER, null, "listener"))
     }
@@ -166,8 +160,8 @@ class NetworkPayloadBridgeTest {
     }
 
     /** A list element of the shape the game's own list holds, claiming the vanilla brand channel. */
-    private fun vanillaBrandEntry(): Any = CustomPacketPayload.TypeAndCodec(
-        CustomPacketPayload.Type<CustomPacketPayload>(Identifier.fromNamespaceAndPath("minecraft", "brand")),
+    private fun vanillaBrandEntry() = CustomPacketPayload.TypeAndCodec(
+        CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("minecraft", "brand")),
         object : StreamCodec<FriendlyByteBuf, CustomPacketPayload> {
             override fun encode(buf: FriendlyByteBuf, value: CustomPacketPayload) {
                 buf.writeBoolean(true)
@@ -177,8 +171,6 @@ class NetworkPayloadBridgeTest {
         },
     )
 
-    private fun foreignPayload(): CustomPacketPayload = object : CustomPacketPayload {
-        override fun type(): CustomPacketPayload.Type<out CustomPacketPayload> =
-            CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("minecraft", "brand"))
-    }
+    private fun foreignPayload(): CustomPacketPayload =
+        CustomPacketPayload { CustomPacketPayload.Type(Identifier.fromNamespaceAndPath("minecraft", "brand")) }
 }

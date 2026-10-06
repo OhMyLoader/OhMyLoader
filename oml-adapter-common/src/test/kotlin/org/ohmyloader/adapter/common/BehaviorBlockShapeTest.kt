@@ -86,7 +86,7 @@ class BehaviorBlockShapeTest {
                 assertEquals(
                     declared.desc.substringBefore(')'),
                     game.desc.substringBefore(')'),
-                    "$name's parameters drifted from the game's EntityBlock: ${declared.desc} vs ${game.desc}"
+                    "$name's parameters drifted from the game's EntityBlock: ${declared.desc} vs ${game.desc}",
                 )
             }
             val beClass = readOur("org/ohmyloader/adapter/common/OMLMachineBlockEntity.class")

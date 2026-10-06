@@ -5,10 +5,11 @@ import java.util.*
 /**
  * Timing and scale statistics for the transformation pipeline: how many classes were transformed and how long it
  * took, where the time went (parse / version conversion / merging / injection / write-back), with totals and
- * averages plus the slowest few classes — only concrete class names tell you what to optimize. Recording is
- * always on (negligible next to ASM parsing; "wanting to see" is only realized afterward); printing
- * is gated by the system property `oml.diagnostics` (any non-empty value other than `false`), read once on first
- * touch. A first report prints once [FIRST_REPORT_AT] classes have been transformed, then every [REPORT_EVERY]
+ * averages plus the slowest few classes — only concrete class names tell you what to optimize. Recording and
+ * printing are both gated by the system property `oml.diagnostics` (any non-empty value other than `false`),
+ * read once on first touch; with the switch off the per-class recording path is a bare flag check — class
+ * loading is multi-threaded, so the recorder's lock must not sit on that path. A first report prints once
+ * [FIRST_REPORT_AT] classes have been transformed, then every [REPORT_EVERY]
  * classes — the report must be visible while running, since a hard-killed game (`TerminateProcess` on Windows)
  * never runs the shutdown hook — with a final report on normal exit as fallback. Phases **overlap** (conversion
  * includes merge and inject): numbers compare horizontally only, never summed.
@@ -106,14 +107,16 @@ internal object Diagnostics {
     }
 
     fun recordClass(internalName: String, nanos: Long, changed: Boolean) {
+        if (!enabled) return
         val count = recorder.recordClass(internalName, nanos, changed)
-        if (enabled && count >= nextReportAt) {
+        if (count >= nextReportAt) {
             nextReportAt = count + REPORT_EVERY
             printReport()
         }
     }
 
     fun recordPhase(phase: String, nanos: Long) {
+        if (!enabled) return
         recorder.recordPhase(phase, nanos)
     }
 

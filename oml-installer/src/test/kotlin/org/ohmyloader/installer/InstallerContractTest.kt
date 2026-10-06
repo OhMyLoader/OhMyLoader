@@ -378,11 +378,11 @@ class InstallerContractTest {
         val libDir = File("build/resources/main/lib")
         assertTrue(libDir.isDirectory, "this test must run from the oml-installer project directory")
         val shipped = libDir.listFiles()!!.map { it.name }
-        for (entry in VersionCatalog.versions()) {
+        for ((version, _, adapterArtifact) in VersionCatalog.versions()) {
             assertTrue(
-                shipped.any { it.startsWith("${entry.adapterArtifact}-") },
-                "lib/ lacks the adapter jar for catalogue version \"${entry.version}\" " +
-                    "(${entry.adapterArtifact}); shipped: $shipped",
+                shipped.any { it.startsWith("$adapterArtifact-") },
+                "lib/ lacks the adapter jar for catalogue version \"$version\" " +
+                    "($adapterArtifact); shipped: $shipped",
             )
         }
     }

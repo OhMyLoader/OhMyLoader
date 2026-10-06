@@ -1,8 +1,8 @@
 package org.ohmyloader.adapter.common
 
+import net.minecraft.world.level.ItemLike
 import net.minecraft.world.level.block.entity.BlockEntityType
 import net.minecraft.world.level.block.state.BlockBehaviour
-import net.minecraft.world.level.ItemLike
 import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.content.OMLBlock
 import org.ohmyloader.api.content.OMLItem

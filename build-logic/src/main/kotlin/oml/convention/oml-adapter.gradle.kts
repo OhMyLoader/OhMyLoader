@@ -79,10 +79,13 @@ afterEvaluate {
         outputs.dir(gameLibraries)
         inputs.property("gameVersion", versionId)
     }
-    dependencies.add("testRuntimeOnly", fileTree(gameLibraries) {
-        include("**/*.jar")
-        exclude("**/io/netty/**")
-    })
+    dependencies.add(
+        "testRuntimeOnly",
+        fileTree(gameLibraries) {
+            include("**/*.jar")
+            exclude("**/io/netty/**")
+        },
+    )
 
     tasks.withType<Test>().configureEach {
         dependsOn(fetchGameLibraries)

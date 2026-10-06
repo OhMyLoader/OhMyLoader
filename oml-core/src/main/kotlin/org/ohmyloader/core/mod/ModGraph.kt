@@ -19,25 +19,25 @@ object ModGraph {
             val existing = byId[mod.id]
             if (existing != null) {
                 problems.add(
-                    "duplicate mod id [${mod.id}]: loaded from both ${existing.file.name} and ${mod.file.name}"
+                    "duplicate mod id [${mod.id}]: loaded from both ${existing.file.name} and ${mod.file.name}",
                 )
             } else {
                 byId[mod.id] = mod
             }
         }
 
-        for (mod in byId.values) {
-            for (dep in mod.dependencies) {
+        for ((id, _, _, _, file, dependencies) in byId.values) {
+            for (dep in dependencies) {
                 val required = byId[dep.modId]
                 when {
                     required == null -> problems.add(
-                        "mod [${mod.id}] (${mod.file.name}) depends on [${dep.display}], " +
-                            "which is not loaded (installed mods: ${byId.keys.joinToString(", ")})"
+                        "mod [$id] (${file.name}) depends on [${dep.display}], " +
+                            "which is not loaded (installed mods: ${byId.keys.joinToString(", ")})",
                     )
 
                     !dep.satisfiedBy(required.version) -> problems.add(
-                        "mod [${mod.id}] depends on [${dep.display}], " +
-                            "but the loaded version of [${dep.modId}] is ${required.version}"
+                        "mod [$id] depends on [${dep.display}], " +
+                            "but the loaded version of [${dep.modId}] is ${required.version}",
                     )
                 }
             }
@@ -49,8 +49,8 @@ object ModGraph {
         val dependents = HashMap<String, MutableList<ModContainer>>()
         for (mod in byId.values) {
             inDegree.putIfAbsent(mod.id, 0)
-            for (dep in mod.dependencies) {
-                val required = byId[dep.modId] ?: continue
+            for ((modId) in mod.dependencies) {
+                val required = byId[modId] ?: continue
                 inDegree.merge(mod.id, 1, Int::plus)
                 dependents.getOrPut(required.id) { mutableListOf() }.add(mod)
             }
@@ -65,21 +65,21 @@ object ModGraph {
                 ?: break // nothing ready: the rest is a cycle, reported below
             remaining.remove(ready)
             ordered += ready
-            for (dependent in dependents[ready.id].orEmpty()) {
-                inDegree.merge(dependent.id, -1, Int::plus)
+            for ((id) in dependents[ready.id].orEmpty()) {
+                inDegree.merge(id, -1, Int::plus)
             }
         }
         if (ordered.size < byId.size) {
             val stuck = byId.values.filter { it !in ordered }.map { it.id }
             problems.add(
                 "dependency cycle through: ${stuck.joinToString(" -> ")} — " +
-                    "every mod in the cycle depends (directly or transitively) on another one in it"
+                    "every mod in the cycle depends (directly or transitively) on another one in it",
             )
         }
 
         if (problems.isNotEmpty()) {
             throw IllegalStateException(
-                "mod loading cannot continue:\n" + problems.joinToString("\n") { "  - $it" }
+                "mod loading cannot continue:\n" + problems.joinToString("\n") { "  - $it" },
             )
         }
         return ordered

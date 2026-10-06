@@ -75,7 +75,7 @@ class HookShapeTest {
         JarFile(clientJar).use { jar ->
             val failures = mutableListOf<String>()
             for ([side, target, classRules] in allClasses(jar)) {
-                val node = classNode(jar, target) ?: continue // covered by the class-existence test
+                val node = classNode(jar, target) // covered by the class-existence test
                 for (rule in classRules.methods) {
                     val matches = node.methods.filter { it.name in rule.selector.names }
                     if (matches.isEmpty()) {
@@ -98,7 +98,7 @@ class HookShapeTest {
         JarFile(clientJar).use { jar ->
             val failures = mutableListOf<String>()
             for ([side, target, classRules] in allClasses(jar)) {
-                val node = classNode(jar, target) ?: continue
+                val node = classNode(jar, target)
                 val callSites = invokedMethods(node)
                 for (rule in classRules.methods) {
                     for ([anchor, _] in rule.points) {
@@ -123,7 +123,7 @@ class HookShapeTest {
         JarFile(clientJar).use { jar ->
             val failures = mutableListOf<String>()
             for ([side, target, classRules] in allClasses(jar)) {
-                val node = classNode(jar, target) ?: continue
+                val node = classNode(jar, target)
                 for (rule in classRules.accessRules) {
                     if (rule.kind != org.ohmyloader.api.inject.MemberKind.FIELD) continue
                     for (name in rule.names) {

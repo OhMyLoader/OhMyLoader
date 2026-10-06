@@ -50,7 +50,7 @@ object OMLKeyBindingsBridge {
 
     /** Appends every pending mapping to the live options; called at the head of each client tick. */
     fun applyPending() {
-        val mc = Minecraft.getInstance() ?: return
+        val mc = Minecraft.getInstance()
         val created = createPending()
         if (created.isEmpty()) return
         val field = keyMappingsField
@@ -60,7 +60,7 @@ object OMLKeyBindingsBridge {
 
     /** Dispatches a key event to every OML mapping it matches, in declaration order. */
     fun dispatchPress(event: KeyEvent) {
-        for ((mapping, onPress) in bound) {
+        for ([mapping, onPress] in bound) {
             if (mapping.matches(event)) onPress()
         }
     }

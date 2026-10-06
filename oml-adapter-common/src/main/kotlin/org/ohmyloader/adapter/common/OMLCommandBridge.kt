@@ -33,12 +33,12 @@ object OMLCommandBridge {
     fun register(commands: Any) {
         if (!registered.add(commands)) return
         val dispatcher = (commands as Commands).dispatcher
-        for (entry in CommandDeclarations.entries) {
+        for ((modId, root) in CommandDeclarations.entries) {
             try {
-                val builder = build(entry.modId, entry.root, emptyList())
+                val builder = build(modId, root, emptyList())
                 dispatcher.register(builder as LiteralArgumentBuilder<CommandSourceStack>)
             } catch (t: Throwable) {
-                OmlLog.error("Commands", "registering /${entry.root.name} from mod [${entry.modId}] failed", t)
+                OmlLog.error("Commands", "registering /${root.name} from mod [$modId] failed", t)
             }
         }
     }
@@ -50,7 +50,7 @@ object OMLCommandBridge {
         path: List<Pair<String, OMLArgumentType>>,
     ): ArgumentBuilder<CommandSourceStack, *> {
         val newPath = path + (node.argumentType?.let { listOf(node.name to it) } ?: emptyList())
-        val builder: ArgumentBuilder<CommandSourceStack, *> = when (val type = node.argumentType) {
+        val builder = when (val type = node.argumentType) {
             null -> LiteralArgumentBuilder.literal(node.name)
             else -> RequiredArgumentBuilder.argument<CommandSourceStack, Any>(
                 node.name,
@@ -63,9 +63,9 @@ object OMLCommandBridge {
         if (node.hasExecute || node.children.isNotEmpty()) {
             builder.executes { context ->
                 val source = OMLCommandSource(
-                    context.source.getTextName(),
-                    context.source.getPlayer() != null,
-                    newPath.associate { (name, type) -> name to extract(context, name, type) },
+                    context.source.textName,
+                    context.source.player != null,
+                    newPath.associate { [name, type] -> name to extract(context, name, type) },
                     { context.source.sendSuccess({ Component.literal(it) }, false) },
                     { context.source.sendFailure(Component.literal(it)) },
                 ) { context.source }

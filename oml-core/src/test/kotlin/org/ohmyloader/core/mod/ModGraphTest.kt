@@ -38,7 +38,7 @@ class ModGraphTest {
                     mod("old", version = "1.0"),
                     mod("dup"),
                     mod("dup"),
-                )
+                ),
             )
         }
         val message = error.message!!
@@ -52,7 +52,7 @@ class ModGraphTest {
     fun `a dependency cycle names the stuck mods`() {
         val error = assertFailsWith<IllegalStateException> {
             ModGraph.order(
-                listOf(mod("a", deps = arrayOf("b")), mod("b", deps = arrayOf("c")), mod("c", deps = arrayOf("a")))
+                listOf(mod("a", deps = arrayOf("b")), mod("b", deps = arrayOf("c")), mod("c", deps = arrayOf("a"))),
             )
         }
         assertTrue("dependency cycle" in error.message!!)
@@ -66,13 +66,13 @@ class ModGraphTest {
             listOf(
                 mod("lib", version = "1.2.3"),
                 mod("app", deps = arrayOf("lib@>=1.2.0", "lib@<2.0")),
-            )
+            ),
         )
         assertEquals(listOf("lib", "app"), ok.map { it.id })
 
         val error = assertFailsWith<IllegalStateException> {
             ModGraph.order(
-                listOf(mod("lib", version = "2.0.0"), mod("app", deps = arrayOf("lib@<2.0")))
+                listOf(mod("lib", version = "2.0.0"), mod("app", deps = arrayOf("lib@<2.0"))),
             )
         }
         assertTrue("lib@<2.0" in error.message!!, "actual:\n${error.message}")
