@@ -6,22 +6,14 @@ import java.util.zip.ZipFile
 
 /**
  * Index of every file the loaded mod jars ship under `assets/` and `data/`, keyed as
- * `"namespace/relative/path"` (the root prefix stripped, so `assets/oml/x.json` and
- * `data/oml/x.json` both index as `oml/x.json` — the pack layer re-roots them per pack type).
+ * `"namespace/relative/path"` — `assets/oml/x.json` and `data/oml/x.json` both index as
+ * `oml/x.json`, re-rooted by the pack layer per pack type.
  *
- * Read from the jars rather than the class loader: the loader can only answer "does this file
- * exist" and a pack must also answer "what is in this directory". The jars are also exactly what
- * sits on the primary loader's search path, so the index and the byte lookup agree by
- * construction. Built once — a mod's jars do not change during a session, and this path runs
- * inside the resource reload of every repository reload.
- *
- * Namespaces are the jars' first path segments plus [assetDomains] (mod ids and content
- * pack namespaces): a mod or pack can register blocks/items and let the version's asset pack
- * synthesize their assets while shipping no `assets/` entry at all, so the domain ids must be
- * reportable as namespaces even with no indexed file behind them.
- *
- * This is the version-independent half of asset injection; the version adapter owns the pack
- * wiring (which pack object serves it, which asset shapes it synthesizes on top).
+ * Read from the jars, not the class loader: a pack must answer "what is in this directory", and the
+ * jars are exactly the primary loader's search path, so index and byte lookup agree by construction.
+ * Built once — jars do not change mid-session, while this runs inside every repository reload.
+ * Namespaces are the jars' first segments plus [assetDomains], for content whose assets the adapter
+ * synthesizes with no `assets/` entry shipped at all.
  */
 class ModAssetIndex(modJars: List<File>, assetDomains: Collection<String>) {
 

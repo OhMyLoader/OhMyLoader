@@ -71,7 +71,7 @@ object Installer {
      * Warnings are logged and then ignored by design: they describe situations the user is allowed to
      * be in (an unusual directory layout). Errors abort.
      *
-     * A failure mid-install is rolled back first (T-1.6): every write the install made is recorded
+     * A failure mid-install is rolled back first: every write the install made is recorded
      * in the context's [InstallJournal], and the exception only travels up after the tree has been
      * restored to its pre-install state — the user retries into a clean directory, not a
      * "nearly installed" one.
@@ -271,16 +271,13 @@ const val SNAPSHOT_ALIAS = "snapshot"
 
 /**
  * Resolves the `snapshot` catalogue entry to its real version id. Everything written downstream —
- * the launcher version JSON's `inheritsFrom`, the game jar path, the server directory layout —
- * must carry the resolved id: launchers look vanilla versions up by exact id, and a literal
- * "snapshot" there would produce a version that inherits from nothing.
+ * the launcher version JSON's `inheritsFrom`, the game jar path, the server directory layout — must
+ * carry the resolved id: launchers look vanilla versions up by exact id, and a literal "snapshot"
+ * there would inherit from nothing.
  *
- * Resolution needs the network (the same dependency a server install already carries); a standard
- * install gains it only when this alias is chosen. A failure is an [InstallationException] naming
- * the escape hatch — passing the real version id directly.
- *
- * [fetchLatest] is the seam that keeps this unit-testable: the tests pass a stub instead of the
- * network.
+ * Resolution needs the network (a server install already carries that dependency; a standard install
+ * gains it only when this alias is chosen). Failure is an [InstallationException] naming the escape
+ * hatch — pass the real version id directly. [fetchLatest] is the seam tests stub instead.
  */
 internal fun resolveSnapshotAlias(
     supported: SupportedVersion,

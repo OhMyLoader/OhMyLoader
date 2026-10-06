@@ -13,7 +13,7 @@ class ServerHookTransformer(private val idPrefix: String) : InjectingTransformer
     injection {
         // Resource pack repo openAllSelected pre-hook — the SERVER half of the rule the client
         // transformer also carries (shared bootstrap code, the same deliberate duplication as the
-        // freeze rule below). M2 made the dedicated server a datapack consumer: declared ores
+        // freeze rule below). The dedicated server is a datapack consumer: declared ores
         // merge into biome files and the recipe/loot JSONs are datapack content, so the server's
         // SERVER_DATA repository must contain the pack or the data silently loads vanilla-only.
         classTarget("net/minecraft/server/packs/repository/PackRepository") {

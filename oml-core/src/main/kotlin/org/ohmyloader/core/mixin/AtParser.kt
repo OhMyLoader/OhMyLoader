@@ -200,10 +200,7 @@ internal object AtParser {
         return name == "AFTER"
     }
 
-    /**
-     * An enum value in an annotation is a `[desc, name]` pair in ASM (and may also be a bare string).
-     * Returns the constant name itself (e.g. `"AFTER"`); empty string for unknown values.
-     */
+    /** ASM encodes an annotation's enum value as a `[desc, name]` pair (a bare string also occurs); "" for unknown. */
     fun enumName(raw: Any?): String = when (raw) {
         is String -> raw.substringAfterLast('/')
         is List<*> -> raw.filterIsInstance<String>().lastOrNull()?.substringAfterLast('/') ?: ""

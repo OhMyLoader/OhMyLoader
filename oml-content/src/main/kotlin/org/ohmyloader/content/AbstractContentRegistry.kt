@@ -306,8 +306,8 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
         val blockId = qualify(namespace, block)
         val dropId = qualify(namespace, drop)
         // 26.3 loot shape: pool conditions are a single `condition` object and entry functions are
-        // `modifier` entries — both renamed from the pre-1.21 arrays this used to emit (a renamed
-        // field fails the loot codec and the override silently drops nothing).
+        // `modifier` entries — the pre-1.21 array shapes fail the loot codec, and a rejected loot
+        // override silently drops nothing.
         val count = if (min == max) "$min" else "{\"type\":\"minecraft:uniform\",\"min\":$min,\"max\":$max}"
         return """
             {"type":"minecraft:block","pools":[{"condition":{"type":"minecraft:survives_explosion"},"entries":[{"type":"minecraft:item","name":"$dropId","modifier":[{"type":"minecraft:set_count","count":$count}]}],"rolls":1}],"random_sequence":"$blockId"}

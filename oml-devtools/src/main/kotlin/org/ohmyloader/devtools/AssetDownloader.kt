@@ -921,15 +921,13 @@ object AssetDownloader {
     /**
      * Resolves the `snapshot` alias to the version manifest's latest snapshot id (network call).
      *
-     * [resolveVersionDetails] already honors the alias for everything it downloads; this function
-     * exists for callers that need the **resolved id itself** before any download — the installer
-     * writes the real id into the launcher version JSON (`inheritsFrom`), the server directory name
-     * and `launch.properties`, and none of those documents may carry a literal "snapshot": the
-     * launcher looks up vanilla versions by exact id.
+     * [resolveVersionDetails] already honors the alias for everything it downloads; this exists for
+     * callers needing the **resolved id itself** — the installer writes it into the version JSON's
+     * `inheritsFrom`, the server directory name and `launch.properties`, and none of those may carry
+     * a literal "snapshot", because launchers look vanilla versions up by exact id.
      *
      * Honors [proxyOverride]; throws [IllegalStateException] with a readable message when the
-     * manifest is unreachable or has no snapshot entry — callers translate that into their own
-     * user-facing error.
+     * manifest is unreachable or lists no snapshot.
      */
     fun resolveLatestSnapshotId(): String {
         val client = newClient()

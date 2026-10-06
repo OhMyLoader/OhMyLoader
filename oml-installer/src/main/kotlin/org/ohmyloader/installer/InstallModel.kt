@@ -412,7 +412,7 @@ class InstallContext(
     val addPrismComponent: Boolean = false,
     /**
      * Every write the install makes is recorded here, so [Installer.performInstall] can undo the
-     * whole install when any step throws (T-1.6). Created by each front end with the context.
+     * whole install when any step throws. Created by each front end with the context.
      */
     val journal: InstallJournal = InstallJournal(),
     val log: (String) -> Unit = { println(it) },

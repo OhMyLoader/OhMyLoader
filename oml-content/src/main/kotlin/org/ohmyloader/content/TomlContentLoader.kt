@@ -6,23 +6,20 @@ import org.ohmyloader.api.content.Furnace
 import java.io.File
 
 /**
- * Loads flat TOML content packs into the [ContentRegistry]: a plain text file dropped into the mods directory
- * becomes real, data-component-backed blocks and items with no jar and no code. The file name (minus extension,
- * lowercased) is the resource namespace — `ruby_pack.toml` declares `ruby_pack:...` content. Field names are
- * snake_case mirrors of the [org.ohmyloader.api.content.OMLBlockDeclaration] /
- * [org.ohmyloader.api.content.OMLItemDeclaration] properties; every field is optional and falls back to the
- * same defaults as the code API. Unknown keys are reported loudly (a typo'd field would otherwise silently
- * produce vanilla defaults) but do not reject the pack. Packs are loaded by [org.ohmyloader.core.OMLCore] in
- * the content-declaration window (the same collection phase code mods go through), sharing the identical
- * freeze-point materialization; the asset injector synthesizes blockstates / models / item definitions like it does for jar mods.
+ * Loads a flat-TOML content pack (`content.toml` in an `.oml` archive) into the [ContentRegistry]:
+ * data becomes blocks and items with no jar and no code. The archive name (minus extension) is the
+ * resource namespace; keys are snake_case mirrors of the code declarations, every one optional.
+ * Unknown keys are reported loudly but never reject the pack — a typo'd field would otherwise
+ * silently produce vanilla defaults.
  *
  * Sections: `[block.<id>]` (properties + optional `ore` table), `[item.<id>]`, `[crafting.<id>]`,
- * `[smelting.<result>]`, `[loot.<block>]`. The data track covers everything the code track can
- * express as data — behavior hooks and block entities are mod code and have no TOML form.
+ * `[smelting.<result>]`, `[loot.<block>]`. Behavior hooks and block entities are mod code, so they
+ * have no TOML form. Loading runs in the loader's content-declaration window, so the data track
+ * shares the code track's freeze-point materialization.
  */
 object TomlContentLoader {
 
-    private const val TAG = "Content"   // used as the OmlLog tag
+    private const val TAG = "Content"
 
     private val ID = Regex("[a-z0-9_.-]+")
     private val NAMESPACE = ID

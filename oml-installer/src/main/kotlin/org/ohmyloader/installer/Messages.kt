@@ -6,14 +6,13 @@ import java.util.*
  * Installer translations.
  *
  * Standard [ResourceBundle] resolution: `messages.properties` is the fallback bundle — **English**,
- * so a locale we do not ship gets readable English; `messages_zh.properties` covers every Chinese
- * locale (Java walks `zh_CN` → `zh` → default). Force a language with `-Doml.installer.lang=en|zh`.
+ * so an unshipped locale still reads English; `messages_zh.properties` covers every Chinese locale
+ * (Java walks `zh_CN` → `zh` → default). Force a language with `-Doml.installer.lang=en|zh`.
  *
- * Placeholders are `{0}`, `{1}` … substituted by [t] itself, not by MessageFormat, which treats a
- * single quote as an escape character (an apostrophe silently loses text unless every quote is
- * doubled). A missing key is visible, not fatal: it returns the key and logs to stderr — a GUI is
- * the wrong place to throw, and "" would show a blank dialog. The .properties files are UTF-8
- * (JEP 226); the GUI only runs on Java 27 — the Java 8 bootstrap never touches this class.
+ * Placeholders `{0}`, `{1}` … are substituted by [t], not by MessageFormat — MessageFormat treats a
+ * single quote as an escape, so an apostrophe would silently lose text. A missing key returns the
+ * key and logs: a GUI is the wrong place to throw, and "" would show a blank dialog. The files are
+ * UTF-8 (JEP 226); the Java 8 bootstrap never touches this class.
  */
 object Messages {
 

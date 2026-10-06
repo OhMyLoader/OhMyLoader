@@ -16,20 +16,15 @@ class UninstallContext(
 )
 
 /**
- * Removes what [Installer] wrote (T-1.6), leaving everything else — worlds, mods, settings, the
- * game itself — untouched.
+ * Removes what [Installer] wrote, leaving everything else — worlds, mods, settings, the game
+ * itself — untouched.
  *
- * The removal lists are **read back from the install's own artifacts** wherever possible (the
- * launcher version JSON's `libraries` array, the Prism component patch's `libraries` array) rather
- * than re-derived from the current layer contents: the JSON on disk is what THIS install actually
- * wrote, including for an installer version older or newer than the one running the uninstall.
- * Where no artifact records a write (the dedicated server's fixed layout), the removal list is the
- * deterministic file set the install produces — `lib/` is ours alone, while `libraries/`, `cache/`,
- * `minecraft/` and everything the server generated at runtime stays.
- *
- * Nothing here removes user data: directories are only ever wiped when the install created and
- * filled them outright (`lib/`), and `File.delete()` on a non-empty directory is the boundary that
- * keeps anything else from going.
+ * Removal lists are read back from the install's own artifacts (the version JSON's and the Prism
+ * patch's `libraries` arrays), not re-derived from the current layer contents: what is on disk
+ * records what THIS install wrote, whichever installer version wrote it. Where no artifact records
+ * a write (the dedicated server's fixed layout), the list is the deterministic file set the install
+ * produces. A directory is wiped only when the install created and filled it outright (`lib/`);
+ * `File.delete()` refusing non-empty directories is the boundary that keeps user data from going.
  */
 object Uninstaller {
 

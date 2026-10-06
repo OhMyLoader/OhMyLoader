@@ -90,12 +90,11 @@ class MinecraftHookTransformer(private val idPrefix: String) : InjectingTransfor
             // Window title, product decision: OMLCore.onWindowTitle replaces whatever the game
             // computed with OMLCore.WINDOW_TITLE. Two producers, two rules:
             // - createTitle(): the constructor passes its result straight into the Window
-            //   constructor (offsets 1004 / 1371), **bypassing** updateTitle() — rewriting the
-            //   return value here covers the very first title the window is created with;
-            // - updateTitle(): a straight `Window.setTitle(createTitle())` (offset 8); its
-            //   ModifyArg below covers every later recompute (world join, focus change) and also
-            //   keeps the ModifyArg demo chain alive — by then the argument is already the
-            //   branded title, so the handler is idempotent.
+            //   constructor, **bypassing** updateTitle() — rewriting the return value here covers
+            //   the very first title the window is created with;
+            // - updateTitle(): `Window.setTitle(createTitle())`, a straight pass-through whose
+            //   ModifyArg covers every later recompute (world join, focus change). Both handlers
+            //   are idempotent: by then the argument is already the branded title.
             method("createTitle", desc = "()Ljava/lang/String;") {
                 atReturn {
                     transformReturn(
@@ -216,12 +215,11 @@ class MinecraftHookTransformer(private val idPrefix: String) : InjectingTransfor
         // files; recipes and loot are datapack JSON), and each side needs the pack mounted into its
         // own repository instance.
         //
-        // Verified in the client jar that both resource-reload paths pass through here: the Minecraft
-        // constructor inlines `reload()` -> `Options.loadSelectedResourcePacks` ->
-        // `openAllSelected()` -> `createReload(...)`, and F3+T / the resource pack screen goes
-        // `reloadResourcePacks` -> `reload()` -> `openAllSelected()`. Both call it *after* the
-        // selection list has been applied from options, so the pack this hook adds is part of the
-        // reload that is asking for it and is not overwritten afterwards.
+        // Both reload paths — startup `Options.loadSelectedResourcePacks` and F3+T
+        // `reloadResourcePacks` — reach `openAllSelected()` only *after* the selection list has been
+        // applied from options, so the pack this hook adds is part of the reload that is asking for
+        // it and is not overwritten afterwards.
+        //
         // Mod commands: the SERVER half lives in the server transformer; the integrated server on
         // this side builds its own dispatcher and needs the same registration (shared classes,
         // same deliberate duplication as the freeze rule).

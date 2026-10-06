@@ -81,7 +81,8 @@ internal fun validateInstallId(id: String): List<String> {
     if (id.isBlank()) return listOf(Messages.t("installId.empty"))
     val bad =
         id.any { it == '/' || it == '\\' || it == ':' || it == '*' || it == '?' || it == '"' || it == '<' || it == '>' || it == '|' }
-    // 双引号也在拦截集合里，只是不列进提示文案（免得提示本身还要转义）
+    // The double quote is in the rejected set too, left out of the message so the message itself
+    // needs no escaping.
     if (bad) return listOf(Messages.t("installId.chars", id))
     if (id == "." || id == "..") return listOf(Messages.t("installId.dots"))
     return emptyList()

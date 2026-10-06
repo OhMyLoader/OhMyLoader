@@ -1,18 +1,14 @@
 package org.ohmyloader.api
 
 /**
- * The one logging door every OML module writes through — deliberately not a framework (5.3 in
- * docs/开发计划.md): the loader shares stdout with the game's own logger, so the surface stays
- * three functions and a tag, and every line carries exactly one recognizable prefix.
+ * The one logging door every OML module writes through — deliberately not a framework: the loader
+ * shares stdout with the game's own logger, so the surface stays three functions and a tag, and
+ * every line carries exactly one recognizable prefix.
  *
- * Line shapes (the contract CI's log judgment relies on):
- *
- *  - [info]  → stdout: `[<tag>] <message>`
- *  - [warn]  → stderr: `[<tag>] WARN: <message>`
- *  - [error] → stderr: `[<tag>] ERROR: <message>`, followed by the throwable's stack trace
- *
- * "No OML error line in the log" is therefore the regex `\[OML[A-Za-z-]*\] (WARN|ERROR):` — any
- * new diagnostic must go through here or that judgment silently stops covering it.
+ * Shapes: [info] stdout `[<tag>] <message>`; [warn] stderr `[<tag>] WARN: …`; [error] stderr
+ * `[<tag>] ERROR: …` plus the stack trace. "No OML error line in the log" is the regex
+ * `\[OML[A-Za-z-]*\] (WARN|ERROR):` — a new diagnostic must go through here, or that judgment
+ * silently stops covering it.
  */
 object OmlLog {
 

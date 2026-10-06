@@ -9,16 +9,14 @@ import org.ohmyloader.api.inject.DslValue
 /**
  * The **local-variable snapshot** at an injection point.
  *
- * **Why not the LocalVariableTable**: an obfuscated jar's `LocalVariableTable` is intermittently present
- * (some jars carry none at all; even where present it covers only some methods), and the variable names in
- * it are **themselves obfuscated names** — looking up a local by name is simply impossible; dataflow
- * analysis reads only instructions, so every target is treated alike. **Why not SimpleVerifier**: it does
- * `Class.forName` when deriving parent/child relationships, but the engine runs inside `findClass` — loading
- * another class would re-enter and could split type identity; only **category-level** info is used here.
- * **Precision boundaries**: method-parameter types come from the descriptor and are **exact**; method-body
- * local types **converge** where two paths merge (references → `Ljava/lang/Object;`, int family → `I`); no
- * **assignability check** between reference types (that needs the class hierarchy) — `Local(type =
- * "Ljava/lang/Runnable;")` will not match a slot declared `Ljava/util/concurrent/CompletableFuture;`.
+ * Not the LocalVariableTable: it is intermittently present and its names are themselves obfuscated,
+ * so name lookup is impossible — dataflow analysis reads instructions only, treating every target
+ * alike. Not SimpleVerifier: it calls `Class.forName` while deriving type relationships, and this
+ * runs inside `findClass`, where loading another class re-enters and can split type identity.
+ *
+ * Precision: parameter types from the descriptor are exact, body locals converge at merge points
+ * (references → `Ljava/lang/Object;`, int family → `I`), and reference types are matched without
+ * assignability — that would need the class hierarchy.
  */
 internal class LocalFrame(private val values: List<BasicValue?>) {
 

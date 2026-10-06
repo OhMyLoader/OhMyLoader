@@ -3,29 +3,14 @@ package org.ohmyloader.installer
 import java.io.File
 
 /**
- * Records every path an install touches so a failed install can undo itself (T-1.6: "an install
- * that fails leaves no half-finished tree").
+ * Records every path an install touches so a failed install can undo itself: overwritten files are
+ * restored from an in-memory snapshot taken on their first write, created files are deleted, created
+ * directories pruned bottom-up.
  *
- * Three records, each with its own rollback semantics:
- *
- *  - **overwritten files** ([recordWrite] on a path that existed): the previous content is
- *    snapshotted in memory on the FIRST write and restored verbatim on rollback. Only small
- *    configuration files travel this road (eula.txt, mmc-pack.json, launch.properties, a version
- *    JSON from an earlier install) — the strategy is worthless for a 40 MB game jar, which is why
- *    [recordDownload] exists.
- *  - **created files**: deleted on rollback. A file written through [writeAtomic] is never a half
- *    file (the move is the last step), so anything left over after a failure is a *complete* file
- *    from a step that succeeded before the step that did not — removing it is what makes the tree
- *    look like the install never started.
- *  - **created directories** ([ensureDir]): pruned bottom-up on rollback. `File.delete()` refuses
- *    non-empty directories, which is exactly the safety property wanted here: a directory that
- *    gained user content between creation and rollback simply survives. [ownTree] marks the
- *    exception — a directory this install created AND filled exclusively with downloaded game
- *    files — for recursive removal.
- *
- * Recording is idempotent per path: the first write wins, later writes to the same path change
- * nothing. Rollback is best-effort by design — a file that cannot be deleted (a lock, a read-only
- * attribute) is reported, never thrown.
+ * In-memory snapshots only suit small config files; [recordDownload] covers the 40 MB game jar.
+ * `File.delete()` refusing non-empty directories is the wanted safety property — a directory that
+ * gained user content between creation and rollback survives, and [ownTree] is the deliberate
+ * exception. Recording is idempotent per path; rollback reports failures, never throws.
  */
 class InstallJournal {
 

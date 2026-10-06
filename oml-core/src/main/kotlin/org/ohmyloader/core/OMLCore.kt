@@ -308,9 +308,9 @@ object OMLCore {
         // Content packs ship as `mods/*.oml` archives: `content.toml` at the root plus the pack's
         // own assets and data (`assets/<namespace>/...`, `data/<namespace>/...`), so a creator
         // ships textures and lang files without a jar. The file name (minus extension) is the
-        // resource namespace. Loose `.toml` files are not a pack form — they cannot carry assets,
-        // which made their blocks render with missing textures — so one found in the mods
-        // directory is reported and refused instead of loaded.
+        // resource namespace. A loose `.toml` is not a pack form: it cannot carry assets, so its
+        // blocks render with missing textures — one found in the mods directory is reported and
+        // refused instead of loaded.
         for (stray in modsDir.listFiles { f -> f.isFile && f.name.endsWith(".toml", ignoreCase = true) }
             ?.sortedBy { it.name.lowercase() } ?: emptyList()) {
             OmlLog.warn(

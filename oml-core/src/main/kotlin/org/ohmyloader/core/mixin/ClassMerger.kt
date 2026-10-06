@@ -647,13 +647,13 @@ internal object ClassMerger {
     /**
      * Insert the merge segment into the target class's constructors.
      *
-     * Merged into **every** target constructor whose delegate call is `super()` — the segment reads no params,
-     * so its source constructor's descriptor is irrelevant, and whichever constructor creates an object must
-     * run the initialization. Constructors delegating with `this(...)` are **skipped**: they eventually reach
-     * the delegated one, so merging in would run the segment twice. The segment is many-to-one, so a fresh
-     * clone is made per target constructor; labels/line numbers/frames are dropped outright (no jumps in the
-     * segment ⇒ nothing targets them) and it is stack-neutral, so inserting at an empty-stack position cannot
-     * disturb the target's existing stack.
+     * Merged into **every** target constructor whose delegate call is `super()` — the segment reads no
+     * params, so the source constructor's descriptor is irrelevant, and any constructor that can
+     * create an object must run the initialization. Constructors delegating with `this(...)` are
+     * **skipped**: they reach the delegated one, and merging in would run the segment twice. The
+     * segment is many-to-one, so a fresh clone goes per target constructor; labels, line numbers and
+     * frames are dropped (no jump in the segment targets them), and it is stack-neutral, so inserting
+     * at an empty-stack position cannot disturb the target's stack.
      * @param delegate the delegate-call index established by [inspectConstructor]
      * @return the number of target constructors actually merged into
      */
