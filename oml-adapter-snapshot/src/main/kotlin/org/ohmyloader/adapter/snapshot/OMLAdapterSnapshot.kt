@@ -42,4 +42,6 @@ class OMLAdapterSnapshot : IAdapter {
     override fun createContentRegistry() = MinecraftContentRegistry
 
     override fun createNetworkSender() = OMLNetworkBridge
+
+    override fun createGameProvider() = OMLGameBridge
 }

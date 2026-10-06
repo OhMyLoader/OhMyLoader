@@ -9,9 +9,9 @@ import org.ohmyloader.api.wrapper.OMLGuiGraphics
 class ClientTickEvent : Event()
 
 /**
- * Per-tick server notification event: dispatched every time the **dedicated
- * server**'s main loop completes one logical frame, always on the server's main
- * thread.
+ * Per-tick server notification event: dispatched every time the **server** main loop completes one
+ * logical frame, always on the server's own thread — a dedicated server's or, in singleplayer, the
+ * integrated server's.
  *
  * Symmetric to (but **not the same as**) [ClientTickEvent] — the client and
  * server are two independent execution paths, and a subscriber only receives

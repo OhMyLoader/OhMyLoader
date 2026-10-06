@@ -1,6 +1,13 @@
 package org.ohmyloader.core.adapter
 
+import org.ohmyloader.api.access.OMLServer
 import org.ohmyloader.api.event.*
+import org.ohmyloader.api.tick.OMLSide
+import org.ohmyloader.api.tick.OMLScheduler
+import org.ohmyloader.api.world.OMLBlockPos
+import org.ohmyloader.api.world.OMLEntity
+import org.ohmyloader.api.world.OMLLivingEntity
+import org.ohmyloader.api.world.OMLPlayer
 import org.ohmyloader.api.wrapper.OMLGuiGraphics
 import org.ohmyloader.api.wrapper.OMLScreen
 import org.ohmyloader.api.wrapper.OMLWorld
@@ -15,6 +22,10 @@ import java.util.*
  * version-specific handling (chat parsing, the registry-freeze point, the resource-pack repository hook)
  * stays in the adapter's EventBridge. When adding an API "supported by only one version", only add the event
  * definition to api and the hook/handler to that adapter; core stays untouched.
+ *
+ * Game objects reach this layer already projected: the adapter turns them into the typed
+ * [org.ohmyloader.api.world] / [org.ohmyloader.api.wrapper] handles, because core never compiles against a
+ * game jar and cannot read a member of one.
  */
 object EventDispatch {
 
@@ -24,14 +35,78 @@ object EventDispatch {
     @JvmStatic
     fun onClientTick() {
         Events.CLIENT_TICK.fire(tickEvent)
+        OMLScheduler.advance(OMLSide.CLIENT)
     }
 
     // ServerTickEvent is stateless; reuse the instance to avoid an allocation per tick
     private val serverTickEvent = ServerTickEvent()
 
+    /**
+     * [server identity] — the tick hook carries the server that ticked, and `SERVER_STARTED` fires on the
+     * first tick of **each** instance: a client can leave a world and start another integrated server in
+     * the same process, and a latch that stayed set would leave the second server without a start event.
+     */
+    private var startedServer: Any? = null
+
     @JvmStatic
-    fun onServerTick() {
+    fun onServerTick(server: OMLServer) {
+        if (startedServer !== server.platform) {
+            startedServer = server.platform
+            Events.SERVER_STARTED.fire(ServerStartedEvent(server))
+        }
         Events.SERVER_TICK.fire(serverTickEvent)
+        OMLScheduler.advance(OMLSide.SERVER)
+    }
+
+    @JvmStatic
+    fun onServerStopping(server: OMLServer) {
+        Events.SERVER_STOPPING.fire(ServerStoppingEvent(server))
+    }
+
+    @JvmStatic
+    fun onPlayerJoined(player: OMLPlayer) {
+        Events.PLAYER_JOINED.fire(PlayerJoinedEvent(player))
+    }
+
+    @JvmStatic
+    fun onPlayerLeft(player: OMLPlayer) {
+        Events.PLAYER_LEFT.fire(PlayerLeftEvent(player))
+    }
+
+    /** Returns the canceled state so the adapter's `CancellableReturn` handler can short-circuit the break. */
+    @JvmStatic
+    fun onBlockBreak(player: OMLPlayer, position: OMLBlockPos, blockId: String): Boolean {
+        val event = BlockBreakEvent(player, position, blockId)
+        Events.BLOCK_BREAK.fire(event)
+        return event.canceled
+    }
+
+    @JvmStatic
+    fun onEntityAttack(player: OMLPlayer, target: OMLEntity): Boolean {
+        val event = EntityAttackEvent(player, target)
+        Events.ENTITY_ATTACK.fire(event)
+        return event.canceled
+    }
+
+    @JvmStatic
+    fun onEntityInteract(player: OMLPlayer, target: OMLEntity, hand: String): Boolean {
+        val event = EntityInteractEvent(player, target, hand)
+        Events.ENTITY_INTERACT.fire(event)
+        return event.canceled
+    }
+
+    @JvmStatic
+    fun onLivingHurt(entity: OMLLivingEntity, amount: Float, damageType: String, attacker: OMLEntity?): Boolean {
+        val event = LivingHurtEvent(entity, amount, damageType, attacker)
+        Events.LIVING_HURT.fire(event)
+        return event.canceled
+    }
+
+    @JvmStatic
+    fun onLivingDied(entity: OMLLivingEntity, damageType: String): Boolean {
+        val event = LivingDiedEvent(entity, damageType)
+        Events.LIVING_DIED.fire(event)
+        return event.canceled
     }
 
     /**
@@ -57,8 +132,8 @@ object EventDispatch {
     }
 
     @JvmStatic
-    fun onGuiOpen(screen: Any?): Boolean {
-        val event = GuiOpenEvent(screen?.let { ScreenWrap(it) })
+    fun onGuiOpen(screen: OMLScreen?): Boolean {
+        val event = GuiOpenEvent(screen)
         Events.GUI_OPEN.fire(event)
         return event.canceled
     }
@@ -71,8 +146,8 @@ object EventDispatch {
     }
 
     @JvmStatic
-    fun onWorldLoad(world: Any?) {
-        Events.WORLD_LOAD.fire(WorldLoadEvent(world?.let { WorldWrap(it) }))
+    fun onWorldLoad(world: OMLWorld?) {
+        Events.WORLD_LOAD.fire(WorldLoadEvent(world))
     }
 
     /** On disconnect (world = null). */
@@ -82,9 +157,8 @@ object EventDispatch {
     }
 
     @JvmStatic
-    fun onHudRender(graphics: Any?) {
-        if (graphics == null) return
-        Events.HUD_RENDER.fire(HudRenderEvent(GuiGraphicsWrap(graphics)))
+    fun onHudRender(graphics: OMLGuiGraphics) {
+        Events.HUD_RENDER.fire(HudRenderEvent(graphics))
     }
 
     /**
@@ -140,8 +214,4 @@ object EventDispatch {
         val body = invokeGetter(packet, bodyGetters.first) ?: return null
         return invokeGetter(body, bodyGetters.second) as? String
     }
-
-    private class ScreenWrap(override val platform: Any) : OMLScreen
-    private class WorldWrap(override val platform: Any) : OMLWorld
-    private class GuiGraphicsWrap(override val platform: Any) : OMLGuiGraphics
 }

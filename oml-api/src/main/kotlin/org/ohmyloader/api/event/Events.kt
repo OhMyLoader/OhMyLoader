@@ -8,7 +8,7 @@ object Events {
     /** Dispatched once per logical tick. */
     val CLIENT_TICK = EventDefinition<ClientTickEvent>("client_tick")
 
-    /** Dispatched once per logical server tick (dedicated server only). */
+    /** Dispatched once per logical server tick, on the server thread (dedicated or integrated). */
     val SERVER_TICK = EventDefinition<ServerTickEvent>("server_tick")
 
     /**
@@ -37,4 +37,31 @@ object Events {
      * extracted.
      */
     val HUD_RENDER = EventDefinition<HudRenderEvent>("hud_render")
+
+    /** Server ready to run its first tick. */
+    val SERVER_STARTED = EventDefinition<ServerStartedEvent>("server_started")
+
+    /** Server shutting down. */
+    val SERVER_STOPPING = EventDefinition<ServerStoppingEvent>("server_stopping")
+
+    /** A player finished entering the world. */
+    val PLAYER_JOINED = EventDefinition<PlayerJoinedEvent>("player_joined")
+
+    /** A player is leaving the world. */
+    val PLAYER_LEFT = EventDefinition<PlayerLeftEvent>("player_left")
+
+    /** A player is about to destroy a block (cancellable). */
+    val BLOCK_BREAK = EventDefinition<BlockBreakEvent>("block_break")
+
+    /** A player's attack landed on an entity (cancellable). */
+    val ENTITY_ATTACK = EventDefinition<EntityAttackEvent>("entity_attack")
+
+    /** A player right-clicked an entity (cancellable). */
+    val ENTITY_INTERACT = EventDefinition<EntityInteractEvent>("entity_interact")
+
+    /** Damage is about to be applied to a living entity (cancellable). */
+    val LIVING_HURT = EventDefinition<LivingHurtEvent>("living_hurt")
+
+    /** A living entity's death routine is starting (cancellable). */
+    val LIVING_DIED = EventDefinition<LivingDiedEvent>("living_died")
 }

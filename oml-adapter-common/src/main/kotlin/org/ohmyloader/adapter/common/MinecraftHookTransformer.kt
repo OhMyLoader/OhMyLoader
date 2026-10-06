@@ -343,6 +343,9 @@ class MinecraftHookTransformer(private val idPrefix: String) : InjectingTransfor
                 }
             }
         }
+        // The integrated server of a singleplayer game runs the server-thread rules in this process,
+        // where only this batch is installed — see ServerEventRules for the shared declaration.
+        serverEventRules()
     },
     id = "$idPrefix:minecraft-hooks",
 )

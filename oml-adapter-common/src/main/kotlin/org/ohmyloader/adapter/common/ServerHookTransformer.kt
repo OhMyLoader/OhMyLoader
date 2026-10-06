@@ -58,12 +58,6 @@ class ServerHookTransformer(private val idPrefix: String) : InjectingTransformer
             }
         }
         classTarget("net/minecraft/server/MinecraftServer") {
-            // invoked once per logic tick of the dedicated server main loop
-            method("tickServer", desc = "(Ljava/util/function/BooleanSupplier;)V") {
-                atHead { call("org/ohmyloader/adapter/common/EventBridge", "onServerTick", "()V") }
-                require(1)
-            }
-
             // The server-side "environment ready" entry point, symmetric to onMinecraftReady at the
             // tail of the client constructor — there is no `Minecraft` class on this side, so that
             // path never fires.
@@ -75,6 +69,11 @@ class ServerHookTransformer(private val idPrefix: String) : InjectingTransformer
                 }
             }
         }
+
+        // Ticks, player join/leave, block breaks, entity interaction and damage — the same rule set the
+        // client batch installs for the integrated server (see ServerEventRules for why it is one
+        // declaration used by both).
+        serverEventRules()
 
         // Shared bootstrap code, so the same rule as in MinecraftHookTransformer (see the class doc
         // for why it is written twice). Without it the dedicated server never reaches

@@ -10,6 +10,7 @@ import org.ohmyloader.api.inject.InjectionPoint
 import java.io.File
 import java.util.jar.JarFile
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.test.fail
@@ -191,6 +192,57 @@ class HookShapeTest {
                     it.name == "tickServer" && it.desc == "(Ljava/util/function/BooleanSupplier;)V"
                 },
             ) { "net/minecraft/server/MinecraftServer.tickServer(Ljava/util/function/BooleanSupplier;)V is gone — the server tick hook has no target" }
+        }
+    }
+
+    @Test
+    fun `placeNewPlayer still ends in one return, so TAIL means fully joined`() {
+        JarFile(clientJar).use { jar ->
+            val list = assertNotNull(classNode(jar, "net/minecraft/server/players/PlayerList"))
+            val place = list.methods.firstOrNull { it.name == "placeNewPlayer" }
+            assertNotNull(place) { "PlayerList.placeNewPlayer is gone — PLAYER_JOINED has no target" }
+            val returns = place.instructions.toArray().count { it.opcode == org.objectweb.asm.Opcodes.RETURN }
+            // With more than one exit, "before the last return" is no longer "after the player is in the
+            // list": a mod could get the event for a player the game then rejects.
+            assertEquals(
+                1,
+                returns,
+                "PlayerList.placeNewPlayer now has $returns exits — the TAIL anchor no longer guarantees a fully joined player",
+            )
+        }
+    }
+
+    @Test
+    fun `hurtServer is still declared on LivingEntity, so damage fires once`() {
+        JarFile(clientJar).use { jar ->
+            val living = assertNotNull(classNode(jar, "net/minecraft/world/entity/LivingEntity"))
+            assertNotNull(
+                living.methods.firstOrNull {
+                    it.name == "hurtServer" &&
+                        it.desc == "(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/damagesource/DamageSource;F)Z"
+                },
+            ) {
+                "LivingEntity.hurtServer is no longer the base declaration — hooking it would fire " +
+                    "zero or several times per damage application instead of exactly once"
+            }
+        }
+    }
+
+    @Test
+    fun `the block break owner is still reachable only through the constructor argument`() {
+        JarFile(clientJar).use { jar ->
+            val gameMode = assertNotNull(classNode(jar, "net/minecraft/server/level/ServerPlayerGameMode"))
+            assertNotNull(
+                gameMode.methods.firstOrNull { it.name == "destroyBlock" && it.desc == "(Lnet/minecraft/core/BlockPos;)Z" },
+            ) { "ServerPlayerGameMode.destroyBlock(BlockPos)Z is gone — BLOCK_BREAK has no target" }
+            val playerField = gameMode.fields.firstOrNull { it.name == "player" }
+            assertNotNull(playerField) { "ServerPlayerGameMode.player is gone; the constructor hook needs a new owner" }
+            // The association hook exists only because the field is protected; if Mojang published an
+            // accessor, the WeakHashMap in EventBridge should go and this test says so.
+            assertTrue(
+                playerField.access and org.objectweb.asm.Opcodes.ACC_PUBLIC == 0,
+                "ServerPlayerGameMode.player is now public — project it directly instead of tracking the constructor argument",
+            )
         }
     }
 

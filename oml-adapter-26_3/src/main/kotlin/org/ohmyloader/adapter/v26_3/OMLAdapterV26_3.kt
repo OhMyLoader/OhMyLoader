@@ -42,4 +42,6 @@ class OMLAdapterV26_3 : IAdapter {
     override fun createContentRegistry() = MinecraftContentRegistry
 
     override fun createNetworkSender() = OMLNetworkBridge
+
+    override fun createGameProvider() = OMLGameBridge
 }

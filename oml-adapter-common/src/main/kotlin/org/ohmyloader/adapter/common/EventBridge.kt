@@ -1,7 +1,20 @@
 package org.ohmyloader.adapter.common
 
+import net.minecraft.core.BlockPos
+import net.minecraft.server.MinecraftServer
+import net.minecraft.server.level.ServerPlayer
+import net.minecraft.server.level.ServerPlayerGameMode
+import net.minecraft.world.InteractionHand
+import net.minecraft.world.InteractionResult
+import net.minecraft.world.damagesource.DamageSource
+import net.minecraft.world.entity.Entity
+import net.minecraft.world.entity.LivingEntity
+import net.minecraft.world.entity.player.Player
+import net.minecraft.world.level.Level
+import org.ohmyloader.api.mixin.CallbackInfoReturnable
 import org.ohmyloader.core.OMLCore
 import org.ohmyloader.core.adapter.EventDispatch
+import java.util.WeakHashMap
 
 /**
  * 26.3 event bridge: injected hooks call into here, which converts version-specific objects into
@@ -26,6 +39,19 @@ object EventBridge {
 
 
     private val contentRegistry = MinecraftContentRegistry
+
+    /**
+     * The game keeps `ServerPlayerGameMode.player` protected, which the API's typed projections cannot
+     * read, so the association is recorded from the constructor argument at injection time. Both sides
+     * of the entry are unreachable together once the player leaves, so the weak keys let the pair go.
+     */
+    private val gameModeOwners = WeakHashMap<ServerPlayerGameMode, ServerPlayer>()
+
+    /** [ServerPlayerGameMode constructor head] */
+    @JvmStatic
+    fun onGameModeCreated(game: ServerPlayerGameMode, player: ServerPlayer) {
+        gameModeOwners[game] = player
+    }
 
     @JvmStatic
     fun onClientTick() {
@@ -54,22 +80,121 @@ object EventBridge {
     fun onHudRender(
         extractor: net.minecraft.client.gui.GuiGraphicsExtractor,
         @Suppress("UNUSED_PARAMETER") delta: net.minecraft.client.DeltaTracker,
-    ) = EventDispatch.onHudRender(extractor)
+    ) = EventDispatch.onHudRender(GameProjections.guiGraphics(extractor))
 
+    /**
+     * [MinecraftServer.tickServer head] Carries the ticking server so the core can tell one server
+     * instance from the next (see [EventDispatch.onServerTick]).
+     */
     @JvmStatic
-    fun onServerTick() = EventDispatch.onServerTick()
+    fun onServerTick(server: MinecraftServer) = EventDispatch.onServerTick(OMLGameBridge.handle(server))
+
+    /** [MinecraftServer.stopServer head] */
+    @JvmStatic
+    fun onServerStopping(server: MinecraftServer) = EventDispatch.onServerStopping(OMLGameBridge.handle(server))
+
+    /** [PlayerList.placeNewPlayer tail] The player is fully in the world at this point. */
+    @JvmStatic
+    fun onPlayerJoined(player: ServerPlayer) = EventDispatch.onPlayerJoined(PlayerWrap(player))
+
+    /** [PlayerList.remove head] Still readable: the game has not torn the player down yet. */
+    @JvmStatic
+    fun onPlayerLeft(player: ServerPlayer) = EventDispatch.onPlayerLeft(PlayerWrap(player))
+
+    /**
+     * [ServerPlayerGameMode.destroyBlock head] Cancelling returns false from the break, which is the
+     * signal vanilla's own `destroyAndAck` uses to resend the block to the client — so the player sees
+     * the block snap back without the mod sending anything.
+     */
+    @JvmStatic
+    fun onBlockBreak(
+        game: ServerPlayerGameMode,
+        pos: BlockPos,
+        @Suppress("UNUSED_PARAMETER") id: Int,
+        cir: CallbackInfoReturnable<Boolean>,
+    ) {
+        val player = gameModeOwners[game] ?: return
+        val blockKey = GameProjections.blockKey(player.level().getBlockState(pos).block)
+        if (EventDispatch.onBlockBreak(PlayerWrap(player), pos.toApi(), blockKey)) cir.setReturnValue(false)
+    }
+
+    /**
+     * [Player.attack head] Cancelling skips the whole swing, animation and damage.
+     *
+     * The same click runs this method on the client's player *and* on the server's in singleplayer, so
+     * only the server-side call is dispatched: one event per gameplay action.
+     */
+    @JvmStatic
+    fun onEntityAttack(player: Player, target: Entity): Boolean {
+        if (player.level().isClientSide) return false
+        return EventDispatch.onEntityAttack(PlayerWrap(player), GameProjections.entity(target))
+    }
+
+    /**
+     * [Player.interactOn head] Cancelling returns `InteractionResult.PASS`, which is what the game does
+     * when the entity declines the interaction — the click falls through to the block behind it.
+     *
+     * Server-side dispatch only, as in [onEntityAttack]: a client-side call would report a target the
+     * server never agreed to interact with.
+     */
+    @JvmStatic
+    fun onEntityInteract(
+        player: Player,
+        target: Entity,
+        hand: InteractionHand,
+        @Suppress("UNUSED_PARAMETER") id: Int,
+        cir: CallbackInfoReturnable<InteractionResult>,
+    ) {
+        if (player.level().isClientSide) return
+        val handName = if (hand == InteractionHand.OFF_HAND) "off_hand" else "main_hand"
+        if (EventDispatch.onEntityInteract(PlayerWrap(player), GameProjections.entity(target), handName)) {
+            cir.setReturnValue(InteractionResult.PASS)
+        }
+    }
+
+    /**
+     * [LivingEntity.hurtServer head, on the base class] Hooking the declaration in `LivingEntity` is what
+     * makes this fire exactly once per damage application: `ServerPlayer` and `Player` both override
+     * `hurtServer`, but each override super-calls up the chain and the chain ends here. An override that
+     * returns before reaching the base (a creative player, an invulnerable entity) fires nothing —
+     * vanilla was not going to apply the damage either.
+     */
+    @JvmStatic
+    fun onLivingHurt(
+        entity: LivingEntity,
+        source: DamageSource,
+        amount: Float,
+        @Suppress("UNUSED_PARAMETER") id: Int,
+        cir: CallbackInfoReturnable<Boolean>,
+    ) {
+        val attacker = source.entity?.let { GameProjections.entity(it) }
+        if (EventDispatch.onLivingHurt(GameProjections.living(entity), amount, source.type().msgId(), attacker)) {
+            cir.setReturnValue(false)
+        }
+    }
+
+    /**
+     * [LivingEntity.die head] Cancellable: cancelling stops the death routine, leaving the entity at zero
+     * health — the same shape as the game's own totem path.
+     */
+    @JvmStatic
+    fun onLivingDied(entity: LivingEntity, source: DamageSource): Boolean =
+        EventDispatch.onLivingDied(GameProjections.living(entity), source.type().msgId())
+
+    /** [Minecraft.setScreenAndShow head] */
+    @JvmStatic
+    fun onGuiOpen(screen: Any?): Boolean = EventDispatch.onGuiOpen(screen?.let(GameProjections::screen))
+
+    /** [Minecraft.setLevel head] */
+    @JvmStatic
+    fun onWorldLoad(world: Any?) = EventDispatch.onWorldLoad(world?.let { GameProjections.world(it as Level) })
 
     @JvmStatic
     fun onFrameLimit(limit: Int): Int = EventDispatch.onFrameLimit(limit)
 
-    @JvmStatic
-    fun onGuiOpen(screen: Any?): Boolean = EventDispatch.onGuiOpen(screen)
-
+    /** [ClientPacketListener.sendChat head] */
     @JvmStatic
     fun onChatSent(message: String): Boolean = EventDispatch.onChatSent(message)
-
-    @JvmStatic
-    fun onWorldLoad(world: Any?) = EventDispatch.onWorldLoad(world)
 
     /** Disconnect (world = null; semantics aligned across versions). */
     @JvmStatic
