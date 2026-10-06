@@ -5,6 +5,12 @@ import org.objectweb.asm.Type
 import org.objectweb.asm.tree.*
 import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.inject.*
+import org.ohmyloader.core.mixin.ARGS
+import org.ohmyloader.core.mixin.ARGS_DESC
+import org.ohmyloader.core.mixin.CALLBACK_INFO
+import org.ohmyloader.core.mixin.CALLBACK_INFO_DESC
+import org.ohmyloader.core.mixin.CALLBACK_RETURNABLE
+import org.ohmyloader.core.mixin.CALLBACK_RETURNABLE_DESC
 import org.ohmyloader.core.transformer.injection.PayloadEmitter.emitCancellableReturn
 import org.ohmyloader.core.transformer.injection.PayloadEmitter.emitValue
 
@@ -13,22 +19,8 @@ import org.ohmyloader.core.transformer.injection.PayloadEmitter.emitValue
 
 internal object PayloadEmitter {
 
-    /** Internal name of `CallbackInfoReturnable` — used by `NEW`/`INVOKEVIRTUAL`/frames. */
-    private const val CALLBACK_RETURNABLE = "org/ohmyloader/api/mixin/CallbackInfoReturnable"
-
-    /** This type's JVM descriptor, for validating the tail of a bridge descriptor. */
-    private const val CALLBACK_RETURNABLE_DESC = "Lorg/ohmyloader/api/mixin/CallbackInfoReturnable;"
-
     /** How a bridge descriptor should end: the handle is the last parameter, returning void. */
-    private const val CALLBACK_RETURNABLE_TAIL = "${CALLBACK_RETURNABLE_DESC})V"
-
-    /** Internal name and descriptor of `CallbackInfo` (the void-target handle) — needed by HandlerCall. */
-    private const val CALLBACK_INFO = "org/ohmyloader/api/mixin/CallbackInfo"
-    private const val CALLBACK_INFO_DESC = "Lorg/ohmyloader/api/mixin/CallbackInfo;"
-
-    /** Internal name and descriptor of `Args` (the "all arguments" handle). */
-    private const val ARGS = "org/ohmyloader/api/mixin/Args"
-    private const val ARGS_DESC = "Lorg/ohmyloader/api/mixin/Args;"
+    private const val CALLBACK_RETURNABLE_TAIL = "$CALLBACK_RETURNABLE_DESC)V"
 
     /**
      * Emits the payload instructions; returns `null` when **this injection cannot be completed** (reason already

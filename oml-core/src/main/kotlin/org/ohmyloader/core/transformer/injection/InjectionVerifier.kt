@@ -3,6 +3,9 @@ package org.ohmyloader.core.transformer.injection
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.ohmyloader.api.inject.*
+import org.ohmyloader.core.mixin.ARGS_DESC
+import org.ohmyloader.core.mixin.CALLBACK_INFO_DESC
+import org.ohmyloader.core.mixin.CALLBACK_RETURNABLE_DESC
 import org.ohmyloader.core.transformer.injection.InjectionVerifier.verifyPayload
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
@@ -20,13 +23,6 @@ import java.lang.reflect.Modifier
  * configuration error — the caller decides whether to fail or warn.
  */
 internal object InjectionVerifier {
-
-    private const val CALLBACK_RETURNABLE_DESC = "Lorg/ohmyloader/api/mixin/CallbackInfoReturnable;"
-
-    private const val CALLBACK_INFO_DESC = "Lorg/ohmyloader/api/mixin/CallbackInfo;"
-
-    /** `Args` (the "all arguments" handle) descriptor. */
-    private const val ARGS_DESC = "Lorg/ohmyloader/api/mixin/Args;"
 
     fun verifyRule(target: String, rule: MethodRule, loader: ClassLoader): List<String> {
         val where = "$target :: ${rule.selector.describe()}"

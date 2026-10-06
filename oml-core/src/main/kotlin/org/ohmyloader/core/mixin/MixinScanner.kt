@@ -199,10 +199,6 @@ object MixinScanner {
     /** Tail kind of the handler parameter list (`@Inject` uses the first two; the other annotations have no callback handle). */
     private enum class Tail { CALLBACK_INFO, RETURNABLE, NONE }
 
-    private const val CALLBACK_INFO_DESC = "Lorg/ohmyloader/api/mixin/CallbackInfo;"
-    private const val CALLBACK_RETURNABLE_DESC = "Lorg/ohmyloader/api/mixin/CallbackInfoReturnable;"
-    private const val ARGS_DESC = "Lorg/ohmyloader/api/mixin/Args;"
-
     // ---------- scanning ----------
 
     private fun scanMod(mod: ModContainer): ScanResult {
@@ -1053,7 +1049,7 @@ object MixinScanner {
         val params = Type.getArgumentTypes(method.desc)
         if (params.size != 1 || params[0].descriptor != ARGS_DESC || Type.getReturnType(method.desc) != Type.VOID_TYPE) {
             problems += "[$modId] $where —— @ModifyArgs handler must be shaped " +
-                "(Lorg/ohmyloader/api/mixin/Args;)V, currently ${method.desc}"
+                "($ARGS_DESC)V, currently ${method.desc}"
             return
         }
         val [id, bridgeName, bridgeDesc] = registerModify(

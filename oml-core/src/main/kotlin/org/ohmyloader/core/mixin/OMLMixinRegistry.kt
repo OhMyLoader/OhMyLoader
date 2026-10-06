@@ -489,6 +489,4 @@ object OMLMixinRegistry {
     }
 
     private const val REGISTRY = "org/ohmyloader/core/mixin/OMLMixinRegistry"
-    private const val CALLBACK_INFO_DESC = "Lorg/ohmyloader/api/mixin/CallbackInfo;"
-    private const val CALLBACK_RETURNABLE_DESC = "Lorg/ohmyloader/api/mixin/CallbackInfoReturnable;"
 }
