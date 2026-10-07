@@ -53,6 +53,9 @@ object Events {
     /** A player has finished respawning, on the instance the server made for this life. */
     val PLAYER_RESPAWNED = EventDefinition<PlayerRespawnedEvent>("player_respawned")
 
+    /** A level starts one tick — one dispatch per loaded dimension on a server, one for the client's own. */
+    val LEVEL_TICK = EventDefinition<LevelTickEvent>("level_tick")
+
     /** A player is about to destroy a block (cancellable). */
     val BLOCK_BREAK = EventDefinition<BlockBreakEvent>("block_break")
 

@@ -45,6 +45,21 @@ internal fun InjectionBuilder.serverEventRules() {
         }
     }
 
+    classTarget("net/minecraft/server/level/ServerLevel") {
+        // HEAD, once per loaded dimension per server tick: the handler's work lands before the level's own
+        // entity and block-entity passes, and `Events.LEVEL_TICK` carries this level, so mod work can be
+        // scoped to one world instead of to the whole server.
+        method("tick", desc = "(Ljava/util/function/BooleanSupplier;)V") {
+            atHead {
+                call(
+                    BRIDGE, "onLevelTick", "(Lnet/minecraft/world/level/Level;)V",
+                    args = listOf(DslValue.This),
+                )
+            }
+            require(1)
+        }
+    }
+
     classTarget("net/minecraft/server/players/PlayerList") {
         // Tail, not head: only after the whole body has run is the player in the list with its initial
         // packets sent, which is what "joined" has to mean for a mod reading the player from here.

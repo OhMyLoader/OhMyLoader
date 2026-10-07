@@ -74,6 +74,11 @@ object EventDispatch {
     }
 
     @JvmStatic
+    fun onLevelTick(level: OMLWorld) {
+        Events.LEVEL_TICK.fire(LevelTickEvent(level))
+    }
+
+    @JvmStatic
     fun onPlayerRespawned(player: OMLPlayer) {
         Events.PLAYER_RESPAWNED.fire(PlayerRespawnedEvent(player))
     }

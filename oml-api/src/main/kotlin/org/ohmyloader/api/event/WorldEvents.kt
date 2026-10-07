@@ -4,6 +4,15 @@ import org.ohmyloader.api.world.OMLBlockPos
 import org.ohmyloader.api.world.OMLEntity
 import org.ohmyloader.api.world.OMLLivingEntity
 import org.ohmyloader.api.world.OMLPlayer
+import org.ohmyloader.api.wrapper.OMLWorld
+
+/**
+ * One tick of one level: [level] is the dimension that is starting its tick. A server fires this once per
+ * loaded dimension per server tick, so a mod's work can be scoped to a world instead of to the whole
+ * server; a client fires it for the level it renders. Singleplayer therefore sees both — two projections
+ * of the same dimension, told apart by [OMLWorld.isClient].
+ */
+class LevelTickEvent(val level: OMLWorld) : Event()
 
 /**
  * A player is about to destroy a block (cancellable). Covers both creative instant-break and the

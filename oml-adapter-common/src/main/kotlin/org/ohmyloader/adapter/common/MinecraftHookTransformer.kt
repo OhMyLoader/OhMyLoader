@@ -343,6 +343,20 @@ class MinecraftHookTransformer(private val idPrefix: String) : InjectingTransfor
                 }
             }
         }
+        classTarget("net/minecraft/client/multiplayer/ClientLevel") {
+            // The client's own level tick, so `Events.LEVEL_TICK` covers whichever side ticks; a handler
+            // tells the two apart through the projection's `isClient`.
+            method("tick", desc = "(Ljava/util/function/BooleanSupplier;)V") {
+                atHead {
+                    call(
+                        "org/ohmyloader/adapter/common/EventBridge", "onLevelTick",
+                        "(Lnet/minecraft/world/level/Level;)V",
+                        args = listOf(DslValue.This),
+                    )
+                }
+                require(1)
+            }
+        }
         // The integrated server of a singleplayer game runs the server-thread rules in this process,
         // where only this batch is installed — see ServerEventRules for the shared declaration.
         serverEventRules()

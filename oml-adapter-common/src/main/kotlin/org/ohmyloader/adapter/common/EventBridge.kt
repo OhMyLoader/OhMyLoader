@@ -95,6 +95,15 @@ object EventBridge {
     @JvmStatic
     fun onServerStopping(server: MinecraftServer) = EventDispatch.onServerStopping(OMLGameBridge.handle(server))
 
+    /**
+     * [ServerLevel.tick head] / [ClientLevel.tick head] One dispatch per level that ticks, carrying that
+     * level: a server's loaded dimensions each report once per server tick, and the client's rendered level
+     * reports once per client tick — so in singleplayer the same dimension arrives twice, as the two
+     * projections the two sides actually hold.
+     */
+    @JvmStatic
+    fun onLevelTick(level: Level) = EventDispatch.onLevelTick(GameProjections.world(level))
+
     /** [PlayerList.placeNewPlayer tail] The player is fully in the world at this point. */
     @JvmStatic
     fun onPlayerJoined(player: ServerPlayer) = EventDispatch.onPlayerJoined(PlayerWrap(player))
