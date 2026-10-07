@@ -28,6 +28,7 @@ plugins {
 
 include(":oml-launcher")
 include(":oml-api")
+include(":oml-api-26_3")
 include(":oml-core")
 include(":oml-content")
 include(":oml-devtools")

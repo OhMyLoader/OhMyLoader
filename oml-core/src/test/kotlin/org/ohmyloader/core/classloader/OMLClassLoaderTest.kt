@@ -18,13 +18,15 @@ import kotlin.test.assertSame
  *    were injected into, so an adapter instance from the parent would be a second copy carrying its
  *    own (empty) adapter-side singletons — content declared in one copy and materialized from the
  *    other, silently.
- * 2. **Everything else under `org.ohmyloader.` keeps a single identity** (parent-first), and game /
+ * 2. **Everything else under `org.ohmyloader.` keeps a single identity** (parent-first — except the
+ *    `CHILD_FIRST_PREFIXES` that name game types), and game /
  *    mod classes are child-first. A change to either rule breaks class identity or the transform
  *    pipeline, and neither shows up as a compile error.
  */
 class OMLClassLoaderTest {
 
     private val adapterClass = "org.ohmyloader.adapter.probe.AdapterProbe"
+    private val api26Class = "org.ohmyloader.api26_3.probe.Api26Probe"
     private val coreClass = "org.ohmyloader.core.probe.CoreProbe"
     private val gameClass = "com.example.probe.GameProbe"
 
@@ -64,6 +66,19 @@ class OMLClassLoaderTest {
             main.loadClass(coreClass),
             "org.ohmyloader. (outside the adapter prefix) is parent-first on purpose",
         )
+    }
+
+    @Test
+    fun `the version-facing api module is child-first like the adapters`() {
+        // It names game types in its public signatures, so a parent-defined copy would hand a mod a second
+        // `ServerPlayer` class than the running game holds — the cast failure would surface inside the mod.
+        val dir = classDir()
+        writeClass(dir, api26Class)
+
+        val [parent, main] = loaders(dir)
+
+        assertSame(main, main.loadClass(api26Class).classLoader, "the main loader must define the version-facing api")
+        assertNotSame(parent.loadClass(api26Class), main.loadClass(api26Class))
     }
 
     @Test

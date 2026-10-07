@@ -51,7 +51,7 @@ class OMLClassLoader(
     }
 
     private fun shouldParentDelegate(name: String): Boolean =
-        PARENT_FIRST_PREFIXES.any { name.startsWith(it) } && !name.startsWith(ADAPTER_PREFIX)
+        PARENT_FIRST_PREFIXES.any { name.startsWith(it) } && CHILD_FIRST_PREFIXES.none { name.startsWith(it) }
 
     /**
      * Resources child-first: root resources of the game jar (such as version.json) must not
@@ -142,16 +142,22 @@ class OMLClassLoader(
 
     private companion object {
         /**
-         * Version-adapter classes are game-coupled code: their signatures and bodies reference game types, so
-         * they must be **defined in this loader** — the same loader as the game classes — or the JVM's
-         * loader-constraint check splits the game type into two Class objects and every injected call into the
-         * adapter dies with `LinkageError: loader constraint violation`. Under the blanket `org.ohmyloader.`
-         * parent-first rule the parent loader (which carries the game jar on the app classpath) would define
-         * the adapter and resolve the game type to *its own* copy — re-running its `<clinit>` in a world where
-         * the game's library jars are invisible, hence `NoClassDefFoundError`. So adapters join the mods' child-first
-         * treatment; the rest of `org.ohmyloader.` keeps parent-first for a single identity with the app-loader world.
+         * Any code that names game types in its signatures must be **defined in this loader** — the same
+         * loader as the game classes — or the JVM's loader-constraint check splits the game type into two
+         * Class objects and every call into it dies with `LinkageError: loader constraint violation`. Under
+         * the blanket `org.ohmyloader.` parent-first rule the parent loader (which carries the game jar on
+         * the app classpath) would define such a class and resolve the game type to *its own* copy —
+         * re-running its `<clinit>` in a world where the game's library jars are invisible, hence
+         * `NoClassDefFoundError`. So these prefixes join the mods' child-first treatment; the rest of
+         * `org.ohmyloader.` keeps parent-first for a single identity with the app-loader world.
          */
-        const val ADAPTER_PREFIX = "org.ohmyloader.adapter."
+        val CHILD_FIRST_PREFIXES = listOf(
+            // The version adapters: their signatures and bodies name game types.
+            "org.ohmyloader.adapter.",
+            // The 26.3-facing mod API, same reason — and mods compile against it, so the split would
+            // surface as a ClassCastException inside a mod, not inside OML.
+            "org.ohmyloader.api26_3.",
+        )
 
         /** These prefixes are always parent-first: the JVM itself, loader runtime, and all loader-level dependency libraries. */
         val PARENT_FIRST_PREFIXES = listOf(
