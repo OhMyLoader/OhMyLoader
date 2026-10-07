@@ -3,8 +3,11 @@ package org.ohmyloader.adapter.common
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.multiplayer.ClientLevel
+import net.minecraft.commands.arguments.blocks.BlockStateParser
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Holder
+import net.minecraft.core.particles.ParticleOptions
+import net.minecraft.core.particles.ParticleType
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.core.registries.Registries
 import net.minecraft.network.chat.Component
@@ -20,14 +23,19 @@ import net.minecraft.sounds.SoundSource
 import net.minecraft.world.effect.MobEffect
 import net.minecraft.world.effect.MobEffectInstance
 import net.minecraft.world.entity.Entity
+import net.minecraft.world.entity.EntitySpawnReason
+import net.minecraft.world.entity.EntityType
 import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.entity.player.Inventory
 import net.minecraft.world.entity.player.Player
+import net.minecraft.world.level.entity.EntityTypeTest
 import net.minecraft.world.item.Item
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.Block
+import net.minecraft.world.level.block.state.BlockState
 import org.ohmyloader.api.world.OMLBlockPos
+import org.ohmyloader.api.world.OMLBlockState
 import org.ohmyloader.api.world.OMLEntity
 import org.ohmyloader.api.world.OMLEffectInstance
 import org.ohmyloader.api.world.OMLInventory
@@ -101,11 +109,44 @@ internal object GameProjections {
     fun dimensionKey(id: String): ResourceKey<Level>? = identifier(id)
         ?.let { ResourceKey.create(Registries.DIMENSION, it) }
 
+    /** A registered entity type; null for an unknown id, which must not spawn a substitute. */
+    fun entityType(id: String): EntityType<*>? = identifier(id)
+        ?.takeIf { BuiltInRegistries.ENTITY_TYPE.containsKey(it) }
+        ?.let { BuiltInRegistries.ENTITY_TYPE.getValue(it) }
+
+    /** A registered particle type — the game accepts it as its own particle options, so one lookup fits. */
+    fun particleType(id: String): ParticleType<*>? = identifier(id)
+        ?.takeIf { BuiltInRegistries.PARTICLE_TYPE.containsKey(it) }
+        ?.let { BuiltInRegistries.PARTICLE_TYPE.getValue(it) }
+
+    /**
+     * Assembles `id[facing=east,powered=false]` and lets the game's own block-state argument parse it:
+     * an unregistered block, an unknown property or a value the property does not allow all fail here,
+     * which is the same rejection `/setblock` gives a player.
+     */
+    fun parseState(blockId: String, properties: Map<String, String>): BlockState? {
+        val spec = buildString {
+            append(blockId)
+            if (properties.isNotEmpty()) {
+                append('[')
+                properties.entries.joinTo(this, separator = ",") { "${it.key}=${it.value}" }
+                append(']')
+            }
+        }
+        return runCatching {
+            // `Registry` is itself a `HolderLookup.RegistryLookup`, so the built-in table is what the
+            // parser wants — no registry-access round trip.
+            BlockStateParser.parseForBlock(BuiltInRegistries.BLOCK, spec, false).blockState()
+        }.getOrNull()
+    }
+
     fun identifier(id: String): Identifier? = runCatching { Identifier.parse(id) }.getOrNull()
 }
 
-internal fun OMLBlockPos.toGame(): BlockPos = BlockPos(x, y, z)
+/** The unfiltered entity-type test the game's own level queries take; the filter is the predicate. */
+private val ALL_ENTITIES: EntityTypeTest<Entity, Entity> = EntityTypeTest.forClass(Entity::class.java)
 
+internal fun OMLBlockPos.toGame(): BlockPos = BlockPos(x, y, z)
 internal fun BlockPos.toApi(): OMLBlockPos = OMLBlockPos(x, y, z)
 
 internal open class EntityWrap(open val entity: Entity) : OMLEntity {
@@ -119,6 +160,15 @@ internal open class EntityWrap(open val entity: Entity) : OMLEntity {
     override val world: OMLWorld get() = GameProjections.world(entity.level())
     override val removed: Boolean get() = entity.isRemoved
     override val onFire: Boolean get() = entity.isOnFire
+
+    override var velocity: OMLVec3
+        get() = entity.deltaMovement.let { OMLVec3(it.x, it.y, it.z) }
+        set(value) = entity.setDeltaMovement(value.x, value.y, value.z)
+
+    override fun remove(): Boolean {
+        entity.remove(Entity.RemovalReason.DISCARDED)
+        return entity.isRemoved
+    }
 }
 
 internal open class LivingWrap(override val entity: LivingEntity) : EntityWrap(entity), OMLLivingEntity {
@@ -188,7 +238,7 @@ internal class PlayerWrap(override val entity: Player) : LivingWrap(entity), OML
         val level = if (dimensionId != null) {
             GameProjections.dimensionKey(dimensionId)?.let(server::getLevel) ?: return false
         } else {
-            target.level() as? ServerLevel ?: return false
+            target.level()
         }
         return target.teleportTo(level, x, y, z, emptySet(), target.yRot, target.xRot, false)
     }
@@ -271,6 +321,29 @@ internal class StackWrap(val stack: ItemStack) : OMLItemStack {
     override val damageValue: Int get() = stack.damageValue
 }
 
+/**
+ * A state read through property *names*. Values come from the game's own `Property.Value` naming, and a
+ * rewritten state goes back through the `/setblock` argument parser — both keep the generic
+ * `Property<T>` / `setValue` pair out of OML's code, and the parser is what rejects an unknown property
+ * or an illegal combination.
+ */
+internal class BlockStateWrap(private val state: BlockState) : OMLBlockState {
+    override val platform: Any get() = state
+    override val blockId: String get() = GameProjections.blockKey(state.block)
+
+    override val properties: Map<String, String>
+        get() = state.values.toList().associate { it.property().name to it.valueName() }
+
+    override fun value(name: String): String? = properties[name]
+
+    override fun with(name: String, value: String): OMLBlockState? {
+        val entries = properties.toMutableMap()
+        if (name !in entries) return null
+        entries[name] = value
+        return GameProjections.parseState(blockId, entries)?.let(::BlockStateWrap)
+    }
+}
+
 internal class LevelWrap(val level: Level) : OMLWorld {
     override val platform: Any get() = level
     override val dimensionId: String get() = level.dimension().identifier().toString()
@@ -278,6 +351,20 @@ internal class LevelWrap(val level: Level) : OMLWorld {
 
     override fun blockAt(pos: OMLBlockPos): String =
         BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos.toGame()).block).toString()
+
+    override fun blockStateAt(pos: OMLBlockPos): OMLBlockState? {
+        val gamePos = pos.toGame()
+        if (!level.isLoaded(gamePos)) return null
+        return BlockStateWrap(level.getBlockState(gamePos))
+    }
+
+    override fun setBlockState(pos: OMLBlockPos, state: OMLBlockState): Boolean {
+        val game = state.platform as? BlockState ?: return false
+        val gamePos = pos.toGame()
+        if (!level.isLoaded(gamePos)) return false
+        level.setBlockAndUpdate(gamePos, game)
+        return level.getBlockState(gamePos) == game
+    }
 
     override fun setBlock(pos: OMLBlockPos, blockId: String): Boolean {
         val block = GameProjections.blockId(blockId) ?: return false
@@ -299,6 +386,52 @@ internal class LevelWrap(val level: Level) : OMLWorld {
         val source = GameProjections.soundSource(category) ?: return false
         // null: play for everyone in range, the caller asking for no listener to exclude.
         level.playSound(null, x, y, z, event, source, volume, pitch)
+        return true
+    }
+
+    override val entities: List<OMLEntity>        get() = when (level) {
+            is ServerLevel -> level.getEntities(ALL_ENTITIES) { true }.map(GameProjections::entity)
+            is ClientLevel -> level.entitiesForRendering().map(GameProjections::entity)
+            // A bare `Level` exposes its entity view only through a protected accessor.
+            else -> emptyList()
+        }
+
+    override fun entitiesOfType(typeId: String): List<OMLEntity> {
+        val type = GameProjections.entityType(typeId) ?: return emptyList()
+        return when (level) {
+            is ServerLevel -> level.getEntities(ALL_ENTITIES) { it.type == type }.map(GameProjections::entity)
+            else -> entities.filter { it.typeId == typeId }
+        }
+    }
+
+    override fun spawnEntity(typeId: String, x: Double, y: Double, z: Double): OMLEntity? {
+        val serverLevel = level as? ServerLevel ?: return null
+        val type = GameProjections.entityType(typeId) ?: return null
+        // COMMAND is the reason `/summon` passes: a spawn a mod asked for, not one the world generated
+        // or a mob bred, which is what the game's own despawn and event rules key on.
+        val spawned = type.create(serverLevel, EntitySpawnReason.COMMAND) ?: return null
+        spawned.setPos(x, y, z)
+        return if (serverLevel.addFreshEntity(spawned)) GameProjections.entity(spawned) else null
+    }
+
+    override fun spawnParticles(
+        particleId: String,
+        x: Double,
+        y: Double,
+        z: Double,
+        count: Int,
+        offsetX: Double,
+        offsetY: Double,
+        offsetZ: Double,
+        speed: Double,
+    ): Boolean {
+        val serverLevel = level as? ServerLevel ?: return false
+        // Only a type that is its own options can be spawned by id: dust, item and block particles carry
+        // arguments built per spawn, which a bare registry id cannot express.
+        val options = GameProjections.particleType(particleId) as? ParticleOptions ?: return false
+        // The game's return value counts the clients that received it, which says nothing about whether
+        // the particle was shown — the answer this method gives is about the id and the side.
+        serverLevel.sendParticles(options, x, y, z, count, offsetX, offsetY, offsetZ, speed)
         return true
     }
 }

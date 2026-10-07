@@ -1,6 +1,8 @@
 package org.ohmyloader.api.wrapper
 
 import org.ohmyloader.api.world.OMLBlockPos
+import org.ohmyloader.api.world.OMLBlockState
+import org.ohmyloader.api.world.OMLEntity
 
 /**
  * Wrapper for version-specific game objects. These wrapper
@@ -45,6 +47,20 @@ interface OMLWorld {
     fun setBlock(pos: OMLBlockPos, blockId: String): Boolean
 
     /**
+     * The state at [pos], block id and property values together, or null when the position is not loaded.
+     * Reading through [blockAt] reports only the id; two chests facing different ways are the same id.
+     */
+    fun blockStateAt(pos: OMLBlockPos): OMLBlockState?
+
+    /**
+     * Places [state] at [pos] with vanilla's neighbour updates and client resync, and reports whether the
+     * position now holds it. A state read from one position can be placed at another; the game refuses an
+     * impossible state rather than storing it, which is why this reads the position back instead of
+     * trusting the write.
+     */
+    fun setBlockState(pos: OMLBlockPos, state: OMLBlockState): Boolean
+
+    /**
      * Whether the chunk holding [pos] is loaded — the only thing that tells an unloaded position apart
      * from one that genuinely holds air, since [blockAt] answers the game's own getter either way.
      */
@@ -64,6 +80,43 @@ interface OMLWorld {
         volume: Float = 1f,
         pitch: Float = 1f,
         category: String = "master",
+    ): Boolean
+
+    /**
+     * The entities this level holds: a server level's live list, or the entities a client level renders.
+     * The list is a snapshot taken at the call, not a view that follows later changes.
+     */
+    val entities: List<OMLEntity>
+
+    /** The entities whose type registry id is [typeId] (`minecraft:cow`); empty for an unregistered id. */
+    fun entitiesOfType(typeId: String): List<OMLEntity>
+
+    /**
+     * Spawns [typeId] at the position and returns the entity, or null when the id is not an entity type,
+     * this is a client-side level — spawning is server-authoritative — or the game refused to add it.
+     * The entity arrives with no motion; the game's own rules (despawning, fire, suffocation) apply to it
+     * from the next tick like they do to a `/summon`ed one.
+     */
+    fun spawnEntity(typeId: String, x: Double, y: Double, z: Double): OMLEntity?
+
+    /**
+     * Shows [particleId] (`minecraft:poof`) at the position to every client that can see it; false for an
+     * unregistered id, a client-side level (the game sends particles from the server), or a particle that
+     * needs arguments of its own — dust colour, an item stack — which a bare id cannot carry. [count] of 0
+     * means one particle at the exact position, the game's own convention, while a larger count spreads
+     * that many through the offset box. [speed] is the game's per-particle parameter, whose meaning
+     * belongs to the particle type.
+     */
+    fun spawnParticles(
+        particleId: String,
+        x: Double,
+        y: Double,
+        z: Double,
+        count: Int = 0,
+        offsetX: Double = 0.0,
+        offsetY: Double = 0.0,
+        offsetZ: Double = 0.0,
+        speed: Double = 0.0,
     ): Boolean
 }
 

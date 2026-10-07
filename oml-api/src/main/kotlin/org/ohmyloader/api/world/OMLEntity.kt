@@ -34,6 +34,22 @@ interface OMLEntity {
     val removed: Boolean
 
     val onFire: Boolean
+
+    /**
+     * Motion in blocks per tick — the vector the game adds to the position when it moves the entity.
+     * Assigning replaces the game's own value, and the game's friction and gravity then work on it.
+     *
+     * A living entity recomputes this vector from its own movement input every tick, so a write to a mob
+     * is integrated on the tick it lands and replaced on the next. A projectile or an item has no such
+     * recomputation and keeps the written vector.
+     */
+    var velocity: OMLVec3
+
+    /**
+     * Takes the entity out of its level; false when the game left it in place. Not for players: removing
+     * a player entity detaches it from the level while its connection keeps pointing at it.
+     */
+    fun remove(): Boolean
 }
 
 /** A living entity: something with health. */
