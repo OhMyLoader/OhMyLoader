@@ -48,6 +48,12 @@ internal class ServerHandle(private val server: MinecraftServer) : OMLServer {
     override fun broadcast(text: String) {
         server.getPlayerList().broadcastAll(ClientboundSystemChatPacket(Component.literal(text), false))
     }
+
+    override fun gameRule(ruleId: String): String? =
+        GameProjections.gameRuleValue(server.gameRules, ruleId)
+
+    override fun setGameRule(ruleId: String, value: String): Boolean =
+        GameProjections.setGameRuleValue(server.gameRules, server, ruleId, value)
 }
 
 private class ClientHandle(private val minecraft: Minecraft) : OMLClient {

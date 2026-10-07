@@ -32,6 +32,19 @@ interface OMLServer {
 
     /** Shows [text] in the chat of every connected player. */
     fun broadcast(text: String)
+
+    /**
+     * The game's own value of the rule addressed by registry id (`minecraft:keep_inventory`), spelled the
+     * way the game spells it (`"true"`, `"3"`); null for an unregistered id.
+     */
+    fun gameRule(ruleId: String): String?
+
+    /**
+     * Sets [value] on that rule, parsed by the game's own serializer: false when the id is unregistered or
+     * the value does not parse for that rule — a boolean rule asked for `"3"`. Propagating the change to
+     * the loaded dimensions is the game's own business; OML keeps no copy of it.
+     */
+    fun setGameRule(ruleId: String, value: String): Boolean
 }
 
 /** The client side of the process: null on a dedicated server, which has none. */

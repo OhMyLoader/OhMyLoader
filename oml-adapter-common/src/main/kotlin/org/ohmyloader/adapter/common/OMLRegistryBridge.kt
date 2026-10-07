@@ -24,6 +24,7 @@ object OMLRegistryBridge : OMLRegistryProvider {
     override val sounds: OMLRegistry by lazy { RegistryView({ BuiltInRegistries.SOUND_EVENT }, Registries.SOUND_EVENT) }
     override val entityTypes: OMLRegistry by lazy { RegistryView({ BuiltInRegistries.ENTITY_TYPE }, Registries.ENTITY_TYPE) }
     override val attributes: OMLRegistry by lazy { RegistryView({ BuiltInRegistries.ATTRIBUTE }, Registries.ATTRIBUTE) }
+    override val gameRules: OMLRegistry by lazy { RegistryView({ BuiltInRegistries.GAME_RULE }, Registries.GAME_RULE) }
 
     /** Damage types are a datapack registry, so their table is the running server's, not a static one. */
     override val damageTypes: OMLRegistry by lazy { RegistryView(::damageTypeTable, Registries.DAMAGE_TYPE) }

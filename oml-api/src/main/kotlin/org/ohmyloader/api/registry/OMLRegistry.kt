@@ -35,6 +35,9 @@ interface OMLRegistryProvider {
 
     /** Entity attributes, e.g. `minecraft:max_health` — the ids attribute reads and writes take. */
     val attributes: OMLRegistry
+
+    /** Game rules, e.g. `minecraft:keep_inventory` — the ids [org.ohmyloader.api.access.OMLServer.gameRule] takes. */
+    val gameRules: OMLRegistry
 }
 
 /**
@@ -76,6 +79,9 @@ object OMLRegistries {
 
     /** Entity attributes, e.g. `minecraft:attack_damage`. */
     val attributes: OMLRegistry get() = provider?.attributes ?: notInstalled()
+
+    /** Game rules, e.g. `minecraft:keep_inventory`. */
+    val gameRules: OMLRegistry get() = provider?.gameRules ?: notInstalled()
 
     private fun notInstalled(): Nothing =
         error("registry reads are not installed — no version adapter is loaded")

@@ -27,6 +27,8 @@ class EventDispatchLifecycleTest {
         override fun playerByName(name: String): OMLPlayer? = null
         override fun level(dimensionId: String): OMLWorld? = null
         override fun broadcast(text: String) {}
+        override fun gameRule(ruleId: String): String? = null
+        override fun setGameRule(ruleId: String, value: String): Boolean = false
     }
 
     @Test

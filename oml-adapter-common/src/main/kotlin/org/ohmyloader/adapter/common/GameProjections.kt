@@ -39,6 +39,8 @@ import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.world.level.gamerules.GameRule
+import net.minecraft.world.level.gamerules.GameRules
 import org.ohmyloader.api.world.OMLBlockPos
 import org.ohmyloader.api.world.OMLBlockState
 import org.ohmyloader.api.world.OMLEntity
@@ -160,6 +162,29 @@ internal object GameProjections {
             // parser wants — no registry-access round trip.
             BlockStateParser.parseForBlock(BuiltInRegistries.BLOCK, spec, false).blockState()
         }.getOrNull()
+    }
+
+    /** A game rule by registry id — the game keeps them in a registry precisely so ids can address them. */
+    fun gameRuleById(id: String): GameRule<*>? = identifier(id)
+        ?.takeIf { BuiltInRegistries.GAME_RULE.containsKey(it) }
+        ?.let { BuiltInRegistries.GAME_RULE.getValue(it) }
+
+    /** The rule's value spelled the way the game spells it, or null for an unregistered id. */
+    fun gameRuleValue(rules: GameRules, id: String): String? =
+        gameRuleById(id)?.let { rules.getAsString(it) }
+
+    /**
+     * Parses [raw] with the rule's own deserializer — so a `Boolean` rule asked for `"3"` is refused rather
+     * than guessed at — and writes it through the game, which owns propagating the change to every loaded
+     * dimension. The registry hands back a star-projected `GameRule<*>` while the setter is generic in the
+     * value type; the erased setter parameter is `Object`, so the cast checks nothing the JVM would.
+     */
+    @Suppress("UNCHECKED_CAST")
+    fun setGameRuleValue(rules: GameRules, server: MinecraftServer, id: String, raw: String): Boolean {
+        val rule = gameRuleById(id) ?: return false
+        val value = rule.deserialize(raw).result().orElse(null) ?: return false
+        rules.set(rule as GameRule<Any>, value, server)
+        return true
     }
 
     fun identifier(id: String): Identifier? = runCatching { Identifier.parse(id) }.getOrNull()
