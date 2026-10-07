@@ -22,10 +22,15 @@ import net.minecraft.sounds.SoundEvent
 import net.minecraft.sounds.SoundSource
 import net.minecraft.world.effect.MobEffect
 import net.minecraft.world.effect.MobEffectInstance
+import net.minecraft.world.damagesource.DamageSource
+import net.minecraft.world.damagesource.DamageType
 import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.EntitySpawnReason
 import net.minecraft.world.entity.EntityType
 import net.minecraft.world.entity.LivingEntity
+import net.minecraft.world.entity.ai.attributes.Attribute
+import net.minecraft.world.entity.ai.attributes.AttributeInstance
+import net.minecraft.world.entity.ai.attributes.AttributeModifier
 import net.minecraft.world.entity.player.Inventory
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.level.entity.EntityTypeTest
@@ -114,6 +119,23 @@ internal object GameProjections {
         ?.takeIf { BuiltInRegistries.ENTITY_TYPE.containsKey(it) }
         ?.let { BuiltInRegistries.ENTITY_TYPE.getValue(it) }
 
+    /** A registered damage type as its holder, the shape the game's own `DamageSource` takes. */
+    fun damageTypeHolder(level: Level, id: String): Holder<DamageType>? {
+        // Damage types are a datapack registry, so the table comes from the level the damage happens in
+        // rather than from the built-in statics.
+        val registry = level.registryAccess().lookupOrThrow(Registries.DAMAGE_TYPE)
+        return identifier(id)?.let { registry.getOptional(it).orElse(null) }?.let(registry::wrapAsHolder)
+    }
+
+    /** A registered attribute as its holder, which is what `LivingEntity.getAttribute` wants. */
+    fun attributeHolder(id: String): Holder<Attribute>? = identifier(id)
+        ?.let { BuiltInRegistries.ATTRIBUTE.getOptional(it).orElse(null) }
+        ?.let { BuiltInRegistries.ATTRIBUTE.wrapAsHolder(it) }
+
+    /** One of the game's attribute operations, addressed by its own name in lower case. */
+    fun attributeOperation(name: String): AttributeModifier.Operation? =
+        AttributeModifier.Operation.values().firstOrNull { it.name.lowercase() == name.lowercase() }
+
     /** A registered particle type — the game accepts it as its own particle options, so one lookup fits. */
     fun particleType(id: String): ParticleType<*>? = identifier(id)
         ?.takeIf { BuiltInRegistries.PARTICLE_TYPE.containsKey(it) }
@@ -141,6 +163,14 @@ internal object GameProjections {
     }
 
     fun identifier(id: String): Identifier? = runCatching { Identifier.parse(id) }.getOrNull()
+
+    /**
+     * The server this process runs — the dedicated one, or the integrated server of a singleplayer game.
+     * Datapack registries, damage types among them, only exist behind a running server.
+     */
+    fun serverOrNull(): MinecraftServer? =
+        (OMLCore.serverInstance as? MinecraftServer)
+            ?: runCatching { Minecraft.getInstance().singleplayerServer }.getOrNull()
 }
 
 /** The unfiltered entity-type test the game's own level queries take; the filter is the predicate. */
@@ -198,6 +228,62 @@ internal open class LivingWrap(override val entity: LivingEntity) : EntityWrap(e
 
     override fun heal(amount: Float) {
         entity.heal(amount)
+    }
+
+    private fun attributeInstance(attributeId: String): AttributeInstance? =
+        GameProjections.attributeHolder(attributeId)?.let(entity::getAttribute)
+
+    override fun attributeValue(attributeId: String): Double? =
+        GameProjections.attributeHolder(attributeId)?.let(entity::getAttributeValue)
+
+    override fun attributeBase(attributeId: String): Double? =
+        attributeInstance(attributeId)?.baseValue
+
+    override fun setAttributeBase(attributeId: String, value: Double): Boolean {
+        val instance = attributeInstance(attributeId) ?: return false
+        instance.setBaseValue(value)
+        return true
+    }
+
+    override fun addAttributeModifier(
+        attributeId: String,
+        modifierId: String,
+        amount: Double,
+        operation: String,
+    ): Boolean {
+        val instance = attributeInstance(attributeId) ?: return false
+        val op = GameProjections.attributeOperation(operation) ?: return false
+        val location = GameProjections.identifier(modifierId) ?: return false
+        instance.addOrReplacePermanentModifier(AttributeModifier(location, amount, op))
+        return true
+    }
+
+    override fun removeAttributeModifier(attributeId: String, modifierId: String): Boolean {
+        val instance = attributeInstance(attributeId) ?: return false
+        val location = GameProjections.identifier(modifierId) ?: return false
+        return instance.removeModifier(location)
+    }
+
+    override fun hurt(damageTypeId: String, amount: Float, attacker: OMLEntity?): Boolean {
+        val level = entity.level()
+        val serverLevel = level as? ServerLevel ?: return false
+        val holder = GameProjections.damageTypeHolder(level, damageTypeId) ?: return false
+        val cause = attacker?.platform as? Entity
+        val source = if (cause == null) DamageSource(holder) else DamageSource(holder, cause, cause)
+        return entity.hurtServer(serverLevel, source, amount)
+    }
+
+    override val fireTicks: Int get() = entity.remainingFireTicks
+
+    override fun setOnFire(ticks: Int): Boolean {
+        entity.igniteForTicks(ticks)
+        return entity.isOnFire
+    }
+
+    override fun clearFire(): Boolean {
+        val burning = entity.isOnFire
+        entity.clearFire()
+        return burning && !entity.isOnFire
     }
 }
 
@@ -258,9 +344,7 @@ internal class PlayerWrap(override val entity: Player) : LivingWrap(entity), OML
         return true
     }
 
-    private fun server(): MinecraftServer? =
-        (OMLCore.serverInstance as? MinecraftServer)
-            ?: runCatching { Minecraft.getInstance().singleplayerServer }.getOrNull()
+    private fun server(): MinecraftServer? = GameProjections.serverOrNull()
 }
 
 internal class InventoryWrap(val inventory: Inventory) : OMLInventory {
@@ -413,6 +497,9 @@ internal class LevelWrap(val level: Level) : OMLWorld {
         spawned.setPos(x, y, z)
         return if (serverLevel.addFreshEntity(spawned)) GameProjections.entity(spawned) else null
     }
+
+    override fun spawnLivingEntity(typeId: String, x: Double, y: Double, z: Double): OMLLivingEntity? =
+        spawnEntity(typeId, x, y, z) as? OMLLivingEntity
 
     override fun spawnParticles(
         particleId: String,

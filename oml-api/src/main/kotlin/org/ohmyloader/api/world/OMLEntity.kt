@@ -79,6 +79,59 @@ interface OMLLivingEntity : OMLEntity {
 
     /** Restores up to [amount] health, capped at the maximum, exactly as the game's own healing is. */
     fun heal(amount: Float)
+
+    /**
+     * The value the game computes for [attributeId] (`minecraft:max_health`) — base plus modifiers — or
+     * null for an unregistered id. Health, speed and attack damage all live in these attributes, and
+     * [maxHealth] is this one read back as a float.
+     */
+    fun attributeValue(attributeId: String): Double?
+
+    /** The value before any modifier, which is the number a mod writes; null for an unregistered id. */
+    fun attributeBase(attributeId: String): Double?
+
+    /**
+     * Sets the base value; false for an unregistered id. The game clamps the number into the attribute's
+     * own range and applies its own consequence (a raised maximum does not refill health, a lowered one
+     * caps it), so read [attributeValue] back rather than assuming the write is the answer.
+     */
+    fun setAttributeBase(attributeId: String, value: Double): Boolean
+
+    /**
+     * Adds a permanent modifier under [modifierId] (`my_mod:sword_bonus`) — permanent in the game's own
+     * sense: it stays until removed, unlike one the game drops when the attribute recomputes. A modifier
+     * already held under that id is replaced. [operation] is one of the game's three, in lower case:
+     * `add_value`, `add_multiplied_base`, `add_multiplied_total`. False for an unregistered attribute or
+     * an unknown operation.
+     */
+    fun addAttributeModifier(attributeId: String, modifierId: String, amount: Double, operation: String): Boolean
+
+    /** Removes the modifier held under [modifierId]; false when this attribute carries no such modifier. */
+    fun removeAttributeModifier(attributeId: String, modifierId: String): Boolean
+
+    /**
+     * Deals [amount] damage of [damageTypeId] (`minecraft:cactus`, `minecraft:campfire`, a mod's own type)
+     * through the game's own damage path, crediting [attacker] as the entity behind it when given; false
+     * when the id is not a registered damage type, the entity is not in a server-side level, or the game
+     * applied nothing.
+     *
+     * The damage arrives through the same hook an attack does, so a `LIVING_HURT` handler sees it, can
+     * cancel it and can rewrite the number — this is a gameplay action, not a way around the rules.
+     */
+    fun hurt(damageTypeId: String, amount: Float, attacker: OMLEntity? = null): Boolean
+
+    /** Ticks of fire the game has left to burn on this entity; it counts the number down each tick. */
+    val fireTicks: Int
+
+    /**
+     * Sets the entity alight for [ticks] (60 is three seconds); false when the game refused, which is what
+     * a fire-immune entity answers. The verdict is the game's own burning flag after the request, not the
+     * call's return.
+     */
+    fun setOnFire(ticks: Int): Boolean
+
+    /** Takes the fire off; false when the game already reported the entity as unlit. */
+    fun clearFire(): Boolean
 }
 
 /**

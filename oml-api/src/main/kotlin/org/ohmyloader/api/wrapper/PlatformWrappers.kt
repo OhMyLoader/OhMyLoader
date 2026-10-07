@@ -3,6 +3,7 @@ package org.ohmyloader.api.wrapper
 import org.ohmyloader.api.world.OMLBlockPos
 import org.ohmyloader.api.world.OMLBlockState
 import org.ohmyloader.api.world.OMLEntity
+import org.ohmyloader.api.world.OMLLivingEntity
 
 /**
  * Wrapper for version-specific game objects. These wrapper
@@ -98,6 +99,13 @@ interface OMLWorld {
      * from the next tick like they do to a `/summon`ed one.
      */
     fun spawnEntity(typeId: String, x: Double, y: Double, z: Double): OMLEntity?
+
+    /**
+     * [spawnEntity] for a type the game makes living: the handle carries health, attributes and fire.
+     * Null when the id is not a registered entity type, this is a client-side level, or the type is not a
+     * living one — a projectile answers null here rather than being handed over as a healthless entity.
+     */
+    fun spawnLivingEntity(typeId: String, x: Double, y: Double, z: Double): OMLLivingEntity?
 
     /**
      * Shows [particleId] (`minecraft:poof`) at the position to every client that can see it; false for an
