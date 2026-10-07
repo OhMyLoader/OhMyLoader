@@ -2,13 +2,23 @@ package org.ohmyloader.adapter.common
 
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
+import net.minecraft.client.multiplayer.ClientLevel
 import net.minecraft.core.BlockPos
+import net.minecraft.core.Holder
 import net.minecraft.core.registries.BuiltInRegistries
+import net.minecraft.core.registries.Registries
 import net.minecraft.network.chat.Component
 import net.minecraft.network.protocol.game.ClientboundSystemChatPacket
 import net.minecraft.resources.Identifier
+import net.minecraft.resources.ResourceKey
 import net.minecraft.server.MinecraftServer
+import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
+import net.minecraft.server.permissions.LevelBasedPermissionSet
+import net.minecraft.sounds.SoundEvent
+import net.minecraft.sounds.SoundSource
+import net.minecraft.world.effect.MobEffect
+import net.minecraft.world.effect.MobEffectInstance
 import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.entity.player.Inventory
@@ -19,6 +29,7 @@ import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.Block
 import org.ohmyloader.api.world.OMLBlockPos
 import org.ohmyloader.api.world.OMLEntity
+import org.ohmyloader.api.world.OMLEffectInstance
 import org.ohmyloader.api.world.OMLInventory
 import org.ohmyloader.api.world.OMLItemStack
 import org.ohmyloader.api.world.OMLLivingEntity
@@ -73,7 +84,24 @@ internal object GameProjections {
         ?.takeIf { BuiltInRegistries.ITEM.containsKey(it) }
         ?.let { BuiltInRegistries.ITEM.getValue(it) }
 
-    private fun identifier(id: String): Identifier? = runCatching { Identifier.parse(id) }.getOrNull()
+    /** A registered sound event; null for an unknown id, which must not play silence. */
+    fun soundEvent(id: String): SoundEvent? = identifier(id)
+        ?.takeIf { BuiltInRegistries.SOUND_EVENT.containsKey(it) }
+        ?.let { BuiltInRegistries.SOUND_EVENT.getValue(it) }
+
+    /** One of the game's sound categories, addressed by its lower-case name (`master`, `blocks`, …). */
+    fun soundSource(category: String): SoundSource? =
+        SoundSource.values().firstOrNull { it.name.lowercase() == category.lowercase() }
+
+    /** A registered effect as its holder — the shape the game's own effect methods take. */
+    fun effectHolder(id: String): Holder<MobEffect>? = identifier(id)
+        ?.let { BuiltInRegistries.MOB_EFFECT.getOptional(it).orElse(null) }
+        ?.let { BuiltInRegistries.MOB_EFFECT.wrapAsHolder(it) }
+
+    fun dimensionKey(id: String): ResourceKey<Level>? = identifier(id)
+        ?.let { ResourceKey.create(Registries.DIMENSION, it) }
+
+    fun identifier(id: String): Identifier? = runCatching { Identifier.parse(id) }.getOrNull()
 }
 
 internal fun OMLBlockPos.toGame(): BlockPos = BlockPos(x, y, z)
@@ -97,6 +125,30 @@ internal open class LivingWrap(override val entity: LivingEntity) : EntityWrap(e
     override val health: Float get() = entity.health
     override val maxHealth: Float get() = entity.maxHealth
     override val alive: Boolean get() = !entity.isRemoved && entity.health > 0f
+
+    override val effects: List<OMLEffectInstance>
+        get() = entity.activeEffects.map {
+            OMLEffectInstance(
+                BuiltInRegistries.MOB_EFFECT.getKey(it.effect.value()).toString(),
+                it.duration,
+                it.amplifier,
+            )
+        }
+
+    override fun hasEffect(effectId: String): Boolean =
+        GameProjections.effectHolder(effectId)?.let(entity::hasEffect) ?: false
+
+    override fun applyEffect(effectId: String, durationTicks: Int, amplifier: Int): Boolean =
+        GameProjections.effectHolder(effectId)
+            ?.let { entity.addEffect(MobEffectInstance(it, durationTicks, amplifier)) }
+            ?: false
+
+    override fun removeEffect(effectId: String): Boolean =
+        GameProjections.effectHolder(effectId)?.let(entity::removeEffect) ?: false
+
+    override fun heal(amount: Float) {
+        entity.heal(amount)
+    }
 }
 
 internal class PlayerWrap(override val entity: Player) : LivingWrap(entity), OMLPlayer {
@@ -122,6 +174,40 @@ internal class PlayerWrap(override val entity: Player) : LivingWrap(entity), OML
         return entity.inventory.add(ItemStack(item, count))
     }
 
+    /** Permission sets are only ever server-side; the game's own fallback for an unset player is level 0. */
+    override val permissionLevel: Int
+        get() = ((entity as? ServerPlayer)?.permissions() as? LevelBasedPermissionSet)?.level()?.id() ?: 0
+
+    /**
+     * Server-authoritative, so a client-side player is moved through the integrated server's
+     * counterpart of the same uuid; with no counterpart there is nothing to move.
+     */
+    override fun teleport(x: Double, y: Double, z: Double, dimensionId: String?): Boolean {
+        val server = server() ?: return false
+        val target = (entity as? ServerPlayer) ?: server.getPlayerList().getPlayer(entity.uuid) ?: return false
+        val level = if (dimensionId != null) {
+            GameProjections.dimensionKey(dimensionId)?.let(server::getLevel) ?: return false
+        } else {
+            target.level() as? ServerLevel ?: return false
+        }
+        return target.teleportTo(level, x, y, z, emptySet(), target.yRot, target.xRot, false)
+    }
+
+    /**
+     * `null` as the excluded listener so the player hears its own sound, and the local playback path
+     * for a client-side player, which has no connection to write a packet on.
+     */
+    override fun playSound(soundId: String, volume: Float, pitch: Float): Boolean {
+        val event = GameProjections.soundEvent(soundId) ?: return false
+        val level = entity.level()
+        when (level) {
+            is ServerLevel -> level.playSound(null, entity, event, SoundSource.PLAYERS, volume, pitch)
+            is ClientLevel -> level.playLocalSound(entity, event, SoundSource.PLAYERS, volume, pitch)
+            else -> return false
+        }
+        return true
+    }
+
     private fun server(): MinecraftServer? =
         (OMLCore.serverInstance as? MinecraftServer)
             ?: runCatching { Minecraft.getInstance().singleplayerServer }.getOrNull()
@@ -144,6 +230,24 @@ internal class InventoryWrap(val inventory: Inventory) : OMLInventory {
 
     override fun add(itemId: String, count: Int): Boolean =
         stackOf(itemId, count)?.let { inventory.add(it) } ?: false
+
+    /**
+     * Takes from every slot that holds the item, the same way the game's own crafting pickup does; the
+     * game's per-slot removal reports how much it actually took, so the returned total is exact even
+     * when a stack boundary fell in the middle of the request.
+     */
+    override fun remove(itemId: String, count: Int): Int {
+        val item = GameProjections.itemId(itemId) ?: return 0
+        if (count <= 0) return 0
+        var missing = count
+        for (slot in 0 until size) {
+            if (missing == 0) break
+            val stack = inventory.getItem(slot)
+            if (stack.isEmpty || stack.item !== item) continue
+            missing -= inventory.removeItem(slot, missing).count
+        }
+        return count - missing
+    }
 
     override fun countOf(itemId: String): Int = GameProjections.itemId(itemId)?.let { inventory.countItem(it) } ?: 0
 
@@ -178,6 +282,24 @@ internal class LevelWrap(val level: Level) : OMLWorld {
     override fun setBlock(pos: OMLBlockPos, blockId: String): Boolean {
         val block = GameProjections.blockId(blockId) ?: return false
         return level.setBlockAndUpdate(pos.toGame(), block.defaultBlockState())
+    }
+
+    override fun isLoaded(pos: OMLBlockPos): Boolean = level.isLoaded(pos.toGame())
+
+    override fun playSound(
+        soundId: String,
+        x: Double,
+        y: Double,
+        z: Double,
+        volume: Float,
+        pitch: Float,
+        category: String,
+    ): Boolean {
+        val event = GameProjections.soundEvent(soundId) ?: return false
+        val source = GameProjections.soundSource(category) ?: return false
+        // null: play for everyone in range, the caller asking for no listener to exclude.
+        level.playSound(null, x, y, z, event, source, volume, pitch)
+        return true
     }
 }
 

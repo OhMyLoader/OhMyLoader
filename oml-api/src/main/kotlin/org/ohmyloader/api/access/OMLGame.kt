@@ -27,6 +27,9 @@ interface OMLServer {
 
     fun playerByName(name: String): OMLPlayer?
 
+    /** The loaded level of [dimensionId] (`minecraft:overworld`); null when that dimension is not loaded. */
+    fun level(dimensionId: String): OMLWorld?
+
     /** Shows [text] in the chat of every connected player. */
     fun broadcast(text: String)
 }

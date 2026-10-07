@@ -5,6 +5,7 @@ import org.ohmyloader.api.event.Events
 import org.ohmyloader.api.tick.OMLSide
 import org.ohmyloader.api.tick.OMLScheduler
 import org.ohmyloader.api.world.OMLPlayer
+import org.ohmyloader.api.wrapper.OMLWorld
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -24,6 +25,7 @@ class EventDispatchLifecycleTest {
         override val tickCount: Int = 0
         override val isDedicated: Boolean = true
         override fun playerByName(name: String): OMLPlayer? = null
+        override fun level(dimensionId: String): OMLWorld? = null
         override fun broadcast(text: String) {}
     }
 

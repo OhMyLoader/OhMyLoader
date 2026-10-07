@@ -32,8 +32,9 @@ interface OMLWorld {
     val isClient: Boolean
 
     /**
-     * Registry id of the block at [pos], e.g. `minecraft:stone`. The game's own getter answers air for
-     * a position that is not loaded, so this reports `minecraft:air` there rather than failing.
+     * Registry id of the block at [pos], e.g. `minecraft:stone`. For a position that is not loaded this
+     * is whatever the game's own getter answers, which is not a stable value — check [isLoaded] first
+     * when the answer has to mean something.
      */
     fun blockAt(pos: OMLBlockPos): String
 
@@ -42,6 +43,28 @@ interface OMLWorld {
      * or the position is not loaded.
      */
     fun setBlock(pos: OMLBlockPos, blockId: String): Boolean
+
+    /**
+     * Whether the chunk holding [pos] is loaded — the only thing that tells an unloaded position apart
+     * from one that genuinely holds air, since [blockAt] answers the game's own getter either way.
+     */
+    fun isLoaded(pos: OMLBlockPos): Boolean
+
+    /**
+     * Plays [soundId] (`minecraft:block.stone.place`) at a position for everyone who can hear it. False
+     * for an unregistered id or an unknown [category], which is one of the game's own sound categories
+     * in lower case: `master`, `music`, `records`, `weather`, `blocks`, `hostile`, `neutral`, `players`,
+     * `ambient`, `voice`, `ui` — it decides which of the client's volume sliders the sound obeys.
+     */
+    fun playSound(
+        soundId: String,
+        x: Double,
+        y: Double,
+        z: Double,
+        volume: Float = 1f,
+        pitch: Float = 1f,
+        category: String = "master",
+    ): Boolean
 }
 
 /** HUD draw-surface wrapper, handed out by [org.ohmyloader.api.event.HudRenderEvent]. */

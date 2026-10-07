@@ -41,6 +41,10 @@ internal class ServerHandle(private val server: MinecraftServer) : OMLServer {
     override fun playerByName(name: String): OMLPlayer? =
         server.getPlayerList().getPlayerByName(name)?.let(::PlayerWrap)
 
+    /** Only loaded levels resolve; a dimension the server has not loaded is null, not an empty world. */
+    override fun level(dimensionId: String): OMLWorld? =
+        GameProjections.dimensionKey(dimensionId)?.let(server::getLevel)?.let(GameProjections::world)
+
     override fun broadcast(text: String) {
         server.getPlayerList().broadcastAll(ClientboundSystemChatPacket(Component.literal(text), false))
     }

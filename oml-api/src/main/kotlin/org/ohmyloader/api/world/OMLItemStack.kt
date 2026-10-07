@@ -57,6 +57,13 @@ interface OMLInventory {
     /** Total count of [itemId] across the addressable slots. */
     fun countOf(itemId: String): Int
 
+    /**
+     * Takes up to [count] of [itemId] out of the addressable slots and returns how many came out —
+     * fewer than asked when the container did not hold that many. Stacks are matched by item id, so
+     * components (damage, custom names) do not have to match.
+     */
+    fun remove(itemId: String, count: Int): Int
+
     /** Points the hand at hotbar index [slot] (0..8); out-of-range indices do nothing. */
     fun selectHotbarSlot(slot: Int)
 }
