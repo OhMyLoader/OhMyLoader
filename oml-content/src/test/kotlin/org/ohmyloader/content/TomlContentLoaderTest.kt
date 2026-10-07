@@ -57,6 +57,28 @@ class TomlContentLoaderTest {
             loot += LootDecl(block, drop, dropCountMin, dropCountMax)
         }
 
+        data class DamageTypeDecl(
+            val id: String,
+            val messageId: String,
+            val scaling: String,
+            val effects: String?,
+            val exhaustion: Float,
+            val deathMessageType: String?,
+        )
+
+        val damageTypes = mutableListOf<DamageTypeDecl>()
+
+        override fun declareDamageType(
+            id: String,
+            messageId: String,
+            scaling: String,
+            effects: String?,
+            exhaustion: Float,
+            deathMessageType: String?,
+        ) {
+            damageTypes += DamageTypeDecl(id, messageId, scaling, effects, exhaustion, deathMessageType)
+        }
+
         val shaped = mutableListOf<Triple<String, List<String>, Map<Char, String>>>()
         val shapeless = mutableListOf<Pair<String, List<String>>>()
 
@@ -277,6 +299,43 @@ class TomlContentLoaderTest {
     // ---------------------------------------------------------------------------------------------
     // T-2.4: the data track aligns with the code track — smelting, loot and ore generation
     // ---------------------------------------------------------------------------------------------
+
+    private val sampleDamageType = """
+        [damage_type.melt]
+        message_id = "pack.melts"
+        effects = "burning"
+        exhaustion = 0.3
+        death_message_type = "intentional_game_design"
+
+        [damage_type.flop]
+        message_id = "pack.flops"
+    """.trimIndent()
+
+    @Test
+    fun `damage_type sections map onto declareDamageType with the game's defaults filled in`() {
+        val (registry, summary) = loadPack("melter", sampleDamageType)
+
+        assertEquals(2, registry.damageTypes.size)
+        assertEquals(2, summary.damageTypes)
+        val melt = registry.damageTypes.first { it.id == "melt" }
+        assertEquals("pack.melts", melt.messageId)
+        assertEquals("when_caused_by_living_non_player", melt.scaling)
+        assertEquals("burning", melt.effects)
+        assertEquals(0.3f, melt.exhaustion)
+        assertEquals("intentional_game_design", melt.deathMessageType)
+        val flop = registry.damageTypes.first { it.id == "flop" }
+        assertEquals(null, flop.effects)
+        assertEquals(0f, flop.exhaustion)
+    }
+
+    @Test
+    fun `a damage_type section without its message_id fails the pack, not the loader`() {
+        val failure = assertFailsWith<IllegalStateException> {
+            loadPack("broken", "[damage_type.silent]\nscaling = \"always\"")
+        }
+        assertTrue("message_id" in failure.message!!, failure.message)
+        assertTrue("broken" in failure.message!!, "the pack name has to be in the message")
+    }
 
     @Test
     fun `smelting sections map onto declareSmelting with defaults and furnace variants`() {

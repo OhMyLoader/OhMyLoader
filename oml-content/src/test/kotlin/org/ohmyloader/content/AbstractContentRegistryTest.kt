@@ -313,4 +313,47 @@ class AbstractContentRegistryTest {
         val json = registry.lootJsonFor("mymod", "mymod_ruby_ore") ?: fail("the loot table must be served")
         assertTrue("\"mymod:raw_ruby\"" in json, "the first declaration wins")
     }
+
+    @Test
+    fun `a damage type is served as the datapack file the game's own codec reads`() {
+        val registry = RecordingRegistry()
+        val facade = registry.forNamespace("mymod")
+
+        facade.declareDamageType(
+            id = "melt",
+            messageId = "mymod.melts",
+            effects = "burning",
+            exhaustion = 0.3f,
+            deathMessageType = "intentional_game_design",
+        )
+        facade.declareDamageType(id = "plain", messageId = "mymod.plain")
+
+        assertEquals(listOf("melt", "plain"), registry.damageTypeIdsFor("mymod"))
+        val json = registry.damageTypeJsonFor("mymod", "melt") ?: fail("the damage type must be served")
+        // scaling/effects/death_message_type are plain enum names, not ids — namespacing them fails the codec
+        assertTrue("\"message_id\":\"mymod.melts\"" in json, json)
+        assertTrue("\"scaling\":\"when_caused_by_living_non_player\"" in json, json)
+        assertTrue("\"effects\":\"burning\"" in json, json)
+        assertTrue("\"death_message_type\":\"intentional_game_design\"" in json, json)
+        assertTrue("\"exhaustion\":0.3" in json, json)
+        val defaults = registry.damageTypeJsonFor("mymod", "plain") ?: fail("the second file must be served")
+        assertTrue(!defaults.contains("effects"), "an unset field is omitted, not defaulted: $defaults")
+        assertTrue(!defaults.contains("death_message_type"), defaults)
+    }
+
+    @Test
+    fun `an unknown damage enum name or a duplicate id is refused instead of reaching the datapack`() {
+        val registry = RecordingRegistry()
+        val facade = registry.forNamespace("mymod")
+
+        facade.declareDamageType(id = "good", messageId = "m")
+        facade.declareDamageType(id = "good", messageId = "dup")
+        facade.declareDamageType(id = "bad_scaling", messageId = "m", scaling = "sometimes")
+        facade.declareDamageType(id = "bad_effects", messageId = "m", effects = "sparkle")
+        facade.declareDamageType(id = "bad_death", messageId = "m", deathMessageType = "dramatic")
+        facade.declareDamageType(id = "Bad Name", messageId = "m")
+
+        assertEquals(listOf("good"), registry.damageTypeIdsFor("mymod"))
+        assertEquals(null, registry.damageTypeJsonFor("mymod", "bad_scaling"))
+    }
 }

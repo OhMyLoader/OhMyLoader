@@ -46,6 +46,8 @@ class ContentTrackParityTest {
             .declareSmelting(input = "raw_ruby", result = "ruby", experience = 0.7, cookingTime = 100)
         code.forNamespace("ruby").declareBlockDrop(block = "ruby_ore", drop = "raw_ruby")
         code.forNamespace("ruby")
+            .declareDamageType(id = "melt", messageId = "ruby.melts", effects = "burning", exhaustion = 0.3f)
+        code.forNamespace("ruby")
             .declareShapelessCrafting(result = "ruby", ingredients = listOf("raw_ruby", "raw_ruby"))
 
         TomlContentLoader.load(
@@ -69,6 +71,11 @@ class ContentTrackParityTest {
 
             [loot.ruby_ore]
             drop = "raw_ruby"
+
+            [damage_type.melt]
+            message_id = "ruby.melts"
+            effects = "burning"
+            exhaustion = 0.3
 
             [crafting.ruby]
             type = "shapeless"
@@ -101,6 +108,8 @@ class ContentTrackParityTest {
         assertEquals(code.recipeJsonFor("ruby", "ruby_raw_ruby"), data.recipeJsonFor("ruby", "ruby_raw_ruby"))
         assertEquals(code.recipeJsonFor("ruby", "ruby_ruby"), data.recipeJsonFor("ruby", "ruby_ruby"))
         assertEquals(code.lootJsonFor("ruby", "ruby_ore"), data.lootJsonFor("ruby", "ruby_ore"))
+        assertEquals(code.damageTypeJsonFor("ruby", "melt"), data.damageTypeJsonFor("ruby", "melt"))
+        assertEquals(code.damageTypeIdsFor("ruby"), data.damageTypeIdsFor("ruby"))
         val codeOreGen = code.oreGenDecls.single()
         val dataOreGen = data.oreGenDecls.single()
         assertEquals(codeOreGen.featureJson, dataOreGen.featureJson)

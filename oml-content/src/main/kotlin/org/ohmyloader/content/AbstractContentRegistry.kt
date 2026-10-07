@@ -54,6 +54,18 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
 
     protected val collectedRecipes: MutableList<RecipeDecl> = mutableListOf()
     protected val collectedLoot: MutableList<LootDecl> = mutableListOf()
+    protected val collectedDamageTypes: MutableList<DamageTypeDecl> = mutableListOf()
+
+    /**
+     * A collected damage-type declaration: [key] is the datapack file's local id, so the registry id the
+     * game binds is `namespace:key` and [OMLLivingEntity.hurt] takes that same string.
+     */
+    data class DamageTypeDecl(
+        val namespace: String,
+        val key: String,
+        val json: String,
+        val reloadable: Boolean,
+    )
 
     /**
      * The datapack JSON for a collected recipe (`data/<ns>/recipe/<key>.json`), or null if no
@@ -82,6 +94,16 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
     fun lootIdsFor(namespace: String): List<String> =
         collectedLoot.filter { it.namespace == namespace }.map { it.key }
 
+    /** The datapack JSON for a collected damage type (`data/<ns>/damage_type/<key>.json`). */
+    @Synchronized
+    fun damageTypeJsonFor(namespace: String, id: String): String? =
+        collectedDamageTypes.firstOrNull { it.namespace == namespace && it.key == id }?.json
+
+    /** The collected damage-type keys of [namespace], in declaration order — the datapack directory listing. */
+    @Synchronized
+    fun damageTypeIdsFor(namespace: String): List<String> =
+        collectedDamageTypes.filter { it.namespace == namespace }.map { it.key }
+
     /**
      * Drops every collected recipe / loot declaration so a reload pass can re-collect them from
      * the pack files as they exist on disk **now**. Blocks and items are NOT touched: their
@@ -94,6 +116,7 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
         // track's recipes and loot belong to frozen blocks and would be lost forever here
         collectedRecipes.removeAll { it.reloadable }
         collectedLoot.removeAll { it.reloadable }
+        collectedDamageTypes.removeAll { it.reloadable }
     }
 
     /** A collected ore-generation declaration, flattened to its two datapack files' JSON. */
@@ -234,6 +257,38 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                 val full = lootJson(block, drop, namespace, dropCountMin, dropCountMax)
                 collectedLoot += LootDecl(namespace, key, full, reloadable)
             }
+
+            override fun declareDamageType(
+                id: String,
+                messageId: String,
+                scaling: String,
+                effects: String?,
+                exhaustion: Float,
+                deathMessageType: String?,
+            ) {
+                val refusal = when {
+                    !DATAPACK_NAME.matches(id) -> "'$id' is not a lowercase datapack name"
+                    scaling !in DAMAGE_SCALINGS -> "unknown damage scaling '$scaling'"
+                    effects != null && effects !in DAMAGE_EFFECTS -> "unknown damage effects '$effects'"
+                    deathMessageType != null && deathMessageType !in DEATH_MESSAGE_TYPES ->
+                        "unknown death message type '$deathMessageType'"
+                    collectedDamageTypes.any { it.namespace == namespace && it.key == id } ->
+                        "damage type '$id' is declared twice"
+                    else -> null
+                }
+                if (refusal != null) {
+                    // Refusing here is the loud answer; writing the file anyway would let the datapack
+                    // codec reject it during reload and leave the damage type missing with no owner.
+                    OmlLog.warn("Content", "$refusal; the damage type is not declared")
+                    return
+                }
+                collectedDamageTypes += DamageTypeDecl(
+                    namespace,
+                    id,
+                    damageTypeJson(messageId, scaling, effects, exhaustion, deathMessageType),
+                    reloadable,
+                )
+            }
         }
 
     private fun qualify(namespace: String, id: String): String =
@@ -302,6 +357,27 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
         if (count < 1) throw IllegalStateException("crafting result count must be >= 1 (got $count)")
     }
 
+    /**
+     * The damage-type JSON, in the game's own field shape: `scaling`, `effects` and `death_message_type`
+     * are plain enum names (no namespace, unlike every other id in these files), and the two optional ones
+     * are omitted rather than defaulted so the game's own codec path applies its default.
+     */
+    private fun damageTypeJson(
+        messageId: String,
+        scaling: String,
+        effects: String?,
+        exhaustion: Float,
+        deathMessageType: String?,
+    ): String = buildString {
+        append('{')
+        if (deathMessageType != null) append("\"death_message_type\":\"$deathMessageType\",")
+        if (effects != null) append("\"effects\":\"$effects\",")
+        append("\"exhaustion\":$exhaustion,")
+        append("\"message_id\":\"$messageId\",")
+        append("\"scaling\":\"$scaling\"")
+        append('}')
+    }
+
     private fun lootJson(block: String, drop: String, namespace: String, min: Int, max: Int): String {
         val blockId = qualify(namespace, block)
         val dropId = qualify(namespace, drop)
@@ -366,3 +442,15 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
      */
     protected abstract fun doMaterialize()
 }
+
+/**
+ * The damage-type enum names the game's codec accepts, spelled as the vanilla datapack spells them. This
+ * is a deliberately closed set: oml-content compiles without the game, so it cannot read the enums, and a
+ * name outside it is refused at declaration instead of reaching a datapack reload that would drop the file.
+ */
+private val DAMAGE_SCALINGS = setOf("never", "when_caused_by_living_non_player", "always")
+private val DAMAGE_EFFECTS = setOf("hurt", "thorns", "drowning", "burning", "poking", "freezing")
+private val DEATH_MESSAGE_TYPES = setOf("default", "fall_variants", "intentional_game_design")
+
+/** A datapack file name: lower case, and no namespace — OML binds the declaring mod's id. */
+private val DATAPACK_NAME = Regex("[a-z0-9_.-]+")

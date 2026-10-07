@@ -39,6 +39,7 @@ object TomlContentLoader {
         val recipes: Int = 0,
         val smelting: Int = 0,
         val loot: Int = 0,
+        val damageTypes: Int = 0,
     )
 
     /**
@@ -75,6 +76,7 @@ object TomlContentLoader {
         var recipes = 0
         var smelting = 0
         var loot = 0
+        var damageTypes = 0
         for ([path, fields] in doc) {
             when {
                 path.isEmpty() -> if (fields.isNotEmpty()) {
@@ -110,14 +112,20 @@ object TomlContentLoader {
                     loot++
                 }
 
+                path.startsWith("damage_type.") && path.count { it == '.' } == 1 -> {
+                    declareDamageTypeSection(path.removePrefix("damage_type."), fields, source, registry)
+                    damageTypes++
+                }
+
                 else -> OmlLog.warn(
                     TAG,
                     "$source: ignoring section [$path] — " +
-                        "expected [block.<id>] / [item.<id>] / [crafting.<id>] / [smelting.<id>] / [loot.<block>]",
+                        "expected [block.<id>] / [item.<id>] / [crafting.<id>] / [smelting.<id>] / " +
+                        "[loot.<block>] / [damage_type.<id>]",
                 )
             }
         }
-        return PackSummary(namespace, blocks, items, recipes, smelting, loot)
+        return PackSummary(namespace, blocks, items, recipes, smelting, loot, damageTypes)
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -191,6 +199,30 @@ object TomlContentLoader {
     }
 
     private val LOOT_KEYS = setOf("drop", "drop_count_min", "drop_count_max")
+
+    private val DAMAGE_TYPE_KEYS =
+        setOf("message_id", "scaling", "effects", "exhaustion", "death_message_type")
+
+    /** A `[damage_type.<id>]` section: the pack's namespace binds the id `hurt()` later takes. */
+    private fun declareDamageTypeSection(
+        id: String,
+        fields: Map<String, Any>,
+        source: String,
+        registry: ContentRegistry,
+    ) {
+        requireId(id, source, "damage_type")
+        val messageId = fields["message_id"] as? String
+            ?: fail(source, "damage_type '$id' is missing its 'message_id' string")
+        reportUnknown(fields, DAMAGE_TYPE_KEYS, source, "damage_type '$id'")
+        registry.declareDamageType(
+            id = id,
+            messageId = messageId,
+            scaling = fields["scaling"] as? String ?: "when_caused_by_living_non_player",
+            effects = fields["effects"] as? String,
+            exhaustion = floatValue(fields, "exhaustion", source, "damage_type '$id'") ?: 0f,
+            deathMessageType = fields["death_message_type"] as? String,
+        )
+    }
 
     /** A `[loot.<block>]` section: breaking the block drops [drop] instead of the block itself. */
     private fun declareLootSection(id: String, fields: Map<String, Any>, source: String, registry: ContentRegistry) {

@@ -51,6 +51,16 @@ class OmlArchivePackTest {
         }
 
         override fun declareShapelessCrafting(result: String, ingredients: List<String>, count: Int) {}
+
+        override fun declareDamageType(
+            id: String,
+            messageId: String,
+            scaling: String,
+            effects: String?,
+            exhaustion: Float,
+            deathMessageType: String?,
+        ) {
+        }
     }
 
     private val factory = object : ContentRegistryFactory {

@@ -82,6 +82,25 @@ interface ContentRegistry {
      * a datapack loot table override at materialization; [drop] may be namespaced or bare.
      */
     fun declareBlockDrop(block: String, drop: String, dropCountMin: Int = 1, dropCountMax: Int = 1)
+
+    /**
+     * Declares a damage type, which the game loads from OML's injected content pack: [OMLLivingEntity.hurt]
+     * takes its id, and a `LIVING_HURT` handler reports [messageId] as the damage type of the hit.
+     * [scaling] is how the game multiplies the amount by difficulty (`never`,
+     * `when_caused_by_living_non_player`, `always`), [effects] the vanilla sounds and particles that come
+     * with it (`hurt`, `thorns`, `drowning`, `burning`, `poking`, `freezing`; null keeps the game's own
+     * default), [deathMessageType] how the death message reads (`default`, `fall_variants`,
+     * `intentional_game_design`). An unknown name is refused with a warning at declaration rather than
+     * written out for the datapack loader to reject later.
+     */
+    fun declareDamageType(
+        id: String,
+        messageId: String,
+        scaling: String = "when_caused_by_living_non_player",
+        effects: String? = null,
+        exhaustion: Float = 0.0f,
+        deathMessageType: String? = null,
+    )
 }
 
 /** Furnace-type recipe variants supported by [ContentRegistry.declareSmelting]. */

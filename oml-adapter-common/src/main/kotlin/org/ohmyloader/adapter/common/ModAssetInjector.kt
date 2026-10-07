@@ -369,7 +369,8 @@ object ModAssetInjector {
     private fun isDataPath(path: String): Boolean =
         path.startsWith("recipe/") || path.startsWith("loot_table/") || path.startsWith("tags/") ||
             path.startsWith("worldgen/") || path.startsWith("advancement/") ||
-            path.startsWith("predicate/") || path.startsWith("loot_modifiers/")
+            path.startsWith("predicate/") || path.startsWith("loot_modifiers/") ||
+            path.startsWith("damage_type/")
 
     /**
      * Bytes for one datapack file. Recipes and loot tables come from OML content declarations
@@ -388,6 +389,11 @@ object ModAssetInjector {
             path.startsWith("loot_table/blocks/") && path.endsWith(".json") -> {
                 val id = path.removePrefix("loot_table/blocks/").removeSuffix(".json")
                 contentRegistry.lootJsonFor(namespace, id)
+            }
+
+            path.startsWith("damage_type/") && path.endsWith(".json") -> {
+                val id = path.removePrefix("damage_type/").removeSuffix(".json")
+                contentRegistry.damageTypeJsonFor(namespace, id)
             }
 
             path.startsWith("worldgen/feature/") && path.endsWith(".json") -> {
@@ -468,6 +474,9 @@ object ModAssetInjector {
         if (dir == "loot_table" || dir == "loot_table/blocks") {
             MinecraftContentRegistry.lootIdsFor(namespace).forEach { emit("loot_table/blocks/$it.json") }
         }
+        if (dir == "damage_type") {
+            MinecraftContentRegistry.damageTypeIdsFor(namespace).forEach { emit("damage_type/$it.json") }
+        }
         if (namespace == "minecraft" && dir == "worldgen/biome") {
             MinecraftContentRegistry.oreTargetedBiomes().forEach { emit("worldgen/biome/$it.json") }
         }
@@ -502,6 +511,8 @@ object ModAssetInjector {
                 "recipe" -> MinecraftContentRegistry.recipeIdsFor(namespace).forEach { emit("recipe/$it.json") }
                 "loot_table/blocks" -> MinecraftContentRegistry.lootIdsFor(namespace)
                     .forEach { emit("loot_table/blocks/$it.json") }
+                "damage_type" -> MinecraftContentRegistry.damageTypeIdsFor(namespace)
+                    .forEach { emit("damage_type/$it.json") }
             }
         }
     }
