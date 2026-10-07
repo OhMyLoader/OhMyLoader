@@ -44,4 +44,6 @@ class OMLAdapterV26_3 : IAdapter {
     override fun createNetworkSender() = OMLNetworkBridge
 
     override fun createGameProvider() = OMLGameBridge
+
+    override fun createRegistryProvider() = OMLRegistryBridge
 }

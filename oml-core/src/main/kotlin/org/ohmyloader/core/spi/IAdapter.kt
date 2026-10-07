@@ -57,6 +57,12 @@ interface IAdapter {
     fun createGameProvider(): org.ohmyloader.api.access.OMLGameProvider? = null
 
     /**
+     * Registry and tag reads for [org.ohmyloader.api.registry.OMLRegistries]. Null when that version
+     * exposes no registry reads; a mod then gets a clear failure rather than an empty registry.
+     */
+    fun createRegistryProvider(): org.ohmyloader.api.registry.OMLRegistryProvider? = null
+
+    /**
      * Game-ready hook (tail of Minecraft initialization): post-processing that needs the game
      * runtime environment (e.g. content materialization) runs here.
      */
