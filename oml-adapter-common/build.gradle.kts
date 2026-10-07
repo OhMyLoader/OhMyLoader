@@ -16,6 +16,10 @@ dependencies {
     testImplementation(libs.nettyCodecBase)
     testImplementation(libs.nettyTransport)
 
+    // The 26.3-facing mod API: the event payloads this bridge fires are its types, and it is defined by
+    // the same loader as the game classes, which is the only arrangement that keeps one game type.
+    implementation(project(":oml-api-26_3"))
+
     compileOnly(files("libs/26.3-client.jar"))
     testImplementation(files("libs/26.3-client.jar"))
 

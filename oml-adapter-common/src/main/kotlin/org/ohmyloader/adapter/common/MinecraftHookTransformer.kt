@@ -126,7 +126,8 @@ class MinecraftHookTransformer(private val idPrefix: String) : InjectingTransfor
             method("setScreenAndShow", desc = "(Lnet/minecraft/client/gui/screens/Screen;)V") {
                 atHead {
                     cancellableCall(
-                        "org/ohmyloader/adapter/common/EventBridge", "onGuiOpen", "(Ljava/lang/Object;)Z",
+                        "org/ohmyloader/adapter/common/EventBridge", "onGuiOpen",
+                        "(Lnet/minecraft/client/gui/screens/Screen;)Z",
                         args = listOf(DslValue.Arg(0)),
                     )
                 }
@@ -137,7 +138,8 @@ class MinecraftHookTransformer(private val idPrefix: String) : InjectingTransfor
             method("setLevel", desc = "(Lnet/minecraft/client/multiplayer/ClientLevel;)V") {
                 atHead {
                     call(
-                        "org/ohmyloader/adapter/common/EventBridge", "onWorldLoad", "(Ljava/lang/Object;)V",
+                        "org/ohmyloader/adapter/common/EventBridge", "onWorldLoad",
+                        "(Lnet/minecraft/client/multiplayer/ClientLevel;)V",
                         args = listOf(DslValue.Arg(0)),
                     )
                 }
@@ -273,7 +275,8 @@ class MinecraftHookTransformer(private val idPrefix: String) : InjectingTransfor
             method("handleSystemChat", desc = "(Lnet/minecraft/network/protocol/game/ClientboundSystemChatPacket;)V") {
                 atHead {
                     cancellableCall(
-                        "org/ohmyloader/adapter/common/EventBridge", "onChatReceived", "(Ljava/lang/Object;)Z",
+                        "org/ohmyloader/adapter/common/EventBridge", "onChatReceived",
+                        "(Lnet/minecraft/network/protocol/Packet;)Z",
                         args = listOf(DslValue.Arg(0)),
                     )
                 }
@@ -281,7 +284,8 @@ class MinecraftHookTransformer(private val idPrefix: String) : InjectingTransfor
             method("handlePlayerChat", desc = "(Lnet/minecraft/network/protocol/game/ClientboundPlayerChatPacket;)V") {
                 atHead {
                     cancellableCall(
-                        "org/ohmyloader/adapter/common/EventBridge", "onChatReceived", "(Ljava/lang/Object;)Z",
+                        "org/ohmyloader/adapter/common/EventBridge", "onChatReceived",
+                        "(Lnet/minecraft/network/protocol/Packet;)Z",
                         args = listOf(DslValue.Arg(0)),
                     )
                 }
@@ -292,7 +296,8 @@ class MinecraftHookTransformer(private val idPrefix: String) : InjectingTransfor
             ) {
                 atHead {
                     cancellableCall(
-                        "org/ohmyloader/adapter/common/EventBridge", "onChatReceived", "(Ljava/lang/Object;)Z",
+                        "org/ohmyloader/adapter/common/EventBridge", "onChatReceived",
+                        "(Lnet/minecraft/network/protocol/Packet;)Z",
                         args = listOf(DslValue.Arg(0)),
                     )
                 }

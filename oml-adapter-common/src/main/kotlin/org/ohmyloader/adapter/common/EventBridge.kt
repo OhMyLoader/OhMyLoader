@@ -1,6 +1,11 @@
 package org.ohmyloader.adapter.common
 
+import net.minecraft.client.gui.GuiGraphicsExtractor
+import net.minecraft.client.gui.screens.Screen
+import net.minecraft.client.multiplayer.ClientLevel
 import net.minecraft.core.BlockPos
+import net.minecraft.network.protocol.Packet
+import net.minecraft.network.protocol.game.ClientGamePacketListener
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.server.level.ServerPlayerGameMode
@@ -16,7 +21,7 @@ import net.minecraft.world.phys.BlockHitResult
 import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.mixin.CallbackInfoReturnable
 import org.ohmyloader.core.OMLCore
-import org.ohmyloader.core.adapter.EventDispatch
+import org.ohmyloader.api26_3.EventDispatch
 import org.ohmyloader.core.adapter.Refl
 import java.lang.reflect.Field
 
@@ -89,20 +94,20 @@ object EventBridge {
     /** [Hud.extractRenderState head] Fires the HUD render callback with the frame's draw surface. */
     @JvmStatic
     fun onHudRender(
-        extractor: net.minecraft.client.gui.GuiGraphicsExtractor,
+        extractor: GuiGraphicsExtractor,
         @Suppress("UNUSED_PARAMETER") delta: net.minecraft.client.DeltaTracker,
-    ) = EventDispatch.onHudRender(GameProjections.guiGraphics(extractor))
+    ) = EventDispatch.onHudRender(extractor)
 
     /**
      * [MinecraftServer.tickServer head] Carries the ticking server so the core can tell one server
      * instance from the next (see [EventDispatch.onServerTick]).
      */
     @JvmStatic
-    fun onServerTick(server: MinecraftServer) = EventDispatch.onServerTick(OMLGameBridge.handle(server))
+    fun onServerTick(server: MinecraftServer) = EventDispatch.onServerTick(server)
 
     /** [MinecraftServer.stopServer head] */
     @JvmStatic
-    fun onServerStopping(server: MinecraftServer) = EventDispatch.onServerStopping(OMLGameBridge.handle(server))
+    fun onServerStopping(server: MinecraftServer) = EventDispatch.onServerStopping(server)
 
     /**
      * [ServerLevel.tick head] / [ClientLevel.tick head] One dispatch per level that ticks, carrying that
@@ -111,15 +116,15 @@ object EventBridge {
      * projections the two sides actually hold.
      */
     @JvmStatic
-    fun onLevelTick(level: Level) = EventDispatch.onLevelTick(GameProjections.world(level))
+    fun onLevelTick(level: Level) = EventDispatch.onLevelTick(level)
 
     /** [PlayerList.placeNewPlayer tail] The player is fully in the world at this point. */
     @JvmStatic
-    fun onPlayerJoined(player: ServerPlayer) = EventDispatch.onPlayerJoined(PlayerWrap(player))
+    fun onPlayerJoined(player: ServerPlayer) = EventDispatch.onPlayerJoined(player)
 
     /** [PlayerList.remove head] Still readable: the game has not torn the player down yet. */
     @JvmStatic
-    fun onPlayerLeft(player: ServerPlayer) = EventDispatch.onPlayerLeft(PlayerWrap(player))
+    fun onPlayerLeft(player: ServerPlayer) = EventDispatch.onPlayerLeft(player)
 
     /**
      * [PlayerList.respawn tail] Receives the player the game is about to return — the instance built for
@@ -128,7 +133,7 @@ object EventBridge {
      */
     @JvmStatic
     fun onPlayerRespawned(player: ServerPlayer): ServerPlayer {
-        EventDispatch.onPlayerRespawned(PlayerWrap(player))
+        EventDispatch.onPlayerRespawned(player)
         return player
     }
 
@@ -145,8 +150,7 @@ object EventBridge {
         cir: CallbackInfoReturnable<Boolean>,
     ) {
         val player = ownerOf(game) ?: return
-        val blockKey = GameProjections.blockKey(player.level().getBlockState(pos).block)
-        if (EventDispatch.onBlockBreak(PlayerWrap(player), pos.toApi(), blockKey)) cir.setReturnValue(false)
+        if (EventDispatch.onBlockBreak(player, pos, player.level().getBlockState(pos))) cir.setReturnValue(false)
     }
 
     /**
@@ -157,8 +161,11 @@ object EventBridge {
      */
     @JvmStatic
     fun onEntityAttack(player: Player, target: Entity): Boolean {
-        if (player.level().isClientSide) return false
-        return EventDispatch.onEntityAttack(PlayerWrap(player), GameProjections.entity(target))
+        // The same click runs this on the client's player and, in singleplayer, on the server's: only
+        // the server-side call is dispatched, so a mod sees one event per gameplay action.
+        val serverPlayer = player as? ServerPlayer ?: return false
+        if (serverPlayer.level().isClientSide) return false
+        return EventDispatch.onEntityAttack(serverPlayer, target)
     }
 
     /**
@@ -176,8 +183,9 @@ object EventBridge {
         @Suppress("UNUSED_PARAMETER") id: Int,
         cir: CallbackInfoReturnable<InteractionResult>,
     ) {
-        if (player.level().isClientSide) return
-        if (EventDispatch.onEntityInteract(PlayerWrap(player), GameProjections.entity(target), handName(hand))) {
+        val serverPlayer = player as? ServerPlayer ?: return
+        if (serverPlayer.level().isClientSide) return
+        if (EventDispatch.onEntityInteract(serverPlayer, target, hand)) {
             cir.setReturnValue(InteractionResult.PASS)
         }
     }
@@ -199,11 +207,8 @@ object EventBridge {
         @Suppress("UNUSED_PARAMETER") id: Int,
         cir: CallbackInfoReturnable<InteractionResult>,
     ) {
-        val pos = hit.blockPos
-        val blockId = GameProjections.blockKey(player.level().getBlockState(pos).block)
         val canceled = EventDispatch.onBlockUsed(
-            PlayerWrap(player), pos.toApi(), blockId, GameProjections.itemKey(stack.item), handName(hand),
-            hit.direction.serializedName,
+            player, hit, player.level().getBlockState(hit.blockPos), stack, hand,
         )
         if (canceled) cir.setReturnValue(InteractionResult.FAIL)
     }
@@ -218,14 +223,9 @@ object EventBridge {
         @Suppress("UNUSED_PARAMETER") id: Int,
         cir: CallbackInfoReturnable<InteractionResult>,
     ) {
-        val canceled = EventDispatch.onItemUsed(
-            PlayerWrap(player), GameProjections.itemKey(stack.item), handName(hand),
-        )
+        val canceled = EventDispatch.onItemUsed(player, stack, hand)
         if (canceled) cir.setReturnValue(InteractionResult.FAIL)
     }
-
-    private fun handName(hand: InteractionHand): String =
-        if (hand == InteractionHand.OFF_HAND) "off_hand" else "main_hand"
 
     /**
      * A [Events.LIVING_HURT] handler's rewritten amount, for the damage applications this thread is inside.
@@ -254,8 +254,7 @@ object EventBridge {
         @Suppress("UNUSED_PARAMETER") id: Int,
         cir: CallbackInfoReturnable<Boolean>,
     ) {
-        val attacker = source.entity?.let { GameProjections.entity(it) }
-        val event = EventDispatch.onLivingHurt(GameProjections.living(entity), amount, source.type().msgId(), attacker)
+        val event = EventDispatch.onLivingHurt(entity, amount, source)
         if (event.canceled) {
             cir.setReturnValue(false)
             return
@@ -287,15 +286,15 @@ object EventBridge {
      */
     @JvmStatic
     fun onLivingDied(entity: LivingEntity, source: DamageSource): Boolean =
-        EventDispatch.onLivingDied(GameProjections.living(entity), source.type().msgId())
+        EventDispatch.onLivingDied(entity, source)
 
     /** [Minecraft.setScreenAndShow head] */
     @JvmStatic
-    fun onGuiOpen(screen: Any?): Boolean = EventDispatch.onGuiOpen(screen?.let(GameProjections::screen))
+    fun onGuiOpen(screen: Screen?): Boolean = EventDispatch.onGuiOpen(screen)
 
     /** [Minecraft.setLevel head] */
     @JvmStatic
-    fun onWorldLoad(world: Any?) = EventDispatch.onWorldLoad(world?.let { GameProjections.world(it as Level) })
+    fun onWorldLoad(world: ClientLevel?) = EventDispatch.onWorldLoad(world)
 
     @JvmStatic
     fun onFrameLimit(limit: Int): Int = EventDispatch.onFrameLimit(limit)
@@ -351,6 +350,6 @@ object EventBridge {
      * the sender's message was modified, with the fallback to `body().content()` (a plain String).
      */
     @JvmStatic
-    fun onChatReceived(packet: Any): Boolean =
-        EventDispatch.onChatReceived(packet, listOf("content", "message", "unsignedContent"), "body" to "content")
+    fun onChatReceived(packet: Packet<ClientGamePacketListener>): Boolean =
+        EventDispatch.onChatReceived(packet)
 }

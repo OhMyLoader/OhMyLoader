@@ -8,6 +8,8 @@ netty = "4.2.18.Final"
 gson = "2.14.0"
 brigadier = "1.3.11"
 datafixerupper = "10.0.21"
+# The game's own vector library: `Component`'s statics need it at test run time.
+joml = "1.10.9"
 
 [libraries]
 kotlinGradlePlugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
@@ -24,6 +26,7 @@ flatlaf = { module = "com.formdev:flatlaf", version.ref = "flatlaf" }
 gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
 brigadier = { module = "com.mojang:brigadier", version.ref = "brigadier" }
 datafixerupper = { module = "com.mojang:datafixerupper", version.ref = "datafixerupper" }
+joml = { module = "org.joml:joml", version.ref = "joml" }
 nettyCodecBase = { module = "io.netty:netty-codec-base", version.ref = "netty" }
 nettyTransport = { module = "io.netty:netty-transport", version.ref = "netty" }
 

@@ -1,24 +1,27 @@
-package org.ohmyloader.api.event
+package org.ohmyloader.api26_3.event
+
+import org.ohmyloader.api.event.EventDefinition
 
 /**
- * Unified event registry: mods subscribe via [EventDefinition.register], and
- * version adapters dispatch via [EventDefinition.fire].
+ * The 26.3 event registry: mods subscribe through [EventDefinition.register], the version adapter
+ * dispatches through [EventDefinition.fire]. Payload fields are the game's own types — this module
+ * exists so a mod can hold a `ServerPlayer` rather than a translation of one.
  */
 object Events {
-    /** Dispatched once per logical tick. */
+    /** Dispatched once per logical client tick. */
     val CLIENT_TICK = EventDefinition<ClientTickEvent>("client_tick")
 
     /** Dispatched once per logical server tick, on the server thread (dedicated or integrated). */
     val SERVER_TICK = EventDefinition<ServerTickEvent>("server_tick")
 
     /**
-     * Frame-rate limit query (mutable): dispatched every frame; handlers may
-     * override `limit`.
+     * Frame-rate limit query (mutable): every frame; handlers may override
+     * [FrameRateLimitEvent.limit].
      */
     val FRAME_RATE_LIMIT = EventDefinition<FrameRateLimitEvent>("frame_rate_limit")
 
     /**
-     * GUI open (cancellable): dispatched right before a GUI is shown;
+     * GUI open (cancellable): right before a GUI is shown;
      * [GuiOpenEvent.screen] being null means the current GUI is being closed.
      */
     val GUI_OPEN = EventDefinition<GuiOpenEvent>("gui_open")
@@ -33,8 +36,7 @@ object Events {
     val WORLD_LOAD = EventDefinition<WorldLoadEvent>("world_load")
 
     /**
-     * HUD render callback: dispatched once per frame while a world is loaded, before the HUD is
-     * extracted.
+     * HUD render callback: once per frame while a world is loaded, before the HUD is extracted.
      */
     val HUD_RENDER = EventDefinition<HudRenderEvent>("hud_render")
 

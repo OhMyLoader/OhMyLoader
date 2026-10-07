@@ -20,8 +20,21 @@ dependencies {
     api(project(":oml-api"))
 
     compileOnly(files(gameJar))
+    // The game supplies these at run time; they are on the compile path only because game types reach
+    // into them — `Component` is a `com.mojang.brigadier.Message`, and every registry interface extends
+    // `com.mojang.serialization.Keyable`. Without them the game types here do not resolve their own
+    // supertypes.
+    compileOnly(libs.brigadier)
+    compileOnly(libs.datafixerupper)
     testImplementation(kotlin("test"))
     testImplementation(files(gameJar))
+    testImplementation(libs.brigadier)
+    testImplementation(libs.datafixerupper)
+    // Building a packet instance runs its static STREAM_CODEC, whose types come from netty — the game
+    // supplies them at run time, and the test JVM has to as well.
+    testImplementation(libs.nettyCodecBase)
+    testImplementation(libs.nettyTransport)
+    testRuntimeOnly(libs.joml)
 }
 
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
