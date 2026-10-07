@@ -143,8 +143,8 @@ interface OMLWorld {
      * Whether this dimension's weather reads as raining / thundering. The game ramps a level toward the
      * state [setWeather] asks for, 0.01 per tick, and calls it raining above 0.2 and thundering above 0.9
      * — so a fresh write shows up twenty-odd ticks later, thunder about a hundred. Thunder is scaled by
-     * the rain level and an open sky is required, so neither reads true below ground or in a dimension
-     * without one.
+     * the rain level, and the game only lets a dimension with an open sky have weather at all (the End is
+     * excluded by name), so neither reads true below ground or in a dimension without one.
      */
     val isRaining: Boolean
 
