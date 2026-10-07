@@ -7,7 +7,11 @@ import net.minecraft.commands.arguments.blocks.BlockStateParser
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Holder
 import net.minecraft.core.particles.ParticleOptions
+import net.minecraft.core.particles.BlockParticleOption
+import net.minecraft.core.particles.DustParticleOptions
+import net.minecraft.core.particles.ItemParticleOption
 import net.minecraft.core.particles.ParticleType
+import net.minecraft.core.particles.ParticleTypes
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.core.registries.Registries
 import net.minecraft.network.chat.Component
@@ -544,6 +548,47 @@ internal class LevelWrap(val level: Level) : OMLWorld {
         // The game's return value counts the clients that received it, which says nothing about whether
         // the particle was shown — the answer this method gives is about the id and the side.
         serverLevel.sendParticles(options, x, y, z, count, offsetX, offsetY, offsetZ, speed)
+        return true
+    }
+
+    override fun spawnItemParticles(itemId: String, x: Double, y: Double, z: Double, count: Int): Boolean {
+        val serverLevel = level as? ServerLevel ?: return false
+        val item = GameProjections.itemId(itemId) ?: return false
+        // The static ParticleTypes fields are typed by their own options class, so no projection is needed.
+        return sendOnServer(serverLevel, ItemParticleOption(ParticleTypes.ITEM, item), x, y, z, count)
+    }
+
+    override fun spawnBlockParticles(blockId: String, x: Double, y: Double, z: Double, count: Int): Boolean {
+        val serverLevel = level as? ServerLevel ?: return false
+        val block = GameProjections.blockId(blockId) ?: return false
+        return sendOnServer(
+            serverLevel,
+            BlockParticleOption(ParticleTypes.BLOCK, block.defaultBlockState()),
+            x, y, z, count,
+        )
+    }
+
+    override fun spawnDustParticles(
+        color: Int,
+        scale: Float,
+        x: Double,
+        y: Double,
+        z: Double,
+        count: Int,
+    ): Boolean {
+        val serverLevel = level as? ServerLevel ?: return false
+        return sendOnServer(serverLevel, DustParticleOptions(color, scale), x, y, z, count)
+    }
+
+    private fun sendOnServer(
+        serverLevel: ServerLevel,
+        options: ParticleOptions,
+        x: Double,
+        y: Double,
+        z: Double,
+        count: Int,
+    ): Boolean {
+        serverLevel.sendParticles(options, x, y, z, count, 0.0, 0.0, 0.0, 0.0)
         return true
     }
 }

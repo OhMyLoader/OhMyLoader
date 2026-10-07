@@ -126,6 +126,18 @@ interface OMLWorld {
         offsetZ: Double = 0.0,
         speed: Double = 0.0,
     ): Boolean
+
+    /**
+     * The same for a particle that needs arguments of its own, which is what the bare-id overload refuses:
+     * [spawnItemParticles] shows [itemId]'s texture breaking, [spawnBlockParticles] shows the default
+     * state of [blockId], and [spawnDustParticles] takes a `0xRRGGBB` [color] with a size [scale]. Each
+     * answers false for an unregistered id or a client-side level.
+     */
+    fun spawnItemParticles(itemId: String, x: Double, y: Double, z: Double, count: Int = 0): Boolean
+
+    fun spawnBlockParticles(blockId: String, x: Double, y: Double, z: Double, count: Int = 0): Boolean
+
+    fun spawnDustParticles(color: Int, scale: Float, x: Double, y: Double, z: Double, count: Int = 0): Boolean
 }
 
 /** HUD draw-surface wrapper, handed out by [org.ohmyloader.api.event.HudRenderEvent]. */
