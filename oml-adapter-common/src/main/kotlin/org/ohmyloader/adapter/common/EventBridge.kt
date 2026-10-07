@@ -13,10 +13,12 @@ import net.minecraft.world.entity.player.Player
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.Level
 import net.minecraft.world.phys.BlockHitResult
+import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.mixin.CallbackInfoReturnable
 import org.ohmyloader.core.OMLCore
 import org.ohmyloader.core.adapter.EventDispatch
-import java.util.WeakHashMap
+import org.ohmyloader.core.adapter.Refl
+import java.lang.reflect.Field
 
 /**
  * 26.3 event bridge: injected hooks call into here, which converts version-specific objects into
@@ -43,17 +45,24 @@ object EventBridge {
     private val contentRegistry = MinecraftContentRegistry
 
     /**
-     * The game keeps `ServerPlayerGameMode.player` protected, which the API's typed projections cannot
-     * read, so the association is recorded from the constructor argument at injection time. Both sides
-     * of the entry are unreachable together once the player leaves, so the weak keys let the pair go.
+     * The game holds `ServerPlayerGameMode.player` protected and the injection DSL has no field operand, so
+     * the break handler reads it off the instance it was handed. The lookup is cached per (type, name) and
+     * the read allocates nothing; no map is involved, which matters because the player and its game mode
+     * reference each other strongly — a map keyed by either one keeps the other alive for the life of the
+     * process, and a weak map does not help, since reachability runs through the value.
      */
-    private val gameModeOwners = WeakHashMap<ServerPlayerGameMode, ServerPlayer>()
+    private val gameModePlayer: Field? =
+        Refl.fieldOrNull(ServerPlayerGameMode::class.java, "player", ServerPlayerGameMode::class.java).also {
+            if (it == null) {
+                OmlLog.warn(
+                    "Events",
+                    "ServerPlayerGameMode.player is gone from this game version — BLOCK_BREAK will not fire",
+                )
+            }
+        }
 
-    /** [ServerPlayerGameMode constructor head] */
-    @JvmStatic
-    fun onGameModeCreated(game: ServerPlayerGameMode, player: ServerPlayer) {
-        gameModeOwners[game] = player
-    }
+    /** The player a game mode belongs to; null when the version renamed the field away. */
+    private fun ownerOf(game: ServerPlayerGameMode): ServerPlayer? = gameModePlayer?.get(game) as? ServerPlayer
 
     @JvmStatic
     fun onClientTick() {
@@ -135,7 +144,7 @@ object EventBridge {
         @Suppress("UNUSED_PARAMETER") id: Int,
         cir: CallbackInfoReturnable<Boolean>,
     ) {
-        val player = gameModeOwners[game] ?: return
+        val player = ownerOf(game) ?: return
         val blockKey = GameProjections.blockKey(player.level().getBlockState(pos).block)
         if (EventDispatch.onBlockBreak(PlayerWrap(player), pos.toApi(), blockKey)) cir.setReturnValue(false)
     }

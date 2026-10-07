@@ -106,17 +106,6 @@ internal fun InjectionBuilder.serverEventRules() {
     }
 
     classTarget("net/minecraft/server/level/ServerPlayerGameMode") {
-        // The game keeps `player` protected, so the break handler cannot read its own player off the
-        // instance — the constructor argument is public, and the bridge records the association from here.
-        constructor(desc = "(Lnet/minecraft/server/level/ServerPlayer;)V") {
-            atConstructorHead {
-                call(
-                    BRIDGE, "onGameModeCreated",
-                    "(Lnet/minecraft/server/level/ServerPlayerGameMode;Lnet/minecraft/server/level/ServerPlayer;)V",
-                    args = listOf(DslValue.This, DslValue.Arg(0)),
-                )
-            }
-        }
         // The single funnel for both break paths: creative `destroyAndAck` calls this directly, the
         // survival delayed break completes inside it via `tick()`. Its return value is the resync
         // signal — false makes `destroyAndAck` send the block back to the client, so a cancelled break
