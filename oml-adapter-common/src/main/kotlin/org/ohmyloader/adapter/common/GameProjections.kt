@@ -41,6 +41,7 @@ import net.minecraft.world.level.entity.EntityTypeTest
 import net.minecraft.world.item.Item
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.Level
+import net.minecraft.world.Container
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.clock.ClockManager
@@ -52,6 +53,7 @@ import net.minecraft.world.level.gamerules.GameRule
 import net.minecraft.world.level.gamerules.GameRules
 import org.ohmyloader.api.world.OMLBlockPos
 import org.ohmyloader.api.world.OMLBlockState
+import org.ohmyloader.api.world.OMLContainer
 import org.ohmyloader.api.world.OMLClock
 import org.ohmyloader.api.world.OMLEntity
 import org.ohmyloader.api.world.OMLEffectInstance
@@ -347,6 +349,20 @@ internal open class LivingWrap(override val entity: LivingEntity) : EntityWrap(e
 
 internal class PlayerWrap(override val entity: Player) : LivingWrap(entity), OMLPlayer {
     override val inventory: OMLInventory get() = InventoryWrap(entity.inventory)
+
+    /** Every player holds the inventory menu whether or not a screen is open, so that one is not "opened". */
+    override val openedMenuId: String?
+        get() = entity.containerMenu
+            ?.takeIf { it !== entity.inventoryMenu }
+            ?.let { BuiltInRegistries.MENU.getKey(it.type)?.toString() }
+
+    /** The server-side close is the only one that reaches the game's state: a client copy is closed by its packet. */
+    override fun closeOpenedMenu(): Boolean {
+        val target = entity as? ServerPlayer ?: return false
+        if (target.containerMenu === target.inventoryMenu) return false
+        target.closeContainer()
+        return target.containerMenu === target.inventoryMenu
+    }
     /** The game's own accessor is `@Nullable` on the base class, so a player can be asked before its game type is known. */
     override val gameMode: String? get() = entity.gameMode()?.getName()
     override val mainHandItem: OMLItemStack get() = GameProjections.stack(entity.mainHandItem)
@@ -451,6 +467,51 @@ internal class InventoryWrap(val inventory: Inventory) : OMLInventory {
         GameProjections.itemId(itemId)?.let { if (count > 0) ItemStack(it, count) else ItemStack.EMPTY }
 }
 
+/**
+ * A block's slot storage. Every read and write goes through the game's own `Container` methods, so which
+ * slot accepts what, how a stack limit clamps and who counts as using the block are the block's decisions
+ * — OML adds no storage model of its own.
+ */
+internal class ContainerWrap(private val container: Container) : OMLContainer {
+    override val platform: Any get() = container
+    override val size: Int get() = container.containerSize
+    override val isEmpty: Boolean get() = container.isEmpty
+
+    override fun itemAt(slot: Int): OMLItemStack? =
+        if (slot in 0 until size) GameProjections.stack(container.getItem(slot)) else null
+
+    override fun setSlot(slot: Int, itemId: String, count: Int): Boolean {
+        val stack = stackFor(itemId, count) ?: return false
+        if (slot !in 0 until size) return false
+        // The block's own rule, asked before writing: a furnace's output slot refuses, and OML does not
+        // paste a stack over what the game would not have put there.
+        if (!container.canPlaceItem(slot, stack)) return false
+        container.setItem(slot, stack)
+        container.setChanged()
+        val written = container.getItem(slot)
+        return count <= 0 || (!written.isEmpty && written.item === stack.item && written.count == stack.count)
+    }
+
+    /** The game's own removal reports how much actually came out, so a stack boundary is not OML's problem. */
+    override fun takeSlot(slot: Int, count: Int): OMLItemStack? =
+        if (slot in 0 until size && count > 0) GameProjections.stack(container.removeItem(slot, count)) else null
+
+    override fun countOf(itemId: String): Int =
+        GameProjections.itemId(itemId)?.let { container.countItem(it) } ?: 0
+
+    override fun canPlace(slot: Int, itemId: String, count: Int): Boolean {
+        val stack = stackFor(itemId, count.coerceAtLeast(1)) ?: return false
+        return slot in 0 until size && container.canPlaceItem(slot, stack)
+    }
+
+    /** Only players are named: the game's own list also carries anything else that holds the block open. */
+    override val openedBy: List<String>
+        get() = container.entitiesWithContainerOpen.mapNotNull { (it as? Player)?.getScoreboardName() }
+
+    private fun stackFor(itemId: String, count: Int): ItemStack? =
+        GameProjections.itemId(itemId)?.let { if (count > 0) ItemStack(it, count) else ItemStack.EMPTY }
+}
+
 internal class StackWrap(val stack: ItemStack) : OMLItemStack {
     override val platform: Any get() = stack
 
@@ -514,6 +575,10 @@ internal class LevelWrap(val level: Level) : OMLWorld {
     }
 
     override fun isLoaded(pos: OMLBlockPos): Boolean = level.isLoaded(pos.toGame())
+
+    /** The block entity's own storage when the block has one; a block without slots is not a container. */
+    override fun containerAt(pos: OMLBlockPos): OMLContainer? =
+        (level.getBlockEntity(pos.toGame()) as? Container)?.let(::ContainerWrap)
 
     override fun playSound(
         soundId: String,

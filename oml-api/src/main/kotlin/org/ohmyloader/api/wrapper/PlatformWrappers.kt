@@ -3,6 +3,7 @@ package org.ohmyloader.api.wrapper
 import org.ohmyloader.api.world.OMLBlockPos
 import org.ohmyloader.api.world.OMLBlockState
 import org.ohmyloader.api.world.OMLClock
+import org.ohmyloader.api.world.OMLContainer
 import org.ohmyloader.api.world.OMLEntity
 import org.ohmyloader.api.world.OMLLivingEntity
 
@@ -165,6 +166,14 @@ interface OMLWorld {
      * clock, so nothing there reads or writes time.
      */
     val clock: OMLClock?
+
+    /**
+     * The storage at [pos] — chest, barrel, furnace, hopper — or null when nothing there holds slots (air,
+     * a block with no container, an unloaded position). Reads and writes reach the block entity the game
+     * itself holds, so a player using the same block sees every change and the block's own slot rules
+     * still apply.
+     */
+    fun containerAt(pos: OMLBlockPos): OMLContainer?
 }
 
 /** HUD draw-surface wrapper, handed out by [org.ohmyloader.api.event.HudRenderEvent]. */

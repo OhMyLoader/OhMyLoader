@@ -67,3 +67,49 @@ interface OMLInventory {
     /** Points the hand at hotbar index [slot] (0..8); out-of-range indices do nothing. */
     fun selectHotbarSlot(slot: Int)
 }
+
+/**
+ * Storage a block holds — the game's own slot container behind a chest, furnace, hopper or barrel. Slot
+ * indices are the container's own layout, which each block defines: a furnace has five slots and its
+ * output slot refuses anything the game would not put there.
+ *
+ * Every read goes to the block entity as the game holds it, so a player opening the block, a hopper
+ * moving items, or a write from this API are all the same state; nothing is cached between calls.
+ */
+interface OMLContainer {
+    /** The underlying game container (a `Container`, usually the block entity itself). */
+    val platform: Any
+
+    /** Number of slots this storage addresses. */
+    val size: Int
+
+    val isEmpty: Boolean
+
+    /** The stack in [slot], or null when the slot is out of range. An occupied-but-empty slot is not possible: the game keeps air out. */
+    fun itemAt(slot: Int): OMLItemStack?
+
+    /**
+     * Replaces [slot]'s contents with `count` of [itemId] and marks the storage dirty the way the game
+     * does after a change; false for an unknown id, an out-of-range slot, or a slot the storage's own
+     * rules refuse. A stack larger than the item's own limit is clamped by the game, not by OML.
+     */
+    fun setSlot(slot: Int, itemId: String, count: Int): Boolean
+
+    /**
+     * Takes up to [count] out of [slot] through the game's own removal and reports what came out — null
+     * for an out-of-range slot, an empty projection when the slot held nothing.
+     */
+    fun takeSlot(slot: Int, count: Int): OMLItemStack?
+
+    /** Total count of [itemId] across the storage, counted the way the game counts it. */
+    fun countOf(itemId: String): Int
+
+    /**
+     * Whether this storage would accept `count` of [itemId] in [slot] — the game's own check, which is how
+     * a furnace's output slot and a hopper's filter answer no without anyone writing to them.
+     */
+    fun canPlace(slot: Int, itemId: String, count: Int): Boolean
+
+    /** Scoreboard names of the players the game counts as using this storage right now. */
+    val openedBy: List<String>
+}

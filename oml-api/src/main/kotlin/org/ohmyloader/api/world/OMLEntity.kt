@@ -151,6 +151,19 @@ interface OMLPlayer : OMLLivingEntity {
     val inventory: OMLInventory
 
     /**
+     * Registry id of the menu this player is using (`minecraft:chest`, `minecraft:furnace`), or null while
+     * they hold only the inventory menu the game gives every player. This is the game's own screen state:
+     * an interaction the player never completed has not changed it.
+     */
+    val openedMenuId: String?
+
+    /**
+     * Closes what the player has open through the game's own path, which drops the carried stack back into
+     * their inventory and marks the block unused; false when they had no menu open to close.
+     */
+    fun closeOpenedMenu(): Boolean
+
+    /**
      * `survival` / `creative` / `adventure` / `spectator`, or null when the game has not given this
      * player a game type — the game's own accessor is nullable, and on a client-side player it can be
      * read before the server has sent one.
