@@ -591,6 +591,20 @@ internal class LevelWrap(val level: Level) : OMLWorld {
         serverLevel.sendParticles(options, x, y, z, count, 0.0, 0.0, 0.0, 0.0)
         return true
     }
+
+    override val isRaining: Boolean get() = level.isRaining
+
+    override val isThundering: Boolean get() = level.isThundering
+
+    override fun setWeather(raining: Boolean, thundering: Boolean, durationTicks: Int): Boolean {
+        val serverLevel = level as? ServerLevel ?: return false
+        if (thundering && !raining) return false
+        // The entry /weather itself calls: it zeroes the clear timer, which would otherwise veto the state
+        // on the next weather tick, and a weather time of 0 makes the game sample its own duration.
+        serverLevel.server.setWeatherParameters(0, durationTicks.coerceAtLeast(0), raining, thundering)
+        val weather = serverLevel.weatherData
+        return weather.isRaining == raining && weather.isThundering == thundering
+    }
 }
 
 internal class ScreenWrap(private val screen: Any) : OMLScreen {

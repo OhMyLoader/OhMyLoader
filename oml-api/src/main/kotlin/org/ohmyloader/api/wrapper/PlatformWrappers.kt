@@ -138,6 +138,26 @@ interface OMLWorld {
     fun spawnBlockParticles(blockId: String, x: Double, y: Double, z: Double, count: Int = 0): Boolean
 
     fun spawnDustParticles(color: Int, scale: Float, x: Double, y: Double, z: Double, count: Int = 0): Boolean
+
+    /**
+     * Whether this dimension's weather reads as raining / thundering. The game ramps a level toward the
+     * state [setWeather] asks for, 0.01 per tick, and calls it raining above 0.2 and thundering above 0.9
+     * — so a fresh write shows up twenty-odd ticks later, thunder about a hundred. Thunder is scaled by
+     * the rain level and an open sky is required, so neither reads true below ground or in a dimension
+     * without one.
+     */
+    val isRaining: Boolean
+
+    val isThundering: Boolean
+
+    /**
+     * Asks for [raining] (and [thundering]) weather: one server-wide record, which every open-sky
+     * dimension then ramps toward. [durationTicks] is how long the game holds the state before its own
+     * cycle takes over; 0 lets the game pick, the way `/weather` without a duration does. False on a
+     * client-side level, which does not own the weather, and for thunder without rain, which the game
+     * cannot represent. The level's live read follows on the game's next weather tick, not on this call.
+     */
+    fun setWeather(raining: Boolean, thundering: Boolean = raining, durationTicks: Int = 0): Boolean
 }
 
 /** HUD draw-surface wrapper, handed out by [org.ohmyloader.api.event.HudRenderEvent]. */
