@@ -10,7 +10,9 @@ import net.minecraft.world.damagesource.DamageSource
 import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.entity.player.Player
+import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.Level
+import net.minecraft.world.phys.BlockHitResult
 import org.ohmyloader.api.mixin.CallbackInfoReturnable
 import org.ohmyloader.core.OMLCore
 import org.ohmyloader.core.adapter.EventDispatch
@@ -146,11 +148,67 @@ object EventBridge {
         cir: CallbackInfoReturnable<InteractionResult>,
     ) {
         if (player.level().isClientSide) return
-        val handName = if (hand == InteractionHand.OFF_HAND) "off_hand" else "main_hand"
-        if (EventDispatch.onEntityInteract(PlayerWrap(player), GameProjections.entity(target), handName)) {
+        if (EventDispatch.onEntityInteract(PlayerWrap(player), GameProjections.entity(target), handName(hand))) {
             cir.setReturnValue(InteractionResult.PASS)
         }
     }
+
+    /**
+     * [ServerPlayerGameMode.useItemOn head] The server-side half of a right-click on a block: the client
+     * predicts its own `MultiPlayerGameMode` and sends the click, so this runs once per click on the
+     * server thread in singleplayer and on a dedicated server alike. Cancelling returns `FAIL`, the game's
+     * own "the click did nothing" result — the client's prediction is rolled back by the packet the game
+     * already schedules for a failed click.
+     */
+    @JvmStatic
+    fun onBlockUsed(
+        @Suppress("UNUSED_PARAMETER") game: ServerPlayerGameMode,
+        player: ServerPlayer,
+        stack: ItemStack,
+        hand: InteractionHand,
+        hit: BlockHitResult,
+        @Suppress("UNUSED_PARAMETER") id: Int,
+        cir: CallbackInfoReturnable<InteractionResult>,
+    ) {
+        val pos = hit.blockPos
+        val blockId = GameProjections.blockKey(player.level().getBlockState(pos).block)
+        val canceled = EventDispatch.onBlockUsed(
+            PlayerWrap(player), pos.toApi(), blockId, GameProjections.itemKey(stack.item), handName(hand),
+            hit.direction.serializedName,
+        )
+        if (canceled) cir.setReturnValue(InteractionResult.FAIL)
+    }
+
+    /** [ServerPlayerGameMode.useItem head] The right-click that hit no block and no entity. */
+    @JvmStatic
+    fun onItemUsed(
+        @Suppress("UNUSED_PARAMETER") game: ServerPlayerGameMode,
+        player: ServerPlayer,
+        stack: ItemStack,
+        hand: InteractionHand,
+        @Suppress("UNUSED_PARAMETER") id: Int,
+        cir: CallbackInfoReturnable<InteractionResult>,
+    ) {
+        val canceled = EventDispatch.onItemUsed(
+            PlayerWrap(player), GameProjections.itemKey(stack.item), handName(hand),
+        )
+        if (canceled) cir.setReturnValue(InteractionResult.FAIL)
+    }
+
+    private fun handName(hand: InteractionHand): String =
+        if (hand == InteractionHand.OFF_HAND) "off_hand" else "main_hand"
+
+    /**
+     * A [Events.LIVING_HURT] handler's rewritten amount, for the damage applications this thread is inside.
+     * The event fires at HEAD while the game reads its damage parameter only later in the same call, so the
+     * number travels between the two hooks here. It is a **stack**, not one slot: a damage application
+     * nested inside another (thorns retaliation) pushes its own entry and pops it at its own read, in order.
+     * An entry is consumed only by the application that pushed it — the pair of identities has to match —
+     * so it can never rewrite an unrelated damage.
+     */
+    private val rewrittenHurt = ThreadLocal<ArrayDeque<RewrittenHurt>>()
+
+    private class RewrittenHurt(val entity: LivingEntity, val source: DamageSource, val amount: Float)
 
     /**
      * [LivingEntity.hurtServer head, on the base class] Hooking the declaration in `LivingEntity` is what
@@ -168,9 +226,30 @@ object EventBridge {
         cir: CallbackInfoReturnable<Boolean>,
     ) {
         val attacker = source.entity?.let { GameProjections.entity(it) }
-        if (EventDispatch.onLivingHurt(GameProjections.living(entity), amount, source.type().msgId(), attacker)) {
+        val event = EventDispatch.onLivingHurt(GameProjections.living(entity), amount, source.type().msgId(), attacker)
+        if (event.canceled) {
             cir.setReturnValue(false)
+            return
         }
+        if (event.amount != amount) {
+            val pending = rewrittenHurt.get() ?: ArrayDeque<RewrittenHurt>().also { rewrittenHurt.set(it) }
+            pending.addLast(RewrittenHurt(entity, source, event.amount))
+        }
+    }
+
+    /**
+     * [LivingEntity.hurtServer, first read of the damage parameter] Hands the game the amount a
+     * [Events.LIVING_HURT] handler wrote. The engine stores the returned value into that parameter slot,
+     * so every later read in the same call — shield reduction, damage cooldown, the damage itself — sees
+     * the handler's number rather than the one the attacker computed.
+     */
+    @JvmStatic
+    fun onHurtAmount(amount: Float, entity: LivingEntity, source: DamageSource): Float {
+        val pending = rewrittenHurt.get() ?: return amount
+        val rewritten = pending.lastOrNull() ?: return amount
+        if (rewritten.entity !== entity || rewritten.source !== source) return amount
+        pending.removeLast()
+        return rewritten.amount
     }
 
     /**

@@ -59,7 +59,13 @@ object Events {
     /** A player right-clicked an entity (cancellable). */
     val ENTITY_INTERACT = EventDefinition<EntityInteractEvent>("entity_interact")
 
-    /** Damage is about to be applied to a living entity (cancellable). */
+    /** A player right-clicked a block with an item or an empty hand (cancellable). */
+    val BLOCK_USED = EventDefinition<BlockUsedEvent>("block_used")
+
+    /** A player used the held item on nothing (cancellable). */
+    val ITEM_USED = EventDefinition<ItemUsedEvent>("item_used")
+
+    /** Damage is about to be applied to a living entity (cancellable, [LivingHurtEvent.amount] is writable). */
     val LIVING_HURT = EventDefinition<LivingHurtEvent>("living_hurt")
 
     /** A living entity's death routine is starting (cancellable). */

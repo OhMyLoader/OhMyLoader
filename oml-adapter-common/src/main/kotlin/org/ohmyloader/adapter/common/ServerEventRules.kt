@@ -99,6 +99,46 @@ internal fun InjectionBuilder.serverEventRules() {
             }
             require(1)
         }
+        // The two right-click paths of the server thread, split by what the click hit. Neither method
+        // calls the other, so one click dispatches one event.
+        method(
+            "useItemOn",
+            desc = "(Lnet/minecraft/server/level/ServerPlayer;Lnet/minecraft/world/level/Level;" +
+                "Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/InteractionHand;" +
+                "Lnet/minecraft/world/phys/BlockHitResult;)Lnet/minecraft/world/InteractionResult;",
+        ) {
+            atHead {
+                cancellableReturn(
+                    BRIDGE, "onBlockUsed",
+                    "(Lnet/minecraft/server/level/ServerPlayerGameMode;Lnet/minecraft/server/level/ServerPlayer;" +
+                        "Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/InteractionHand;" +
+                        "Lnet/minecraft/world/phys/BlockHitResult;I$CIR)V",
+                    bridgeArgs = listOf(
+                        DslValue.This, DslValue.Arg(0), DslValue.Arg(2), DslValue.Arg(3), DslValue.Arg(4),
+                        DslValue.IntVal(0),
+                    ),
+                )
+            }
+            require(1)
+        }
+        method(
+            "useItem",
+            desc = "(Lnet/minecraft/server/level/ServerPlayer;Lnet/minecraft/world/level/Level;" +
+                "Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/InteractionHand;)" +
+                "Lnet/minecraft/world/InteractionResult;",
+        ) {
+            atHead {
+                cancellableReturn(
+                    BRIDGE, "onItemUsed",
+                    "(Lnet/minecraft/server/level/ServerPlayerGameMode;Lnet/minecraft/server/level/ServerPlayer;" +
+                        "Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/InteractionHand;I$CIR)V",
+                    bridgeArgs = listOf(
+                        DslValue.This, DslValue.Arg(0), DslValue.Arg(2), DslValue.Arg(3), DslValue.IntVal(0),
+                    ),
+                )
+            }
+            require(1)
+        }
     }
 
     classTarget("net/minecraft/world/entity/player/Player") {
@@ -132,10 +172,31 @@ internal fun InjectionBuilder.serverEventRules() {
     }
 
     classTarget("net/minecraft/world/entity/LivingEntity") {
+        // Declared **before** the HEAD dispatch on purpose: rules apply in declaration order to the
+        // instruction list the previous rule left behind, so with the HEAD hook first, its own argument
+        // loads of the damage parameter would sit ahead of vanilla's first read and `ordinal = 0` would
+        // rewrite the hook's load rather than the game's — the number a handler wrote would never reach
+        // the damage. Vanilla first reads the parameter after its invulnerability, dying and
+        // fire-resistance guards; the engine writes the returned number back into that slot, so every
+        // later read in the same call (shield reduction, damage cooldown, the damage itself) uses it.
+        method(
+            "hurtServer",
+            desc = "(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/damagesource/DamageSource;F)Z",
+        ) {
+            beforeLoad(index = 3, type = "F", argsOnly = true, ordinal = 0) {
+                modifyVariable(
+                    BRIDGE, "onHurtAmount",
+                    "(FLnet/minecraft/world/entity/LivingEntity;Lnet/minecraft/world/damagesource/DamageSource;)F",
+                    extras = listOf(DslValue.This, DslValue.Arg(1)),
+                )
+            }
+            require(1)
+        }
         // Hooking the declaration in LivingEntity is what makes this fire exactly once per damage
-        // application: ServerPlayer and Player override it, each override super-calls up the chain, and
-        // the chain ends here. An override that returns before reaching the base (creative,
-        // invulnerable) fires nothing — vanilla was not going to apply that damage either.
+        // application: `ServerPlayer` and `Player` both override it, each override super-calls up the
+        // chain, and the chain ends here. An override that returns before reaching the base (a creative
+        // player, an invulnerable entity) fires nothing — vanilla was not going to apply that damage
+        // either.
         method(
             "hurtServer",
             desc = "(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/damagesource/DamageSource;F)Z",

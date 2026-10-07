@@ -96,10 +96,41 @@ object EventDispatch {
     }
 
     @JvmStatic
-    fun onLivingHurt(entity: OMLLivingEntity, amount: Float, damageType: String, attacker: OMLEntity?): Boolean {
+    fun onBlockUsed(
+        player: OMLPlayer,
+        position: OMLBlockPos,
+        blockId: String,
+        itemId: String,
+        hand: String,
+        face: String,
+    ): Boolean {
+        val event = BlockUsedEvent(player, position, blockId, itemId, hand, face)
+        Events.BLOCK_USED.fire(event)
+        return event.canceled
+    }
+
+    @JvmStatic
+    fun onItemUsed(player: OMLPlayer, itemId: String, hand: String): Boolean {
+        val event = ItemUsedEvent(player, itemId, hand)
+        Events.ITEM_USED.fire(event)
+        return event.canceled
+    }
+
+    /**
+     * Returns the fired event rather than just its canceled state: the game reads the damage number
+     * again later in the same call, so the adapter needs [LivingHurtEvent.amount] after the handlers
+     * ran, not only the cancel verdict.
+     */
+    @JvmStatic
+    fun onLivingHurt(
+        entity: OMLLivingEntity,
+        amount: Float,
+        damageType: String,
+        attacker: OMLEntity?,
+    ): LivingHurtEvent {
         val event = LivingHurtEvent(entity, amount, damageType, attacker)
         Events.LIVING_HURT.fire(event)
-        return event.canceled
+        return event
     }
 
     @JvmStatic
