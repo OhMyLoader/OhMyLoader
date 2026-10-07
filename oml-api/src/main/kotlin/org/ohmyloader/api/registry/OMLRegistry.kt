@@ -29,6 +29,12 @@ interface OMLRegistryProvider {
     val sounds: OMLRegistry
 
     val entityTypes: OMLRegistry
+
+    /** Damage types, e.g. `minecraft:cactus` — the ids [org.ohmyloader.api.world.OMLLivingEntity.hurt] takes. */
+    val damageTypes: OMLRegistry
+
+    /** Entity attributes, e.g. `minecraft:max_health` — the ids attribute reads and writes take. */
+    val attributes: OMLRegistry
 }
 
 /**
@@ -64,6 +70,12 @@ object OMLRegistries {
 
     /** Entity types, e.g. `minecraft:cow`. */
     val entityTypes: OMLRegistry get() = provider?.entityTypes ?: notInstalled()
+
+    /** Damage types, e.g. `minecraft:campfire`. */
+    val damageTypes: OMLRegistry get() = provider?.damageTypes ?: notInstalled()
+
+    /** Entity attributes, e.g. `minecraft:attack_damage`. */
+    val attributes: OMLRegistry get() = provider?.attributes ?: notInstalled()
 
     private fun notInstalled(): Nothing =
         error("registry reads are not installed — no version adapter is loaded")
