@@ -7,6 +7,7 @@ import net.minecraft.server.MinecraftServer
 import org.ohmyloader.api.access.OMLClient
 import org.ohmyloader.api.access.OMLGameProvider
 import org.ohmyloader.api.access.OMLServer
+import org.ohmyloader.api.world.OMLClock
 import org.ohmyloader.api.world.OMLPlayer
 import org.ohmyloader.api.wrapper.OMLScreen
 import org.ohmyloader.api.wrapper.OMLWorld
@@ -54,6 +55,8 @@ internal class ServerHandle(private val server: MinecraftServer) : OMLServer {
 
     override fun setGameRule(ruleId: String, value: String): Boolean =
         GameProjections.setGameRuleValue(server.gameRules, server, ruleId, value)
+
+    override fun clock(clockId: String): OMLClock? = GameProjections.serverClock(server, clockId)
 }
 
 private class ClientHandle(private val minecraft: Minecraft) : OMLClient {

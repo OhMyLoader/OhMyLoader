@@ -38,6 +38,9 @@ interface OMLRegistryProvider {
 
     /** Game rules, e.g. `minecraft:keep_inventory` — the ids [org.ohmyloader.api.access.OMLServer.gameRule] takes. */
     val gameRules: OMLRegistry
+
+    /** Clocks, e.g. `minecraft:overworld` — the ids [org.ohmyloader.api.access.OMLServer.clock] takes. */
+    val worldClocks: OMLRegistry
 }
 
 /**
@@ -82,6 +85,9 @@ object OMLRegistries {
 
     /** Game rules, e.g. `minecraft:keep_inventory`. */
     val gameRules: OMLRegistry get() = provider?.gameRules ?: notInstalled()
+
+    /** Clocks the game keeps time by, e.g. `minecraft:overworld`. */
+    val worldClocks: OMLRegistry get() = provider?.worldClocks ?: notInstalled()
 
     private fun notInstalled(): Nothing =
         error("registry reads are not installed — no version adapter is loaded")

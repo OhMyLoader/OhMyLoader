@@ -1,5 +1,6 @@
 package org.ohmyloader.api.access
 
+import org.ohmyloader.api.world.OMLClock
 import org.ohmyloader.api.world.OMLPlayer
 import org.ohmyloader.api.wrapper.OMLScreen
 import org.ohmyloader.api.wrapper.OMLWorld
@@ -29,6 +30,13 @@ interface OMLServer {
 
     /** The loaded level of [dimensionId] (`minecraft:overworld`); null when that dimension is not loaded. */
     fun level(dimensionId: String): OMLWorld?
+
+    /**
+     * The loaded clock named by [clockId] (`minecraft:overworld`), whether or not any dimension is running
+     * on it right now; null when no such clock is registered. A clock reached this way is the same one a
+     * dimension's [OMLWorld.clock] hands out, so writes through either path land on the game's own record.
+     */
+    fun clock(clockId: String): OMLClock?
 
     /** Shows [text] in the chat of every connected player. */
     fun broadcast(text: String)

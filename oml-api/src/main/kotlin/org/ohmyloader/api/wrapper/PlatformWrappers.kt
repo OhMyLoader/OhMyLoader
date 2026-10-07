@@ -2,6 +2,7 @@ package org.ohmyloader.api.wrapper
 
 import org.ohmyloader.api.world.OMLBlockPos
 import org.ohmyloader.api.world.OMLBlockState
+import org.ohmyloader.api.world.OMLClock
 import org.ohmyloader.api.world.OMLEntity
 import org.ohmyloader.api.world.OMLLivingEntity
 
@@ -158,6 +159,12 @@ interface OMLWorld {
      * cannot represent. The level's live read follows on the game's next weather tick, not on this call.
      */
     fun setWeather(raining: Boolean, thundering: Boolean = raining, durationTicks: Int = 0): Boolean
+
+    /**
+     * The clock this dimension runs on, or null when its dimension type names none — the Nether has no
+     * clock, so nothing there reads or writes time.
+     */
+    val clock: OMLClock?
 }
 
 /** HUD draw-surface wrapper, handed out by [org.ohmyloader.api.event.HudRenderEvent]. */

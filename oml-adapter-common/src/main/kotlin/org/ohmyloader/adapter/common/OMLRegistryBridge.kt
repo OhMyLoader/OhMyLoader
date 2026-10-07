@@ -6,6 +6,7 @@ import net.minecraft.core.registries.Registries
 import net.minecraft.resources.ResourceKey
 import net.minecraft.tags.TagKey
 import net.minecraft.world.damagesource.DamageType
+import net.minecraft.world.clock.WorldClock
 import org.ohmyloader.api.registry.OMLRegistry
 import org.ohmyloader.api.registry.OMLRegistryProvider
 
@@ -28,10 +29,16 @@ object OMLRegistryBridge : OMLRegistryProvider {
 
     /** Damage types are a datapack registry, so their table is the running server's, not a static one. */
     override val damageTypes: OMLRegistry by lazy { RegistryView(::damageTypeTable, Registries.DAMAGE_TYPE) }
+
+    /** Clocks are a datapack registry too: the game loads them with the world, not with the binary. */
+    override val worldClocks: OMLRegistry by lazy { RegistryView(::worldClockTable, Registries.WORLD_CLOCK) }
 }
 
 private fun damageTypeTable(): Registry<DamageType>? =
     GameProjections.serverOrNull()?.registryAccess()?.lookupOrThrow(Registries.DAMAGE_TYPE)
+
+private fun worldClockTable(): Registry<WorldClock>? =
+    GameProjections.serverOrNull()?.registryAccess()?.lookupOrThrow(Registries.WORLD_CLOCK)
 
 /**
  * A tag is addressed by its registry key, and the key is passed in rather than read from the registry:

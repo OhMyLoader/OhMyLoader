@@ -43,10 +43,16 @@ import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.world.clock.ClockManager
+import net.minecraft.world.clock.ClockTimeMarker
+import net.minecraft.world.clock.ClockTimeMarkers
+import net.minecraft.world.clock.ServerClockManager
+import net.minecraft.world.clock.WorldClock
 import net.minecraft.world.level.gamerules.GameRule
 import net.minecraft.world.level.gamerules.GameRules
 import org.ohmyloader.api.world.OMLBlockPos
 import org.ohmyloader.api.world.OMLBlockState
+import org.ohmyloader.api.world.OMLClock
 import org.ohmyloader.api.world.OMLEntity
 import org.ohmyloader.api.world.OMLEffectInstance
 import org.ohmyloader.api.world.OMLInventory
@@ -190,6 +196,29 @@ internal object GameProjections {
         rules.set(rule as GameRule<Any>, value, server)
         return true
     }
+
+    /**
+     * The clock this dimension runs on. `DimensionType.defaultClock()` is the game's own binding, read
+     * from the dimension type's datapack file — the Nether declares none, so time does not exist there.
+     */
+    fun levelClock(level: Level): OMLClock? =
+        level.dimensionType().defaultClock().orElse(null)?.let { ClockWrap(level.clockManager(), it) }
+
+    /**
+     * A clock addressed by registry id through the running server's own table. Resolving the holder here
+     * rather than building one matters: `ServerClockManager.getInstance` throws for a clock its map does
+     * not hold, and the map is populated from exactly this registry.
+     */
+    fun serverClock(server: MinecraftServer, id: String): OMLClock? {
+        val location = identifier(id) ?: return null
+        val registry = server.registryAccess().lookupOrThrow(Registries.WORLD_CLOCK)
+        val holder = registry.getOptional(location).orElse(null)?.let(registry::wrapAsHolder) ?: return null
+        return ClockWrap(server.clockManager(), holder)
+    }
+
+    /** A clock-time-marker key from an id, the shape `ServerClockManager`'s marker methods take. */
+    fun markerKey(id: String): ResourceKey<ClockTimeMarker>? = identifier(id)
+        ?.let { ResourceKey.create(ClockTimeMarkers.ROOT_ID, it) }
 
     fun identifier(id: String): Identifier? = runCatching { Identifier.parse(id) }.getOrNull()
 
@@ -604,6 +633,84 @@ internal class LevelWrap(val level: Level) : OMLWorld {
         serverLevel.server.setWeatherParameters(0, durationTicks.coerceAtLeast(0), raining, thundering)
         val weather = serverLevel.weatherData
         return weather.isRaining == raining && weather.isThundering == thundering
+    }
+
+    override val clock: OMLClock? get() = GameProjections.levelClock(level)
+}
+
+/**
+ * One clock, read through the manager of the level that handed it out: the server's is the record the
+ * game counts in, the client's is the copy the server pushed to it. Every read re-resolves the instance,
+ * so a held projection tracks the clock rather than freezing it.
+ */
+internal class ClockWrap(
+    private val manager: ClockManager,
+    private val holder: Holder<WorldClock>,
+) : OMLClock {
+    private val instance get() = manager.getInstance(holder)
+
+    /** The clock the game itself writes to; null on a client, which receives time rather than setting it. */
+    private val serverManager get() = manager as? ServerClockManager
+
+    override val platform: Any get() = instance
+
+    override val clockId: String get() = holder.getRegisteredName()
+
+    override val totalTicks: Long get() = instance.totalTicks()
+
+    override val partialTick: Float get() = instance.partialTick()
+
+    override val rate: Float get() = instance.rate()
+
+    override val isPaused: Boolean get() = instance.isPaused()
+
+    override val markerIds: List<String>
+        get() = serverManager?.commandTimeMarkersForClock(holder)
+            ?.map { it.identifier().toString() }?.toList() ?: emptyList()
+
+    override fun isAtMarker(markerId: String): Boolean {
+        val key = GameProjections.markerKey(markerId) ?: return false
+        return serverManager?.isAtTimeMarker(holder, key) ?: false
+    }
+
+    /** The game distinguishes "moved" from "was already there"; both mean the clock is there now. */
+    override fun moveToMarker(markerId: String): Boolean {
+        val server = serverManager ?: return false
+        val key = GameProjections.markerKey(markerId) ?: return false
+        return server.moveToTimeMarker(holder, key) != ServerClockManager.MoveResult.NO_TIME_MARKER_FOUND
+    }
+
+    override fun setTotalTicks(ticks: Long): Boolean {
+        val server = serverManager ?: return false
+        server.setTotalTicks(holder, ticks)
+        return instance.totalTicks() == ticks
+    }
+
+    override fun addTicks(ticks: Int): Boolean {
+        val server = serverManager ?: return false
+        val before = instance.totalTicks()
+        server.addTicks(holder, ticks)
+        return instance.totalTicks() == before + ticks
+    }
+
+    override fun setPaused(paused: Boolean): Boolean {
+        val server = serverManager ?: return false
+        server.setPaused(holder, paused)
+        return instance.isPaused() == paused
+    }
+
+    override fun setRate(rate: Float): Boolean {
+        val server = serverManager ?: return false
+        // The window the game's own `/time rate` argument accepts; the manager would store anything, so
+        // OML checks rather than letting a clock reach a state the command would refuse to create.
+        if (rate < CLOCK_RATE_MIN || rate > CLOCK_RATE_MAX) return false
+        server.setRate(holder, rate)
+        return instance.rate() == rate
+    }
+
+    private companion object {
+        private const val CLOCK_RATE_MIN = 1.0E-5f
+        private const val CLOCK_RATE_MAX = 1000.0f
     }
 }
 

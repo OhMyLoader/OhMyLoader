@@ -4,6 +4,7 @@ import org.ohmyloader.api.access.OMLServer
 import org.ohmyloader.api.event.Events
 import org.ohmyloader.api.tick.OMLSide
 import org.ohmyloader.api.tick.OMLScheduler
+import org.ohmyloader.api.world.OMLClock
 import org.ohmyloader.api.world.OMLPlayer
 import org.ohmyloader.api.wrapper.OMLWorld
 import kotlin.test.Test
@@ -29,6 +30,7 @@ class EventDispatchLifecycleTest {
         override fun broadcast(text: String) {}
         override fun gameRule(ruleId: String): String? = null
         override fun setGameRule(ruleId: String, value: String): Boolean = false
+        override fun clock(clockId: String): OMLClock? = null
     }
 
     @Test
