@@ -104,6 +104,17 @@ object EventBridge {
     fun onPlayerLeft(player: ServerPlayer) = EventDispatch.onPlayerLeft(PlayerWrap(player))
 
     /**
+     * [PlayerList.respawn tail] Receives the player the game is about to return — the instance built for
+     * this new life, not the argument it replaced — and hands back the very same object: the transform is
+     * how the hook reaches a value that only exists at the return, not a way to change it.
+     */
+    @JvmStatic
+    fun onPlayerRespawned(player: ServerPlayer): ServerPlayer {
+        EventDispatch.onPlayerRespawned(PlayerWrap(player))
+        return player
+    }
+
+    /**
      * [ServerPlayerGameMode.destroyBlock head] Cancelling returns false from the break, which is the
      * signal vanilla's own `destroyAndAck` uses to resend the block to the client — so the player sees
      * the block snap back without the mod sending anything.

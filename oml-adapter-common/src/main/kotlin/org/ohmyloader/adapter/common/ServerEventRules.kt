@@ -71,6 +71,23 @@ internal fun InjectionBuilder.serverEventRules() {
             }
             require(1)
         }
+        // TAIL with a return-value transform: `respawn` builds a **new** ServerPlayer for the life that is
+        // starting and returns it, while its argument is the instance being discarded — a HEAD hook could
+        // only hand mods a dead entity. The handler gives the same object back, so the game's own return
+        // path is untouched.
+        method(
+            "respawn",
+            desc = "(Lnet/minecraft/server/level/ServerPlayer;ZLnet/minecraft/world/entity/Entity" +
+                "\$RemovalReason;)Lnet/minecraft/server/level/ServerPlayer;",
+        ) {
+            atTail {
+                transformReturn(
+                    BRIDGE, "onPlayerRespawned",
+                    "(Lnet/minecraft/server/level/ServerPlayer;)Lnet/minecraft/server/level/ServerPlayer;",
+                )
+            }
+            require(1)
+        }
     }
 
     classTarget("net/minecraft/server/level/ServerPlayerGameMode") {

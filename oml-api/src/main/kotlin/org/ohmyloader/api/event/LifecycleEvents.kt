@@ -20,3 +20,10 @@ class PlayerJoinedEvent(val player: OMLPlayer) : Event()
 
 /** A player is leaving; the handle still reads its last-known position and inventory. */
 class PlayerLeftEvent(val player: OMLPlayer) : Event()
+
+/**
+ * A player has respawned. [player] is the instance the server created for this new life — the one that
+ * was dying is discarded and stops reading live state — so a handler that kept a player handle from
+ * before the death has to pick this one up instead.
+ */
+class PlayerRespawnedEvent(val player: OMLPlayer) : Event()

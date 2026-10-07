@@ -50,6 +50,9 @@ object Events {
     /** A player is leaving the world. */
     val PLAYER_LEFT = EventDefinition<PlayerLeftEvent>("player_left")
 
+    /** A player has finished respawning, on the instance the server made for this life. */
+    val PLAYER_RESPAWNED = EventDefinition<PlayerRespawnedEvent>("player_respawned")
+
     /** A player is about to destroy a block (cancellable). */
     val BLOCK_BREAK = EventDefinition<BlockBreakEvent>("block_break")
 

@@ -73,6 +73,11 @@ object EventDispatch {
         Events.PLAYER_LEFT.fire(PlayerLeftEvent(player))
     }
 
+    @JvmStatic
+    fun onPlayerRespawned(player: OMLPlayer) {
+        Events.PLAYER_RESPAWNED.fire(PlayerRespawnedEvent(player))
+    }
+
     /** Returns the canceled state so the adapter's `CancellableReturn` handler can short-circuit the break. */
     @JvmStatic
     fun onBlockBreak(player: OMLPlayer, position: OMLBlockPos, blockId: String): Boolean {
