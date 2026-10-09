@@ -73,7 +73,8 @@ object OMLRegistries {
     fun damageType(level: Level, id: String): Holder<DamageType>? =
         level.registryAccess().lookupOrThrow(Registries.DAMAGE_TYPE).holderById(id)
 
-    /** The clock [id] names in the server's own table; a holder built from anything else throws when the manager is asked for it. */
+    /** The clock [id] names in the server's own table; a holder built from anything else throws when the
+     * manager is asked for it. */
     fun clock(server: MinecraftServer, id: String): Holder<WorldClock>? =
         server.registryAccess().lookupOrThrow(Registries.WORLD_CLOCK).holderById(id)
 
@@ -124,15 +125,18 @@ object OMLRegistries {
 fun <T : Any> Registry<T>.byId(id: String): T? =
     OMLRegistries.location(id)?.takeIf(::containsKey)?.let { getValue(it) }
 
-/** The id [value] is registered under; the game's own answer, which is its default id for an unregistered value. */
+/** The id [value] is registered under; the game's own answer, which is its default id for an unregistered
+ * value. */
 fun <T : Any> Registry<T>.idOf(value: T): String = getKey(value).toString()
 
 /** Every id this table holds, in the game's own order. */
 fun <T : Any> Registry<T>.ids(): List<String> = keySet().map { it.toString() }
 
-fun <T : Any> Registry<T>.contains(id: String): Boolean = OMLRegistries.location(id)?.let(::containsKey) ?: false
+fun <T : Any> Registry<T>.contains(id: String): Boolean =
+    OMLRegistries.location(id)?.let(::containsKey) ?: false
 
-/** The holder for [id]; null when unregistered. Holders are what the game's own effect, attribute and damage methods take. */
+/** The holder for [id]; null when unregistered. Holders are what the game's own effect, attribute and damage
+ * methods take. */
 fun <T : Any> Registry<T>.holderById(id: String): Holder<T>? =
     OMLRegistries.location(id)?.let { getOptional(it).orElse(null) }?.let(::wrapAsHolder)
 

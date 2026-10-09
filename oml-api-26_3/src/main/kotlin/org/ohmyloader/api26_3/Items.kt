@@ -31,20 +31,23 @@ fun Container.setSlot(slot: Int, itemId: String, count: Int): Boolean {
     return count <= 0 || (!written.isEmpty && written.item === stack.item && written.count == stack.count)
 }
 
-/** `count` taken out of [slot], as the game's own removal reports it; null for a slot that does not exist or a non-positive count. */
+/** `count` taken out of [slot], as the game's own removal reports it; null for a slot that does not exist
+ * or a non-positive count. */
 fun Container.takeSlot(slot: Int, count: Int): ItemStack? =
     if (slot in 0 until containerSize && count > 0) removeItem(slot, count) else null
 
 /** Total count of [itemId] across the container; 0 for an unregistered id. */
 fun Container.countOf(itemId: String): Int = OMLRegistries.item(itemId)?.let(::countItem) ?: 0
 
-/** Whether the block's own rule accepts `count` of [itemId] in [slot]; false for an unregistered id or a slot that does not exist. */
+/** Whether the block's own rule accepts `count` of [itemId] in [slot]; false for an unregistered id or a
+ * slot that does not exist. */
 fun Container.canPlace(slot: Int, itemId: String, count: Int): Boolean {
     val stack = stackOf(itemId, count.coerceAtLeast(1)) ?: return false
     return slot in 0 until containerSize && canPlaceItem(slot, stack)
 }
 
-/** The players using this block right now. Only players are named: the game's own list also carries anything else that holds the block open. */
+/** The players using this block right now. Only players are named: the game's own list also carries anything
+ * else that holds the block open. */
 val Container.openedByPlayerNames: List<String>
     get() = entitiesWithContainerOpen.mapNotNull { (it as? Player)?.scoreboardName }
 
@@ -72,7 +75,8 @@ fun Inventory.remove(itemId: String, count: Int): Int {
     return count - missing
 }
 
-/** Points the hand at hotbar index [slot]; out-of-range indices do nothing. The game's own hotbar test decides which slots are addressable. */
+/** Points the hand at hotbar index [slot]; out-of-range indices do nothing. The game's own hotbar test
+ * decides which slots are addressable. */
 fun Inventory.selectHotbarSlot(slot: Int) {
     if (Inventory.isHotbarSlot(slot)) selectedSlot = slot
 }

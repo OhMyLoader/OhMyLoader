@@ -22,10 +22,14 @@ import net.minecraft.world.level.entity.EntityTypeTest
 /** Registry id of this dimension, e.g. `minecraft:overworld`. */
 val Level.dimensionId: String get() = dimension().identifier().toString()
 
-/** Registry id of the block at [pos]. For an unloaded position the game's own getter answers, which is not a stable value — check [isLoaded] first when the answer has to mean something. */
+/**
+ * Registry id of the block at [pos]. For an unloaded position the game's own getter answers, which is not a
+ * stable value — check [isLoaded] first when the answer has to mean something.
+ */
 fun Level.blockIdAt(pos: BlockPos): String = BuiltInRegistries.BLOCK.getKey(getBlockState(pos).block).toString()
 
-/** The state at [pos], or null when the chunk is not loaded — the only way to tell an unloaded position apart from one holding air. */
+/** The state at [pos], or null when the chunk is not loaded — the only way to tell an unloaded position
+ * apart from one holding air. */
 fun Level.blockStateAt(pos: BlockPos): BlockState? = pos.takeIf(::isLoaded)?.let(::getBlockState)
 
 /**
@@ -52,7 +56,8 @@ fun Level.setBlockAt(pos: BlockPos, state: BlockState): Boolean {
 /** Registry id of this state's block, e.g. `minecraft:chest`. */
 val BlockState.blockId: String get() = BuiltInRegistries.BLOCK.getKey(block).toString()
 
-/** Every property the block defines, with the value this state carries, named the way the game writes them into blockstate JSON. */
+/** Every property the block defines, with the value this state carries, named the way the game writes them
+ * into blockstate JSON. */
 val BlockState.propertyValues: Map<String, String>
     get() = values.toList().associate { it.property().name to it.valueName() }
 
@@ -71,7 +76,10 @@ fun BlockState.withProperty(name: String, value: String): BlockState? {
     return OMLRegistries.blockState(blockId, entries)
 }
 
-/** The storage at [pos] — chest, barrel, furnace, hopper — or null when nothing there holds slots. Reads and writes reach the block entity the game itself holds, so a player using the same block sees every change. */
+/**
+ * The storage at [pos] — chest, barrel, furnace, hopper — or null when nothing there holds slots. Reads and
+ * writes reach the block entity the game itself holds, so a player using the same block sees every change.
+ */
 fun Level.containerAt(pos: BlockPos): Container? = getBlockEntity(pos) as? Container
 
 /**
@@ -113,13 +121,15 @@ fun ServerLevel.setWeather(raining: Boolean, thundering: Boolean = raining, dura
     return weatherData.isRaining == raining && weatherData.isThundering == thundering
 }
 
-/** The clock this dimension runs on, or null when its dimension type names none — the Nether declares none, so nothing there reads or writes time. */
+/** The clock this dimension runs on, or null when its dimension type names none — the Nether declares none,
+ * so nothing there reads or writes time. */
 val Level.clock: Holder<WorldClock>? get() = dimensionType().defaultClock().orElse(null)
 
 /** The unfiltered entity-type test the game's own level queries take. */
 private val ALL_ENTITIES: EntityTypeTest<Entity, Entity> = EntityTypeTest.forClass(Entity::class.java)
 
-/** Every entity this level holds. The list is a snapshot taken at the call, not a view that follows later changes. */
+/** Every entity this level holds. The list is a snapshot taken at the call, not a view that follows later
+ * changes. */
 fun ServerLevel.entities(): List<Entity> = getEntities(ALL_ENTITIES) { true }
 
 /** The entities a client level renders this frame — the client's own view, which lags the server's list. */
@@ -148,7 +158,8 @@ fun ServerLevel.spawnEntity(typeId: String, x: Double, y: Double, z: Double): En
     return if (addFreshEntity(spawned)) spawned else null
 }
 
-/** [spawnEntity] for a type the game makes living; null when the type is not a living one, rather than a healthless stand-in. */
+/** [spawnEntity] for a type the game makes living; null when the type is not a living one, rather than a
+ * healthless stand-in. */
 fun ServerLevel.spawnLivingEntity(typeId: String, x: Double, y: Double, z: Double): LivingEntity? =
     spawnEntity(typeId, x, y, z) as? LivingEntity
 
@@ -178,7 +189,12 @@ fun ServerLevel.spawnParticles(
     return true
 }
 
-/** The same for a particle that needs arguments of its own, which the bare-id form refuses: [spawnItemParticles] shows [itemId]'s texture breaking, [spawnBlockParticles] shows the default state of [blockId], and [spawnDustParticles] takes a `0xRRGGBB` [color] with a size [scale]. Each answers false for an unregistered id. */
+/**
+ * The same for a particle that needs arguments of its own, which the bare-id form refuses:
+ * [spawnItemParticles] shows [itemId]'s texture breaking, [spawnBlockParticles] shows the default state of
+ * [blockId], and [spawnDustParticles] takes a `0xRRGGBB` [color] with a size [scale]. Each answers false for
+ * an unregistered id.
+ */
 fun ServerLevel.spawnItemParticles(itemId: String, x: Double, y: Double, z: Double, count: Int = 0): Boolean {
     val item = OMLRegistries.item(itemId) ?: return false
     // The static ParticleTypes fields are typed by their own options class.
@@ -187,7 +203,9 @@ fun ServerLevel.spawnItemParticles(itemId: String, x: Double, y: Double, z: Doub
 
 fun ServerLevel.spawnBlockParticles(blockId: String, x: Double, y: Double, z: Double, count: Int = 0): Boolean {
     val block = OMLRegistries.block(blockId) ?: return false
-    return sendParticlesHere(BlockParticleOption(ParticleTypes.BLOCK, block.defaultBlockState()), x, y, z, count)
+    return sendParticlesHere(
+        BlockParticleOption(ParticleTypes.BLOCK, block.defaultBlockState()), x, y, z, count,
+    )
 }
 
 fun ServerLevel.spawnDustParticles(

@@ -20,11 +20,15 @@ import net.minecraft.world.level.Level
 val Level.clockInstance: ClockInstance?
     get() = clock?.let { clockManager().instanceOf(it) }
 
-/** The game's own record for [clock]; null when this manager does not hold it — the game would otherwise throw. */
+/** The game's own record for [clock]; null when this manager does not hold it — the game would otherwise
+ * throw. */
 fun ClockManager.instanceOf(clock: Holder<WorldClock>): ClockInstance? =
     runCatching { getInstance(clock) }.getOrNull()
 
-/** The clock [clockId] (`minecraft:overworld`) names in the server's own table, whether or not a dimension is running on it right now; null when no such clock is registered. */
+/**
+ * The clock [clockId] (`minecraft:overworld`) names in the server's own table, whether or not a dimension is
+ * running on it right now; null when no such clock is registered.
+ */
 fun MinecraftServer.clockById(clockId: String): Holder<WorldClock>? = OMLRegistries.clock(this, clockId)
 
 /**

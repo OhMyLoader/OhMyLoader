@@ -22,9 +22,13 @@ fun MinecraftServer.levelById(dimensionId: String): ServerLevel? =
     OMLRegistries.dimension(dimensionId)?.let(::getLevel)
 
 /** Shows [text] in the chat of every connected player, through the game's own system-message path. */
-fun MinecraftServer.broadcastMessage(text: String) = playerList.broadcastSystemMessage(Component.literal(text), false)
+fun MinecraftServer.broadcastMessage(text: String) =
+    playerList.broadcastSystemMessage(Component.literal(text), false)
 
-/** The game's own value of the rule addressed by registry id (`minecraft:keep_inventory`), spelled the way the game spells it (`"true"`, `"3"`); null for an unregistered id. */
+/**
+ * The game's own value of the rule addressed by registry id (`minecraft:keep_inventory`), spelled the way the
+ * game spells it (`"true"`, `"3"`); null for an unregistered id.
+ */
 fun MinecraftServer.gameRuleValue(ruleId: String): String? = OMLRegistries.gameRuleValue(gameRules, ruleId)
 
 /**

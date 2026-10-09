@@ -30,7 +30,10 @@ fun Entity.discard(): Boolean {
     return isRemoved
 }
 
-/** Registry id of this effect, e.g. `minecraft:regeneration`. The game's own [duration] is the remaining time and its amplifier is zero-based, so 0 is level I. */
+/**
+ * Registry id of this effect, e.g. `minecraft:regeneration`. The game's own `duration` is the remaining time
+ * and its `amplifier` is zero-based, so 0 is level I.
+ */
 val MobEffectInstance.effectId: String
     get() = BuiltInRegistries.MOB_EFFECT.getKey(effect.value()).toString()
 
@@ -43,8 +46,10 @@ fun LivingEntity.hasEffect(effectId: String): Boolean =
  * effect. Re-applying the same effect follows the game's own merge rule — it does not simply replace what is
  * there.
  */
-fun LivingEntity.applyEffect(effectId: String, durationTicks: Int, amplifier: Int = 0): Boolean =
-    OMLRegistries.mobEffect(effectId)?.let { addEffect(MobEffectInstance(it, durationTicks, amplifier)) } ?: false
+fun LivingEntity.applyEffect(effectId: String, durationTicks: Int, amplifier: Int = 0): Boolean {
+    val holder = OMLRegistries.mobEffect(effectId) ?: return false
+    return addEffect(MobEffectInstance(holder, durationTicks, amplifier))
+}
 
 /** Removes [effectId]; false when the id is unknown or the entity does not have it. */
 fun LivingEntity.removeEffect(effectId: String): Boolean =
@@ -115,7 +120,10 @@ fun LivingEntity.hurt(damageTypeId: String, amount: Float, attacker: Entity? = n
     return hurtServer(serverLevel, source, amount)
 }
 
-/** Sets the entity alight for [ticks] (60 is three seconds); false when the game refused, which is what a fire-immune entity answers. The verdict is the game's own burning flag after the request. */
+/**
+ * Sets the entity alight for [ticks] (60 is three seconds); false when the game refused, which is what a
+ * fire-immune entity answers. The verdict is the game's own burning flag after the request.
+ */
 fun LivingEntity.ignite(ticks: Int): Boolean {
     igniteForTicks(ticks)
     return isOnFire
@@ -150,10 +158,14 @@ fun ServerPlayer.closeMenu(): Boolean {
     return containerMenu === inventoryMenu
 }
 
-/** `survival` / `creative` / `adventure` / `spectator`, or null when the game has not given this player a game type — the accessor is nullable, and a client-side player can be read before the server has sent one. */
+/**
+ * `survival` / `creative` / `adventure` / `spectator`, or null when the game has not given this player a game
+ * type — the accessor is nullable, and a client-side player can be read before the server has sent one.
+ */
 val Player.gameModeName: String? get() = gameMode()?.getName()
 
-/** Vanilla's permission level: 0 player, 1 moderator, 2 gamemaster, 3 admin, 4 owner. A player the server has no permission set for reports 0. */
+/** Vanilla's permission level: 0 player, 1 moderator, 2 gamemaster, 3 admin, 4 owner. A player the server
+ * has no permission set for reports 0. */
 val Player.permissionLevel: Int
     get() = ((this as? ServerPlayer)?.permissions() as? LevelBasedPermissionSet)?.level()?.id() ?: 0
 
