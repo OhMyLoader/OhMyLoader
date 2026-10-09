@@ -51,20 +51,9 @@ interface IAdapter {
     fun createNetworkSender(): org.ohmyloader.api.network.OMLNetworkSender? = null
 
     /**
-     * Resolves the live server and client for [org.ohmyloader.api.access.OMLGame]. Null when that
-     * version exposes neither handle yet; a mod then sees null instead of a half-built object.
-     */
-    fun createGameProvider(): org.ohmyloader.api.access.OMLGameProvider? = null
-
-    /**
-     * Registry and tag reads for [org.ohmyloader.api.registry.OMLRegistries]. Null when that version
-     * exposes no registry reads; a mod then gets a clear failure rather than an empty registry.
-     */
-    fun createRegistryProvider(): org.ohmyloader.api.registry.OMLRegistryProvider? = null
-
-    /**
-     * Game-ready hook (tail of Minecraft initialization): post-processing that needs the game
-     * runtime environment (e.g. content materialization) runs here.
+     * Game-ready hook (tail of Minecraft initialization, or the dedicated server's own constructor path):
+     * post-processing that needs the game runtime environment (e.g. content materialization) runs here,
+     * before mods initialize.
      */
     fun onGameReady() {}
 }

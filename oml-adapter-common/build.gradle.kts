@@ -31,7 +31,7 @@ dependencies {
     // (the client jar does not embed it).
     compileOnly(libs.brigadier)
 
-    // The projections read registry ids off `BuiltInRegistries`; every registry interface extends
+    // Registry and holder reads walk `BuiltInRegistries`; every registry interface extends
     // `com.mojang.serialization.Keyable`, so that class must resolve at compile time even though the
     // members called are the game's own. The game supplies DataFixerUpper at run time.
     compileOnly(libs.datafixerupper)

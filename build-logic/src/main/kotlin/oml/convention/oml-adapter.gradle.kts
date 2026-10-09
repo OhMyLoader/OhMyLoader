@@ -106,6 +106,9 @@ afterEvaluate {
 
         val ourProjects = listOf(
             project(":oml-launcher"), project(":oml-core"), project(":oml-api"),
+            // The version-facing mod API names game classes, so the main loader must define it (its
+            // child-first carve-out) — it still travels on the app classpath like every layer jar.
+            project(":oml-api-26_3"),
             // the shared adapter implementation travels with every adapter install
             project(":oml-adapter-common"),
             project,

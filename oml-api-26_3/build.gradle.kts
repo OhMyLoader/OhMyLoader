@@ -37,6 +37,22 @@ dependencies {
     testRuntimeOnly(libs.joml)
 }
 
+// `Identifier`'s static init links brigadier, DataFixerUpper, JOML and Mojang's util, so a test that
+// parses a real id needs the game's own library tree. It is the copy the 26.3 adapter already fetches —
+// one download per version, and the version JSON is the authoritative list rather than a hand-pinned one.
+val gameLibraries = file("$rootDir/oml-adapter-26_3/libs/26.3-libraries")
+dependencies.add(
+    "testRuntimeOnly",
+    fileTree(gameLibraries) {
+        include("**/*.jar")
+        exclude("**/io/netty/**")
+    },
+)
+
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
     dependsOn(":oml-adapter-26_3:fetchClientJar")
+}
+
+tasks.withType<Test>().configureEach {
+    dependsOn(":oml-adapter-26_3:fetchGameLibraries")
 }

@@ -26,13 +26,13 @@ import org.ohmyloader.core.adapter.Refl
 import java.lang.reflect.Field
 
 /**
- * 26.3 event bridge: injected hooks call into here, which converts version-specific objects into
- * unified events and dispatches them. Every method is invoked from injected bytecode via
- * INVOKESTATIC, so they must stay `@JvmStatic` and keep their FQN and signatures unchanged.
+ * 26.3 event bridge: injected hooks call into here, which reads the game's own objects off the call and hands
+ * them to the dispatch layer. Every method is invoked from injected bytecode via INVOKESTATIC, so they must
+ * stay `@JvmStatic` and keep their FQN and signatures unchanged.
  *
- * Events whose semantics are identical across versions are lowered to the core's [EventDispatch];
- * this class keeps the thin `@JvmStatic` delegations plus the version-specific parts — the chat
- * accessor names and the registry freeze point.
+ * Firing lives in [EventDispatch]; this class keeps the `@JvmStatic` surface plus what only the injection side
+ * knows: which game method each hook sits in, how a cancel lands in that method's own return value, and the
+ * registry freeze point content has to materialize before.
  */
 object EventBridge {
     /** [Commands handover] Registers the mod commands into a freshly built dispatcher (see the hook). */
@@ -113,7 +113,7 @@ object EventBridge {
      * [ServerLevel.tick head] / [ClientLevel.tick head] One dispatch per level that ticks, carrying that
      * level: a server's loaded dimensions each report once per server tick, and the client's rendered level
      * reports once per client tick — so in singleplayer the same dimension arrives twice, as the two
-     * projections the two sides actually hold.
+     * level objects the two sides actually hold.
      */
     @JvmStatic
     fun onLevelTick(level: Level) = EventDispatch.onLevelTick(level)
@@ -341,14 +341,7 @@ object EventBridge {
             .getDeclaredMethod("freeze").apply { isAccessible = true }.invoke(null)
     }
 
-    /**
-     * Inbound chat: the extraction *mechanism* (candidate getters, Optional unwrapping,
-     * Component→`getString()`, signed-body fallback) lives in the core's [EventDispatch]; this
-     * delegation carries only the 26.3 accessor facts. `ClientboundSystemChatPacket.content()` /
-     * `ClientboundDisguisedChatPacket.message()` (Component → `getString()`), and
-     * `ClientboundPlayerChatPacket.unsignedContent()` — an `Optional<Component>` present only when
-     * the sender's message was modified, with the fallback to `body().content()` (a plain String).
-     */
+    /** [ClientPacketListener.handleSystemChat / handleDisguisedChat / handlePlayerChat heads] Inbound chat, with the text resolved by [EventDispatch]. */
     @JvmStatic
     fun onChatReceived(packet: Packet<ClientGamePacketListener>): Boolean =
         EventDispatch.onChatReceived(packet)

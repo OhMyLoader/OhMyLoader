@@ -350,7 +350,7 @@ class MinecraftHookTransformer(private val idPrefix: String) : InjectingTransfor
         }
         classTarget("net/minecraft/client/multiplayer/ClientLevel") {
             // The client's own level tick, so `Events.LEVEL_TICK` covers whichever side ticks; a handler
-            // tells the two apart through the projection's `isClient`.
+            // tells the two apart through `Level.isClientSide`.
             method("tick", desc = "(Ljava/util/function/BooleanSupplier;)V") {
                 atHead {
                     call(

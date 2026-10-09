@@ -58,7 +58,7 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
 
     /**
      * A collected damage-type declaration: [key] is the datapack file's local id, so the registry id the
-     * game binds is `namespace:key` and [OMLLivingEntity.hurt] takes that same string.
+     * game binds is `namespace:key` and the 26.3 `hurt` extension takes that same string.
      */
     data class DamageTypeDecl(
         val namespace: String,

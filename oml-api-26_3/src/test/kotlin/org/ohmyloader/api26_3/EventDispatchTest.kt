@@ -1,5 +1,8 @@
 package org.ohmyloader.api26_3
 
+import net.minecraft.ChatFormatting
+import net.minecraft.network.chat.Component
+import net.minecraft.network.protocol.game.ClientboundSystemChatPacket
 import net.minecraft.network.protocol.game.ClientboundTickingStatePacket
 import org.ohmyloader.api26_3.event.Events
 import org.ohmyloader.api26_3.EventDispatch.chatTextOf
@@ -45,9 +48,23 @@ class EventDispatchTest {
         assertEquals(listOf(260, 260), seen, "the recorder runs before the adjuster, so both fires reset")
     }
 
-    // Which packet yields which text is a four-line `when` over types the game owns, and building a
-    // `Component` in a unit test drags in the game's whole library set; the real machine covers it, where
-    // the packets are the ones the server actually sent (the verification mod asserts the received text).
+    /**
+     * The disguised and signed branches stay with the real machine, where the packets are the ones a server
+     * actually sent; what is pinned here is that a component's *text* — not its style or its
+     * `Component` object — is what the event carries.
+     */
+    @Test
+    fun `a system packet's component content arrives as plain text`() {
+        val styled = Component.literal("hello ").withStyle(ChatFormatting.RED).append(Component.literal("world"))
+        val packet = ClientboundSystemChatPacket(styled, false)
+
+        assertEquals("hello world", chatTextOf(packet), "styles are stripped, as they are for the game's own display text")
+
+        val seen = mutableListOf<String>()
+        Events.CHAT_RECEIVED.register { seen += it.message }
+        assertFalse(EventDispatch.onChatReceived(packet))
+        assertEquals(listOf("hello world"), seen)
+    }
 
     @Test
     fun `a packet that carries no readable chat fires nothing`() {

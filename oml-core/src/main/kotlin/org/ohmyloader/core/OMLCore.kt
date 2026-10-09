@@ -3,7 +3,6 @@ package org.ohmyloader.core
 import org.ohmyloader.api.ModContext
 import org.ohmyloader.api.OMLModInitializer
 import org.ohmyloader.api.OmlLog
-import org.ohmyloader.api.access.OMLGame
 import org.ohmyloader.api.client.OMLKeyBindingProvider
 import org.ohmyloader.api.client.OMLKeyBindingRegistry
 import org.ohmyloader.api.command.OMLCommandDeclaration
@@ -12,7 +11,6 @@ import org.ohmyloader.api.command.OMLCommandRegistry
 import org.ohmyloader.api.content.ContentRegistryFactory
 import org.ohmyloader.api.content.OMLContentProvider
 import org.ohmyloader.api.network.*
-import org.ohmyloader.api.registry.OMLRegistries
 import org.ohmyloader.content.AbstractContentRegistry
 import org.ohmyloader.content.TomlContentLoader
 import org.ohmyloader.core.OMLCore.installLogFile
@@ -122,13 +120,6 @@ object OMLCore {
         this.adapter = adapter
         // Installed before mod init: a mod may send during its own initialization.
         OMLNetwork.sender = adapter.createNetworkSender()
-        // Same timing for the live game handles: `OMLGame.server` resolves through the adapter, and a
-        // mod reading it during its own init must not see a half-installed provider.
-        OMLGame.provider = adapter.createGameProvider()
-        // Installed before mod init like the two above, and it must not read the registries itself:
-        // loader initialization runs before the game's own bootstrap, so the views behind it resolve on
-        // the first read a mod makes.
-        OMLRegistries.provider = adapter.createRegistryProvider()
 
         val transformers = registerTransformers(adapter, omlLoader, mods)
 

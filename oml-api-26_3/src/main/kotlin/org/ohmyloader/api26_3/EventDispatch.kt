@@ -86,6 +86,7 @@ object EventDispatch {
 
     @JvmStatic
     fun onServerTick(server: MinecraftServer) {
+        OMLGame.recordServer(server)
         if (startsNow(server)) {
             Events.SERVER_STARTED.fire(ServerStartedEvent(server))
         }
@@ -95,6 +96,9 @@ object EventDispatch {
 
     @JvmStatic
     fun onServerStopping(server: MinecraftServer) {
+        // Only the server that is stopping: a client starting its next integrated server before this one
+        // has finished shutting down must not lose its handle.
+        if (OMLGame.server === server) OMLGame.recordServer(null)
         Events.SERVER_STOPPING.fire(ServerStoppingEvent(server))
     }
 
