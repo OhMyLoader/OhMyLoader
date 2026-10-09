@@ -8,12 +8,13 @@
 
 | 层 | 内容 | 承诺 |
 |----|------|------|
-| **契约层** | `@Mod` 入口、`OMLModInitializer` / `ModContext`、`Events` 全部事件、`ContentRegistry` 声明 DSL、注入 DSL（`@RuleSource` / `RuleSetProvider` / 锚点与改写原语） | 语义与签名按语义化版本向后兼容；破坏性变更必须先以弃用形式存在一个次版本 |
-| **已提供、仍在沉淀** | 命令 DSL（`command`）、配置（`config`）、网络（`network`）、按键 / HUD / 创造标签（`client`）、世界与玩家投影（`world` / `access`）、注册表与标签只读视图（`registry`）、主线程调度器（`tick`）、`ModContext.config` | 0.x 阶段允许随版本调整（调整记录进发布说明与 `docs/forensics.md`）；1.0 起升入契约层 |
-| **逃生舱（无稳定性承诺）** | 一切 `platform` 属性暴露的原生对象、`OMLCore` 的反射旁路（`gameClassLoader` / `serverInstance`） | 跟随游戏版本自由变动，任何版本都可能破坏——这是它们存在的目的：让 mod 作者在不等 OML 的情况下自救 |
+| **契约层** | `@Mod` 入口、`OMLModInitializer` / `ModContext`、`Event` 基元与 `EventDefinition`、`ContentRegistry` 声明 DSL、注入 DSL（`@RuleSource` / `RuleSetProvider` / 锚点与改写原语） | 语义与签名按语义化版本向后兼容；破坏性变更必须先以弃用形式存在一个次版本 |
+| **已提供、仍在沉淀** | 命令 DSL（`command`）、配置（`config`）、网络（`network`）、按键 / HUD / 创造标签（`client`）、主线程调度器（`tick`）、`ModContext.config` | 0.x 阶段允许随版本调整（调整记录进发布说明与 `docs/forensics.md`）；1.0 起升入契约层 |
+| **版本面向（随游戏版本变动）** | `oml-api-26_3`：事件载荷与扩展函数直接命名 26.3 的类（`ServerPlayer` / `BlockPos` / `DamageSource` / `BuiltInRegistries`…） | 不承诺跨游戏版本兼容——它的兼容对象就是那一版游戏。换版本是换工件（`oml-api-<version>`），不是改调用写法 |
 
-判断一个签名属于哪一层：它若把游戏类型藏在了 OML 自己的抽象后面，就是契约层；它若把游戏对象
-原样交给你，就是逃生舱。
+判断一个签名属于哪一层：它若与游戏版本无关（声明、调度、事件基元、注入 DSL），就在本工件里，受契约
+承诺约束；它若命名了某个版本的游戏类型，就在 `oml-api-<version>` 里，跟着游戏版本走。本工件不提供游戏
+对象的包装层，也不提供 `platform` 之类的逃生舱——需要游戏类型的那一层直接就是游戏类型。
 
 ## 版本号策略
 

@@ -1,29 +1,32 @@
 # OhMyLoader (OML)
 
-一个面向 Minecraft Java Edition 26.x 的模组加载器：自研字节码注入引擎（替代 Mixin 底层）、统一的高层
-mod API、数据驱动的声明式内容注册，客户端与专用服务端双端支持。当前稳定主线为 26.3，全线运行在 Java 27 上。
+一个面向 Minecraft Java Edition 26.x 的模组加载器：自研字节码注入引擎（替代 Mixin 底层）、两层 mod API
+（版本无关的声明与调度 + 直接以 26.3 原生类型表达的游戏访问层）、数据驱动的声明式内容注册，客户端与专用
+服务端双端支持。当前稳定主线为 26.3，全线运行在 Java 27 上。
 
 ## 特性
 
 - **自研字节码注入引擎**：声明式注入 DSL + Mixin 类合并（`@Shadow` / `@Overwrite` / `@Accessor` …），
   启动期对全部规则做存在性 / 签名 / `require` 自检，杜绝"规则静默失效"。
 - **统一 mod API**：`@Mod` 入口 + 函数式事件注册（tick（整服务端与逐世界）/ 服务端与玩家生命周期（含重生）/
-  方块与实体的破坏、右键、使用 / 伤害（数值可改写）/ 死亡 / 聊天 / GUI / 世界加载 / HUD / 帧率限制 …），
-  面向高层语义编程，不接触版本内部结构；原生游戏对象随时可通过 `e.platform` 逃生舱访问。
-- **世界与玩家 API**：`OMLGame` 取双端正在运行的游戏对象，`OMLWorld` / `OMLEntity` / `OMLPlayer` /
-  `OMLInventory` 等投影每次调用都直读底层对象，跨 tick 持有的句柄不会失效；实体生成与查询（含活体专用
-  入口）、运动向量、属性基础值与常驻修正、主动造成伤害（走的正是会触发 `LIVING_HURT` 的那条路径）、点火、
+  方块与实体的破坏、右键、使用 / 伤害（数值可改写）/ 死亡 / 聊天 / GUI / 世界加载 / HUD / 帧率限制 …）。
+  事件载荷直接携带游戏自己的对象（`ServerPlayer`、`BlockPos`、`BlockState`、`DamageSource`、`Screen`…），
+  mod 拿到的就是游戏正在用的那一个，没有包装层也没有逃生舱。
+- **26.3 游戏访问 API**（`org.ohmyloader.api26_3`）：`OMLGame.server` / `OMLGame.client` 就是
+  `MinecraftServer` / `Minecraft` 本身，其余能力全部是以游戏类型为实现者的扩展函数与属性——不分配包装对象，
+  也就没有跨 tick 失效的句柄。实体生成与查询（含活体专用入口）、运动向量、属性基础值与常驻修正、
+  主动造成伤害（走的正是会触发 `LIVING_HURT` 的那条路径）、点火、
   方块状态（属性名寻址）读写、粒子（含自带参数的尘埃 / 物品 / 方块）、天气（读实时等级，写走 `/weather`
   同一条路径）、游戏规则按 id 读写、按维度时钟（26.3 的 `world.clock`：计数 / 速率 / 暂停 / 具名时刻标记）、
-  方块存储（`containerAt`：槽位读写与方块自己的拒绝规则、正在使用方块的玩家）、玩家所用菜单与关闭、
-  效果、音效、传送、权限等级、区块加载判定与物品取出都在这一层；
-  `OMLScheduler` 把非游戏线程的工作排回所属侧的 tick 队列。
+  方块存储（`containerAt` 返回游戏自己的 `Container`：槽位读写遵守方块自身的拒绝规则、可列出正在使用它的
+  玩家）、玩家所用菜单与关闭、效果、音效、传送、权限等级、区块加载判定与物品取出都在这一层。
+  `OMLScheduler`（版本无关）把非游戏线程的工作排回所属侧的 tick 队列。
 - **声明式内容注册**：`ContentRegistry` 声明方块 / 物品 / 配方 / 掉落 / 伤害类型 / 行为钩子 / BlockEntity /
   矿石世界生成；方块与物品在注册表冻结点材料化为原生内容，配方、掉落与伤害类型则写成数据包 JSON 经 OML
   注入的资源包走 vanilla 自己的重载路径。
-- **注册表与标签读取**：`OMLRegistries` 提供方块 / 物品 / 效果 / 音效 / 实体类型 / 属性 / 伤害类型 /
-  游戏规则 / 时钟九张游戏原生表的只读视图，mod 自己注册的内容与原版条目同等可查（id、标签成员、某 id
-  属于哪些标签）。
+- **注册表与标签读取**：直接读 `BuiltInRegistries` 与数据包表，`org.ohmyloader.api26_3` 的
+  `byId` / `ids` / `contains` / `membersOf` / `tagsOf` 扩展按 id 寻址（未注册的 id 返回 null，不返回默认值），
+  mod 自己注册的内容与原版条目同等可查。
 - **自定义网络载荷**：`OMLNetworkProvider` 声明通道 + `OMLPacketBuffer` 自有编解码，双端按通道名路由
   （复用 vanilla 固定的两个 payload 包 id），单人集成服务端与专用服务端共用同一份声明。
 - **mod 资产注入**：每个 mod jar 的 `assets/` 经注入的资源包对游戏完整可见（任意命名空间、任意目录）。
@@ -46,10 +49,19 @@ class MyMod : OMLModInitializer {
       if (event.message.contains("bad_word")) {
         event.cancel() // 拦截聊天（cancellable 事件由 cancel() 取消，canceled 只读）
       }
+      // event.packet 就是收到的那条 Clientbound...Packet，不再只给 OML 预先消化过的文本
+    }
+    Events.BLOCK_BREAK.register { event ->
+      if (event.state.blockId == "minecraft:bedrock") event.cancel() // 玩家与坐标都是游戏对象
     }
   }
 }
 ```
+
+> mod 的编译类路径由官方 Gradle 插件挂好：`oml-api`、`oml-api-26_3`（按 `oml { minecraftVersion }`
+> 推导坐标）、游戏本体 jar 与该版本运行库。因此 mod 的类**不能**放在 `org.ohmyloader.` 前缀下——那一段
+> 是 parent-first，模组类会被启动器层定义，而启动器层没有游戏运行库，直接引用 `net.minecraft.*` 会以
+> `NoClassDefFoundError` 收场。
 
 修改游戏内部未暴露的逻辑时，直接写注入规则（无需 Mixin）：规则放在一个 `@RuleSource` 标注、实现
 `RuleSetProvider` 的类里，由 loader 在启动期读取并自检。
@@ -104,7 +116,9 @@ JDK 27（Zulu）· Gradle 9.8.0 · Kotlin 2.5.0-Beta1（当前唯一声明 JVM 2
 ### 追加说明
 
 - **模块结构**：`oml-core`（加载器内核：类加载 / 注入执行器 / Mixin 前端与类合并 / SPI）、
-  `oml-api`（mod 面向的 API）、`oml-content`（版本无关的内容注册与 `.oml`/TOML 装载）、
+  `oml-api`（版本无关的 mod API：事件基元、内容声明、调度、配置、网络、注入与 mixin）、
+  `oml-api-26_3`（26.3 版本面向 API：事件载荷与扩展函数直接命名游戏类型，必须由主加载器按 child-first
+  定义）、`oml-content`（版本无关的内容注册与 `.oml`/TOML 装载）、
   `oml-launcher`（自举头）、`oml-adapter-common`（各版本共享的钩子、事件桥、内容材料化与网络桥）、
   `oml-adapter-26_3` 与 `oml-adapter-snapshot`
   （版本驱动层，薄）、`oml-native`（zig 构建的 C 库，Zstd 编解码）、`oml-devtools`（下载器）、
