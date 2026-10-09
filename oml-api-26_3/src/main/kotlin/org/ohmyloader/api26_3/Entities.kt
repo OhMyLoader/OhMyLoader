@@ -22,15 +22,6 @@ val Entity.typeId: String get() = BuiltInRegistries.ENTITY_TYPE.getKey(type).toS
 val Entity.dimensionId: String get() = level().dimensionId
 
 /**
- * Takes the entity out of its level and reports whether the game did; false means it is still there. Not for
- * players: removing a player entity detaches it from the level while its connection keeps pointing at it.
- */
-fun Entity.discard(): Boolean {
-    remove(Entity.RemovalReason.DISCARDED)
-    return isRemoved
-}
-
-/**
  * Registry id of this effect, e.g. `minecraft:regeneration`. The game's own `duration` is the remaining time
  * and its `amplifier` is zero-based, so 0 is level I.
  */
