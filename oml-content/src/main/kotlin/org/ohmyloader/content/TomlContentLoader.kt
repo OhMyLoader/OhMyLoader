@@ -314,10 +314,10 @@ object TomlContentLoader {
     }
 
     /**
-     * Reload pass: re-dispatches only the data declarations (crafting recipes) from [toml] into
-     * [registry]. Blocks and items are silently skipped — their registries are frozen, they cannot
-     * be re-materialized, and reloading must not grow the declaration queues. Everything else
-     * behaves like [load]: malformed crafting sections throw with the reason.
+     * Reload pass: re-dispatches only the datapack declarations (recipes, loot tables, damage types) from
+     * [toml] into [registry]. Blocks and items are silently skipped — their registries are frozen, they
+     * cannot be re-materialized, and reloading must not grow the declaration queues. Everything else
+     * behaves like [load]: malformed sections throw with the reason.
      */
     fun loadDataDeclarations(namespace: String, source: String, toml: String, registry: ContentRegistry) {
         require(NAMESPACE.matches(namespace)) {
@@ -338,6 +338,9 @@ object TomlContentLoader {
 
                 path.startsWith("loot.") && path.count { it == '.' } == 1 ->
                     declareLootSection(path.removePrefix("loot."), fields, source, registry)
+
+                path.startsWith("damage_type.") && path.count { it == '.' } == 1 ->
+                    declareDamageTypeSection(path.removePrefix("damage_type."), fields, source, registry)
             }
         }
     }
