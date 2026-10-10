@@ -101,7 +101,52 @@ interface ContentRegistry {
         exhaustion: Float = 0.0f,
         deathMessageType: String? = null,
     )
+
+    /**
+     * Declares a world clock, which the game loads from OML's injected content pack as
+     * `data/<namespace>/world_clock/<id>.json`. A 26.3 clock carries no fields beyond its identity: the
+     * position, rate and pause belong to the server's clock manager, which runs one instance for **every**
+     * registered clock — including one no dimension binds, so a mod's own clock counts on its own.
+     */
+    fun declareClock(id: String)
+
+    /**
+     * Declares a timeline: the unit that attaches named moments to a clock, loaded as
+     * `data/<namespace>/timeline/<id>.json`. [OMLTimelineDeclaration.clock] is required, [periodTicks]
+     * optional, and each marker's tick has to sit inside the period — the game's own codec rule, enforced
+     * here because a file the codec rejects leaves the whole timeline unregistered with no owner to say so.
+     */
+    fun declareTimeline(id: String, configure: OMLTimelineDeclaration.() -> Unit)
 }
+
+/**
+ * Clock-time declaration for [ContentRegistry.declareTimeline]. Tracks (the environment-attribute
+ * keyframe half of a timeline) have no declaration form here: their value type is per-attribute and the
+ * data is version-facing, so write the datapack file yourself if you need one.
+ */
+class OMLTimelineDeclaration {
+
+    /** The clock this timeline drives: namespaced (`minecraft:overworld`) or bare, resolved in the declaring namespace. */
+    var clock: String? = null
+
+    /** Ticks in one cycle; null means the markers never repeat. */
+    var periodTicks: Int? = null
+
+    // Public but not mod-facing API: the content layer reads this to emit the datapack file.
+    val markers = mutableListOf<OMLTimeMarker>()
+
+    /**
+     * Names [ticks] of the cycle as `markerId`. [inCommands] decides whether `/time set` offers it — the
+     * game's own flag, and the reason [org.ohmyloader.api26_3.markersOf] can list fewer markers than a
+     * timeline declares.
+     */
+    fun marker(id: String, ticks: Int, inCommands: Boolean = false) {
+        markers += OMLTimeMarker(id, ticks, inCommands)
+    }
+}
+
+/** One named moment of a timeline: [id] is bound to the declaring namespace, [ticks] counts inside its period. */
+data class OMLTimeMarker(val id: String, val ticks: Int, val inCommands: Boolean)
 
 /** Furnace-type recipe variants supported by [ContentRegistry.declareSmelting]. */
 enum class Furnace(val recipePath: String) {

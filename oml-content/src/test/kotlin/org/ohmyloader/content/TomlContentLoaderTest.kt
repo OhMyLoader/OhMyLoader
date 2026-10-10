@@ -79,6 +79,17 @@ class TomlContentLoaderTest {
             damageTypes += DamageTypeDecl(id, messageId, scaling, effects, exhaustion, deathMessageType)
         }
 
+        val clocks = mutableListOf<String>()
+        val timelines = mutableListOf<Pair<String, OMLTimelineDeclaration>>()
+
+        override fun declareClock(id: String) {
+            clocks += id
+        }
+
+        override fun declareTimeline(id: String, configure: OMLTimelineDeclaration.() -> Unit) {
+            timelines += id to OMLTimelineDeclaration().apply(configure)
+        }
+
         val shaped = mutableListOf<Triple<String, List<String>, Map<Char, String>>>()
         val shapeless = mutableListOf<Pair<String, List<String>>>()
 
@@ -428,5 +439,60 @@ class TomlContentLoaderTest {
         assertFailsWith<IllegalStateException> {
             loadPack("miners", "[block.tin_ore]\nore = true\n")
         }.let { assertTrue("must be an inline table" in it.message!!) }
+    }
+
+    private val sampleClockTimeline = """
+        [clock.tide]
+
+        [timeline.surge]
+        clock = "tide"
+        period_ticks = 24000
+        markers = { low_tide = 0, high_tide = { ticks = 12000, in_commands = true } }
+    """.trimIndent()
+
+    @Test
+    fun `clock and timeline sections map onto the declaration DSL`() {
+        val (registry, summary) = loadPack("tides", sampleClockTimeline)
+
+        assertEquals(listOf("tide"), registry.clocks)
+        assertEquals(1, summary.clocks)
+        val (id, spec) = registry.timelines.single()
+        assertEquals("surge", id)
+        assertEquals(1, summary.timelines)
+        assertEquals("tide", spec.clock)
+        assertEquals(24000, spec.periodTicks)
+        assertEquals(listOf("low_tide" to 0, "high_tide" to 12000), spec.markers.map { it.id to it.ticks })
+        assertEquals(listOf(false, true), spec.markers.map { it.inCommands })
+    }
+
+    @Test
+    fun `a clock section with fields and a malformed marker fail the pack loudly`() {
+        assertFailsWith<IllegalStateException> {
+            loadPack("tides", "[clock.tide]\nperiod_ticks = 100\n")
+        }.let { assertTrue("takes no fields" in it.message!!, it.message!!) }
+        assertFailsWith<IllegalStateException> {
+            loadPack("tides", "[timeline.surge]\nclock = \"tide\"\nmarkers = { dusk = \"morning\" }\n")
+        }.let { assertTrue("tick number or a table" in it.message!!, it.message!!) }
+        assertFailsWith<IllegalStateException> {
+            loadPack("tides", "[timeline.surge]\nmarkers = { dusk = 1 }\n")
+        }.let { assertTrue("missing its 'clock'" in it.message!!, it.message!!) }
+    }
+
+    @Test
+    fun `a reload re-collects every datapack declaration the load pass collected`() {
+        val registry = RecordingRegistry()
+        TomlContentLoader.load("tides", "tides.toml", sampleDamageType + "\n" + sampleClockTimeline, registry)
+        val reloaded = RecordingRegistry()
+        TomlContentLoader.loadDataDeclarations(
+            "tides", "tides.toml", sampleDamageType + "\n" + sampleClockTimeline, reloaded,
+        )
+
+        assertEquals(registry.damageTypes.map { it.id }, reloaded.damageTypes.map { it.id })
+        assertEquals(registry.clocks, reloaded.clocks)
+        assertEquals(registry.timelines.map { it.first }, reloaded.timelines.map { it.first })
+        assertEquals(
+            registry.timelines.single().second.markers.map { it.id to it.ticks },
+            reloaded.timelines.single().second.markers.map { it.id to it.ticks },
+        )
     }
 }

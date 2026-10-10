@@ -13,9 +13,10 @@ import java.io.File
  * silently produce vanilla defaults.
  *
  * Sections: `[block.<id>]` (properties + optional `ore` table), `[item.<id>]`, `[crafting.<id>]`,
- * `[smelting.<result>]`, `[loot.<block>]`. Behavior hooks and block entities are mod code, so they
- * have no TOML form. Loading runs in the loader's content-declaration window, so the data track
- * shares the code track's freeze-point materialization.
+ * `[smelting.<result>]`, `[loot.<block>]`, `[damage_type.<id>]`, `[clock.<id>]` (no fields),
+ * `[timeline.<id>]` (`clock` + optional `period_ticks` + `markers`). Behavior hooks and block entities are
+ * mod code, so they have no TOML form. Loading runs in the loader's content-declaration window, so the data
+ * track shares the code track's freeze-point materialization.
  */
 object TomlContentLoader {
 
@@ -40,6 +41,8 @@ object TomlContentLoader {
         val smelting: Int = 0,
         val loot: Int = 0,
         val damageTypes: Int = 0,
+        val clocks: Int = 0,
+        val timelines: Int = 0,
     )
 
     /**
@@ -77,6 +80,8 @@ object TomlContentLoader {
         var smelting = 0
         var loot = 0
         var damageTypes = 0
+        var clocks = 0
+        var timelines = 0
         for ([path, fields] in doc) {
             when {
                 path.isEmpty() -> if (fields.isNotEmpty()) {
@@ -117,15 +122,25 @@ object TomlContentLoader {
                     damageTypes++
                 }
 
+                path.startsWith("clock.") && path.count { it == '.' } == 1 -> {
+                    declareClockSection(path.removePrefix("clock."), fields, source, registry)
+                    clocks++
+                }
+
+                path.startsWith("timeline.") && path.count { it == '.' } == 1 -> {
+                    declareTimelineSection(path.removePrefix("timeline."), fields, source, registry)
+                    timelines++
+                }
+
                 else -> OmlLog.warn(
                     TAG,
                     "$source: ignoring section [$path] — " +
                         "expected [block.<id>] / [item.<id>] / [crafting.<id>] / [smelting.<id>] / " +
-                        "[loot.<block>] / [damage_type.<id>]",
+                        "[loot.<block>] / [damage_type.<id>] / [clock.<id>] / [timeline.<id>]",
                 )
             }
         }
-        return PackSummary(namespace, blocks, items, recipes, smelting, loot, damageTypes)
+        return PackSummary(namespace, blocks, items, recipes, smelting, loot, damageTypes, clocks, timelines)
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -235,6 +250,59 @@ object TomlContentLoader {
         registry.declareBlockDrop(block = id, drop = drop, dropCountMin = min, dropCountMax = max)
     }
 
+    /** A `[clock.<id>]` section: a 26.3 clock has no fields, so the section exists only to name it. */
+    private fun declareClockSection(id: String, fields: Map<String, Any>, source: String, registry: ContentRegistry) {
+        requireId(id, source, "clock")
+        if (fields.isNotEmpty()) {
+            fail(source, "clock '$id' takes no fields (a 26.3 clock declares nothing but its id)")
+        }
+        registry.declareClock(id)
+    }
+
+    private val TIMELINE_KEYS = setOf("clock", "period_ticks", "markers")
+
+    /**
+     * A `[timeline.<id>]` section: `clock` is required, `period_ticks` optional, and `markers` an inline table
+     * whose value is either a tick number or `{ ticks = .., in_commands = .. }` — the two forms the game's own
+     * codec accepts.
+     */
+    private fun declareTimelineSection(
+        id: String,
+        fields: Map<String, Any>,
+        source: String,
+        registry: ContentRegistry,
+    ) {
+        requireId(id, source, "timeline")
+        val clock = fields["clock"] as? String ?: fail(source, "timeline '$id' is missing its 'clock' string")
+        val periodTicks = intValue(fields, "period_ticks", source, "timeline '$id'")
+        val markers = fields["markers"]
+        if (markers != null && markers !is Map<*, *>) {
+            fail(source, "timeline '$id'.markers must be an inline table, e.g. markers = { dusk = 12000 }")
+        }
+        reportUnknown(fields, TIMELINE_KEYS, source, "timeline '$id'")
+        registry.declareTimeline(id) {
+            this.clock = clock
+            this.periodTicks = periodTicks
+            for ((name, value) in (markers as Map<*, *>? ?: emptyMap<Any?, Any?>())) {
+                val markerName = name as? String
+                    ?: fail(source, "timeline '$id': marker names must be strings")
+                val ctx = "timeline '$id' marker '$markerName'"
+                when (value) {
+                    is Number -> marker(markerName, value.toInt())
+
+                    is Map<*, *> -> marker(
+                        markerName,
+                        (value["ticks"] as? Number ?: fail(source, "$ctx is missing its numeric 'ticks'")).toInt(),
+                        value["in_commands"] as? Boolean ?: false,
+                    )
+
+                    else -> fail(source, "$ctx must be a tick number or a table like " +
+                        "{ ticks = 12000, in_commands = true }")
+                }
+            }
+        }
+    }
+
     private fun declareItem(id: String, fields: Map<String, Any>, source: String, registry: ContentRegistry) {
         requireId(id, source, "item")
         registry.declareItem(id) {
@@ -314,10 +382,10 @@ object TomlContentLoader {
     }
 
     /**
-     * Reload pass: re-dispatches only the datapack declarations (recipes, loot tables, damage types) from
-     * [toml] into [registry]. Blocks and items are silently skipped — their registries are frozen, they
-     * cannot be re-materialized, and reloading must not grow the declaration queues. Everything else
-     * behaves like [load]: malformed sections throw with the reason.
+     * Reload pass: re-dispatches only the datapack declarations (recipes, loot tables, damage types, clocks,
+     * timelines) from [toml] into [registry]. Blocks and items are silently skipped — their registries are
+     * frozen, they cannot be re-materialized, and reloading must not grow the declaration queues. Everything
+     * else behaves like [load]: a malformed section throws with the reason.
      */
     fun loadDataDeclarations(namespace: String, source: String, toml: String, registry: ContentRegistry) {
         require(NAMESPACE.matches(namespace)) {
@@ -341,6 +409,12 @@ object TomlContentLoader {
 
                 path.startsWith("damage_type.") && path.count { it == '.' } == 1 ->
                     declareDamageTypeSection(path.removePrefix("damage_type."), fields, source, registry)
+
+                path.startsWith("clock.") && path.count { it == '.' } == 1 ->
+                    declareClockSection(path.removePrefix("clock."), fields, source, registry)
+
+                path.startsWith("timeline.") && path.count { it == '.' } == 1 ->
+                    declareTimelineSection(path.removePrefix("timeline."), fields, source, registry)
             }
         }
     }

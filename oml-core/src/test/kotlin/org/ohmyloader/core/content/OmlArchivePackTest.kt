@@ -61,6 +61,10 @@ class OmlArchivePackTest {
             deathMessageType: String?,
         ) {
         }
+
+        override fun declareClock(id: String) {}
+
+        override fun declareTimeline(id: String, configure: OMLTimelineDeclaration.() -> Unit) {}
     }
 
     private val factory = object : ContentRegistryFactory {

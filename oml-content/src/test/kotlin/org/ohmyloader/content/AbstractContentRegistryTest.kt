@@ -356,4 +356,65 @@ class AbstractContentRegistryTest {
         assertEquals(listOf("good"), registry.damageTypeIdsFor("mymod"))
         assertEquals(null, registry.damageTypeJsonFor("mymod", "bad_scaling"))
     }
+
+    @Test
+    fun `a clock and a timeline are served as the datapack files the game's own codecs read`() {
+        val registry = RecordingRegistry()
+        val facade = registry.forNamespace("mymod")
+
+        facade.declareClock("tide")
+        facade.declareTimeline("surge") {
+            clock = "tide"
+            periodTicks = 24000
+            marker("low_tide", 0)
+            marker("high_tide", 12000, inCommands = true)
+        }
+        facade.declareTimeline("quiet") { clock = "minecraft:overworld" }
+
+        assertEquals(listOf("tide"), registry.clockIdsFor("mymod"))
+        assertEquals("{}", registry.clockJsonFor("mymod", "tide"), "a clock declares nothing but its id")
+        assertEquals(null, registry.clockJsonFor("mymod", "absent"))
+
+        assertEquals(listOf("surge", "quiet"), registry.timelineIdsFor("mymod"))
+        val surge = registry.timelineJsonFor("mymod", "surge") ?: fail("the timeline must be served")
+        assertTrue("\"clock\":\"mymod:tide\"" in surge, surge)
+        assertTrue("\"period_ticks\":24000" in surge, surge)
+        assertTrue("\"mymod:low_tide\":0" in surge, "a marker outside /time set is the bare-number form: $surge")
+        assertTrue("\"mymod:high_tide\":{\"show_in_commands\":true,\"ticks\":12000}" in surge, surge)
+        val quiet = registry.timelineJsonFor("mymod", "quiet") ?: fail("the second file must be served")
+        assertTrue("\"clock\":\"minecraft:overworld\"" in quiet, quiet)
+        assertTrue("time_markers" !in quiet, "an unset field is omitted, not defaulted: $quiet")
+        assertTrue("period_ticks" !in quiet, quiet)
+    }
+
+    @Test
+    fun `a timeline the game would reject is refused at declaration`() {
+        val registry = RecordingRegistry()
+        val facade = registry.forNamespace("mymod")
+
+        facade.declareClock("tide")
+        facade.declareTimeline("good") {
+            clock = "tide"
+            periodTicks = 1000
+            marker("early", 0)
+            marker("late", 999)
+        }
+        facade.declareTimeline("no_clock") { marker("m", 0) }
+        facade.declareTimeline("undeclared_clock") { clock = "nowhere" }
+        facade.declareTimeline("bad_clock") { clock = "Bad Name" }
+        facade.declareTimeline("zero_period") { clock = "tide"; periodTicks = 0; marker("m", 0) }
+        facade.declareTimeline("past_period") { clock = "tide"; periodTicks = 1000; marker("m", 1000) }
+        facade.declareTimeline("negative_tick") { clock = "tide"; marker("m", -1) }
+        facade.declareTimeline("marker_twice") { clock = "tide"; marker("m", 0); marker("m", 10) }
+        facade.declareTimeline("bad_marker") { clock = "tide"; marker("Bad Marker", 0) }
+        // the game gives one marker to one timeline per clock, so a second claim never registers either file
+        facade.declareTimeline("claims_early") { clock = "tide"; marker("early", 500) }
+        facade.declareTimeline("good") { clock = "tide" }
+        facade.declareClock("tide")
+        facade.declareClock("Bad Name")
+
+        assertEquals(listOf("good"), registry.timelineIdsFor("mymod"))
+        assertEquals(listOf("tide"), registry.clockIdsFor("mymod"))
+        assertEquals(null, registry.timelineJsonFor("mymod", "claims_early"))
+    }
 }

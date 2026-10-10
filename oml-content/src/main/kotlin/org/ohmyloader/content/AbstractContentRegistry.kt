@@ -55,6 +55,8 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
     protected val collectedRecipes: MutableList<RecipeDecl> = mutableListOf()
     protected val collectedLoot: MutableList<LootDecl> = mutableListOf()
     protected val collectedDamageTypes: MutableList<DamageTypeDecl> = mutableListOf()
+    protected val collectedClocks: MutableList<ClockDecl> = mutableListOf()
+    protected val collectedTimelines: MutableList<TimelineDecl> = mutableListOf()
 
     /**
      * A collected damage-type declaration: [key] is the datapack file's local id, so the registry id the
@@ -63,6 +65,24 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
     data class DamageTypeDecl(
         val namespace: String,
         val key: String,
+        val json: String,
+        val reloadable: Boolean,
+    )
+
+    /**
+     * A collected clock declaration. 26.3's `WorldClock` is an identity with no fields, so the datapack file
+     * is an empty object and the declaration is the id.
+     */
+    data class ClockDecl(val namespace: String, val key: String, val reloadable: Boolean)
+
+    /** A collected timeline declaration: [key] is the file's local id under `timeline/`. */
+    data class TimelineDecl(
+        val namespace: String,
+        val key: String,
+        /** The clock this file drives, fully qualified — the game gives one marker to one timeline per clock. */
+        val clockId: String,
+        /** Every marker id this file declares, fully qualified. */
+        val markerIds: List<String>,
         val json: String,
         val reloadable: Boolean,
     )
@@ -104,6 +124,26 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
     fun damageTypeIdsFor(namespace: String): List<String> =
         collectedDamageTypes.filter { it.namespace == namespace }.map { it.key }
 
+    /** A 26.3 clock declares nothing but its own id, so its datapack file is the empty object. */
+    @Synchronized
+    fun clockJsonFor(namespace: String, id: String): String? =
+        if (collectedClocks.any { it.namespace == namespace && it.key == id }) "{}" else null
+
+    /** The collected clock keys of [namespace], in declaration order — the datapack directory listing. */
+    @Synchronized
+    fun clockIdsFor(namespace: String): List<String> =
+        collectedClocks.filter { it.namespace == namespace }.map { it.key }
+
+    /** The datapack JSON for a collected timeline (`data/<ns>/timeline/<key>.json`). */
+    @Synchronized
+    fun timelineJsonFor(namespace: String, id: String): String? =
+        collectedTimelines.firstOrNull { it.namespace == namespace && it.key == id }?.json
+
+    /** The collected timeline keys of [namespace], in declaration order. */
+    @Synchronized
+    fun timelineIdsFor(namespace: String): List<String> =
+        collectedTimelines.filter { it.namespace == namespace }.map { it.key }
+
     /**
      * Drops every collected recipe / loot declaration so a reload pass can re-collect them from
      * the pack files as they exist on disk **now**. Blocks and items are NOT touched: their
@@ -117,6 +157,8 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
         collectedRecipes.removeAll { it.reloadable }
         collectedLoot.removeAll { it.reloadable }
         collectedDamageTypes.removeAll { it.reloadable }
+        collectedClocks.removeAll { it.reloadable }
+        collectedTimelines.removeAll { it.reloadable }
     }
 
     /** A collected ore-generation declaration, flattened to its two datapack files' JSON. */
@@ -289,6 +331,75 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                     reloadable,
                 )
             }
+
+            override fun declareClock(id: String) {
+                val refusal = when {
+                    !DATAPACK_NAME.matches(id) -> "'$id' is not a lowercase datapack name"
+                    collectedClocks.any { it.namespace == namespace && it.key == id } ->
+                        "clock '$id' is declared twice"
+                    else -> null
+                }
+                if (refusal != null) {
+                    OmlLog.warn("Content", "$refusal; the clock is not declared")
+                    return
+                }
+                collectedClocks += ClockDecl(namespace, id, reloadable)
+            }
+
+            override fun declareTimeline(id: String, configure: OMLTimelineDeclaration.() -> Unit) {
+                val spec = OMLTimelineDeclaration().apply(configure)
+                val clock = spec.clock?.let { qualify(namespace, it) }
+                    ?: run {
+                        OmlLog.warn("Content", "timeline '$id' names no clock; the timeline is not declared")
+                        return
+                    }
+                val period = spec.periodTicks
+                val unreachable = spec.markers.firstOrNull {
+                    it.ticks < 0 || (period != null && it.ticks >= period)
+                }
+                val claimed = spec.markers.firstOrNull { marker ->
+                    val key = qualify(namespace, marker.id)
+                    collectedTimelines.any { it.clockId == clock && key in it.markerIds }
+                }
+                val refusal = when {
+                    !DATAPACK_NAME.matches(id) -> "'$id' is not a lowercase datapack name"
+                    !DATAPACK_NAME.matches(clock.substringAfterLast(':')) ->
+                        "clock '${spec.clock}' is not a lowercase datapack name"
+                    collectedTimelines.any { it.namespace == namespace && it.key == id } ->
+                        "timeline '$id' is declared twice"
+                    period != null && period <= 0 ->
+                        "timeline '$id' period $period is not a positive number of ticks"
+                    clock.substringBefore(':') == namespace &&
+                        collectedClocks.none { it.namespace == namespace && it.key == clock.substringAfter(':') } ->
+                        "timeline '$id' drives clock '$clock', which this pack has not declared " +
+                            "(declare the clock before the timeline that drives it)"
+                    unreachable != null ->
+                        "timeline '$id' marker '${unreachable.id}' names tick ${unreachable.ticks}, which " +
+                            "the cycle it declares never reaches"
+                    spec.markers.map { it.id }.distinct().size != spec.markers.size ->
+                        "timeline '$id' declares one marker twice"
+                    spec.markers.any { !DATAPACK_NAME.matches(it.id) } ->
+                        "timeline '$id' declares a marker that is not a lowercase datapack name"
+                    claimed != null ->
+                        "marker '${claimed.id}' is already declared on clock '$clock' by another timeline"
+                    else -> null
+                }
+                if (refusal != null) {
+                    // The tick-inside-the-cycle rule and the one-timeline-per-marker rule are the game's own:
+                    // its codec and its registry validation enforce them, and a file they reject leaves the
+                    // timeline absent from the registry with nothing in the log naming the pack that wrote it.
+                    OmlLog.warn("Content", "$refusal; the timeline is not declared")
+                    return
+                }
+                collectedTimelines += TimelineDecl(
+                    namespace,
+                    id,
+                    clock,
+                    spec.markers.map { qualify(namespace, it.id) },
+                    timelineJson(namespace, clock, spec),
+                    reloadable,
+                )
+            }
         }
 
     private fun qualify(namespace: String, id: String): String =
@@ -377,6 +488,30 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
         append("\"scaling\":\"$scaling\"")
         append('}')
     }
+
+    /**
+     * The timeline file in the game's own shape: `clock` is a full id (a bare one is bound to the declaring
+     * namespace like every other id in these files), `period_ticks` is omitted when the markers do not repeat,
+     * and a marker that stays out of `/time set` is written as the bare number the codec also accepts.
+     */
+    private fun timelineJson(namespace: String, clock: String, spec: OMLTimelineDeclaration): String =
+        buildString {
+            append("{\"clock\":\"").append(clock).append('"')
+            spec.periodTicks?.let { append(",\"period_ticks\":").append(it) }
+            if (spec.markers.isNotEmpty()) {
+                append(",\"time_markers\":{")
+                spec.markers.joinTo(this, separator = ",") { marker ->
+                    val key = qualify(namespace, marker.id)
+                    if (marker.inCommands) {
+                        "\"$key\":{\"show_in_commands\":true,\"ticks\":${marker.ticks}}"
+                    } else {
+                        "\"$key\":${marker.ticks}"
+                    }
+                }
+                append('}')
+            }
+            append('}')
+        }
 
     private fun lootJson(block: String, drop: String, namespace: String, min: Int, max: Int): String {
         val blockId = qualify(namespace, block)

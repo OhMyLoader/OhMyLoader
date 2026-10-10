@@ -370,7 +370,8 @@ object ModAssetInjector {
         path.startsWith("recipe/") || path.startsWith("loot_table/") || path.startsWith("tags/") ||
             path.startsWith("worldgen/") || path.startsWith("advancement/") ||
             path.startsWith("predicate/") || path.startsWith("loot_modifiers/") ||
-            path.startsWith("damage_type/")
+            path.startsWith("damage_type/") || path.startsWith("world_clock/") ||
+            path.startsWith("timeline/")
 
     /**
      * Bytes for one datapack file. Recipes and loot tables come from OML content declarations
@@ -394,6 +395,16 @@ object ModAssetInjector {
             path.startsWith("damage_type/") && path.endsWith(".json") -> {
                 val id = path.removePrefix("damage_type/").removeSuffix(".json")
                 contentRegistry.damageTypeJsonFor(namespace, id)
+            }
+
+            path.startsWith("world_clock/") && path.endsWith(".json") -> {
+                val id = path.removePrefix("world_clock/").removeSuffix(".json")
+                contentRegistry.clockJsonFor(namespace, id)
+            }
+
+            path.startsWith("timeline/") && path.endsWith(".json") -> {
+                val id = path.removePrefix("timeline/").removeSuffix(".json")
+                contentRegistry.timelineJsonFor(namespace, id)
             }
 
             path.startsWith("worldgen/feature/") && path.endsWith(".json") -> {
@@ -477,6 +488,12 @@ object ModAssetInjector {
         if (dir == "damage_type") {
             MinecraftContentRegistry.damageTypeIdsFor(namespace).forEach { emit("damage_type/$it.json") }
         }
+        if (dir == "world_clock") {
+            MinecraftContentRegistry.clockIdsFor(namespace).forEach { emit("world_clock/$it.json") }
+        }
+        if (dir == "timeline") {
+            MinecraftContentRegistry.timelineIdsFor(namespace).forEach { emit("timeline/$it.json") }
+        }
         if (namespace == "minecraft" && dir == "worldgen/biome") {
             MinecraftContentRegistry.oreTargetedBiomes().forEach { emit("worldgen/biome/$it.json") }
         }
@@ -513,6 +530,10 @@ object ModAssetInjector {
                     .forEach { emit("loot_table/blocks/$it.json") }
                 "damage_type" -> MinecraftContentRegistry.damageTypeIdsFor(namespace)
                     .forEach { emit("damage_type/$it.json") }
+                "world_clock" -> MinecraftContentRegistry.clockIdsFor(namespace)
+                    .forEach { emit("world_clock/$it.json") }
+                "timeline" -> MinecraftContentRegistry.timelineIdsFor(namespace)
+                    .forEach { emit("timeline/$it.json") }
             }
         }
     }

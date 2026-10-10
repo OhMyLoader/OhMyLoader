@@ -49,6 +49,13 @@ class ContentTrackParityTest {
             .declareDamageType(id = "melt", messageId = "ruby.melts", effects = "burning", exhaustion = 0.3f)
         code.forNamespace("ruby")
             .declareShapelessCrafting(result = "ruby", ingredients = listOf("raw_ruby", "raw_ruby"))
+        code.forNamespace("ruby").declareClock("tide")
+        code.forNamespace("ruby").declareTimeline("surge") {
+            clock = "tide"
+            periodTicks = 24000
+            marker("low_tide", 0)
+            marker("high_tide", 12000, inCommands = true)
+        }
 
         TomlContentLoader.load(
             "ruby",
@@ -80,6 +87,13 @@ class ContentTrackParityTest {
             [crafting.ruby]
             type = "shapeless"
             ingredients = ["raw_ruby", "raw_ruby"]
+
+            [clock.tide]
+
+            [timeline.surge]
+            clock = "tide"
+            period_ticks = 24000
+            markers = { low_tide = 0, high_tide = { ticks = 12000, in_commands = true } }
             """.trimIndent(),
             data.forNamespace("ruby"),
         )
@@ -110,6 +124,9 @@ class ContentTrackParityTest {
         assertEquals(code.lootJsonFor("ruby", "ruby_ore"), data.lootJsonFor("ruby", "ruby_ore"))
         assertEquals(code.damageTypeJsonFor("ruby", "melt"), data.damageTypeJsonFor("ruby", "melt"))
         assertEquals(code.damageTypeIdsFor("ruby"), data.damageTypeIdsFor("ruby"))
+        assertEquals(code.clockJsonFor("ruby", "tide"), data.clockJsonFor("ruby", "tide"))
+        assertEquals(code.timelineJsonFor("ruby", "surge"), data.timelineJsonFor("ruby", "surge"))
+        assertEquals(code.timelineIdsFor("ruby"), data.timelineIdsFor("ruby"))
         val codeOreGen = code.oreGenDecls.single()
         val dataOreGen = data.oreGenDecls.single()
         assertEquals(codeOreGen.featureJson, dataOreGen.featureJson)
@@ -119,5 +136,6 @@ class ContentTrackParityTest {
         // sanity: the compared artifacts are not trivially empty
         assertTrue(code.recipeJsonFor("ruby", "ruby_raw_ruby")!!.contains("smelting"))
         assertTrue(code.recipeJsonFor("ruby", "ruby_ruby")!!.contains("crafting_shapeless"))
+        assertTrue(code.timelineJsonFor("ruby", "surge")!!.contains("\"ruby:high_tide\""), "the marker id is bound to the pack namespace")
     }
 }
