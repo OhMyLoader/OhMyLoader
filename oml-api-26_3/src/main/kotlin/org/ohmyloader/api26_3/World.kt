@@ -33,12 +33,16 @@ fun Level.blockIdAt(pos: BlockPos): String = BuiltInRegistries.BLOCK.getKey(getB
 fun Level.blockStateAt(pos: BlockPos): BlockState? = pos.takeIf(::isLoaded)?.let(::getBlockState)
 
 /**
- * Places [blockId]'s default state at [pos] with vanilla's neighbour-update flags; false for an unknown id.
- * Writes take effect on a server-side level: the client's level holds a prediction the server overwrites.
+ * Places [blockId]'s default state at [pos] with vanilla's neighbour-update flags, and reports whether the
+ * position now holds that block — the game's `setBlock` return value is not it, since the game can answer
+ * false for a state it did store. False for an unknown id or an unloaded position. Writes take effect on a
+ * server-side level: the client's level holds a prediction the server overwrites.
  */
 fun Level.setBlockAt(pos: BlockPos, blockId: String): Boolean {
     val block = OMLRegistries.block(blockId) ?: return false
-    return setBlockAndUpdate(pos, block.defaultBlockState())
+    if (!isLoaded(pos)) return false
+    setBlockAndUpdate(pos, block.defaultBlockState())
+    return getBlockState(pos).block == block
 }
 
 /**
