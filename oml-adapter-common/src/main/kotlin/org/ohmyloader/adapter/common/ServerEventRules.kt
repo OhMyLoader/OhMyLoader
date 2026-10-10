@@ -58,6 +58,32 @@ internal fun InjectionBuilder.serverEventRules() {
             }
             require(1)
         }
+        // The chunk reached its ticking status: `ChunkMap` calls this right after the level's own
+        // post-generation pass, with the `LevelChunk` that is now live in this dimension. HEAD because the
+        // body registers the chunk's block entities, and a handler that keeps per-chunk state wants to be
+        // able to see them.
+        method("startTickingChunk", desc = "(Lnet/minecraft/world/level/chunk/LevelChunk;)V") {
+            atHead {
+                call(
+                    BRIDGE, "onChunkStartedTicking",
+                    "(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/level/chunk/LevelChunk;)V",
+                    args = listOf(DslValue.This, DslValue.Arg(0)),
+                )
+            }
+            require(1)
+        }
+        // The chunk is being dropped. HEAD, not tail: the body clears the chunk's block entities and its
+        // entity-section link, so by the tail there is nothing left for a handler to read.
+        method("unload", desc = "(Lnet/minecraft/world/level/chunk/LevelChunk;)V") {
+            atHead {
+                call(
+                    BRIDGE, "onChunkUnloaded",
+                    "(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/level/chunk/LevelChunk;)V",
+                    args = listOf(DslValue.This, DslValue.Arg(0)),
+                )
+            }
+            require(1)
+        }
     }
 
     classTarget("net/minecraft/server/players/PlayerList") {

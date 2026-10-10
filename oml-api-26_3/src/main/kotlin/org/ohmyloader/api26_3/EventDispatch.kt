@@ -10,7 +10,9 @@ import net.minecraft.network.protocol.game.ClientboundDisguisedChatPacket
 import net.minecraft.network.protocol.game.ClientboundPlayerChatPacket
 import net.minecraft.network.protocol.game.ClientboundSystemChatPacket
 import net.minecraft.server.MinecraftServer
+import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
+import net.minecraft.world.level.chunk.LevelChunk
 import net.minecraft.world.damagesource.DamageSource
 import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.LivingEntity
@@ -24,6 +26,8 @@ import org.ohmyloader.api.tick.OMLSide
 import java.lang.ref.WeakReference
 import org.ohmyloader.api26_3.event.BlockBreakEvent
 import org.ohmyloader.api26_3.event.BlockUsedEvent
+import org.ohmyloader.api26_3.event.ChunkStartedTickingEvent
+import org.ohmyloader.api26_3.event.ChunkUnloadedEvent
 import org.ohmyloader.api26_3.event.ChatReceivedEvent
 import org.ohmyloader.api26_3.event.ChatSentEvent
 import org.ohmyloader.api26_3.event.ClientTickEvent
@@ -110,6 +114,14 @@ object EventDispatch {
 
     @JvmStatic
     fun onLevelTick(level: Level) = Events.LEVEL_TICK.fire(LevelTickEvent(level))
+
+    @JvmStatic
+    fun onChunkStartedTicking(level: ServerLevel, chunk: LevelChunk) =
+        Events.CHUNK_STARTED_TICKING.fire(ChunkStartedTickingEvent(level, chunk))
+
+    @JvmStatic
+    fun onChunkUnloaded(level: ServerLevel, chunk: LevelChunk) =
+        Events.CHUNK_UNLOADED.fire(ChunkUnloadedEvent(level, chunk))
 
     @JvmStatic
     fun onPlayerRespawned(player: ServerPlayer) =

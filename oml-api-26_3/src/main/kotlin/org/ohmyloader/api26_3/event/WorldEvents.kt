@@ -1,6 +1,8 @@
 package org.ohmyloader.api26_3.event
 
 import net.minecraft.core.BlockPos
+import net.minecraft.server.level.ServerLevel
+import net.minecraft.world.level.chunk.LevelChunk
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.damagesource.DamageSource
 import net.minecraft.world.entity.Entity
@@ -20,6 +22,19 @@ import org.ohmyloader.api.event.Event
  * `level.isClientSide`.
  */
 class LevelTickEvent(val level: Level) : Event()
+
+/**
+ * A chunk has become a ticking chunk of [level]: its tile entities are live and its block ticks run.
+ * [chunk] is the game's own `LevelChunk`, position included (`chunk.pos`), and the dispatch is a
+ * observation rather than a decision — the game has already promoted it.
+ */
+class ChunkStartedTickingEvent(val level: ServerLevel, val chunk: LevelChunk) : Event()
+
+/**
+ * A chunk is leaving [level]. The game calls this while the chunk is still readable, so a mod can sweep
+ * per-chunk state out of its own tables; it cannot stop the unload.
+ */
+class ChunkUnloadedEvent(val level: ServerLevel, val chunk: LevelChunk) : Event()
 
 /**
  * A player is about to destroy a block (cancellable). Covers the creative instant break and the

@@ -7,10 +7,12 @@ import net.minecraft.core.BlockPos
 import net.minecraft.network.protocol.Packet
 import net.minecraft.network.protocol.game.ClientGamePacketListener
 import net.minecraft.server.MinecraftServer
+import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.server.level.ServerPlayerGameMode
 import net.minecraft.world.InteractionHand
 import net.minecraft.world.InteractionResult
+import net.minecraft.world.level.chunk.LevelChunk
 import net.minecraft.world.damagesource.DamageSource
 import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.LivingEntity
@@ -117,6 +119,18 @@ object EventBridge {
      */
     @JvmStatic
     fun onLevelTick(level: Level) = EventDispatch.onLevelTick(level)
+
+    /**
+     * [ServerLevel.startTickingChunk head] The game promoted this chunk to ticking in [level]: the chunk
+     * object, its position and its level are one and the same object a mod gets from `levelById`.
+     */
+    @JvmStatic
+    fun onChunkStartedTicking(level: ServerLevel, chunk: LevelChunk) =
+        EventDispatch.onChunkStartedTicking(level, chunk)
+
+    /** [ServerLevel.unload head] The chunk is being dropped from [level] and is still readable here. */
+    @JvmStatic
+    fun onChunkUnloaded(level: ServerLevel, chunk: LevelChunk) = EventDispatch.onChunkUnloaded(level, chunk)
 
     /** [PlayerList.placeNewPlayer tail] The player is fully in the world at this point. */
     @JvmStatic

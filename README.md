@@ -9,7 +9,8 @@
 - **自研字节码注入引擎**：声明式注入 DSL + Mixin 类合并（`@Shadow` / `@Overwrite` / `@Accessor` …），
   启动期对全部规则做存在性 / 签名 / `require` 自检，杜绝"规则静默失效"。
 - **统一 mod API**：`@Mod` 入口 + 函数式事件注册（tick（整服务端与逐世界）/ 服务端与玩家生命周期（含重生）/
-  方块与实体的破坏、右键、使用 / 伤害（数值可改写）/ 死亡 / 聊天 / GUI / 世界加载 / HUD / 帧率限制 …）。
+  方块与实体的破坏、右键、使用 / 伤害（数值可改写）/ 死亡 / 聊天 / GUI / 世界加载 / 区块开始运行与卸载 / HUD /
+  帧率限制 …）。
   事件载荷直接携带游戏自己的对象（`ServerPlayer`、`BlockPos`、`BlockState`、`DamageSource`、`Screen`…），
   mod 拿到的就是游戏正在用的那一个，没有包装层也没有逃生舱。
 - **26.3 游戏访问 API**（`org.ohmyloader.api26_3`）：`OMLGame.server` / `OMLGame.client` 就是
@@ -20,7 +21,7 @@
   同一条路径）、游戏规则按 id 读写、按维度时钟（26.3 的 `world.clock`：计数 / 速率 / 暂停 / 具名时刻标记）、
   时间线表按 id 读回（`clockDrivenBy` / `timeMarkersOf` / `markerIdsDriving`，含 `/time set` 不展示的标记）、
   维度与维度类型读回（`dimensionTypeIds` / `dimensionTypeId` / `dimensionTypeById`，世界本身就是游戏为
-  数据包条目建起来的 `ServerLevel`）、
+  数据包条目建起来的 `ServerLevel`）、强制加载票据（`forceLoadChunk` 走游戏的 `TicketType.FORCED`，读回同一张票据表）、
   方块存储（`containerAt` 返回游戏自己的 `Container`：槽位读写遵守方块自身的拒绝规则、可列出正在使用它的
   玩家）、玩家所用菜单与关闭、穿戴槽（`itemIn` / `equip` / `unequip` 按槽名与 id 寻址，能否进某槽由游戏的
   `isEquippableInSlot` 判定，被拒不改动原穿戴物）、效果、音效、传送、权限等级、区块加载判定与物品取出都在这一层。

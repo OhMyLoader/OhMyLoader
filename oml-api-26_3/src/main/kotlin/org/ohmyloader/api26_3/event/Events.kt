@@ -58,6 +58,12 @@ object Events {
     /** A level starts one tick — one dispatch per loaded dimension on a server, one for the client's own. */
     val LEVEL_TICK = EventDefinition<LevelTickEvent>("level_tick")
 
+    /** A chunk became a ticking chunk of one server level (observed; the game already promoted it). */
+    val CHUNK_STARTED_TICKING = EventDefinition<ChunkStartedTickingEvent>("chunk_started_ticking")
+
+    /** A chunk is leaving one server level, while it is still readable. */
+    val CHUNK_UNLOADED = EventDefinition<ChunkUnloadedEvent>("chunk_unloaded")
+
     /** A player is about to destroy a block (cancellable). */
     val BLOCK_BREAK = EventDefinition<BlockBreakEvent>("block_break")
 
