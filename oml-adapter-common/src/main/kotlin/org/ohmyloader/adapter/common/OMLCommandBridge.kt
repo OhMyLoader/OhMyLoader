@@ -16,6 +16,7 @@ import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.command.OMLArgumentType
 import org.ohmyloader.api.command.OMLCommandDeclaration
 import org.ohmyloader.api.command.OMLCommandSource
+import org.ohmyloader.api26_3.hasPermissionNode
 import org.ohmyloader.core.command.CommandDeclarations
 
 /**
@@ -57,8 +58,14 @@ object OMLCommandBridge {
                 @Suppress("UNCHECKED_CAST") argumentTypeInstance(type) as com.mojang.brigadier.arguments.ArgumentType<Any>,
             )
         }
-        if (node.permissionLevel > 0) {
-            builder.requires { permissionCheck(node.permissionLevel).check(it.permissions()) }
+        val level = node.permissionLevel
+        val requiredNode = node.permissionNode
+        if (level > 0 && requiredNode != null) {
+            builder.requires { permissionCheck(level).check(it.permissions()) && it.hasPermissionNode(requiredNode) }
+        } else if (level > 0) {
+            builder.requires { permissionCheck(level).check(it.permissions()) }
+        } else if (requiredNode != null) {
+            builder.requires { it.hasPermissionNode(requiredNode) }
         }
         if (node.hasExecute || node.children.isNotEmpty()) {
             builder.executes { context ->

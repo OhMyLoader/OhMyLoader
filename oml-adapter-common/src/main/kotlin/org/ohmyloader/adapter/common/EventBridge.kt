@@ -136,9 +136,23 @@ object EventBridge {
     @JvmStatic
     fun onPlayerJoined(player: ServerPlayer) = EventDispatch.onPlayerJoined(player)
 
+    /**
+     * [ServerPlayer.permissions tail] The set the game is about to use for this player, handed to OML's
+     * override table: identity when the player has no overrides, a wrapper of the game's own set otherwise.
+     */
+    @JvmStatic
+    fun onPlayerPermissions(
+        permissions: net.minecraft.server.permissions.PermissionSet,
+        player: ServerPlayer,
+    ): net.minecraft.server.permissions.PermissionSet =
+        org.ohmyloader.api26_3.OMLPermissionGrants.apply(player, permissions)
+
     /** [PlayerList.remove head] Still readable: the game has not torn the player down yet. */
     @JvmStatic
-    fun onPlayerLeft(player: ServerPlayer) = EventDispatch.onPlayerLeft(player)
+    fun onPlayerLeft(player: ServerPlayer) {
+        org.ohmyloader.api26_3.OMLPermissionGrants.forget(player.uuid)
+        EventDispatch.onPlayerLeft(player)
+    }
 
     /**
      * [PlayerList.respawn tail] Receives the player the game is about to return — the instance built for

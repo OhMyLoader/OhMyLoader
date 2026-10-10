@@ -86,6 +86,25 @@ internal fun InjectionBuilder.serverEventRules() {
         }
     }
 
+    classTarget("net/minecraft/server/level/ServerPlayer") {
+        // The one funnel every consumer of a player's authority reads through — chat gates, command gates,
+        // `/oml`-style checks. TAIL with a return transform: the game builds the level-based set itself, and
+        // OML hands back either that very object (nothing granted: identity, no allocation) or a wrapper over
+        // it. A wrapper is safe because the callers only ever invoke `PermissionSet.hasPermission`; nothing
+        // casts the result back to `LevelBasedPermissionSet`.
+        method("permissions", desc = "()Lnet/minecraft/server/permissions/PermissionSet;") {
+            atTail {
+                transformReturn(
+                    BRIDGE, "onPlayerPermissions",
+                    "(Lnet/minecraft/server/permissions/PermissionSet;" +
+                        "Lnet/minecraft/server/level/ServerPlayer;)Lnet/minecraft/server/permissions/PermissionSet;",
+                    extras = listOf(DslValue.This),
+                )
+            }
+            require(1)
+        }
+    }
+
     classTarget("net/minecraft/server/players/PlayerList") {
         // Tail, not head: only after the whole body has run is the player in the list with its initial
         // packets sent, which is what "joined" has to mean for a mod reading the player from here.
