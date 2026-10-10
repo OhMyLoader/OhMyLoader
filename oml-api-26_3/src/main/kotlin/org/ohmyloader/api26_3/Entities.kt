@@ -14,6 +14,8 @@ import net.minecraft.world.entity.ai.attributes.AttributeInstance
 import net.minecraft.world.entity.ai.attributes.AttributeModifier
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.item.ItemStack
+import net.minecraft.world.level.portal.TeleportTransition
+import net.minecraft.world.phys.Vec3
 
 /** Registry id of this entity's type, e.g. `minecraft:cow`. */
 val Entity.typeId: String get() = BuiltInRegistries.ENTITY_TYPE.getKey(type).toString()
@@ -191,6 +193,24 @@ fun Player.teleport(x: Double, y: Double, z: Double, dimensionId: String? = null
     }
     return target.teleportTo(level, x, y, z, emptySet(), target.yRot, target.xRot, false)
 }
+
+/**
+ * Moves this entity into the dimension [dimensionId] names, through the same transition the portals and
+ * `/teleport` run: rotation and motion come along, and anything riding it comes with it. Null when this
+ * server has no such level loaded. The answer is the instance the game holds **after** the move, so a mod
+ * that keeps a handle takes the answer rather than continuing to ask the one it had.
+ */
+fun Entity.teleportToLevel(dimensionId: String, x: Double, y: Double, z: Double): Entity? {
+    val level = level() as? ServerLevel ?: return null
+    val target = level.server.levelById(dimensionId) ?: return null
+    return teleport(
+        TeleportTransition(target, Vec3(x, y, z), deltaMovement, yRot, xRot, TeleportTransition.DO_NOTHING),
+    )
+}
+
+/** The same transition for a player, which stays the same instance: the game moves the connection with it. */
+fun ServerPlayer.teleportToLevel(dimensionId: String, x: Double, y: Double, z: Double): ServerPlayer? =
+    (this as Entity).teleportToLevel(dimensionId, x, y, z) as? ServerPlayer
 
 /**
  * Plays [soundId] (`minecraft:entity.pig.ambient`) so this player hears it: a packet to that client for a

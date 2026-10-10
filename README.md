@@ -23,7 +23,8 @@
   维度与维度类型读回（`dimensionTypeIds` / `dimensionTypeId` / `dimensionTypeById`，世界本身就是游戏为
   数据包条目建起来的 `ServerLevel`）、强制加载票据（`forceLoadChunk` 走游戏的 `TicketType.FORCED`，读回同一张票据表）、
   权限节点（按 id 寻址游戏自己的 `Permission.Atom`，`grantPermissionNode` 改的是 `ServerPlayer.permissions()`
-  的回答，命令闸门与聊天闸门都读这一处）、
+  的回答，命令闸门与聊天闸门都读这一处） 跨维度传送（`teleportToLevel` 走游戏的 `TeleportTransition`，返回的是移动之后游戏持有的实例）与
+  方块实体本体（`blockEntityAt`，未加载位置一律答 null）、
   方块存储（`containerAt` 返回游戏自己的 `Container`：槽位读写遵守方块自身的拒绝规则、可列出正在使用它的
   玩家）、玩家所用菜单与关闭、穿戴槽（`itemIn` / `equip` / `unequip` 按槽名与 id 寻址，能否进某槽由游戏的
   `isEquippableInSlot` 判定，被拒不改动原穿戴物）、效果、音效、传送、权限等级、区块加载判定与物品取出都在这一层。

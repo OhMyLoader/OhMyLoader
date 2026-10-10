@@ -18,6 +18,7 @@ import net.minecraft.world.clock.WorldClock
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.entity.EntityTypeTest
+import net.minecraft.world.level.block.entity.BlockEntity
 
 /** Registry id of this dimension, e.g. `minecraft:overworld`. */
 val Level.dimensionId: String get() = dimension().identifier().toString()
@@ -84,7 +85,14 @@ fun BlockState.withProperty(name: String, value: String): BlockState? {
  * The storage at [pos] — chest, barrel, furnace, hopper — or null when nothing there holds slots. Reads and
  * writes reach the block entity the game itself holds, so a player using the same block sees every change.
  */
-fun Level.containerAt(pos: BlockPos): Container? = getBlockEntity(pos) as? Container
+fun Level.containerAt(pos: BlockPos): Container? = blockEntityAt(pos) as? Container
+
+/**
+ * The block entity at [pos], or null when nothing lives there. The position has to be loaded:
+ * `Level.getBlockEntity` reaches through `getChunkAt`, which **loads** a chunk the caller never assumed was
+ * there, so this answers null for an unloaded position instead of quietly generating one for it.
+ */
+fun Level.blockEntityAt(pos: BlockPos): BlockEntity? = pos.takeIf(::isLoaded)?.let(::getBlockEntity)
 
 /**
  * Plays [soundId] (`minecraft:block.stone.place`) at the position for everyone who can hear it. False for
