@@ -251,6 +251,9 @@ class AbstractContentRegistryTest {
         override fun putBoolean(key: String, value: Boolean) {}
         override fun getString(key: String): String? = null
         override fun putString(key: String, value: String) {}
+        override fun hasKey(key: String) = false
+        override fun remove(key: String) = false
+        override fun keys(): Set<String> = emptySet()
     }
 
     @Test

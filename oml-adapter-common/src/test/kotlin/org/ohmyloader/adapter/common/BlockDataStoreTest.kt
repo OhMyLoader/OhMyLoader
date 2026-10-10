@@ -50,6 +50,33 @@ class BlockDataStoreTest {
     }
 
     @Test
+    fun `a stored default and an absent key are different answers`() {
+        val store = OMLBlockDataStore()
+        assertFalse(store.hasKey("progress"), "nothing was written yet")
+        store.putInt("progress", 0)
+        assertTrue(store.hasKey("progress"), "a stored zero is a stored value")
+        assertEquals(setOf("progress"), store.keys())
+
+        store.putString("owner", "ruby")
+        assertEquals(listOf("progress", "owner"), store.keys().toList(), "keys keep write order")
+
+        assertTrue(store.remove("progress"))
+        assertFalse(store.remove("progress"), "removing what is already gone says so")
+        assertFalse(store.hasKey("progress"))
+        assertEquals(7, store.getInt("progress", 7), "the absent key falls back to the caller's default")
+        assertEquals(setOf("owner"), store.keys())
+
+        // the removal has to reach the save, or the key returns on the next load
+        assertTrue(store.consumeDirty(), "remove() is a write")
+        val restored = OMLBlockDataStore().also { it.decode(store.encode()) }
+        assertEquals(setOf("owner"), restored.keys())
+
+        val copy = store.keys()
+        store.putInt("extra", 1)
+        assertEquals(setOf("owner"), copy, "the caller's set is a copy, not the live map's view")
+    }
+
+    @Test
     fun `an unknown type tag is a loud corruption, not a silent skip`() {
         // hand-framed payload: count=1, writeUTF("k") = 0x0001 'k', then a tag byte no version wrote
         val corrupted = java.util.Base64.getEncoder()

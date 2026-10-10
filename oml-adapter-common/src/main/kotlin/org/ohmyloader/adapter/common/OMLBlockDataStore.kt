@@ -48,6 +48,18 @@ class OMLBlockDataStore : OMLBlockData {
     override fun getString(key: String): String? = values[key] as? String
     override fun putString(key: String, value: String) = put(key, value)
 
+    override fun hasKey(key: String): Boolean = values.containsKey(key)
+
+    override fun remove(key: String): Boolean {
+        if (!values.containsKey(key)) return false
+        values.remove(key)
+        dirty = true
+        return true
+    }
+
+    /** A copy: the caller must not be able to drop a key the encoder has no tag for. */
+    override fun keys(): Set<String> = LinkedHashSet(values.keys)
+
     fun writeTo(output: ValueOutput) {
         if (values.isEmpty()) return
         output.putString(DATA_KEY, encode())

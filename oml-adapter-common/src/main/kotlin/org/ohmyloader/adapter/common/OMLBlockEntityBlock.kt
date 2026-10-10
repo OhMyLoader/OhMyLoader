@@ -9,6 +9,7 @@ import net.minecraft.world.level.block.entity.BlockEntityType
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.storage.ValueInput
 import net.minecraft.world.level.storage.ValueOutput
+import org.ohmyloader.api.content.OMLBlockDataCarrier
 import org.ohmyloader.api.content.OMLBlockTickEvent
 
 /**
@@ -47,10 +48,10 @@ class OMLBlockEntityBlock(properties: Properties) : OMLBehaviorBlock(properties)
         if (handlers.isEmpty() || type !== entityType || level.isClientSide) return null
         return BlockEntityTicker { tickLevel, pos, _, blockEntity ->
             val machine = blockEntity as OMLMachineBlockEntity
-            val event = OMLBlockTickEvent(pos.x, pos.y, pos.z, machine.data) { tickLevel }
+            val event = OMLBlockTickEvent(pos.x, pos.y, pos.z, machine.blockData) { tickLevel }
             handlers.forEach { it(event) }
             // the data store may have been written this tick; a clean store makes this a no-op cost
-            if (machine.data.consumeDirty()) machine.setChanged()
+            if (machine.blockData.consumeDirty()) machine.setChanged()
         }
     }
 }
@@ -63,15 +64,16 @@ class OMLMachineBlockEntity(
     type: BlockEntityType<*>,
     pos: BlockPos,
     state: BlockState,
-) : BlockEntity(type, pos, state) {
+) : BlockEntity(type, pos, state), OMLBlockDataCarrier {
 
-    val data = OMLBlockDataStore()
+    /** Typed as the store, not the interface: the ticker needs `consumeDirty`, which is not mod-facing. */
+    override val blockData: OMLBlockDataStore = OMLBlockDataStore()
 
     override fun saveAdditional(output: ValueOutput) {
-        data.writeTo(output)
+        blockData.writeTo(output)
     }
 
     override fun loadAdditional(input: ValueInput) {
-        data.readFrom(input)
+        blockData.readFrom(input)
     }
 }

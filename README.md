@@ -24,7 +24,9 @@
   数据包条目建起来的 `ServerLevel`）、强制加载票据（`forceLoadChunk` 走游戏的 `TicketType.FORCED`，读回同一张票据表）、
   权限节点（按 id 寻址游戏自己的 `Permission.Atom`，`grantPermissionNode` 改的是 `ServerPlayer.permissions()`
   的回答，命令闸门与聊天闸门都读这一处）、跨维度传送（`teleportToLevel` 走游戏的 `TeleportTransition`，返回的是
-  移动之后游戏持有的实例）、方块实体本体（`blockEntityAt`，未加载位置一律答 null）、出生点与重生锚点（
+  移动之后游戏持有的实例）、方块实体本体（`blockEntityAt`，未加载位置一律答 null）、声明式方块实体的持久数据
+  （`blockDataAt(pos)` / `server.blockDataAt(dimensionId, pos)` 取到的就是该方块 ticker 写的同一份存储；游戏按
+  每维度每位置各持有一个块实体，所以同坐标在两个维度里是两份互不相干的存储）、出生点与重生锚点（
   `setRespawnAnchor` / `setWorldSpawn` 交回游戏自己的 `RespawnData` 并回读校验；世界出生点整个服务器只有一条
   记录，换维度是重新指向这一条）、
   方块存储（`containerAt` 返回游戏自己的 `Container`：槽位读写遵守方块自身的拒绝规则、可列出正在使用它的

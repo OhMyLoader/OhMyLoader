@@ -2,8 +2,8 @@ package org.ohmyloader.api.content
 
 /**
  * A persistent key-value store owned by one declared block entity, surviving save/reload. Values
- * are primitives and strings only — everything else belongs in mod code (or the `platform` escape
- * hatch), not in chunk data. Writes mark the block entity dirty for the next autosave.
+ * are primitives and strings only — anything richer belongs in the block entity's own code, not in
+ * chunk data. Writes mark the block entity dirty for the next autosave.
  */
 interface OMLBlockData {
     fun getInt(key: String, default: Int = 0): Int
@@ -24,6 +24,24 @@ interface OMLBlockData {
     /** `null` when absent (a string's sensible default is rarely the empty string). */
     fun getString(key: String): String?
     fun putString(key: String, value: String)
+
+    /** Whether [key] holds a value; a stored default and an absent key are not the same thing. */
+    fun hasKey(key: String): Boolean
+
+    /** Drops [key], answering false when nothing was stored under it. */
+    fun remove(key: String): Boolean
+
+    /** Every key this store holds, in the order the values were first written. */
+    fun keys(): Set<String>
+}
+
+/**
+ * What a declared block entity exposes: its persistent [blockData]. The game owns the block entity, so
+ * this is how code outside the block's own ticker reaches the very store the ticker writes — the two views
+ * are one object, not a copy of it.
+ */
+interface OMLBlockDataCarrier {
+    val blockData: OMLBlockData
 }
 
 /**

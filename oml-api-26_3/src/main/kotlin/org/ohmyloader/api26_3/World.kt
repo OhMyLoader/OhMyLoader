@@ -9,6 +9,7 @@ import net.minecraft.core.particles.ItemParticleOption
 import net.minecraft.core.particles.ParticleOptions
 import net.minecraft.core.particles.ParticleTypes
 import net.minecraft.core.registries.BuiltInRegistries
+import net.minecraft.server.MinecraftServer
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.Container
 import net.minecraft.world.entity.Entity
@@ -19,6 +20,8 @@ import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.entity.EntityTypeTest
 import net.minecraft.world.level.block.entity.BlockEntity
+import org.ohmyloader.api.content.OMLBlockData
+import org.ohmyloader.api.content.OMLBlockDataCarrier
 
 /** Registry id of this dimension, e.g. `minecraft:overworld`. */
 val Level.dimensionId: String get() = dimension().identifier().toString()
@@ -93,6 +96,19 @@ fun Level.containerAt(pos: BlockPos): Container? = blockEntityAt(pos) as? Contai
  * there, so this answers null for an unloaded position instead of quietly generating one for it.
  */
 fun Level.blockEntityAt(pos: BlockPos): BlockEntity? = pos.takeIf(::isLoaded)?.let(::getBlockEntity)
+
+/**
+ * The persistent data the declared block entity at [pos] owns, or null when nothing loaded lives there or that
+ * block has no declared block entity. This is the store its own ticker writes — one object, reached from
+ * outside the tick handler — and it is why the address carries a level: the game holds a block entity per
+ * position **per dimension**, so two dimensions with the same coordinates keep two answers.
+ */
+fun Level.blockDataAt(pos: BlockPos): OMLBlockData? =
+    (blockEntityAt(pos) as? OMLBlockDataCarrier)?.blockData
+
+/** The same store addressed by the dimension [dimensionId] names; null when this server has no such level. */
+fun MinecraftServer.blockDataAt(dimensionId: String, pos: BlockPos): OMLBlockData? =
+    levelById(dimensionId)?.blockDataAt(pos)
 
 /**
  * Plays [soundId] (`minecraft:block.stone.place`) at the position for everyone who can hear it. False for
