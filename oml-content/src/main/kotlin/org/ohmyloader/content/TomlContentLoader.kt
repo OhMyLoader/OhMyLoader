@@ -3,6 +3,7 @@ package org.ohmyloader.content
 import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.content.ContentRegistry
 import org.ohmyloader.api.content.Furnace
+import org.ohmyloader.api.content.OMLTagDeclaration
 import java.io.File
 
 /**
@@ -15,8 +16,10 @@ import java.io.File
  * Sections: `[block.<id>]` (properties + optional `ore` table), `[item.<id>]`, `[crafting.<id>]`,
  * `[smelting.<result>]`, `[loot.<block>]`, `[damage_type.<id>]`, `[clock.<id>]` (no fields),
  * `[timeline.<id>]` (`clock` + optional `period_ticks` + `markers`), `[dimension_type.<id>]`,
- * `[dimension.<id>]`. Behavior hooks and block entities are mod code, so they have no TOML form. Loading
- * runs in the loader's content-declaration window, so the data track shares the code track's freeze-point
+ * `[dimension.<id>]`, `[tag.<label>]` (`registry` + `tag` + `values` + optional `replace`) — the tag section is
+ * the one whose ids are fields, because a TOML bare key cannot spell the `:` of `minecraft:is_fire` or the `/`
+ * of `worldgen/biome`. Behavior hooks and block entities are mod code, so they have no TOML form. Loading runs
+ * in the loader's content-declaration window, so the data track shares the code track's freeze-point
  * materialization.
  */
 object TomlContentLoader {
@@ -46,6 +49,7 @@ object TomlContentLoader {
         val timelines: Int = 0,
         val dimensionTypes: Int = 0,
         val dimensions: Int = 0,
+        val tags: Int = 0,
     )
 
     /**
@@ -87,6 +91,7 @@ object TomlContentLoader {
         var timelines = 0
         var dimensionTypes = 0
         var dimensions = 0
+        var tags = 0
         for ([path, fields] in doc) {
             when {
                 path.isEmpty() -> if (fields.isNotEmpty()) {
@@ -149,18 +154,23 @@ object TomlContentLoader {
                     dimensions++
                 }
 
+                path.startsWith("tag.") && path.count { it == '.' } == 1 -> {
+                    declareTagSection(path.removePrefix("tag."), fields, source, registry)
+                    tags++
+                }
+
                 else -> OmlLog.warn(
                     TAG,
                     "$source: ignoring section [$path] — " +
                         "expected [block.<id>] / [item.<id>] / [crafting.<id>] / [smelting.<id>] / " +
                         "[loot.<block>] / [damage_type.<id>] / [clock.<id>] / [timeline.<id>] / " +
-                        "[dimension_type.<id>] / [dimension.<id>]",
+                        "[dimension_type.<id>] / [dimension.<id>] / [tag.<label>]",
                 )
             }
         }
         return PackSummary(
             namespace, blocks, items, recipes, smelting, loot, damageTypes, clocks, timelines,
-            dimensionTypes, dimensions,
+            dimensionTypes, dimensions, tags,
         )
     }
 
@@ -324,6 +334,56 @@ object TomlContentLoader {
         }
     }
 
+    private val TAG_KEYS = setOf("registry", "tag", "values", "replace")
+
+    /**
+     * A `[tag.<label>]` section: `registry` names the registry whose tag folder receives the file
+     * (`minecraft:damage_type`, `minecraft:worldgen/biome`) and `tag` the tag it writes — which may live in
+     * another namespace, since adding to `#minecraft:is_fire` is the ordinary case. `values` holds ids, each
+     * either a bare string or `{ id = .., required = .. }` (the two forms the game's own tag codec reads), a
+     * leading `#` making an entry a reference to another tag.
+     */
+    private fun declareTagSection(
+        label: String,
+        fields: Map<String, Any>,
+        source: String,
+        registry: ContentRegistry,
+    ) {
+        requireId(label, source, "tag")
+        val registryId = fields["registry"] as? String
+            ?: fail(source, "tag '$label' is missing its 'registry' string")
+        val tagId = fields["tag"] as? String
+            ?: fail(source, "tag '$label' is missing its 'tag' string")
+        val replace = boolValue(fields, "replace", source, "tag '$label'") ?: false
+        val values = listValue(fields, "values", source, "tag '$label'").orEmpty()
+        reportUnknown(fields, TAG_KEYS, source, "tag '$label'")
+        registry.declareTag(registryId, tagId) {
+            this.replace = replace
+            for (value in values) {
+                when (value) {
+                    is String -> tagMember(value)
+
+                    is Map<*, *> -> tagMember(
+                        value["id"] as? String
+                            ?: fail(source, "tag '$label' entry is missing its 'id' string"),
+                        value["required"] as? Boolean ?: true,
+                    )
+
+                    else -> fail(
+                        source,
+                        "tag '$label' entries must be id strings or tables like " +
+                            "{ id = \"minecraft:cactus\", required = false }",
+                    )
+                }
+            }
+        }
+    }
+
+    /** One `values` entry in either of the game's forms: a leading `#` spells a reference to another tag. */
+    private fun OMLTagDeclaration.tagMember(id: String, required: Boolean = true) {
+        if (id.startsWith("#")) tag(id.removePrefix("#"), required) else element(id, required)
+    }
+
     private fun declareItem(id: String, fields: Map<String, Any>, source: String, registry: ContentRegistry) {
         requireId(id, source, "item")
         registry.declareItem(id) {
@@ -404,7 +464,8 @@ object TomlContentLoader {
 
     /**
      * Reload pass: re-dispatches only the datapack declarations (recipes, loot tables, damage types, clocks,
-     * timelines) from [toml] into [registry]. Blocks and items are silently skipped — their registries are
+     * timelines, dimensions, tags) from [toml] into [registry]. Blocks and items are silently skipped — their
+     * registries are
      * frozen, they cannot be re-materialized, and reloading must not grow the declaration queues. Everything
      * else behaves like [load]: a malformed section throws with the reason.
      */
@@ -444,6 +505,9 @@ object TomlContentLoader {
 
                 path.startsWith("dimension.") && path.count { it == '.' } == 1 ->
                     declareDimensionSection(path.removePrefix("dimension."), fields, source, registry)
+
+                path.startsWith("tag.") && path.count { it == '.' } == 1 ->
+                    declareTagSection(path.removePrefix("tag."), fields, source, registry)
             }
         }
     }

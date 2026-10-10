@@ -32,11 +32,14 @@
   `isEquippableInSlot` 判定，被拒不改动原穿戴物）、效果、音效、传送、权限等级、区块加载判定与物品取出都在这一层。
   `OMLScheduler`（版本无关）把非游戏线程的工作排回所属侧的 tick 队列。
 - **声明式内容注册**：`ContentRegistry` 声明方块 / 物品 / 配方 / 掉落 / 伤害类型 / 时钟与时刻标记 /
-  维度类型与维度 / 行为钩子 / BlockEntity / 矿石世界生成；方块与物品在注册表冻结点材料化为原生内容，配方、
-  掉落、伤害类型、时钟 / 时间线与维度则写成数据包 JSON 经 OML 注入的资源包走 vanilla 自己的重载路径。
+  维度类型与维度 / 标签 / 行为钩子 / BlockEntity / 矿石世界生成；方块与物品在注册表冻结点材料化为原生内容，配方、
+  掉落、伤害类型、时钟 / 时间线、维度与标签则写成数据包 JSON 经 OML 注入的资源包走 vanilla 自己的重载路径。
+  标签文件按**标签自己的命名空间**落盘（`data/<标签 ns>/tags/<注册表路径>/<标签路径>.json`），所以加入
+  `#minecraft:is_fire` 与开一个自己的组是同一条声明路径，而多个 mod 提同一个标签时由 OML 合并成一个文件
+  （游戏每个标签只读一份文件），`replace` 相互矛盾的那一条会被点名拒绝而不是按顺序猜。
 - **注册表与标签读取**：直接读 `BuiltInRegistries` 与数据包表，`org.ohmyloader.api26_3` 的
-  `byId` / `ids` / `contains` / `membersOf` / `tagsOf` 扩展按 id 寻址（未注册的 id 返回 null，不返回默认值），
-  mod 自己注册的内容与原版条目同等可查。
+  `byId` / `ids` / `contains` / `membersOf` / `tagsOf` / `tagIds` 扩展按 id 寻址（未注册的 id 返回 null，不返回默认值），
+  mod 自己注册的内容与原版条目同等可查；`tagIds` 分得清"空标签"与"游戏没读到的标签"。
 - **自定义网络载荷**：`OMLNetworkProvider` 声明通道 + `OMLPacketBuffer` 自有编解码，双端按通道名路由
   （复用 vanilla 固定的两个 payload 包 id），单人集成服务端与专用服务端共用同一份声明。
 - **mod 资产注入**：每个 mod jar 的 `assets/` 经注入的资源包对游戏完整可见（任意命名空间、任意目录）。

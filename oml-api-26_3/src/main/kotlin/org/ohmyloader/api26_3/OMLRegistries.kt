@@ -153,3 +153,11 @@ fun <T : Any> Registry<T>.membersOf(registryKey: ResourceKey<Registry<T>>, tagId
 /** Every tag id [id] carries; empty for an unregistered value, which is also the game's answer. */
 fun <T : Any> Registry<T>.tagsOf(id: String): List<String> =
     holderById(id)?.tags()?.map { it.location().toString() }?.toList() ?: emptyList()
+
+/**
+ * Every tag this table holds. Read it to tell an empty tag from one the game never loaded: a tag file the
+ * loader does not look at — a registry it has no table for, a folder name it cannot match — leaves no tag at
+ * all, while an adopted one with no members is a real, empty tag.
+ */
+fun <T : Any> Registry<T>.tagIds(registryKey: ResourceKey<Registry<T>>): List<String> =
+    getTags().map { it.key().location().toString() }.toList()

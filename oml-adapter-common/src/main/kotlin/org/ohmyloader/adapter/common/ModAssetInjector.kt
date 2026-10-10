@@ -420,6 +420,10 @@ object ModAssetInjector {
                 contentRegistry.dimensionJsonFor(namespace, id)
             }
 
+            // A tag file is matched by its whole path: `tags/worldgen/biome/x.json` splits two ways, and only
+            // the declaration says which half names the registry
+            path.startsWith("tags/") && path.endsWith(".json") -> contentRegistry.tagJsonAt(namespace, path)
+
             path.startsWith("worldgen/feature/") && path.endsWith(".json") -> {
                 val id = path.removePrefix("worldgen/feature/").removeSuffix(".json")
                 contentRegistry.oreFeatureJsonFor(namespace, id)
@@ -513,6 +517,15 @@ object ModAssetInjector {
         }
         if (dir == "dimension") {
             MinecraftContentRegistry.dimensionIdsFor(namespace).forEach { emit("dimension/$it.json") }
+        }
+        // Tag files live one directory per registry, and the registry's own path may contain a slash
+        // (`tags/worldgen/biome/…`), so both the bare root and a registry folder can be what is asked for.
+        if (dir == "tags") {
+            MinecraftContentRegistry.tagPathsFor(namespace).forEach { emit("tags/$it") }
+        }
+        if (dir.startsWith("tags/")) {
+            val registryPath = dir.removePrefix("tags/")
+            MinecraftContentRegistry.tagIdsFor(namespace, registryPath).forEach { emit("$dir/$it.json") }
         }
         if (namespace == "minecraft" && dir == "worldgen/biome") {
             MinecraftContentRegistry.oreTargetedBiomes().forEach { emit("worldgen/biome/$it.json") }

@@ -524,4 +524,133 @@ class AbstractContentRegistryTest {
         val json = registry.dimensionJsonFor("mymod", "home") ?: fail("the served stem must exist")
         assertTrue("\"height\":1" in json, "the first declaration wins: $json")
     }
+
+    /**
+     * The tag file's identity is the **tag's** namespace plus the registry's datapack folder, which is what
+     * lets a mod's pack write `data/minecraft/tags/damage_type/is_fire.json` — the file the game reads to put
+     * this pack's damage type into the group that fire immunity obeys.
+     */
+    @Test
+    fun `a tag is served as the file the game's tag loader reads`() {
+        val registry = RecordingRegistry()
+        val mine = registry.forNamespace("mymod")
+        val other = registry.forNamespace("other")
+
+        mine.declareTag("minecraft:damage_type", "minecraft:is_fire") {
+            element("melt")
+            tag("minecraft:is_projectile")
+            element("minecraft:bad_name", required = false)
+        }
+        // the same tag, a different pack: one file per tag, so both packs' members have to land in it
+        other.declareTag("minecraft:damage_type", "minecraft:is_fire") { element("another_type") }
+        mine.declareTag("minecraft:item", "probe_group") { element("minecraft:diamond") }
+        mine.declareTag("minecraft:worldgen/biome", "melts_in") { element("minecraft:plains") }
+        mine.declareTag("minecraft:entity_type", "replaced_here") {
+            replace = true
+            element("minecraft:cow")
+        }
+
+        assertEquals(
+            listOf("is_fire"),
+            registry.tagIdsFor("minecraft", "damage_type"),
+            "adding to a vanilla tag writes into the vanilla namespace",
+        )
+        val fire = registry.tagJsonAt("minecraft", "tags/damage_type/is_fire.json")
+            ?: fail("the merged tag file must be served")
+        assertTrue(
+            "\"values\":[\"mymod:melt\",\"#minecraft:is_projectile\"," +
+                "{\"id\":\"minecraft:bad_name\",\"required\":false},\"other:another_type\"]" in fire,
+            "members merge across packs in declaration order, deduplicated by the game's own shape: $fire",
+        )
+        assertTrue("replace" !in fire, fire)
+        assertEquals(listOf("probe_group"), registry.tagIdsFor("mymod", "item"))
+        assertEquals(
+            "{\"values\":[\"minecraft:diamond\"]}",
+            registry.tagJsonAt("mymod", "tags/item/probe_group.json"),
+        )
+        assertEquals(
+            "{\"values\":[\"minecraft:plains\"]}",
+            registry.tagJsonAt("mymod", "tags/worldgen/biome/melts_in.json"),
+            "a registry path with a slash is one folder, not two",
+        )
+        assertTrue(
+            "replace\":true" in (registry.tagJsonAt("mymod", "tags/entity_type/replaced_here.json") ?: fail("x")),
+        )
+        assertEquals(
+            listOf(
+                "item/probe_group.json",
+                "worldgen/biome/melts_in.json",
+                "entity_type/replaced_here.json",
+            ),
+            registry.tagPathsFor("mymod"),
+            "the bare `tags` root lists every file this pack filled under its own namespace",
+        )
+        assertEquals(null, registry.tagJsonAt("mymod", "tags/item/no_group.json"))
+    }
+
+    @Test
+    fun `a tag the game cannot read is refused at declaration`() {
+        val registry = RecordingRegistry()
+        val mine = registry.forNamespace("mymod")
+        val other = registry.forNamespace("other")
+
+        mine.declareTag("minecraft:damage_type", "good") { element("melt") }
+        mine.declareTag("Bad Name", "wrong_registry") { element("melt") }
+        mine.declareTag("minecraft:damage_type", "Bad Tag") { element("melt") }
+        mine.declareTag("minecraft:damage_type", "empty//path") { element("melt") }
+        mine.declareTag("minecraft:damage_type", "no_members") { }
+        mine.declareTag("minecraft:damage_type", "bad_member") { element("Bad Member") }
+        mine.declareTag("minecraft:damage_type", "clears") { replace = true }
+        // one file carries one answer: "join what is there" cannot share it with "this is all of it"
+        other.declareTag("minecraft:damage_type", "mymod:good") { replace = true }
+        other.declareTag("minecraft:damage_type", "mymod:good") { element("second") }
+
+        assertEquals(
+            listOf("damage_type/good.json", "damage_type/clears.json"),
+            registry.tagPathsFor("mymod"),
+            "only the well-formed declarations survive",
+        )
+        listOf("wrong_registry", "Bad Tag", "empty//path", "no_members", "bad_member").forEach { refused ->
+            assertEquals(
+                null,
+                registry.tagJsonAt("mymod", "tags/damage_type/$refused.json"),
+                "'$refused' must not reach the pack",
+            )
+        }
+        assertEquals(
+            "{\"values\":[\"mymod:melt\",\"other:second\"]}",
+            registry.tagJsonAt("mymod", "tags/damage_type/good.json"),
+            "the contradictory replacement was refused and the compatible one merged",
+        )
+        assertEquals(
+            "{\"values\":[],\"replace\":true}",
+            registry.tagJsonAt("mymod", "tags/damage_type/clears.json"),
+            "an empty replacing tag is the game's own way to empty a tag",
+        )
+    }
+
+    @Test
+    fun `a reload drops only the pack it re-collects from a merged tag`() {
+        val registry = RecordingRegistry()
+        registry.forNamespace("mymod")
+            .declareTag("minecraft:damage_type", "minecraft:is_fire") { element("code_type") }
+        registry.forNamespace("pack", reloadable = true)
+            .declareTag("minecraft:damage_type", "minecraft:is_fire") { element("toml_type") }
+        val merged = registry.tagJsonAt("minecraft", "tags/damage_type/is_fire.json") ?: fail("merged")
+        assertTrue("pack:toml_type" in merged && "mymod:code_type" in merged, merged)
+
+        registry.clearDataDeclarations()
+
+        val json = registry.tagJsonAt("minecraft", "tags/damage_type/is_fire.json")
+            ?: fail("the code track's section keeps the file alive")
+        assertEquals("{\"values\":[\"mymod:code_type\"]}", json)
+        assertEquals(listOf("is_fire"), registry.tagIdsFor("minecraft", "damage_type"))
+
+        registry.clearDataDeclarations()
+        assertEquals(
+            "{\"values\":[\"mymod:code_type\"]}",
+            registry.tagJsonAt("minecraft", "tags/damage_type/is_fire.json"),
+            "clearing twice costs the code track nothing",
+        )
+    }
 }

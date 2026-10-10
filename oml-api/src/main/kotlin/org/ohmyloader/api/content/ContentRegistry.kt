@@ -134,7 +134,49 @@ interface ContentRegistry {
      * [OMLDimensionDeclaration.type] is required.
      */
     fun declareDimension(id: String, configure: OMLDimensionDeclaration.() -> Unit)
+
+    /**
+     * Adds this pack's members to a tag in the registry [registryId] (`minecraft:damage_type`,
+     * `minecraft:item`, `minecraft:worldgen/biome`), written where the game reads tags:
+     * `data/<tag namespace>/tags/<registry path>/<tag path>.json`. This is how content joins a group the game
+     * already gates on — `#minecraft:is_fire` is what makes an entity's fire immunity bite — and how a mod
+     * opens a group of its own.
+     *
+     * [tagId] may name a tag in **another** namespace: adding to a vanilla tag is the normal case, and the file
+     * then lands in that namespace's folder. Because the game reads one file per tag, every pack that declares
+     * the same tag contributes its members to it, in declaration order, and a second declaration that asks for
+     * the opposite [OMLTagDeclaration.replace] is refused rather than guessed at.
+     */
+    fun declareTag(registryId: String, tagId: String, configure: OMLTagDeclaration.() -> Unit)
 }
+
+/**
+ * Members of a tag for [ContentRegistry.declareTag]. [element] is an id in the registry and [tag] another tag
+ * whose contents join this one (`minecraft:is_explosion` means `#minecraft:is_explosion`) — the distinction the
+ * game's own file format makes. `required = false` is its own answer too: an absent optional member leaves the
+ * tag loading, an absent required one drops it.
+ */
+class OMLTagDeclaration {
+
+    /** Make these members the tag's whole content instead of adding to what the game holds. */
+    var replace: Boolean = false
+
+    // Public but not mod-facing API: the content layer reads this to write the datapack file.
+    val entries = mutableListOf<OMLTagEntry>()
+
+    /** Registry member [id]: namespaced, or bare to resolve in the declaring namespace. */
+    fun element(id: String, required: Boolean = true) {
+        entries += OMLTagEntry(id, required, tag = false)
+    }
+
+    /** Another tag, named as its registry id — the `#` is the file's spelling, added here. */
+    fun tag(id: String, required: Boolean = true) {
+        entries += OMLTagEntry(id, required, tag = true)
+    }
+}
+
+/** One tag member: [id] is an element or, with [tag], a reference to another tag. */
+data class OMLTagEntry(val id: String, val required: Boolean, val tag: Boolean)
 
 /**
  * Dimension-type fields for [ContentRegistry.declareDimensionType]. Names mirror the datapack JSON so a

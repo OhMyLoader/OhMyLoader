@@ -69,6 +69,8 @@ class OmlArchivePackTest {
         override fun declareDimensionType(id: String, configure: OMLDimensionTypeDeclaration.() -> Unit) {}
 
         override fun declareDimension(id: String, configure: OMLDimensionDeclaration.() -> Unit) {}
+
+        override fun declareTag(registryId: String, tagId: String, configure: OMLTagDeclaration.() -> Unit) {}
     }
 
     private val factory = object : ContentRegistryFactory {

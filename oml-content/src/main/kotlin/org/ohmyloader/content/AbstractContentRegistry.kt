@@ -59,6 +59,7 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
     protected val collectedTimelines: MutableList<TimelineDecl> = mutableListOf()
     protected val collectedDimensionTypes: MutableList<DimensionTypeDecl> = mutableListOf()
     protected val collectedDimensions: MutableList<DimensionDecl> = mutableListOf()
+    protected val collectedTags: MutableList<TagDecl> = mutableListOf()
 
     /**
      * A collected damage-type declaration: [key] is the datapack file's local id, so the registry id the
@@ -105,6 +106,34 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
         val typeId: String,
         val json: String,
         val reloadable: Boolean,
+    )
+
+    /**
+     * One pack's contribution to a tag file. The game reads **one** file per tag, so every mod that adds to
+     * `minecraft:is_fire` lands in the same file OML injects, and a reload can drop only the TOML pack's part
+     * of it.
+     */
+    data class TagSection(
+        /** The namespace of the mod that declared these members — named in a refusal, which is otherwise
+         * indistinguishable from a broken file. */
+        val owner: String,
+        val entries: List<OMLTagEntry>,
+        val replace: Boolean,
+        val reloadable: Boolean,
+    )
+
+    /**
+     * A collected tag declaration — one file. [namespace] is the **tag's** namespace (adding to a vanilla tag
+     * writes into `minecraft`, not into the declaring mod's folder), [registryPath] is the registry's datapack
+     * folder (`damage_type`, `worldgen/biome`) and [key] the tag's path inside it, so the game reads this at
+     * `data/<namespace>/tags/<registryPath>/<key>.json`.
+     */
+    data class TagDecl(
+        val namespace: String,
+        val registryPath: String,
+        val key: String,
+        val sections: List<TagSection>,
+        val json: String,
     )
 
     /**
@@ -185,6 +214,29 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
         collectedDimensions.filter { it.namespace == namespace }.map { it.key }
 
     /**
+     * The tag file collected for pack path [path] (`tags/<registry path>/<tag path>.json`). Matched against the
+     * collected declarations rather than parsed, because `tags/worldgen/biome/x.json` splits two ways and only
+     * the declaration says which half is the registry.
+     */
+    @Synchronized
+    fun tagJsonAt(namespace: String, path: String): String? =
+        collectedTags.firstOrNull {
+            it.namespace == namespace && "tags/${it.registryPath}/${it.key}.json" == path
+        }?.json
+
+    /** The tag paths collected for registry folder [registryPath] under [namespace] — the directory listing. */
+    @Synchronized
+    fun tagIdsFor(namespace: String, registryPath: String): List<String> =
+        collectedTags.filter { it.namespace == namespace && it.registryPath == registryPath }.map { it.key }
+
+    /** Every tag file this pack filled, for a listing of the bare `tags` root. */
+    @Synchronized
+    fun tagPathsFor(namespace: String): List<String> =
+        collectedTags.filter { it.namespace == namespace }
+            .map { "${it.registryPath}/${it.key}.json" }
+            .distinct()
+
+    /**
      * Drops every collected recipe / loot declaration so a reload pass can re-collect them from
      * the pack files as they exist on disk **now**. Blocks and items are NOT touched: their
      * registries are frozen, so they cannot be re-materialized and their declarations stay
@@ -201,6 +253,18 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
         collectedTimelines.removeAll { it.reloadable }
         collectedDimensionTypes.removeAll { it.reloadable }
         collectedDimensions.removeAll { it.reloadable }
+        // A tag file holds every pack's members, so re-collecting means dropping the TOML pack's section and
+        // rebuilding the file from what is left — dropping the whole tag would take another mod's members with it
+        val keptTags = collectedTags.mapNotNull { decl ->
+            val sections = decl.sections.filterNot { it.reloadable }
+            when {
+                sections.isEmpty() -> null
+                sections == decl.sections -> decl
+                else -> decl.copy(sections = sections, json = tagJson(sections))
+            }
+        }
+        collectedTags.clear()
+        collectedTags += keptTags
     }
 
     /** A collected ore-generation declaration, flattened to its two datapack files' JSON. */
@@ -532,7 +596,95 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                     namespace, id, type, dimensionJson(namespace, type, spec), reloadable,
                 )
             }
+
+            override fun declareTag(registryId: String, tagId: String, configure: OMLTagDeclaration.() -> Unit) {
+                val spec = OMLTagDeclaration().apply(configure)
+                val registry = qualify(namespace, registryId)
+                val tag = qualify(namespace, tagId)
+                val badEntry = spec.entries.firstOrNull { !isDatapackPath(qualify(namespace, it.id)) }
+                val refusal = when {
+                    !isDatapackPath(registry) -> "registry '$registryId' is not a datapack registry name"
+                    !isDatapackPath(tag) -> "tag '$tagId' is not a datapack tag name"
+                    badEntry != null -> "tag '$tagId' names member '${badEntry.id}', which is not a datapack id"
+                    spec.entries.isEmpty() && !spec.replace ->
+                        "tag '$tagId' adds no member, so there is nothing for the file to say"
+                    else -> null
+                }
+                if (refusal != null) {
+                    OmlLog.warn("Content", "$refusal; the tag is not declared")
+                    return
+                }
+                val section = TagSection(
+                    namespace,
+                    spec.entries.map { it.copy(id = qualify(namespace, it.id)) },
+                    spec.replace,
+                    reloadable,
+                )
+                // Which folder the file lands in is the tag's own namespace, not the declaring mod's: that is
+                // what makes "add my damage type to #minecraft:is_fire" work at all.
+                val at = collectedTags.indexOfFirst {
+                    it.namespace == tag.substringBefore(':') &&
+                        it.registryPath == registry.substringAfter(':') &&
+                        it.key == tag.substringAfter(':')
+                }
+                if (at < 0) {
+                    collectedTags += TagDecl(
+                        tag.substringBefore(':'),
+                        registry.substringAfter(':'),
+                        tag.substringAfter(':'),
+                        listOf(section),
+                        tagJson(listOf(section)),
+                    )
+                    return
+                }
+                val held = collectedTags[at]
+                val against = held.sections.firstOrNull { it.replace != spec.replace }
+                if (against != null) {
+                    // One file can carry one answer, and "these are the whole tag" contradicts "join what is
+                    // there", so neither pack gets a guess.
+                    OmlLog.warn(
+                        "Content",
+                        "tag '$tag' of '$registry': '${against.owner}' adds to it while '$namespace' replaces " +
+                            "it; '$namespace' is not declared",
+                    )
+                    return
+                }
+                val sections = held.sections + section
+                collectedTags[at] = held.copy(sections = sections, json = tagJson(sections))
+            }
         }
+
+    /**
+     * Whether [id] is an id the game will find. The path splits on `/` and every segment has to be a lowercase
+     * datapack name that is not `.` or `..` — the game's own `isValidResourcePath` — which is what lets
+     * `worldgen/biome` name a registry while `worldgen//biome` names nothing. The namespace is checked too:
+     * a misspelled one is an id the game parses and then never reads a tag for.
+     */
+    private fun isDatapackPath(id: String): Boolean {
+        val namespace = id.substringBefore(':')
+        val path = if (id.contains(':')) id.substringAfter(':') else id
+        return (!id.contains(':') || DATAPACK_NAME.matches(namespace)) &&
+            path.split('/').all { DATAPACK_NAME.matches(it) && it != "." && it != ".." }
+    }
+
+    /**
+     * The tag file in the game's own shape: a bare string per required member, the object form only where a
+     * member is optional, and `#` spelling a nested tag — the three forms `TagEntry.CODEC` parses. Members
+     * repeat across packs by design, so the merged list is deduplicated in declaration order.
+     */
+    private fun tagJson(sections: List<TagSection>): String {
+        val entries = sections.flatMap { it.entries }.distinct()
+        return buildString {
+            append("{\"values\":[")
+            entries.joinTo(this, separator = ",") { entry ->
+                val spelled = if (entry.tag) "#${entry.id}" else entry.id
+                if (entry.required) "\"$spelled\"" else "{\"id\":\"$spelled\",\"required\":false}"
+            }
+            append("]")
+            if (sections.any { it.replace }) append(",\"replace\":true")
+            append("}")
+        }
+    }
 
     private fun qualify(namespace: String, id: String): String =
         if (id.contains(':')) id else "$namespace:$id"

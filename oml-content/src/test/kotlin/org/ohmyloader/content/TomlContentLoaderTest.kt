@@ -101,6 +101,14 @@ class TomlContentLoaderTest {
             dimensions += id to OMLDimensionDeclaration().apply(configure)
         }
 
+        data class TagDecl(val registryId: String, val tagId: String, val spec: OMLTagDeclaration)
+
+        val tags = mutableListOf<TagDecl>()
+
+        override fun declareTag(registryId: String, tagId: String, configure: OMLTagDeclaration.() -> Unit) {
+            tags += TagDecl(registryId, tagId, OMLTagDeclaration().apply(configure))
+        }
+
         val shaped = mutableListOf<Triple<String, List<String>, Map<Char, String>>>()
         val shapeless = mutableListOf<Pair<String, List<String>>>()
 
@@ -562,11 +570,12 @@ class TomlContentLoaderTest {
     @Test
     fun `a reload re-collects every datapack declaration the load pass collected`() {
         val registry = RecordingRegistry()
-        TomlContentLoader.load("tides", "tides.toml", sampleDamageType + "\n" + sampleClockTimeline + "\n" + sampleDimension, registry)
+        TomlContentLoader.load("tides", "tides.toml", sampleDamageType + "\n" + sampleClockTimeline + "\n" + sampleDimension + "\n" + sampleTag, registry)
         val reloaded = RecordingRegistry()
         TomlContentLoader.loadDataDeclarations(
             "tides", "tides.toml",
-            sampleDamageType + "\n" + sampleClockTimeline + "\n" + sampleDimension, reloaded,
+            sampleDamageType + "\n" + sampleClockTimeline + "\n" + sampleDimension + "\n" + sampleTag,
+            reloaded,
         )
 
         assertEquals(registry.damageTypes.map { it.id }, reloaded.damageTypes.map { it.id })
@@ -585,5 +594,74 @@ class TomlContentLoaderTest {
             registry.dimensions.single().second.layers.map { it.block to it.height },
             reloaded.dimensions.single().second.layers.map { it.block to it.height },
         )
+        assertEquals(
+            registry.tags.map { it.registryId to it.tagId },
+            reloaded.tags.map { it.registryId to it.tagId },
+        )
+        assertEquals(
+            registry.tags.first().spec.entries,
+            reloaded.tags.first().spec.entries,
+        )
+    }
+
+    private val sampleTag = """
+        [tag.fire_join]
+        registry = "minecraft:damage_type"
+        tag = "minecraft:is_fire"
+        values = ["melt", { id = "#minecraft:is_projectile", required = false }]
+
+        [tag.probe_group]
+        registry = "item"
+        tag = "probe_group"
+        values = ["minecraft:diamond"]
+        replace = true
+    """.trimIndent()
+
+    /**
+     * The tag's ids have to be fields rather than section components: a TOML bare key cannot spell the `:` of
+     * `minecraft:is_fire` or the `/` of `worldgen/biome`, and both are ordinary tag names.
+     */
+    @Test
+    fun `a tag section maps onto the declaration DSL`() {
+        val (registry, summary) = loadPack("tides", sampleTag)
+
+        assertEquals(2, summary.tags)
+        val join = registry.tags.first()
+        assertEquals("minecraft:damage_type", join.registryId)
+        assertEquals("minecraft:is_fire", join.tagId)
+        assertEquals(false, join.spec.replace)
+        assertEquals(
+            listOf(
+                OMLTagEntry("melt", required = true, tag = false),
+                OMLTagEntry("minecraft:is_projectile", required = false, tag = true),
+            ),
+            join.spec.entries,
+            "a leading `#` in a value is the game's spelling for a reference to another tag",
+        )
+
+        val group = registry.tags[1]
+        assertEquals("item", group.registryId)
+        assertEquals("probe_group", group.tagId)
+        assertEquals(true, group.spec.replace)
+        assertEquals(listOf(OMLTagEntry("minecraft:diamond", required = true, tag = false)), group.spec.entries)
+    }
+
+    @Test
+    fun `a malformed tag section fails the pack loudly`() {
+        assertFailsWith<IllegalStateException> {
+            loadPack("tides", "[tag.join]\nregistry = \"minecraft:damage_type\"\n")
+        }.let { assertTrue("missing its 'tag' string" in it.message!!, it.message!!) }
+        assertFailsWith<IllegalStateException> {
+            loadPack("tides", "[tag.join]\ntag = \"is_fire\"\n")
+        }.let { assertTrue("missing its 'registry' string" in it.message!!, it.message!!) }
+        assertFailsWith<IllegalStateException> {
+            loadPack("tides", "[tag.join]\nregistry = 3\ntag = \"is_fire\"\n")
+        }.let { assertTrue("missing its 'registry' string" in it.message!!, it.message!!) }
+        assertFailsWith<IllegalStateException> {
+            loadPack("tides", "[tag.join]\nregistry = \"damage_type\"\ntag = \"is_fire\"\nvalues = 7\n")
+        }.let { assertTrue("must be an array" in it.message!!, it.message!!) }
+        assertFailsWith<IllegalStateException> {
+            loadPack("tides", "[tag.join]\nregistry = \"damage_type\"\ntag = \"is_fire\"\nvalues = [ 3 ]\n")
+        }.let { assertTrue("id strings or tables" in it.message!!, it.message!!) }
     }
 }
