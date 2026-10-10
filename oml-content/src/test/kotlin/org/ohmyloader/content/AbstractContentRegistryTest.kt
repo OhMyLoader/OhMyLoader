@@ -417,4 +417,111 @@ class AbstractContentRegistryTest {
         assertEquals(listOf("tide"), registry.clockIdsFor("mymod"))
         assertEquals(null, registry.timelineJsonFor("mymod", "claims_early"))
     }
+
+    @Test
+    fun `a dimension type and its dimension are served as the files the game's codecs read`() {
+        val registry = RecordingRegistry()
+        val facade = registry.forNamespace("mymod")
+
+        facade.declareClock("tide")
+        facade.declareDimensionType("deep") {
+            skyLight = false
+            ceiling = true
+            minY = 0
+            height = 128
+            logicalHeight = 128
+            coordinateScale = 2.0
+            ambientLight = 0.3f
+            skybox = "none"
+            fixedTime = true
+            clock = "tide"
+            timelines += "surge"
+        }
+        facade.declareDimension("deep_home") {
+            type = "deep"
+            layer("minecraft:bedrock", 1)
+            layer("mymod:ruby_block", 3)
+            biome = "minecraft:plains"
+        }
+        facade.declareDimension("noise_home") {
+            type = "minecraft:overworld"
+            generator = "noise"
+            noiseSettings = "minecraft:overworld"
+            biome = "minecraft:plains"
+        }
+        facade.declareDimensionType("plain")
+
+        assertEquals(listOf("deep", "plain"), registry.dimensionTypeIdsFor("mymod"))
+        val json = registry.dimensionTypeJsonFor("mymod", "deep") ?: fail("the type must be served")
+        // the eleven fields the codec marks required are always there; the four it defaults are not guessed
+        assertTrue("\"has_skylight\":false" in json, json)
+        assertTrue("\"has_ceiling\":true" in json, json)
+        assertTrue("\"min_y\":0" in json, json)
+        assertTrue("\"height\":128" in json, json)
+        assertTrue("\"logical_height\":128" in json, json)
+        assertTrue("\"coordinate_scale\":2.0" in json, json)
+        assertTrue("\"ambient_light\":0.3" in json, json)
+        assertTrue("\"monster_spawn_light_level\":7" in json, json)
+        assertTrue("\"infiniburn\":\"#minecraft:infiniburn_overworld\"" in json, json)
+        assertTrue("\"skybox\":\"none\"" in json, json)
+        assertTrue("\"has_fixed_time\":true" in json, json)
+        assertTrue("\"default_clock\":\"mymod:tide\"" in json, json)
+        assertTrue("\"timelines\":[\"mymod:surge\"]" in json, json)
+        val defaults = registry.dimensionTypeJsonFor("mymod", "plain") ?: fail("the second type must be served")
+        assertTrue("skybox" !in defaults, "an unset field is omitted, not defaulted: $defaults")
+        assertTrue("default_clock" !in defaults, defaults)
+        assertTrue("\"has_skylight\":true" in defaults, defaults)
+
+        assertEquals(listOf("deep_home", "noise_home"), registry.dimensionIdsFor("mymod"))
+        val flat = registry.dimensionJsonFor("mymod", "deep_home") ?: fail("the stem must be served")
+        assertTrue("\"type\":\"mymod:deep\"" in flat, flat)
+        assertTrue("\"type\":\"minecraft:flat\"" in flat, flat)
+        assertTrue("\"block\":\"minecraft:bedrock\",\"height\":1" in flat, flat)
+        assertTrue("\"block\":\"mymod:ruby_block\",\"height\":3" in flat, flat)
+        assertTrue("\"biome\":\"minecraft:plains\"" in flat, flat)
+        assertTrue("\"features\":false" in flat, flat)
+        val noise = registry.dimensionJsonFor("mymod", "noise_home") ?: fail("the second stem must be served")
+        assertTrue("\"type\":\"minecraft:noise\"" in noise, noise)
+        assertTrue("\"settings\":\"minecraft:overworld\"" in noise, noise)
+        assertTrue("\"type\":\"minecraft:fixed\",\"biome\":\"minecraft:plains\"" in noise, noise)
+    }
+
+    @Test
+    fun `a dimension the game's codec would reject is refused at declaration`() {
+        val registry = RecordingRegistry()
+        val facade = registry.forNamespace("mymod")
+
+        facade.declareClock("tide")
+        facade.declareDimensionType("good") {
+            minY = 0
+            height = 128
+        }
+        facade.declareDimensionType("scale_out") { coordinateScale = 0.0 }
+        facade.declareDimensionType("min_y_out") { minY = -2033 }
+        facade.declareDimensionType("height_out") { height = 15 }
+        facade.declareDimensionType("logical_out") { logicalHeight = 4065 }
+        facade.declareDimensionType("light_out") { ambientLight = 1.5f }
+        facade.declareDimensionType("monster_out") { monsterSpawnLightLevel = 16 }
+        facade.declareDimensionType("no_tag") { infiniburn = "minecraft:infiniburn_overworld" }
+        facade.declareDimensionType("bad_skybox") { skybox = "twilight" }
+        facade.declareDimensionType("undeclared_clock") { clock = "nowhere" }
+        facade.declareDimensionType("good") { height = 64 }
+
+        assertEquals(listOf("good"), registry.dimensionTypeIdsFor("mymod"))
+
+        facade.declareDimension("home") {
+            type = "good"
+            layer("minecraft:bedrock", 1)
+        }
+        facade.declareDimension("no_type") { layer("minecraft:bedrock", 1) }
+        facade.declareDimension("bad_generator") { type = "good"; generator = "cellular" }
+        facade.declareDimension("undeclared_type") { type = "nowhere" }
+        facade.declareDimension("noise_incomplete") { type = "good"; generator = "noise" }
+        facade.declareDimension("empty_layer") { type = "good"; layer("minecraft:bedrock", 0) }
+        facade.declareDimension("home") { type = "good" }
+
+        assertEquals(listOf("home"), registry.dimensionIdsFor("mymod"))
+        val json = registry.dimensionJsonFor("mymod", "home") ?: fail("the served stem must exist")
+        assertTrue("\"height\":1" in json, "the first declaration wins: $json")
+    }
 }

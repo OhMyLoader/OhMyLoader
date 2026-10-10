@@ -65,6 +65,10 @@ class OmlArchivePackTest {
         override fun declareClock(id: String) {}
 
         override fun declareTimeline(id: String, configure: OMLTimelineDeclaration.() -> Unit) {}
+
+        override fun declareDimensionType(id: String, configure: OMLDimensionTypeDeclaration.() -> Unit) {}
+
+        override fun declareDimension(id: String, configure: OMLDimensionDeclaration.() -> Unit) {}
     }
 
     private val factory = object : ContentRegistryFactory {

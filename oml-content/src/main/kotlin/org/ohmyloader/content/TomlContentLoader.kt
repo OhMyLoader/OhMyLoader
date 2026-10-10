@@ -14,9 +14,10 @@ import java.io.File
  *
  * Sections: `[block.<id>]` (properties + optional `ore` table), `[item.<id>]`, `[crafting.<id>]`,
  * `[smelting.<result>]`, `[loot.<block>]`, `[damage_type.<id>]`, `[clock.<id>]` (no fields),
- * `[timeline.<id>]` (`clock` + optional `period_ticks` + `markers`). Behavior hooks and block entities are
- * mod code, so they have no TOML form. Loading runs in the loader's content-declaration window, so the data
- * track shares the code track's freeze-point materialization.
+ * `[timeline.<id>]` (`clock` + optional `period_ticks` + `markers`), `[dimension_type.<id>]`,
+ * `[dimension.<id>]`. Behavior hooks and block entities are mod code, so they have no TOML form. Loading
+ * runs in the loader's content-declaration window, so the data track shares the code track's freeze-point
+ * materialization.
  */
 object TomlContentLoader {
 
@@ -43,6 +44,8 @@ object TomlContentLoader {
         val damageTypes: Int = 0,
         val clocks: Int = 0,
         val timelines: Int = 0,
+        val dimensionTypes: Int = 0,
+        val dimensions: Int = 0,
     )
 
     /**
@@ -82,6 +85,8 @@ object TomlContentLoader {
         var damageTypes = 0
         var clocks = 0
         var timelines = 0
+        var dimensionTypes = 0
+        var dimensions = 0
         for ([path, fields] in doc) {
             when {
                 path.isEmpty() -> if (fields.isNotEmpty()) {
@@ -132,15 +137,31 @@ object TomlContentLoader {
                     timelines++
                 }
 
+                path.startsWith("dimension_type.") && path.count { it == '.' } == 1 -> {
+                    declareDimensionTypeSection(
+                        path.removePrefix("dimension_type."), fields, source, registry,
+                    )
+                    dimensionTypes++
+                }
+
+                path.startsWith("dimension.") && path.count { it == '.' } == 1 -> {
+                    declareDimensionSection(path.removePrefix("dimension."), fields, source, registry)
+                    dimensions++
+                }
+
                 else -> OmlLog.warn(
                     TAG,
                     "$source: ignoring section [$path] — " +
                         "expected [block.<id>] / [item.<id>] / [crafting.<id>] / [smelting.<id>] / " +
-                        "[loot.<block>] / [damage_type.<id>] / [clock.<id>] / [timeline.<id>]",
+                        "[loot.<block>] / [damage_type.<id>] / [clock.<id>] / [timeline.<id>] / " +
+                        "[dimension_type.<id>] / [dimension.<id>]",
                 )
             }
         }
-        return PackSummary(namespace, blocks, items, recipes, smelting, loot, damageTypes, clocks, timelines)
+        return PackSummary(
+            namespace, blocks, items, recipes, smelting, loot, damageTypes, clocks, timelines,
+            dimensionTypes, dimensions,
+        )
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -415,6 +436,92 @@ object TomlContentLoader {
 
                 path.startsWith("timeline.") && path.count { it == '.' } == 1 ->
                     declareTimelineSection(path.removePrefix("timeline."), fields, source, registry)
+
+                path.startsWith("dimension_type.") && path.count { it == '.' } == 1 ->
+                    declareDimensionTypeSection(
+                        path.removePrefix("dimension_type."), fields, source, registry,
+                    )
+
+                path.startsWith("dimension.") && path.count { it == '.' } == 1 ->
+                    declareDimensionSection(path.removePrefix("dimension."), fields, source, registry)
+            }
+        }
+    }
+
+    private val DIMENSION_TYPE_KEYS = setOf(
+        "sky_light", "ceiling", "dragon_fight", "coordinate_scale", "min_y", "height", "logical_height",
+        "infiniburn", "ambient_light", "monster_spawn_light_level", "monster_spawn_block_light_limit",
+        "fixed_time", "skybox", "clock", "timelines",
+    )
+
+    /** A `[dimension_type.<id>]` section: every field is optional and defaults to vanilla's overworld. */
+    private fun declareDimensionTypeSection(
+        id: String,
+        fields: Map<String, Any>,
+        source: String,
+        registry: ContentRegistry,
+    ) {
+        requireId(id, source, "dimension_type")
+        val timelines = listValue(fields, "timelines", source, "dimension_type '$id'").orEmpty()
+        reportUnknown(fields, DIMENSION_TYPE_KEYS, source, "dimension_type '$id'")
+        registry.declareDimensionType(id) {
+            skyLight = boolValue(fields, "sky_light", source, "dimension_type '$id'") ?: true
+            ceiling = boolValue(fields, "ceiling", source, "dimension_type '$id'") ?: false
+            dragonFight = boolValue(fields, "dragon_fight", source, "dimension_type '$id'") ?: false
+            coordinateScale = doubleValue(fields, "coordinate_scale", source, "dimension_type '$id'") ?: 1.0
+            minY = intValue(fields, "min_y", source, "dimension_type '$id'") ?: -64
+            height = intValue(fields, "height", source, "dimension_type '$id'") ?: 384
+            logicalHeight = intValue(fields, "logical_height", source, "dimension_type '$id'") ?: 384
+            infiniburn = fields["infiniburn"] as? String ?: "#minecraft:infiniburn_overworld"
+            ambientLight = floatValue(fields, "ambient_light", source, "dimension_type '$id'") ?: 0f
+            monsterSpawnLightLevel =
+                intValue(fields, "monster_spawn_light_level", source, "dimension_type '$id'") ?: 7
+            monsterSpawnBlockLightLimit =
+                intValue(fields, "monster_spawn_block_light_limit", source, "dimension_type '$id'") ?: 0
+            fixedTime = boolValue(fields, "fixed_time", source, "dimension_type '$id'")
+            skybox = fields["skybox"] as? String
+            clock = fields["clock"] as? String
+            for (timeline in timelines) {
+                this.timelines += timeline as? String
+                    ?: fail(source, "dimension_type '$id'.timelines entries must be strings")
+            }
+        }
+    }
+
+    private val DIMENSION_KEYS = setOf("type", "generator", "layers", "noise_settings", "biome", "features", "lakes")
+
+    /**
+     * A `[dimension.<id>]` section: the level stem the game builds a level for. `type` is required, `layers`
+     * an array of inline tables for the flat generator (`{ block = "minecraft:bedrock", height = 1 }`).
+     */
+    private fun declareDimensionSection(
+        id: String,
+        fields: Map<String, Any>,
+        source: String,
+        registry: ContentRegistry,
+    ) {
+        requireId(id, source, "dimension")
+        val type = fields["type"] as? String ?: fail(source, "dimension '$id' is missing its 'type' string")
+        val layers = listValue(fields, "layers", source, "dimension '$id'")
+        if (fields.containsKey("layers") && layers == null) {
+            fail(source, "dimension '$id'.layers must be an array of { block = \"…\", height = 1 } tables")
+        }
+        reportUnknown(fields, DIMENSION_KEYS, source, "dimension '$id'")
+        registry.declareDimension(id) {
+            this.type = type
+            generator = fields["generator"] as? String ?: "flat"
+            noiseSettings = fields["noise_settings"] as? String
+            biome = fields["biome"] as? String
+            features = boolValue(fields, "features", source, "dimension '$id'") ?: false
+            lakes = boolValue(fields, "lakes", source, "dimension '$id'") ?: false
+            for (entry in layers.orEmpty()) {
+                val table = entry as? Map<*, *>
+                    ?: fail(source, "dimension '$id'.layers entries must be inline tables")
+                val block = table["block"] as? String
+                    ?: fail(source, "dimension '$id' layer is missing its 'block' string")
+                val height = table["height"] as? Number
+                    ?: fail(source, "dimension '$id' layer for '$block' is missing its numeric 'height'")
+                layer(block, height.toInt())
             }
         }
     }

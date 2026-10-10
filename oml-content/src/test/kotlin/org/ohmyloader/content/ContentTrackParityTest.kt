@@ -56,6 +56,24 @@ class ContentTrackParityTest {
             marker("low_tide", 0)
             marker("high_tide", 12000, inCommands = true)
         }
+        code.forNamespace("ruby").declareDimensionType("deep") {
+            skyLight = false
+            ceiling = true
+            minY = 0
+            height = 128
+            coordinateScale = 2.0
+            ambientLight = 0.3f
+            skybox = "none"
+            fixedTime = true
+            clock = "tide"
+            timelines += "surge"
+        }
+        code.forNamespace("ruby").declareDimension("deep_home") {
+            type = "deep"
+            layer("minecraft:bedrock", 1)
+            layer("raw_ruby", 3)
+            biome = "minecraft:plains"
+        }
 
         TomlContentLoader.load(
             "ruby",
@@ -94,6 +112,23 @@ class ContentTrackParityTest {
             clock = "tide"
             period_ticks = 24000
             markers = { low_tide = 0, high_tide = { ticks = 12000, in_commands = true } }
+
+            [dimension_type.deep]
+            sky_light = false
+            ceiling = true
+            min_y = 0
+            height = 128
+            coordinate_scale = 2.0
+            ambient_light = 0.3
+            skybox = "none"
+            fixed_time = true
+            clock = "tide"
+            timelines = ["surge"]
+
+            [dimension.deep_home]
+            type = "deep"
+            layers = [ { block = "minecraft:bedrock", height = 1 }, { block = "raw_ruby", height = 3 } ]
+            biome = "minecraft:plains"
             """.trimIndent(),
             data.forNamespace("ruby"),
         )
@@ -127,6 +162,10 @@ class ContentTrackParityTest {
         assertEquals(code.clockJsonFor("ruby", "tide"), data.clockJsonFor("ruby", "tide"))
         assertEquals(code.timelineJsonFor("ruby", "surge"), data.timelineJsonFor("ruby", "surge"))
         assertEquals(code.timelineIdsFor("ruby"), data.timelineIdsFor("ruby"))
+        assertEquals(code.dimensionTypeJsonFor("ruby", "deep"), data.dimensionTypeJsonFor("ruby", "deep"))
+        assertEquals(code.dimensionJsonFor("ruby", "deep_home"), data.dimensionJsonFor("ruby", "deep_home"))
+        assertEquals(code.dimensionTypeIdsFor("ruby"), data.dimensionTypeIdsFor("ruby"))
+        assertEquals(code.dimensionIdsFor("ruby"), data.dimensionIdsFor("ruby"))
         val codeOreGen = code.oreGenDecls.single()
         val dataOreGen = data.oreGenDecls.single()
         assertEquals(codeOreGen.featureJson, dataOreGen.featureJson)
@@ -137,5 +176,6 @@ class ContentTrackParityTest {
         assertTrue(code.recipeJsonFor("ruby", "ruby_raw_ruby")!!.contains("smelting"))
         assertTrue(code.recipeJsonFor("ruby", "ruby_ruby")!!.contains("crafting_shapeless"))
         assertTrue(code.timelineJsonFor("ruby", "surge")!!.contains("\"ruby:high_tide\""), "the marker id is bound to the pack namespace")
+        assertTrue(code.dimensionJsonFor("ruby", "deep_home")!!.contains("\"type\":\"ruby:deep\""), "the stem binds the type to the pack namespace")
     }
 }

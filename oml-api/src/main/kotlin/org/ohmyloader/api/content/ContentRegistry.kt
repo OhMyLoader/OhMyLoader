@@ -117,7 +117,109 @@ interface ContentRegistry {
      * here because a file the codec rejects leaves the whole timeline unregistered with no owner to say so.
      */
     fun declareTimeline(id: String, configure: OMLTimelineDeclaration.() -> Unit)
+
+    /**
+     * Declares a dimension type, loaded as `data/<namespace>/dimension_type/<id>.json`. [OMLDimensionTypeDeclaration]
+     * covers the game's own fields and every one has a default taken from vanilla's overworld — the codec marks
+     * eleven of them required, so the file has to carry them whether or not the mod cares. Out-of-range values
+     * are refused at declaration: a rejected file leaves the type absent from the registry and the dimension that
+     * names it fails to load with it.
+     */
+    fun declareDimensionType(id: String, configure: OMLDimensionTypeDeclaration.() -> Unit = {})
+
+    /**
+     * Declares a dimension, loaded as `data/<namespace>/dimension/<id>.json`. The game creates a level for
+     * **every** entry in that table when the server starts ([org.ohmyloader.api26_3.levelById] then answers for
+     * it), so this is the whole of what 26.3 gives a mod without writing a level implementer.
+     * [OMLDimensionDeclaration.type] is required.
+     */
+    fun declareDimension(id: String, configure: OMLDimensionDeclaration.() -> Unit)
 }
+
+/**
+ * Dimension-type fields for [ContentRegistry.declareDimensionType]. Names mirror the datapack JSON so a
+ * modder can read the vanilla file beside the declaration; the numeric defaults are vanilla's overworld.
+ */
+class OMLDimensionTypeDeclaration {
+
+    /** `has_skylight`: whether daylight reaches the surface, and part of the game's open-sky weather test. */
+    var skyLight: Boolean = true
+
+    /** `has_ceiling`: a roofed dimension, which the game also reads as "no weather here". */
+    var ceiling: Boolean = false
+
+    /** `has_ender_dragon_fight`: whether the dragon fight logic claims this dimension. */
+    var dragonFight: Boolean = false
+
+    /** `coordinate_scale`: how many blocks this dimension covers per block of its parent. */
+    var coordinateScale: Double = 1.0
+
+    /** `min_y`: the lowest build height. The game's own window is -2032..2031. */
+    var minY: Int = -64
+
+    /** `height`: the total dimension height in blocks. The game's own window is 16..4064. */
+    var height: Int = 384
+
+    /** `logical_height`: the height the day-light cycle uses. The game's own window is 0..4064. */
+    var logicalHeight: Int = 384
+
+    /** `infiniburn`: the block tag fire burns forever in, spelled as a tag reference (`#minecraft:infiniburn_overworld`). */
+    var infiniburn: String = "#minecraft:infiniburn_overworld"
+
+    /** `ambient_light`: 0.0 (dark) to 1.0 (full), the light the game pretends the sky gives. */
+    var ambientLight: Float = 0.0f
+
+    /** `monster_spawn_light_level`: how bright it may be for monsters to spawn (0..15). */
+    var monsterSpawnLightLevel: Int = 7
+
+    /** `monster_spawn_block_light_limit`: the block-light ceiling for monster spawns (0 = never on block light). */
+    var monsterSpawnBlockLightLimit: Int = 0
+
+    /** `has_fixed_time`: freezes the sky's cycle. Null omits the field, which is the game's own default. */
+    var fixedTime: Boolean? = null
+
+    /** `skybox`: `none`, `overworld` or `end`. Null omits it, and the game picks its own default. */
+    var skybox: String? = null
+
+    /** `default_clock`: the clock dimensions of this type run on — a declared clock, or null for none. */
+    var clock: String? = null
+
+    /** `timelines`: the timeline declarations whose tracks apply to this type. Empty omits the field. */
+    val timelines = mutableListOf<String>()
+}
+
+/**
+ * The level stem for [ContentRegistry.declareDimension]: which dimension type the level runs on, and how its
+ * terrain is produced. 26.3 offers three generators a mod can name without writing code: `flat`, `noise` and
+ * `debug`.
+ */
+class OMLDimensionDeclaration {
+
+    /** The dimension type this level runs on: namespaced, or bare to resolve in the declaring namespace. Required. */
+    var type: String? = null
+
+    /** The generator: `flat`, `noise` or `debug`. */
+    var generator: String = "flat"
+
+    // Public but not mod-facing API: the content layer reads these to write the generator JSON.
+    val layers = mutableListOf<OMLFlatLayer>()
+    var noiseSettings: String? = null
+    var biome: String? = null
+
+    /** Whether the flat generator decorates features. */
+    var features: Boolean = false
+
+    /** Whether the flat generator fills water lakes. */
+    var lakes: Boolean = false
+
+    /** One layer of the flat generator, [height] blocks of [block] tall, stacked bottom-up. */
+    fun layer(block: String, height: Int) {
+        layers += OMLFlatLayer(block, height)
+    }
+}
+
+/** A flat-generator layer: [block] repeated [height] times, the shape the game's own superpreset files use. */
+data class OMLFlatLayer(val block: String, val height: Int)
 
 /**
  * Clock-time declaration for [ContentRegistry.declareTimeline]. Tracks (the environment-attribute

@@ -90,6 +90,17 @@ class TomlContentLoaderTest {
             timelines += id to OMLTimelineDeclaration().apply(configure)
         }
 
+        val dimensionTypes = mutableListOf<Pair<String, OMLDimensionTypeDeclaration>>()
+        val dimensions = mutableListOf<Pair<String, OMLDimensionDeclaration>>()
+
+        override fun declareDimensionType(id: String, configure: OMLDimensionTypeDeclaration.() -> Unit) {
+            dimensionTypes += id to OMLDimensionTypeDeclaration().apply(configure)
+        }
+
+        override fun declareDimension(id: String, configure: OMLDimensionDeclaration.() -> Unit) {
+            dimensions += id to OMLDimensionDeclaration().apply(configure)
+        }
+
         val shaped = mutableListOf<Triple<String, List<String>, Map<Char, String>>>()
         val shapeless = mutableListOf<Pair<String, List<String>>>()
 
@@ -478,13 +489,84 @@ class TomlContentLoaderTest {
         }.let { assertTrue("missing its 'clock'" in it.message!!, it.message!!) }
     }
 
+    private val sampleDimension = """
+        [clock.tide]
+
+        [dimension_type.deep]
+        sky_light = false
+        ceiling = true
+        min_y = 0
+        height = 128
+        logical_height = 128
+        coordinate_scale = 2.0
+        ambient_light = 0.3
+        skybox = "none"
+        fixed_time = true
+        clock = "tide"
+        timelines = ["surge"]
+
+        [dimension.deep_home]
+        type = "deep"
+        layers = [ { block = "minecraft:bedrock", height = 1 }, { block = "ruby_block", height = 3 } ]
+        biome = "minecraft:plains"
+    """.trimIndent()
+
+    @Test
+    fun `dimension_type and dimension sections map onto the declaration DSL`() {
+        val (registry, summary) = loadPack("tides", sampleDimension)
+
+        assertEquals(listOf("tide"), registry.clocks)
+        assertEquals(1, summary.dimensionTypes)
+        val (typeId, type) = registry.dimensionTypes.single()
+        assertEquals("deep", typeId)
+        assertEquals(false, type.skyLight)
+        assertEquals(true, type.ceiling)
+        assertEquals(0, type.minY)
+        assertEquals(128, type.height)
+        assertEquals(128, type.logicalHeight)
+        assertEquals(2.0, type.coordinateScale)
+        assertEquals(0.3f, type.ambientLight)
+        assertEquals("none", type.skybox)
+        assertEquals(true, type.fixedTime)
+        assertEquals("tide", type.clock)
+        assertEquals(listOf("surge"), type.timelines)
+        assertEquals("#minecraft:infiniburn_overworld", type.infiniburn)
+        assertEquals(7, type.monsterSpawnLightLevel)
+
+        assertEquals(1, summary.dimensions)
+        val (dimId, dim) = registry.dimensions.single()
+        assertEquals("deep_home", dimId)
+        assertEquals("deep", dim.type)
+        assertEquals("flat", dim.generator)
+        assertEquals(listOf("minecraft:bedrock" to 1, "ruby_block" to 3), dim.layers.map { it.block to it.height })
+        assertEquals("minecraft:plains", dim.biome)
+        assertEquals(false, dim.features)
+    }
+
+    @Test
+    fun `a dimension without a type or with a malformed layer fails the pack loudly`() {
+        assertFailsWith<IllegalStateException> {
+            loadPack("tides", "[dimension.home]\ngenerator = \"flat\"\n")
+        }.let { assertTrue("missing its 'type' string" in it.message!!, it.message!!) }
+        assertFailsWith<IllegalStateException> {
+            loadPack("tides", "[dimension.home]\ntype = \"deep\"\nlayers = \"bedrock\"\n")
+        }.let { assertTrue("must be an array" in it.message!!, it.message!!) }
+        assertFailsWith<IllegalStateException> {
+            loadPack("tides", "[dimension.home]\ntype = \"deep\"\nlayers = [ { height = 1 } ]\n")
+        }.let { assertTrue("missing its 'block' string" in it.message!!, it.message!!) }
+        assertFailsWith<IllegalStateException> {
+            loadPack("tides", "[dimension_type.deep]\nsky_light = \"bright\"\n")
+        }.let { assertTrue("must be true or false" in it.message!!, it.message!!) }
+    }
+
     @Test
     fun `a reload re-collects every datapack declaration the load pass collected`() {
         val registry = RecordingRegistry()
-        TomlContentLoader.load("tides", "tides.toml", sampleDamageType + "\n" + sampleClockTimeline, registry)
+        TomlContentLoader.load("tides", "tides.toml", sampleDamageType + "\n" + sampleClockTimeline + "\n" + sampleDimension, registry)
         val reloaded = RecordingRegistry()
         TomlContentLoader.loadDataDeclarations(
-            "tides", "tides.toml", sampleDamageType + "\n" + sampleClockTimeline, reloaded,
+            "tides", "tides.toml",
+            sampleDamageType + "\n" + sampleClockTimeline + "\n" + sampleDimension, reloaded,
         )
 
         assertEquals(registry.damageTypes.map { it.id }, reloaded.damageTypes.map { it.id })
@@ -493,6 +575,15 @@ class TomlContentLoaderTest {
         assertEquals(
             registry.timelines.single().second.markers.map { it.id to it.ticks },
             reloaded.timelines.single().second.markers.map { it.id to it.ticks },
+        )
+        assertEquals(registry.dimensionTypes.map { it.first }, reloaded.dimensionTypes.map { it.first })
+        assertEquals(
+            registry.dimensionTypes.single().second.height,
+            reloaded.dimensionTypes.single().second.height,
+        )
+        assertEquals(
+            registry.dimensions.single().second.layers.map { it.block to it.height },
+            reloaded.dimensions.single().second.layers.map { it.block to it.height },
         )
     }
 }

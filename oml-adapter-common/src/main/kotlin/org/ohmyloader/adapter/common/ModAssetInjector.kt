@@ -371,7 +371,8 @@ object ModAssetInjector {
             path.startsWith("worldgen/") || path.startsWith("advancement/") ||
             path.startsWith("predicate/") || path.startsWith("loot_modifiers/") ||
             path.startsWith("damage_type/") || path.startsWith("world_clock/") ||
-            path.startsWith("timeline/")
+            path.startsWith("timeline/") || path.startsWith("dimension_type/") ||
+            path.startsWith("dimension/")
 
     /**
      * Bytes for one datapack file. Recipes and loot tables come from OML content declarations
@@ -405,6 +406,18 @@ object ModAssetInjector {
             path.startsWith("timeline/") && path.endsWith(".json") -> {
                 val id = path.removePrefix("timeline/").removeSuffix(".json")
                 contentRegistry.timelineJsonFor(namespace, id)
+            }
+
+            path.startsWith("dimension_type/") && path.endsWith(".json") -> {
+                val id = path.removePrefix("dimension_type/").removeSuffix(".json")
+                contentRegistry.dimensionTypeJsonFor(namespace, id)
+            }
+
+            // `dimension/` is the level-stem folder; the longer prefix above is checked first so a
+            // `dimension_type/x.json` ask never lands here
+            path.startsWith("dimension/") && path.endsWith(".json") -> {
+                val id = path.removePrefix("dimension/").removeSuffix(".json")
+                contentRegistry.dimensionJsonFor(namespace, id)
             }
 
             path.startsWith("worldgen/feature/") && path.endsWith(".json") -> {
@@ -494,6 +507,13 @@ object ModAssetInjector {
         if (dir == "timeline") {
             MinecraftContentRegistry.timelineIdsFor(namespace).forEach { emit("timeline/$it.json") }
         }
+        if (dir == "dimension_type") {
+            MinecraftContentRegistry.dimensionTypeIdsFor(namespace)
+                .forEach { emit("dimension_type/$it.json") }
+        }
+        if (dir == "dimension") {
+            MinecraftContentRegistry.dimensionIdsFor(namespace).forEach { emit("dimension/$it.json") }
+        }
         if (namespace == "minecraft" && dir == "worldgen/biome") {
             MinecraftContentRegistry.oreTargetedBiomes().forEach { emit("worldgen/biome/$it.json") }
         }
@@ -534,6 +554,10 @@ object ModAssetInjector {
                     .forEach { emit("world_clock/$it.json") }
                 "timeline" -> MinecraftContentRegistry.timelineIdsFor(namespace)
                     .forEach { emit("timeline/$it.json") }
+                "dimension_type" -> MinecraftContentRegistry.dimensionTypeIdsFor(namespace)
+                    .forEach { emit("dimension_type/$it.json") }
+                "dimension" -> MinecraftContentRegistry.dimensionIdsFor(namespace)
+                    .forEach { emit("dimension/$it.json") }
             }
         }
     }

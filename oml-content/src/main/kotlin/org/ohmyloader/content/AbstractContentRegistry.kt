@@ -57,6 +57,8 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
     protected val collectedDamageTypes: MutableList<DamageTypeDecl> = mutableListOf()
     protected val collectedClocks: MutableList<ClockDecl> = mutableListOf()
     protected val collectedTimelines: MutableList<TimelineDecl> = mutableListOf()
+    protected val collectedDimensionTypes: MutableList<DimensionTypeDecl> = mutableListOf()
+    protected val collectedDimensions: MutableList<DimensionDecl> = mutableListOf()
 
     /**
      * A collected damage-type declaration: [key] is the datapack file's local id, so the registry id the
@@ -83,6 +85,24 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
         val clockId: String,
         /** Every marker id this file declares, fully qualified. */
         val markerIds: List<String>,
+        val json: String,
+        val reloadable: Boolean,
+    )
+
+    /** A collected dimension-type declaration: [key] is the file's local id under `dimension_type/`. */
+    data class DimensionTypeDecl(
+        val namespace: String,
+        val key: String,
+        val json: String,
+        val reloadable: Boolean,
+    )
+
+    /** A collected dimension declaration: [key] is the file's local id under `dimension/`. */
+    data class DimensionDecl(
+        val namespace: String,
+        val key: String,
+        /** The dimension type this level runs on, fully qualified. */
+        val typeId: String,
         val json: String,
         val reloadable: Boolean,
     )
@@ -144,6 +164,26 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
     fun timelineIdsFor(namespace: String): List<String> =
         collectedTimelines.filter { it.namespace == namespace }.map { it.key }
 
+    /** The datapack JSON for a collected dimension type (`data/<ns>/dimension_type/<key>.json`). */
+    @Synchronized
+    fun dimensionTypeJsonFor(namespace: String, id: String): String? =
+        collectedDimensionTypes.firstOrNull { it.namespace == namespace && it.key == id }?.json
+
+    /** The collected dimension-type keys of [namespace], in declaration order. */
+    @Synchronized
+    fun dimensionTypeIdsFor(namespace: String): List<String> =
+        collectedDimensionTypes.filter { it.namespace == namespace }.map { it.key }
+
+    /** The datapack JSON for a collected dimension (`data/<ns>/dimension/<key>.json`). */
+    @Synchronized
+    fun dimensionJsonFor(namespace: String, id: String): String? =
+        collectedDimensions.firstOrNull { it.namespace == namespace && it.key == id }?.json
+
+    /** The collected dimension keys of [namespace], in declaration order. */
+    @Synchronized
+    fun dimensionIdsFor(namespace: String): List<String> =
+        collectedDimensions.filter { it.namespace == namespace }.map { it.key }
+
     /**
      * Drops every collected recipe / loot declaration so a reload pass can re-collect them from
      * the pack files as they exist on disk **now**. Blocks and items are NOT touched: their
@@ -159,6 +199,8 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
         collectedDamageTypes.removeAll { it.reloadable }
         collectedClocks.removeAll { it.reloadable }
         collectedTimelines.removeAll { it.reloadable }
+        collectedDimensionTypes.removeAll { it.reloadable }
+        collectedDimensions.removeAll { it.reloadable }
     }
 
     /** A collected ore-generation declaration, flattened to its two datapack files' JSON. */
@@ -400,6 +442,96 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                     reloadable,
                 )
             }
+
+            override fun declareDimensionType(id: String, configure: OMLDimensionTypeDeclaration.() -> Unit) {
+                val spec = OMLDimensionTypeDeclaration().apply(configure)
+                val clock = spec.clock?.let { qualify(namespace, it) }
+                val badTimeline = spec.timelines.firstOrNull { !DATAPACK_NAME.matches(it.substringAfterLast(':')) }
+                val refusal = when {
+                    !DATAPACK_NAME.matches(id) -> "'$id' is not a lowercase datapack name"
+                    collectedDimensionTypes.any { it.namespace == namespace && it.key == id } ->
+                        "dimension type '$id' is declared twice"
+                    spec.coordinateScale !in COORDINATE_SCALE_MIN..COORDINATE_SCALE_MAX ->
+                        "dimension type '$id' scale ${spec.coordinateScale} is outside the game's " +
+                            "$COORDINATE_SCALE_MIN..$COORDINATE_SCALE_MAX"
+                    spec.minY !in DIMENSION_MIN_Y..DIMENSION_MAX_Y ->
+                        "dimension type '$id' min_y ${spec.minY} is outside the game's " +
+                            "$DIMENSION_MIN_Y..$DIMENSION_MAX_Y"
+                    spec.height !in DIMENSION_MIN_HEIGHT..DIMENSION_HEIGHT_SPAN ->
+                        "dimension type '$id' height ${spec.height} is outside the game's " +
+                            "$DIMENSION_MIN_HEIGHT..$DIMENSION_HEIGHT_SPAN"
+                    spec.logicalHeight !in 0..DIMENSION_HEIGHT_SPAN ->
+                        "dimension type '$id' logical height ${spec.logicalHeight} is outside the game's " +
+                            "0..$DIMENSION_HEIGHT_SPAN"
+                    spec.ambientLight !in 0f..1f ->
+                        "dimension type '$id' ambient light ${spec.ambientLight} is not between 0.0 and 1.0"
+                    spec.monsterSpawnLightLevel !in 0..15 || spec.monsterSpawnBlockLightLimit !in 0..15 ->
+                        "dimension type '$id' monster spawn light is not a 0..15 light level"
+                    !spec.infiniburn.startsWith("#") ||
+                        !DATAPACK_NAME.matches(spec.infiniburn.removePrefix("#").substringAfterLast(':')) ->
+                        "dimension type '$id' infiniburn '${spec.infiniburn}' is not a `#namespace:tag` reference"
+                    spec.skybox != null && spec.skybox !in SKYBOXES ->
+                        "dimension type '$id' has unknown skybox '${spec.skybox}' (none, overworld, end)"
+                    badTimeline != null ->
+                        "dimension type '$id' names timeline '$badTimeline', which is not a datapack id"
+                    clock != null && clock.substringBefore(':') == namespace &&
+                        collectedClocks.none { it.namespace == namespace && it.key == clock.substringAfter(':') } ->
+                        "dimension type '$id' runs on clock '$clock', which this pack has not declared " +
+                            "(declare the clock before the type that runs on it)"
+                    else -> null
+                }
+                if (refusal != null) {
+                    // Every window above is the game's own codec range: a file outside it is rejected during
+                    // reload, and the dimension that names this type then fails to load alongside it.
+                    OmlLog.warn("Content", "$refusal; the dimension type is not declared")
+                    return
+                }
+                collectedDimensionTypes += DimensionTypeDecl(
+                    namespace, id, dimensionTypeJson(namespace, spec), reloadable,
+                )
+            }
+
+            override fun declareDimension(id: String, configure: OMLDimensionDeclaration.() -> Unit) {
+                val spec = OMLDimensionDeclaration().apply(configure)
+                val type = spec.type?.let { qualify(namespace, it) }
+                    ?: run {
+                        OmlLog.warn(
+                            "Content",
+                            "dimension '$id' names no dimension type; the dimension is not declared",
+                        )
+                        return
+                    }
+                val badLayer = spec.layers.firstOrNull { it.height < 1 || !isDataPackId(it.block) }
+                val refusal = when {
+                    !DATAPACK_NAME.matches(id) -> "'$id' is not a lowercase datapack name"
+                    collectedDimensions.any { it.namespace == namespace && it.key == id } ->
+                        "dimension '$id' is declared twice"
+                    spec.generator !in GENERATORS ->
+                        "dimension '$id' generator '${spec.generator}' is not one of ${GENERATORS.sorted()}"
+                    type.substringBefore(':') == namespace &&
+                        collectedDimensionTypes.none {
+                            it.namespace == namespace && it.key == type.substringAfter(':')
+                        } ->
+                        "dimension '$id' runs on type '$type', which this pack has not declared " +
+                            "(declare the type before the dimension that uses it)"
+                    spec.generator == "noise" &&
+                        (spec.noiseSettings == null || spec.biome == null || !isDataPackId(spec.biome!!)) ->
+                        "dimension '$id' needs a noise 'settings' id and a fixed 'biome' id"
+                    spec.generator == "flat" && spec.biome != null && !isDataPackId(spec.biome!!) ->
+                        "dimension '$id' names biome '${spec.biome}', which is not a datapack id"
+                    badLayer != null ->
+                        "dimension '$id' layer '${badLayer.block}' x${badLayer.height} is not a " +
+                            "block id with a positive height"
+                    else -> null
+                }
+                if (refusal != null) {
+                    OmlLog.warn("Content", "$refusal; the dimension is not declared")
+                    return
+                }
+                collectedDimensions += DimensionDecl(
+                    namespace, id, type, dimensionJson(namespace, type, spec), reloadable,
+                )
+            }
         }
 
     private fun qualify(namespace: String, id: String): String =
@@ -488,6 +620,63 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
         append("\"scaling\":\"$scaling\"")
         append('}')
     }
+
+    /**
+     * The dimension-type file in the game's own field shape. The eleven fields its codec marks required are
+     * always written, with vanilla's overworld values as the declaration defaults; the four the codec defaults
+     * on its own are omitted when the mod leaves them unset, so the game applies its default rather than OML
+     * guessing one.
+     */
+    private fun dimensionTypeJson(namespace: String, spec: OMLDimensionTypeDeclaration): String = buildString {
+        append("{\"ambient_light\":${spec.ambientLight},")
+        append("\"coordinate_scale\":${spec.coordinateScale},")
+        append("\"has_ceiling\":${spec.ceiling},")
+        append("\"has_ender_dragon_fight\":${spec.dragonFight},")
+        append("\"has_skylight\":${spec.skyLight},")
+        append("\"height\":${spec.height},")
+        append("\"infiniburn\":\"${spec.infiniburn}\",")
+        append("\"logical_height\":${spec.logicalHeight},")
+        append("\"min_y\":${spec.minY},")
+        append("\"monster_spawn_block_light_limit\":${spec.monsterSpawnBlockLightLimit},")
+        append("\"monster_spawn_light_level\":${spec.monsterSpawnLightLevel}")
+        spec.fixedTime?.let { append(",\"has_fixed_time\":$it") }
+        spec.skybox?.let { append(",\"skybox\":\"$it\"") }
+        spec.clock?.let { append(",\"default_clock\":\"${qualify(namespace, it)}\"") }
+        if (spec.timelines.isNotEmpty()) {
+            append(",\"timelines\":[")
+            spec.timelines.joinTo(this, separator = ",") { "\"${qualify(namespace, it)}\"" }
+            append(']')
+        }
+        append('}')
+    }
+
+    /**
+     * The level-stem file: `type` names the dimension type, and `generator` is one of the three the game can
+     * build without code — a flat stack of layers, a noise settings id with one fixed biome, or the debug
+     * generator, which carries no settings of its own.
+     */
+    private fun dimensionJson(namespace: String, type: String, spec: OMLDimensionDeclaration): String =
+        buildString {
+            append("{\"type\":\"$type\",\"generator\":{\"type\":\"minecraft:${spec.generator}\"")
+            when (spec.generator) {
+                "flat" -> {
+                    append(",\"settings\":{\"layers\":[")
+                    spec.layers.joinTo(this, separator = ",") {
+                        "{\"block\":\"${qualify(namespace, it.block)}\",\"height\":${it.height}}"
+                    }
+                    append("],\"features\":${spec.features},\"lakes\":${spec.lakes}")
+                    spec.biome?.let { append(",\"biome\":\"${qualify(namespace, it)}\"") }
+                    append('}')
+                }
+
+                "noise" -> append(
+                    ",\"settings\":\"${qualify(namespace, spec.noiseSettings!!)}\"," +
+                        "\"biome_source\":{\"type\":\"minecraft:fixed\",\"biome\":" +
+                        "\"${qualify(namespace, spec.biome!!)}\"}",
+                )
+            }
+            append("}}")
+        }
 
     /**
      * The timeline file in the game's own shape: `clock` is a full id (a bare one is bound to the declaring
@@ -589,3 +778,21 @@ private val DEATH_MESSAGE_TYPES = setOf("default", "fall_variants", "intentional
 
 /** A datapack file name: lower case, and no namespace — OML binds the declaring mod's id. */
 private val DATAPACK_NAME = Regex("[a-z0-9_.-]+")
+
+/**
+ * The game's own `DimensionType` codec windows, read off 26.3: `intRange(MIN_Y, MAX_Y)` for `min_y`,
+ * `intRange(16, Y_SIZE)` for `height` and `intRange(0, Y_SIZE)` for `logical_height`, where
+ * `Y_SIZE = (1 << BlockPos.PACKED_Y_LENGTH) - 32 = 4064`, `MAX_Y = 2031` and `MIN_Y = -2032`.
+ */
+private const val COORDINATE_SCALE_MIN = 9.999999747378752E-6
+private const val COORDINATE_SCALE_MAX = 3.0E7
+private const val DIMENSION_MIN_Y = -2032
+private const val DIMENSION_MAX_Y = 2031
+private const val DIMENSION_MIN_HEIGHT = 16
+private const val DIMENSION_HEIGHT_SPAN = 4064
+
+private val SKYBOXES = setOf("none", "overworld", "end")
+private val GENERATORS = setOf("flat", "noise", "debug")
+
+/** A `namespace:path` (or a bare path, which the game binds to `minecraft`) the codec can parse. */
+private fun isDataPackId(id: String): Boolean = DATAPACK_NAME.matches(id.substringAfterLast(':'))

@@ -19,13 +19,15 @@
   方块状态（属性名寻址）读写、粒子（含自带参数的尘埃 / 物品 / 方块）、天气（读实时等级，写走 `/weather`
   同一条路径）、游戏规则按 id 读写、按维度时钟（26.3 的 `world.clock`：计数 / 速率 / 暂停 / 具名时刻标记）、
   时间线表按 id 读回（`clockDrivenBy` / `timeMarkersOf` / `markerIdsDriving`，含 `/time set` 不展示的标记）、
+  维度与维度类型读回（`dimensionTypeIds` / `dimensionTypeId` / `dimensionTypeById`，世界本身就是游戏为
+  数据包条目建起来的 `ServerLevel`）、
   方块存储（`containerAt` 返回游戏自己的 `Container`：槽位读写遵守方块自身的拒绝规则、可列出正在使用它的
   玩家）、玩家所用菜单与关闭、穿戴槽（`itemIn` / `equip` / `unequip` 按槽名与 id 寻址，能否进某槽由游戏的
   `isEquippableInSlot` 判定，被拒不改动原穿戴物）、效果、音效、传送、权限等级、区块加载判定与物品取出都在这一层。
   `OMLScheduler`（版本无关）把非游戏线程的工作排回所属侧的 tick 队列。
-- **声明式内容注册**：`ContentRegistry` 声明方块 / 物品 / 配方 / 掉落 / 伤害类型 / 时钟与时刻标记 / 行为钩子 /
-  BlockEntity / 矿石世界生成；方块与物品在注册表冻结点材料化为原生内容，配方、掉落、伤害类型与时钟 / 时间线
-  则写成数据包 JSON 经 OML 注入的资源包走 vanilla 自己的重载路径。
+- **声明式内容注册**：`ContentRegistry` 声明方块 / 物品 / 配方 / 掉落 / 伤害类型 / 时钟与时刻标记 /
+  维度类型与维度 / 行为钩子 / BlockEntity / 矿石世界生成；方块与物品在注册表冻结点材料化为原生内容，配方、
+  掉落、伤害类型、时钟 / 时间线与维度则写成数据包 JSON 经 OML 注入的资源包走 vanilla 自己的重载路径。
 - **注册表与标签读取**：直接读 `BuiltInRegistries` 与数据包表，`org.ohmyloader.api26_3` 的
   `byId` / `ids` / `contains` / `membersOf` / `tagsOf` 扩展按 id 寻址（未注册的 id 返回 null，不返回默认值），
   mod 自己注册的内容与原版条目同等可查。
