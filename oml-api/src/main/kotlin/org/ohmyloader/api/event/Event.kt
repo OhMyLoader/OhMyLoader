@@ -30,6 +30,11 @@ abstract class Event {
  * Dispatch path: `fire` -> invoker (a single lambda rebuilt at registration
  * time from the current listener snapshot) -> ordered traversal. Registration is
  * a low-frequency operation, so the rebuild cost is incurred only at registration.
+ *
+ * Registration mutates a plain list and is not synchronized: register during mod
+ * initialization, on one thread, before the version adapter starts dispatching.
+ * There is no unregister by design — a listener registered here stays for the
+ * life of the process.
  */
 class EventDefinition<T : Event>(val id: String) {
 
