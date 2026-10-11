@@ -79,7 +79,10 @@ interface ContentRegistry {
 
     /**
      * Declares that breaking [block] drops [drop] (instead of the block itself). Translated into
-     * a datapack loot table override at materialization; [drop] may be namespaced or bare.
+     * a datapack loot table override keyed by the block's registry id: a bare [block] binds to the
+     * declaring mod's namespace, `minecraft:<block>` overrides a vanilla block in the `minecraft`
+     * folder. [drop] may be namespaced or bare. A second declaration for the same block is refused
+     * with a warning — the first one wins.
      */
     fun declareBlockDrop(block: String, drop: String, dropCountMin: Int = 1, dropCountMax: Int = 1)
 

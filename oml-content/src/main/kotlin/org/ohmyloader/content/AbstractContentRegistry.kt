@@ -44,7 +44,11 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
         val reloadable: Boolean,
     )
 
-    /** Collected block-drop loot table declaration: [key] is the datapack file's local id (the block). */
+    /**
+     * Collected block-drop loot table declaration. [namespace] is the **block's** namespace (an override
+     * of a vanilla block writes into `minecraft`, not into the declaring mod's folder) and [key] the
+     * block's bare path — the file the game reads for block `<namespace>:<key>`'s default drops.
+     */
     data class LootDecl(
         val namespace: String,
         val key: String,
@@ -153,12 +157,15 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
     fun recipeIdsFor(namespace: String): List<String> =
         collectedRecipes.filter { it.namespace == namespace }.map { it.key }
 
-    /** The datapack JSON for a collected block-drop loot table (`data/<ns>/loot_table/blocks/<key>.json`). */
+    /**
+     * The datapack JSON for a collected block-drop loot table (`data/<ns>/loot_table/blocks/<key>.json`).
+     * [namespace] is the block's namespace, [key] the block's bare path — see [LootDecl].
+     */
     @Synchronized
     fun lootJsonFor(namespace: String, id: String): String? =
         collectedLoot.firstOrNull { it.namespace == namespace && it.key == id }?.json
 
-    /** The collected loot-table keys of [namespace], in declaration order — the datapack directory listing. */
+    /** The collected loot-table keys of [namespace] (the block paths), in declaration order — the datapack directory listing. */
     @Synchronized
     fun lootIdsFor(namespace: String): List<String> =
         collectedLoot.filter { it.namespace == namespace }.map { it.key }
@@ -408,19 +415,25 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                 dropCountMin: Int,
                 dropCountMax: Int,
             ): Unit = synchronized(this@AbstractContentRegistry) {
-                val key = qualify(namespace, block).replace(':', '_')
+                // The file the game reads for a block's default drops is keyed by the block's registry id
+                // itself (`techmod:tin_ore` -> `data/techmod/loot_table/blocks/tin_ore.json`), so which
+                // folder the file lands in is the block's namespace, not the declaring mod's — that is
+                // what lets `minecraft:copper_ore` override a vanilla block at all.
+                val blockId = qualify(namespace, block)
+                val at = blockId.substringBefore(':')
+                val key = blockId.substringAfter(':')
                 // A block has exactly one default loot table (its id derives from the file name), so a
                 // second declaration cannot also take effect — suffixing would emit an orphan table
                 // nothing references. Keep the first, say so loudly.
-                if (collectedLoot.any { it.namespace == namespace && it.key == key }) {
+                if (collectedLoot.any { it.namespace == at && it.key == key }) {
                     OmlLog.warn(
                         "Content",
-                        "block drop for '$block' declared more than once; keeping the first, ignoring this one",
+                        "block drop for '$blockId' declared more than once; keeping the first, ignoring this one",
                     )
                     return
                 }
-                val full = lootJson(block, drop, namespace, dropCountMin, dropCountMax)
-                collectedLoot += LootDecl(namespace, key, full, reloadable)
+                val full = lootJson(blockId, at, key, drop, namespace, dropCountMin, dropCountMax)
+                collectedLoot += LootDecl(at, key, full, reloadable)
             }
 
             override fun declareDamageType(
@@ -896,15 +909,25 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
             append('}')
         }
 
-    private fun lootJson(block: String, drop: String, namespace: String, min: Int, max: Int): String {
-        val blockId = qualify(namespace, block)
+    private fun lootJson(
+        blockId: String,
+        blockNamespace: String,
+        blockPath: String,
+        drop: String,
+        namespace: String,
+        min: Int,
+        max: Int,
+    ): String {
         val dropId = qualify(namespace, drop)
         // 26.3 loot shape: pool conditions are a single `condition` object and entry functions are
         // `modifier` entries — the pre-1.21 array shapes fail the loot codec, and a rejected loot
         // override silently drops nothing.
+        // `random_sequence` is the loot table's own id, which the game derives from the block's
+        // registry id (`<ns>:blocks/<path>`); a sequence the table does not own just changes its
+        // seeding without saying so.
         val count = if (min == max) "$min" else "{\"type\":\"minecraft:uniform\",\"min\":$min,\"max\":$max}"
         return """
-            {"type":"minecraft:block","pools":[{"condition":{"type":"minecraft:survives_explosion"},"entries":[{"type":"minecraft:item","name":"$dropId","modifier":[{"type":"minecraft:set_count","count":$count}]}],"rolls":1}],"random_sequence":"$blockId"}
+            {"type":"minecraft:block","pools":[{"condition":{"type":"minecraft:survives_explosion"},"entries":[{"type":"minecraft:item","name":"$dropId","modifier":[{"type":"minecraft:set_count","count":$count}]}],"rolls":1}],"random_sequence":"$blockNamespace:blocks/$blockPath"}
         """.trim()
     }
 

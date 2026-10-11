@@ -312,9 +312,25 @@ class AbstractContentRegistryTest {
         facade.declareBlockDrop(block = "ruby_ore", drop = "raw_ruby")
         facade.declareBlockDrop(block = "ruby_ore", drop = "ruby")
 
-        assertEquals(listOf("mymod_ruby_ore"), registry.lootIdsFor("mymod"))
-        val json = registry.lootJsonFor("mymod", "mymod_ruby_ore") ?: fail("the loot table must be served")
+        // The file key is the block's bare path: the game derives the default loot table id from the
+        // block's registry id, so `mymod:ruby_ore` reads `data/mymod/loot_table/blocks/ruby_ore.json`.
+        assertEquals(listOf("ruby_ore"), registry.lootIdsFor("mymod"))
+        val json = registry.lootJsonFor("mymod", "ruby_ore") ?: fail("the loot table must be served")
         assertTrue("\"mymod:raw_ruby\"" in json, "the first declaration wins")
+        assertTrue("\"random_sequence\":\"mymod:blocks/ruby_ore\"" in json, json)
+    }
+
+    @Test
+    fun `a vanilla block's drop override lands in the minecraft namespace`() {
+        val registry = RecordingRegistry()
+        val facade = registry.forNamespace("mymod")
+
+        facade.declareBlockDrop(block = "minecraft:copper_ore", drop = "raw_copper")
+
+        assertTrue(registry.lootIdsFor("mymod").isEmpty(), "the override must not go into the mod's folder")
+        assertEquals(listOf("copper_ore"), registry.lootIdsFor("minecraft"))
+        val json = registry.lootJsonFor("minecraft", "copper_ore") ?: fail("the loot table must be served")
+        assertTrue("\"random_sequence\":\"minecraft:blocks/copper_ore\"" in json, json)
     }
 
     @Test

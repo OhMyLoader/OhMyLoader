@@ -193,15 +193,18 @@ object ModAssetInjector {
                 // holds `assets/` only, so the answer is the same for either type.
                 "getNamespaces" -> {
                     val base = assetIndex().namespaces()
-                    // Declared ores merge into vanilla biome files, so the minecraft namespace must
-                    // be listed for the SERVER datapack reload to even look inside it. For
-                    // CLIENT_RESOURCES it must NOT be listed, ever: the pack sits at Position.TOP,
-                    // and a minecraft-claiming pack would shadow every vanilla asset with whatever
-                    // loader.getResource("assets/minecraft/…") finds — the game jar's own copy,
-                    // which ships 69-byte placeholder panorama textures where the real ones come
-                    // from the downloaded asset index (the missing title-screen background).
+                    // The minecraft namespace must be listed for the SERVER datapack reload when the pack
+                    // carries data for it — declared ores merge into vanilla biome files, and a vanilla
+                    // block's loot override lands in the minecraft folder — otherwise the reload never
+                    // looks inside it. For CLIENT_RESOURCES it must NOT be listed, ever: the pack sits at
+                    // Position.TOP, and a minecraft-claiming pack would shadow every vanilla asset with
+                    // whatever loader.getResource("assets/minecraft/…") finds — the game jar's own copy,
+                    // which ships 69-byte placeholder panorama textures where the real ones come from
+                    // the downloaded asset index (the missing title-screen background).
                     if (args.getOrNull(0) == serverData &&
-                        MinecraftContentRegistry.oreTargetedBiomes().isNotEmpty() && "minecraft" !in base
+                        (MinecraftContentRegistry.oreTargetedBiomes().isNotEmpty() ||
+                            MinecraftContentRegistry.lootIdsFor("minecraft").isNotEmpty()) &&
+                        "minecraft" !in base
                     ) {
                         base + "minecraft"
                     } else {
