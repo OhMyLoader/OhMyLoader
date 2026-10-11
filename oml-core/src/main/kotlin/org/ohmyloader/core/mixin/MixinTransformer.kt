@@ -7,6 +7,8 @@ import org.ohmyloader.core.transformer.IClassTransformer
 import org.ohmyloader.core.transformer.IVerifiableTransformer
 import org.ohmyloader.core.transformer.TransformContext
 import org.ohmyloader.core.transformer.injection.InjectingTransformer
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * The unified transformer for the Mixin front-end: **merge first, then inject** — a hard order, not
@@ -29,10 +31,10 @@ internal class MixinTransformer(
     private val mergeTargets: Set<String> = merges.mapTo(mutableSetOf()) { it.targetInternal }
 
     /** All merge problems that have occurred (including each mixin's static problems) -- collected for the startup self-check. */
-    private val problems = mutableListOf<String>()
+    private val problems = CopyOnWriteArrayList<String>()
 
     /** Cross-mixin `@Overwrite` ledger: the same target method overwritten by two mixins must be reported as a conflict. */
-    private val overwritten = mutableMapOf<String, String>()
+    private val overwritten = ConcurrentHashMap<String, String>()
 
     override fun appliesTo(internalName: String): Boolean =
         internalName in mergeTargets || injection?.appliesTo(internalName) == true

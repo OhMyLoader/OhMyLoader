@@ -65,7 +65,13 @@ object OMLMixinRegistry {
     )
 
     private val nextId = AtomicInteger()
-    private val handlers = mutableMapOf<Int, Handler>()
+
+    /**
+     * Written once per handler at scan time, read from the game thread at every dispatch —
+     * a concurrent map keeps the read path lock-free. Iteration ([ensureBridgeGenerated]) and
+     * clearing ([resetForTests]) stay under the object monitor.
+     */
+    private val handlers = ConcurrentHashMap<Int, Handler>()
     private val mixinInstances = ConcurrentHashMap<String, Any>()
 
     /**

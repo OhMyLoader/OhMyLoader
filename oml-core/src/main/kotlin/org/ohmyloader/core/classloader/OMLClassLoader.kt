@@ -9,6 +9,7 @@ import org.ohmyloader.core.transformer.IClassTransformer
 import org.ohmyloader.core.transformer.TransformContext
 import java.net.URL
 import java.net.URLClassLoader
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * OML's primary loader: game classes and mod classes are all defined here, with bytecode
@@ -19,13 +20,20 @@ import java.net.URLClassLoader
  * load them as-is and the pipeline would never get a chance); JDK internals and the
  * loader's own dependencies (ASM, Kotlin, logging, LWJGL, etc.) stay parent-first,
  * guaranteeing module access and a single global class identity.
+ *
+ * Concurrency: this loader is deliberately **not** registered as parallel capable, so every
+ * `loadClass` serializes on the per-class loading lock and the transformer pipeline runs
+ * single-threaded. The transformer list itself is a copy-on-write snapshot (safe to read from
+ * any thread), but enabling `registerAsParallelCapable` additionally requires auditing the full
+ * [findClass] path (Diagnostics recording, resource lookup, re-entrant class loading) first.
  */
 class OMLClassLoader(
     urls: Array<URL>,
     parent: ClassLoader,
 ) : URLClassLoader(urls, parent) {
 
-    private val transformers = mutableListOf<IClassTransformer>()
+    /** Written once at startup, read on every class load — a copy-on-write snapshot keeps reads lock-free. */
+    private val transformers = CopyOnWriteArrayList<IClassTransformer>()
 
     fun registerTransformer(transformer: IClassTransformer) {
         transformers.add(transformer)
