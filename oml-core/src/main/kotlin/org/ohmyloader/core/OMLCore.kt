@@ -444,14 +444,22 @@ object OMLCore {
     @JvmStatic
     fun loadedModIds(): List<String> = loadedMods.map { it.id.lowercase() }
 
-    /** Resource namespaces contributed by content packs ("*.toml" / "*.oml" files in the mods directory, no jar). */
+    /**
+     * Resource namespaces contributed by content packs ("*.toml" / "*.oml" files in the mods directory, no jar).
+     *
+     * Thread contract: written once during startup content loading, read-only afterwards.
+     */
     private val flatContentNamespaces = linkedSetOf<String>()
 
     /**
      * The `.oml` content pack archives: unlike loose `.toml` packs they carry their own assets and
      * data, so the asset index must scan them exactly like mod jars.
+     *
+     * Thread contract: [loadContentPacks] writes it at startup and [reloadContentPacks] (a vanilla
+     * `/reload`) may write it again while [contentPackFiles] is being read for asset indexing —
+     * hence the copy-on-write set, keeping both sides lock-free.
      */
-    private val contentPackFiles = linkedSetOf<File>()
+    private val contentPackFiles = java.util.concurrent.CopyOnWriteArraySet<File>()
 
     /** The content pack archives (`.oml`), for the asset index. */
     @JvmStatic
@@ -610,10 +618,15 @@ object OMLCore {
         }
     }
 
-    /** Mods whose [OMLModInitializer.onInitialize] threw, by id — surfaced by the `/oml mods` command. */
+    /**
+     * Mods whose [OMLModInitializer.onInitialize] threw, by id — surfaced by the `/oml mods` command.
+     *
+     * Thread contract: written only during mod initialization, read-only afterwards (the `/oml`
+     * executor reads it). No reader may mutate it.
+     */
     val initFailures = LinkedHashMap<String, Throwable>()
 
-    /** The initialization order after dependency sorting — what `/oml mods` reports. */
+    /** The initialization order after dependency sorting — what `/oml mods` reports. Same thread contract as [initFailures]. */
     val initOrder = mutableListOf<ModContainer>()
 
     /**

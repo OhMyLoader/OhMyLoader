@@ -12,5 +12,9 @@ object CommandDeclarations {
 
     data class Entry(val modId: String, val root: OMLCommandDeclaration)
 
+    /**
+     * Thread contract: written only during mod initialization, read-only afterwards (the adapter
+     * translates it on whatever thread rebuilds the game's dispatcher). No reader may mutate it.
+     */
     val entries = mutableListOf<Entry>()
 }

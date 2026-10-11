@@ -24,6 +24,11 @@ object PayloadDeclarations {
         val handler: (Any?, OMLNetworkContext) -> Unit,
     )
 
+    /**
+     * Thread contract: written only during the declaration phase (before the game's network stack
+     * starts), read-only afterwards — [handlerFor] runs on the game's network threads for every
+     * inbound packet. No reader may mutate it.
+     */
     val entries = mutableListOf<Entry>()
 
     /** An id without a namespace is published under the declaring mod's id. */

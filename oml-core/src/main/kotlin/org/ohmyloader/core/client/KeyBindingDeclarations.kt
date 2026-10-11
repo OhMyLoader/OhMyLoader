@@ -9,5 +9,9 @@ object KeyBindingDeclarations {
 
     data class Entry(val modId: String, val id: String, val defaultKey: String, val onPress: () -> Unit)
 
+    /**
+     * Thread contract: written only during mod initialization, read-only afterwards (the adapter
+     * applies it lazily on the first client tick). No reader may mutate it.
+     */
     val entries = mutableListOf<Entry>()
 }
