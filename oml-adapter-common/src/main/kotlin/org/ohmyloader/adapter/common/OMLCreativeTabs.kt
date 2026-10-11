@@ -18,16 +18,27 @@ import org.ohmyloader.core.OMLCore
 object OMLCreativeTabs {
 
     /**
-     * The tab's grid position is a hard constraint, not presentation: `CreativeModeTabs.validate()`
-     * runs after this registration and throws on any duplicate (row, column). Vanilla occupies
-     * columns 0–6 of both rows; [CreativeTabPositionTest] fails the build the day column 9 is taken.
+     * The tab's grid position is a hard constraint on two counts. `CreativeModeTabs.validate()` throws on
+     * any duplicate (row, column) and vanilla fills columns 0–6 of both rows, so [TAB_COLUMN] sits past
+     * them; and the creative screen lays a right-aligned tab at `imageWidth - 27 * (7 - column) + 1`,
+     * which puts column [TAB_COLUMN] immediately after the last vanilla button of the row.
+     * [CreativeTabPositionTest] fails the build the day that slot is taken.
      */
     internal val TAB_ROW = CreativeModeTab.Row.TOP
-    internal const val TAB_COLUMN = 9
+    internal const val TAB_COLUMN = 7
+
+    /**
+     * The upper bound of the game's own tab-sprite clamp. Vanilla passes `sprites.length`, which lets a
+     * column past vanilla's seven index one element out of the array; the rule on
+     * `CreativeModeInventoryScreen.extractTabButton` routes that bound through here.
+     */
+    @JvmStatic
+    fun spriteBound(bound: Int): Int = (bound - 1).coerceAtLeast(0)
 
     fun register(itemLikes: List<ItemLike>) {
         if (itemLikes.isEmpty()) return
         val tab = CreativeModeTab.builder(TAB_ROW, TAB_COLUMN)
+            .alignedRight()
             .title(Component.translatable("itemGroup.oml.main"))
             .icon { ItemStack(itemLikes.first()) }
             .displayItems { _, output ->

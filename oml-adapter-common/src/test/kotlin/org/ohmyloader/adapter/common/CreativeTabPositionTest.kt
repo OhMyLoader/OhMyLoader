@@ -3,6 +3,7 @@ package org.ohmyloader.adapter.common
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.*
+import org.ohmyloader.core.transformer.TransformContext
 import java.io.File
 import java.util.jar.JarFile
 import kotlin.test.Test
@@ -17,6 +18,11 @@ import kotlin.test.fail
  * the real jar and fails the build the day that slot is taken.
  */
 class CreativeTabPositionTest {
+
+    private companion object {
+        const val SPRITE_ARRAY = "net/minecraft/resources/Identifier"
+        const val OML_CREATIVE_TABS = "org/ohmyloader/adapter/common/OMLCreativeTabs"
+    }
 
     private val clientJar: File = File(System.getProperty("oml.clientJar", "libs/26.3-client.jar"))
 
@@ -61,6 +67,63 @@ class CreativeTabPositionTest {
             )
         }
     }
+
+    /**
+     * The other half of the slot's story: the screen's tab-button sprites hold one entry per vanilla
+     * column, so [OMLCreativeTabs.TAB_COLUMN] is out of their range by construction, and the only thing
+     * standing between a mod tab and an `ArrayIndexOutOfBoundsException` in "Rendering screen" is the
+     * bound rule. This applies the live rules to the real class and asks that the handler sit on the
+     * value the vanilla code feeds to `Mth.clamp`.
+     */
+    @Test
+    fun `the creative screen clamps a mod tab onto a sprite it owns`() {
+        val target = "net/minecraft/client/gui/screens/inventory/CreativeModeInventoryScreen"
+        JarFile(clientJar).use { jar ->
+            val entry = jar.getJarEntry("$target.class") ?: fail("$target missing from the client jar")
+            val node = ClassNode()
+            jar.getInputStream(entry).use { ClassReader(it.readAllBytes()).accept(node, 0) }
+
+            val clinit = instructionsOf(node.methods.first { it.name == "<clinit>" })
+            // `bipush <n>; anewarray Identifier` — anewarray carries the element type, and the length is
+            // the push ahead of it.
+            val spriteWidths: List<Int> = clinit.mapIndexedNotNull { index, insn ->
+                if (insn is TypeInsnNode && insn.desc == SPRITE_ARRAY) {
+                    (clinit.getOrNull(index - 1) as? IntInsnNode)?.operand
+                } else {
+                    null
+                }
+            }
+            assertTrue(spriteWidths.isNotEmpty(), "no tab sprite array is built in <clinit> — the read is off")
+            assertTrue(
+                OMLCreativeTabs.TAB_COLUMN > spriteWidths.min() - 1,
+                "column ${OMLCreativeTabs.TAB_COLUMN} now fits the ${spriteWidths.min()}-entry tab sprite " +
+                    "arrays, so the bound rule is no longer what keeps the creative screen alive — recheck both",
+            )
+
+            MinecraftHookTransformer(idPrefix = "test").transform(TransformContext(target, node))
+            val button = node.methods.first { it.name == "extractTabButton" }
+            val insns = instructionsOf(button)
+            val clampAt = insns.indexOfFirst {
+                it is MethodInsnNode && it.owner == "net/minecraft/util/Mth" && it.name == "clamp"
+            }
+            assertTrue(
+                clampAt > 0,
+                "extractTabButton no longer clamps a column into the sprite array — the vanilla lookup " +
+                    "moved, so this rule anchors on nothing",
+            )
+            val handlerAt = insns.take(clampAt).indexOfLast {
+                it is MethodInsnNode && it.owner == OML_CREATIVE_TABS && it.name == "spriteBound"
+            }
+            assertTrue(
+                handlerAt >= 0,
+                "nothing narrows the clamp bound before Mth.clamp: a column past vanilla's sprites indexes " +
+                    "one past the array and the creative screen crashes while rendering",
+            )
+        }
+    }
+
+    private fun instructionsOf(method: MethodNode): List<AbstractInsnNode> =
+        List(method.instructions.size()) { method.instructions[it] }
 
     private fun intPushed(insn: AbstractInsnNode?): Int? = when (insn) {
         is InsnNode -> when (insn.opcode) {
