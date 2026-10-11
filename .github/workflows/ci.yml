@@ -1,3 +1,6 @@
+# This workflow compiles, tests and packages. The real client and server launch
+# verification runs in the OhMyLoaderTestMod repository, whose end-to-end mod consumes
+# this build's artifacts by Maven coordinate.
 name: CI
 
 on:
@@ -17,6 +20,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v6
@@ -29,14 +33,24 @@ jobs:
           version: 0.16.0
       - uses: gradle/actions/setup-gradle@v6
       # HookShapeTest and the adapter compile read the vanilla client jar; caching it
-      # avoids a full Piston download on every run (key on the game version)
+      # avoids a full Piston download on every run. The key hashes the build files that
+      # declare which game versions are wanted, so a new version invalidates the cache;
+      # oml-adapter-common/libs holds the jar its compileOnly/testImplementation wiring reads.
       - uses: actions/cache@v6
         with:
           path: |
             oml-adapter-26_3/libs
             oml-adapter-snapshot/libs
-          key: client-jars-26.3-26.4-snapshot-2
-      - run: ./gradlew build
+            oml-adapter-common/libs
+          key: client-jars-${{ hashFiles('oml-adapter-26_3/build.gradle.kts', 'oml-adapter-snapshot/build.gradle.kts', 'oml-adapter-common/build.gradle.kts') }}
+          restore-keys: |
+            client-jars-
+      # tag builds produce the release-versioned installer here, so the release job can
+      # attach this exact artifact instead of rebuilding it
+      - name: Compute the release version for tag builds
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: echo "OML_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+      - run: ./gradlew ${OML_VERSION:+-Poml_version=$OML_VERSION} build
       - uses: actions/upload-artifact@v7
         with:
           name: oml-installer
@@ -49,6 +63,7 @@ jobs:
   # the zig-built oml-native library.
   windows-test:
     runs-on: windows-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v6
@@ -61,13 +76,15 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
       - run: ./gradlew.bat :oml-installer:test :oml-devtools:test
 
-  # Tag build: proper version via -Poml_version (overrides the gradle.properties snapshot),
-  # installer fat jar attached to a GitHub Release, all Maven coordinates published to
-  # GitHub Packages — the interim Maven server until a dedicated one exists.
+  # Tag build: all Maven coordinates published to GitHub Packages (the interim Maven server
+  # until a dedicated one exists) with the proper version via -Poml_version, and the installer
+  # fat jar built by the build job above — carrying the same version, because that job received
+  # the tag too — is attached to the GitHub Release. No rebuild of the installer here.
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: write
       packages: write
@@ -77,24 +94,21 @@ jobs:
         with:
           distribution: zulu
           java-version: '27'
-      - uses: mlugg/setup-zig@v2
-        with:
-          version: 0.16.0
       - uses: gradle/actions/setup-gradle@v6
-      - uses: actions/cache@v6
-        with:
-          path: |
-            oml-adapter-26_3/libs
-            oml-adapter-snapshot/libs
-          key: client-jars-26.3-26.4-snapshot-2
-      - run: ./gradlew -Poml_version="${GITHUB_REF_NAME#v}" build publish
+      - run: ./gradlew -Poml_version="${GITHUB_REF_NAME#v}" publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v7
+        with:
+          name: oml-installer
+          path: dist
       # The release is only as good as its asset: if a build-graph change ever drops shadowJar
       # from `build`, this fails the job instead of publishing a release with nothing attached.
       - name: The installer fat jar must exist before publishing
         run: ls -l dist/oml-installer-*.jar
-      - uses: softprops/action-gh-release@v3
+      # pinned to the commit the v3 tag points at (release 3.0.3); the tag object sha is
+      # 5113cdc90fd4d541c801c55356214017bf5ae34b
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64
         with:
           files: dist/oml-installer-*.jar
           fail_on_unmatched_files: true
