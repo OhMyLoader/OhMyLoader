@@ -23,18 +23,15 @@ abstract class Event {
 }
 
 /**
- * Typed event definition: one [EventDefinition] per event, with listeners
- * registered directly as `(T) -> Unit` lambdas — registration and dispatch are
- * entirely reflection-free and type-scan-free.
+ * Typed event definition: one instance per event; mods register `(T) -> Unit`
+ * listeners and the adapter dispatches — reflection-free, type-scan-free. `fire`
+ * walks a snapshot lambda rebuilt at registration time (a low-frequency
+ * operation, so the rebuild cost lives there).
  *
- * Dispatch path: `fire` -> invoker (a single lambda rebuilt at registration
- * time from the current listener snapshot) -> ordered traversal. Registration is
- * a low-frequency operation, so the rebuild cost is incurred only at registration.
- *
- * Registration mutates a plain list and is not synchronized: register during mod
- * initialization, on one thread, before the version adapter starts dispatching.
- * There is no unregister by design — a listener registered here stays for the
- * life of the process.
+ * Registration mutates a plain list and is not synchronized: register during
+ * mod initialization, on one thread, before the adapter starts dispatching.
+ * No unregister by design — a registered listener stays for the life of the
+ * process.
  */
 class EventDefinition<T : Event>(val id: String) {
 
