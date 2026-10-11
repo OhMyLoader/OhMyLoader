@@ -129,6 +129,20 @@ class MixinScannerTest {
         assertTrue(parsed.problems.single().contains("is not a recognized injection point"), parsed.problems.toString())
     }
 
+    @Test
+    fun `legacy dotted target is rejected with a problem`() {
+        // `net.minecraft.Foo.bar(I)V` (no L…; wrapper) produces a target that can never match — reported
+        // instead of silently emitting a dead anchor
+        val node = injectClass(handler("h", "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V"))
+        node.methods[0].visibleAnnotations[0].put("at", atNode("INVOKE", target = "net.minecraft.Foo.bar(I)V"))
+        val parsed = MixinScanner.parseMixinClass(node, "m")
+
+        assertTrue(parsed.rules.isEmpty())
+        val problem = parsed.problems.single()
+        assertTrue(problem.contains("not a recognized injection point"), problem)
+        assertTrue(problem.contains("net.minecraft.Foo.bar(I)V"), problem)
+    }
+
     // ---------- @Inject ----------
 
     @Test

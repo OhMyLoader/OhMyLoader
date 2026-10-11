@@ -434,8 +434,7 @@ object MixinScanner {
                 problems += if (atNode == null) {
                     "[$modId] $where —— $shortName is missing at = @At(…)"
                 } else {
-                    "[$modId] $where —— $shortName's @At(value = \"${annotationValue(atNode, "value")}\") " +
-                        "is not a recognized injection point (available: ${AtParser.SUPPORTED.joinToString("/")})"
+                    "[$modId] $where —— $shortName's ${unrecognizedAt(atNode)}"
                 }
                 return
             }
@@ -471,8 +470,7 @@ object MixinScanner {
         }
         val point = AtParser.parse(atNode)
         if (point == null) {
-            problems += "[$modId] $where —— $shortName's @At(value = \"${annotationValue(atNode, "value")}\") " +
-                "is not a recognized injection point (available: ${AtParser.SUPPORTED.joinToString("/")})"
+            problems += "[$modId] $where —— $shortName's ${unrecognizedAt(atNode)}"
             return
         }
 
@@ -1467,6 +1465,17 @@ object MixinScanner {
     }
 
     // ---------- annotation retrieval ----------
+
+    /**
+     * Diagnostic text for an unrecognized `@At`: the value plus, when written, the target — a legacy
+     * dotted owner or a bad specifier suffix hides in the target just as often as in the value.
+     */
+    private fun unrecognizedAt(atNode: AnnotationNode): String {
+        val target = (annotationValue(atNode, "target") as? String).orEmpty()
+        val targetPart = if (target.isEmpty()) "" else ", target = \"$target\""
+        return "@At(value = \"${annotationValue(atNode, "value")}\"$targetPart) " +
+            "is not a recognized injection point (available: ${AtParser.SUPPORTED.joinToString("/")})"
+    }
 
     /** The value of [name] in the annotation; returns null when absent. */
     private fun annotationValue(annotation: AnnotationNode, name: String): Any? =

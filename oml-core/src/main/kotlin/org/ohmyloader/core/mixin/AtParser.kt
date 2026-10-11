@@ -57,6 +57,7 @@ internal object AtParser {
 
             // INVOKE_ASSIGN means "after the call" -- it also covers the `shift = AFTER` semantics
             "INVOKE", "INVOKE_ASSIGN" -> {
+                if (isLegacyDotted(target)) return null
                 val m = methodTarget(target)
                 InjectionPoint.Call(
                     owner = m.owner,
@@ -77,6 +78,7 @@ internal object AtParser {
             }
 
             "FIELD" -> {
+                if (isLegacyDotted(target)) return null
                 val f = fieldTarget(target)
                 InjectionPoint.FieldAccess(
                     owner = f.owner,
@@ -89,6 +91,7 @@ internal object AtParser {
             }
 
             "NEW" -> {
+                if (isLegacyDotted(target)) return null
                 val t = typeTarget(target)
                 InjectionPoint.NewInstance(t.owner, t.desc, ordinal)
             }
@@ -122,6 +125,13 @@ internal object AtParser {
     private data class Ordinal(val ordinal: Int?, val last: Boolean)
 
     // ---------- member targets ----------
+
+    /**
+     * Mixin's legacy dotted form `owner.member(args)ret` (no `L…;` wrapper): package-name dots are
+     * ambiguous against member dots, and guessing wrong yields a target that can never match — so the
+     * whole `@At` goes unrecognized and the caller reports it, instead of emitting a dead anchor.
+     */
+    private fun isLegacyDotted(target: String): Boolean = target.contains('.') && !target.startsWith("L")
 
     /** Method target: `Lowner;name(args)ret` / `name(args)ret` / `name` / empty (all wildcard). */
     fun methodTarget(target: String): MethodTarget {
