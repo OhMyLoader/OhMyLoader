@@ -481,6 +481,10 @@ object TomlContentLoader {
         }
         for ([path, fields] in doc) {
             when {
+                // MinimalToml always emits the root table (""), empty unless the pack has root-level
+                // keys, and the load pass already judged those keys — it is not an unknown section.
+                path.isEmpty() -> Unit
+
                 path.startsWith("crafting.") && path.count { it == '.' } == 1 ->
                     declareCrafting(path.removePrefix("crafting."), fields, source, registry)
 
