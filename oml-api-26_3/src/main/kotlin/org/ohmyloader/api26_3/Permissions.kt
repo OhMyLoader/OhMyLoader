@@ -81,9 +81,7 @@ object OMLPermissionGrants {
     internal fun put(player: UUID, nodeId: String, allowed: Boolean): Boolean {
         val key = atomNode(nodeId)?.id()?.toString() ?: return false
         val table = overrides.computeIfAbsent(player) { ConcurrentHashMap() }
-        val changed = table.put(key, allowed) != allowed
-        if (table.isEmpty()) overrides.remove(player)
-        return changed
+        return table.put(key, allowed) != allowed
     }
 
     internal fun remove(player: UUID, nodeId: String): Boolean {
