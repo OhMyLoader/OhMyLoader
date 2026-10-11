@@ -287,15 +287,19 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
      */
     protected val collectedOreGen: MutableList<OreGenDecl> = mutableListOf()
 
-    /** Read-only view for the adapter (serving + biome merge), in declaration order. */
-    val oreGenDecls: List<OreGenDecl> get() = collectedOreGen
+    /** Read-only snapshot for the adapter (serving + biome merge), in declaration order. */
+    val oreGenDecls: List<OreGenDecl>
+        @Synchronized get() = collectedOreGen.toList()
 
+    @Synchronized
     fun oreGenKeysFor(namespace: String): List<String> =
         collectedOreGen.filter { it.namespace == namespace }.map { it.key }
 
+    @Synchronized
     fun oreFeatureJsonFor(namespace: String, key: String): String? =
         collectedOreGen.firstOrNull { it.namespace == namespace && it.key == key }?.featureJson
 
+    @Synchronized
     fun orePlacedJsonFor(namespace: String, key: String): String? =
         collectedOreGen.firstOrNull { it.namespace == namespace && it.key == key }?.placedJson
 
