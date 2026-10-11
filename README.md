@@ -125,7 +125,7 @@ object MyRules : RuleSetProvider {
 
 ### 工具链
 
-JDK 27（Zulu）· Gradle 9.8.0 · Kotlin 2.5.0-Beta1（当前唯一声明 JVM 27 目标的 Kotlin 线；
+JDK 27（Zulu）· Gradle 9.8.1 · Kotlin 2.5.0-Beta1（当前唯一声明 JVM 27 目标的 Kotlin 线；
 `build-logic` 因 `kotlin-dsl` 绑定 Gradle 内嵌编译器，暂以 JVM 26 目标运行，合法无害）。
 
 ### 追加说明
