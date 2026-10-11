@@ -3,6 +3,8 @@
 package org.ohmyloader.content
 
 import org.ohmyloader.api.content.*
+import java.io.ByteArrayOutputStream
+import java.io.PrintStream
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -129,6 +131,19 @@ class TomlContentLoaderTest {
             name, text, registry,
         )
         return registry to summary
+    }
+
+    /** Runs [block] with stderr captured — the loader's warnings are `[<tag>] WARN: …` lines on stderr. */
+    private fun stderrLinesOf(block: () -> Unit): List<String> {
+        val captured = ByteArrayOutputStream()
+        val original = System.err
+        System.setErr(PrintStream(captured, true, Charsets.UTF_8))
+        try {
+            block()
+        } finally {
+            System.setErr(original)
+        }
+        return captured.toString(Charsets.UTF_8).lineSequence().filter { it.isNotBlank() }.toList()
     }
 
     @Test
@@ -601,6 +616,37 @@ class TomlContentLoaderTest {
         assertEquals(
             registry.tags.first().spec.entries,
             reloaded.tags.first().spec.entries,
+        )
+    }
+
+    /**
+     * The reload pass covers only the datapack sections, so an unknown section must warn — the same
+     * typo the load pass warns about would otherwise reload into nothing with no line saying why.
+     * The frozen block / item sections are the opposite contract: skipped without a line, because
+     * the same pack file reloads as written and they cannot be re-materialized.
+     */
+    @Test
+    fun `a reload warns about unknown sections and silently skips the frozen block and item ones`() {
+        val toml = """
+            [block.frozen]
+            [item.still_frozen]
+            [crafting.frozen_result]
+            type = "shapeless"
+            ingredients = ["frozen"]
+            [mystery_section]
+            x = 1
+        """.trimIndent()
+        val lines = stderrLinesOf {
+            TomlContentLoader.loadDataDeclarations("tides", "tides.toml", toml, RecordingRegistry())
+        }
+        assertEquals(
+            1,
+            lines.count { "WARN" in it },
+            "exactly the unknown section must warn on reload, got: $lines",
+        )
+        assertTrue(
+            lines.single { "WARN" in it }.contains("[mystery_section]"),
+            "the warning must name the offending section, got: $lines",
         )
     }
 
