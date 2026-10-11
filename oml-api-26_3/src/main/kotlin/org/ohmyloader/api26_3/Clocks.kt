@@ -78,27 +78,31 @@ fun ServerClockManager.applyRate(clock: Holder<WorldClock>, rate: Float): Boolea
     }.getOrDefault(false)
 }
 
-/** Marker ids this clock offers. */
+/** Marker ids this clock offers; empty when this manager does not hold the clock. */
 fun ServerClockManager.markersOf(clock: Holder<WorldClock>): List<String> =
-    commandTimeMarkersForClock(clock).map { it.identifier().toString() }.toList()
+    runCatching { commandTimeMarkersForClock(clock).map { it.identifier().toString() }.toList() }
+        .getOrDefault(emptyList())
 
 /**
  * Whether the clock sits on [markerId] now, by the game's own test. A marker is a point in the cycle — exact,
  * or periodic when it declares a period — not a window, so this is true for one tick of each period. False for
- * a marker this clock does not carry.
+ * a marker this clock does not carry, and for a clock this manager does not hold.
  */
 fun ServerClockManager.atMarker(clock: Holder<WorldClock>, markerId: String): Boolean {
     val key = OMLRegistries.clockMarker(markerId) ?: return false
-    return isAtTimeMarker(clock, key)
+    return runCatching { isAtTimeMarker(clock, key) }.getOrDefault(false)
 }
 
 /**
  * Moves the clock to [markerId]'s next occurrence and answers whether it is there now: a clock already on the
- * marker counts as success, an unknown or foreign marker as failure.
+ * marker counts as success, an unknown or foreign marker as failure, and a clock this manager does not hold
+ * moves nothing and answers false.
  */
 fun ServerClockManager.applyMarker(clock: Holder<WorldClock>, markerId: String): Boolean {
     val key = OMLRegistries.clockMarker(markerId) ?: return false
-    return moveToTimeMarker(clock, key) != ServerClockManager.MoveResult.NO_TIME_MARKER_FOUND
+    return runCatching {
+        moveToTimeMarker(clock, key) != ServerClockManager.MoveResult.NO_TIME_MARKER_FOUND
+    }.getOrDefault(false)
 }
 
 private const val CLOCK_RATE_MIN = 1.0E-5f
