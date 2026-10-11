@@ -31,6 +31,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
 import java.io.PrintStream
+import java.lang.reflect.InvocationTargetException
 import java.net.URL
 import java.nio.file.Paths
 import java.util.*
@@ -116,7 +117,7 @@ object OMLCore {
         // would exist as two copies, each with its own adapter-side singletons — declarations
         // collected in one, materialization run against the other's empty state.
         val omlLoader = createMainLoader(parent, mods)
-        val adapter = discoverAdapter(omlLoader) ?: return
+        val adapter = discoverAdapter(omlLoader)
         this.adapter = adapter
         // Installed before mod init: a mod may send during its own initialization.
         OMLNetwork.sender = adapter.createNetworkSender()
@@ -186,22 +187,24 @@ object OMLCore {
      * and in the loader the injected hooks resolve them through. The check below turns the one way this
      * can break — an adapter class defined by some other loader, hence a second copy of every
      * adapter-side singleton — into a startup error instead of content that silently never materializes.
+     *
+     * A failed discovery throws: a startup that cannot proceed must be observable to the launcher (a
+     * non-zero exit code with the reason on stderr), not look like a successful hand-over to a game
+     * that then never starts.
      */
-    private fun discoverAdapter(loader: ClassLoader): IAdapter? {
-        val adapter = ServiceLoader.load(IAdapter::class.java, loader).firstOrNull()
-        if (adapter == null) {
-            OmlLog.error("OMLCore", "Fatal: no IAdapter implementation found (check classpath and META-INF/services)")
-            return null
+    private fun discoverAdapter(loader: ClassLoader): IAdapter {
+        val adapter = ServiceLoader.load(IAdapter::class.java, loader).firstOrNull() ?: run {
+            val problem = "no IAdapter implementation found (check classpath and META-INF/services)"
+            OmlLog.error("OMLCore", "Fatal: $problem")
+            throw IllegalStateException(problem)
         }
         if (adapter.javaClass.classLoader !== loader) {
-            OmlLog.error(
-                "OMLCore",
-                "Fatal: the adapter ${adapter.javaClass.name} was defined by " +
-                    "${adapter.javaClass.classLoader} instead of the OML main loader ($loader). Adapter classes must sit " +
-                    "under org.ohmyloader.adapter. so the main loader defines them; otherwise every adapter-side singleton " +
-                    "exists twice and injected hooks see the copy that never received the declarations.",
-            )
-            return null
+            val problem = "the adapter ${adapter.javaClass.name} was defined by " +
+                "${adapter.javaClass.classLoader} instead of the OML main loader ($loader). Adapter classes must sit " +
+                "under org.ohmyloader.adapter. so the main loader defines them; otherwise every adapter-side singleton " +
+                "exists twice and injected hooks see the copy that never received the declarations."
+            OmlLog.error("OMLCore", "Fatal: $problem")
+            throw IllegalStateException(problem)
         }
         return adapter
     }
@@ -353,16 +356,22 @@ object OMLCore {
         }
     }
 
-    /** Hands main-thread control to the game (or the dedicated server) through the OML main loader. */
+    /**
+     * Hands main-thread control to the game (or the dedicated server) through the OML main loader.
+     *
+     * Failures here are rethrown, not logged-and-returned: a startup that never reaches the game must
+     * be observable to the launcher as a non-zero exit (the exception propagates out of
+     * [org.ohmyloader.launcher.OMLBootstrap.main]). It must NOT die via `exitProcess` from here —
+     * the diagnostics report is delivered by a shutdown hook, and throwing keeps the JVM on the
+     * normal-termination path where that hook runs with the full stack trace already printed.
+     */
     private fun launch(adapter: IAdapter, args: Array<String>) {
         val entryClass = if (serverSide) adapter.serverMainClass else adapter.mainClass
         if (entryClass == null) {
-            OmlLog.error(
-                "OMLCore",
-                "Fatal: server startup is not yet supported for ${adapter.versionId} "
-                    + "(IAdapter.serverMainClass is null).",
-            )
-            return
+            val message = "server startup is not yet supported for ${adapter.versionId} " +
+                "(IAdapter.serverMainClass is null)."
+            OmlLog.error("OMLCore", "Fatal: $message")
+            throw IllegalStateException(message)
         }
 
         try {
@@ -374,14 +383,18 @@ object OMLCore {
             )
             mainMethod.invoke(null, args)
         } catch (e: ClassNotFoundException) {
-            OmlLog.error(
-                "OMLCore",
-                "Fatal: entry class $entryClass not found!\n" +
-                    "Please check that the game jar exists in oml-adapter-*/libs/ and matches the adapter layer version.",
-                e,
-            )
+            val message = "entry class $entryClass not found!\n" +
+                "Please check that the game jar exists in oml-adapter-*/libs/ and matches the adapter layer version."
+            OmlLog.error("OMLCore", "Fatal: $message", e)
+            throw IllegalStateException(message, e)
+        } catch (e: InvocationTargetException) {
+            // The game's own crash — rethrow the original so the crash report path / launcher sees the
+            // real exception, not a reflective wrapper
+            OmlLog.error("OMLCore", "Failed to start Minecraft!", e.targetException)
+            throw e.targetException
         } catch (t: Throwable) {
             OmlLog.error("OMLCore", "Failed to start Minecraft!", t)
+            throw t
         }
     }
 
