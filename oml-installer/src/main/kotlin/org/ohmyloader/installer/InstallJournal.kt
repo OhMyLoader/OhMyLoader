@@ -74,6 +74,9 @@ class InstallJournal {
             if (path.isFile && path.delete()) removed++ else failed++
         }
         for ([path, previous] in backups) {
+            // Deliberately not atomic: rollback is best-effort reporting (it never throws), and the
+            // snapshot exists only in memory, so a rollback that dies here can leave the file
+            // half-restored with nothing to retry from.
             try {
                 path.writeBytes(previous)
                 restored++
