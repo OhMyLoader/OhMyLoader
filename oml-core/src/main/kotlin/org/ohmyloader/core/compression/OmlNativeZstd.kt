@@ -80,8 +80,15 @@ object OmlNativeZstd {
     /** True once the library opened AND all six symbols bound. Consumers call this before use. */
     fun available(): Boolean = bindings != null
 
+    /**
+     * The call surface is only meaningful once [available] is true; reaching this error means a
+     * consumer skipped that check and would otherwise die as a bare NPE with no diagnosis.
+     */
+    private fun requireBindings(): Bindings =
+        bindings ?: error("oml-native is unavailable — query OmlNativeZstd.available() before calling the zstd surface")
+
     /** Upper bound for the compressed form of [size] bytes at any level. */
-    fun bound(size: Long): Long = bindings!!.compressBound.invoke(size) as Long
+    fun bound(size: Long): Long = requireBindings().compressBound.invoke(size) as Long
 
     /**
      * One-shot compress; returns the compressed byte count. The segments go straight to the
@@ -89,7 +96,7 @@ object OmlNativeZstd {
      * staged by the FFM linker (one copy, still no JNI).
      */
     fun compress(dst: MemorySegment, dstCap: Long, src: MemorySegment, srcSize: Long, level: Int): Long =
-        bindings!!.compress.invoke(dst, dstCap, src, srcSize, level) as Long
+        requireBindings().compress.invoke(dst, dstCap, src, srcSize, level) as Long
 
     /**
      * Compress through the library's per-thread persistent [ZSTD_CCtx]: same result as
@@ -98,18 +105,18 @@ object OmlNativeZstd {
      * threads each hold their own and no locking is involved.
      */
     fun compressReusable(dst: MemorySegment, dstCap: Long, src: MemorySegment, srcSize: Long, level: Int): Long =
-        bindings!!.compressReusable.invoke(dst, dstCap, src, srcSize, level) as Long
+        requireBindings().compressReusable.invoke(dst, dstCap, src, srcSize, level) as Long
 
     /** One-shot decompress; returns the produced byte count. */
     fun decompress(dst: MemorySegment, dstCap: Long, src: MemorySegment, srcSize: Long): Long =
-        bindings!!.decompress.invoke(dst, dstCap, src, srcSize) as Long
+        requireBindings().decompress.invoke(dst, dstCap, src, srcSize) as Long
 
     /** Declared content size of a frame: a byte count, `-1` (unknown), or `-2` (malformed). */
     fun getFrameContentSize(src: MemorySegment, srcSize: Long): Long =
-        bindings!!.frameContentSize.invoke(src, srcSize) as Long
+        requireBindings().frameContentSize.invoke(src, srcSize) as Long
 
     /** Non-zero when [code] is a zstd error code (as returned by the functions above). */
-    fun isErrorCode(code: Long): Boolean = (bindings!!.isError.invoke(code) as Int) != 0
+    fun isErrorCode(code: Long): Boolean = (requireBindings().isError.invoke(code) as Int) != 0
 
     // -----------------------------------------------------------------------------------------
     // byte[] conveniences for the region-file streaming wrappers and tests
