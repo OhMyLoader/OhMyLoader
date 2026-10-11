@@ -523,11 +523,9 @@ object OMLCore {
      * [Hook injection point] Handler for window-title `ModifyArg` (in-place rewrite): replaces the
      * game-computed title with [WINDOW_TITLE].
      *
-     * The title is a **product decision** — and the product has decided: the window reads
-     * "OhMyLoader", no matter which vanilla path (startup, world join, focus change) recomputes it.
-     * Returning the argument unchanged was the bootstrap-era choice, kept only until the product
-     * made up its mind; the hook chain itself is unchanged, so the original title is still received
-     * here first (and logged once) before being swapped out.
+     * The title is a **product decision** — the window reads "OhMyLoader" no matter which vanilla
+     * path (startup, world join, focus change) recomputes it. The hook chain delivers the original
+     * title here first, so it can still be logged once before being swapped out.
      */
     @JvmStatic
     fun onWindowTitle(title: String): String {
