@@ -276,6 +276,19 @@ internal fun InjectionBuilder.serverEventRules() {
             }
             require(1)
         }
+        // The guard returns above fire after the HEAD dispatch but before the first read of the damage
+        // parameter, so a rewrite pushed at HEAD would otherwise sit in the thread's queue past its call
+        // and could rewrite a later, unrelated hit. Every return of the same method releases whatever
+        // that call left queued.
+        method(
+            "hurtServer",
+            desc = "(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/damagesource/DamageSource;F)Z",
+        ) {
+            atReturn {
+                call(BRIDGE, "onHurtReturned", "()V")
+            }
+            require(5)
+        }
         method("die", desc = "(Lnet/minecraft/world/damagesource/DamageSource;)V") {
             atHead {
                 cancellableCall(

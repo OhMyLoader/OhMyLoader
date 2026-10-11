@@ -261,7 +261,8 @@ object EventBridge {
      * number travels between the two hooks here. It is a **stack**, not one slot: a damage application
      * nested inside another (thorns retaliation) pushes its own entry and pops it at its own read, in order.
      * An entry is consumed only by the application that pushed it — the pair of identities has to match —
-     * so it can never rewrite an unrelated damage.
+     * so it can never rewrite an unrelated damage, and whatever its own call never read is released at that
+     * call's returns ([onHurtReturned]).
      */
     private val rewrittenHurt = ThreadLocal<ArrayDeque<RewrittenHurt>>()
 
@@ -306,6 +307,16 @@ object EventBridge {
         if (rewritten.entity !== entity || rewritten.source !== source) return amount
         pending.removeLast()
         return rewritten.amount
+    }
+
+    /**
+     * [LivingEntity.hurtServer, every return] Releases what the call pushed but its first parameter read
+     * never consumed — the invulnerability, dying and fire-immunity guards return before that read. Nothing
+     * legit is pending here: a nested hurt can only start once the outer call has already read its parameter.
+     */
+    @JvmStatic
+    fun onHurtReturned() {
+        rewrittenHurt.get()?.clear()
     }
 
     /**
