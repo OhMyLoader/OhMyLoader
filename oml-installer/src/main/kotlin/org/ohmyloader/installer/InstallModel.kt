@@ -247,7 +247,9 @@ class FatJarArtifactSource(
     }
 
     override fun shellJar(): LayerArtifact {
-        val entry = sharedEntries.firstOrNull { it.contains("launcher", ignoreCase = true) }
+        // The shell is the oml-launcher artifact, so it is matched by its file name: a substring
+        // search for "launcher" also catches any other jar whose name happens to carry the word.
+        val entry = sharedEntries.firstOrNull { it.substringAfterLast('/').startsWith("oml-launcher") }
             ?: throw InstallationException(Messages.t("err.fatjar.noShell"))
         val name = entry.substringAfterLast('/')
         return LayerArtifact(name, ArtifactSource.coordinateBaseOf(name)) {
@@ -278,12 +280,25 @@ class FatJarArtifactSource(
     }
 
     companion object {
-        /** The fat jar this process is running from, located through `java.class.path`. */
-        fun runningJar(): File =
-            System.getProperty("java.class.path")?.split(File.pathSeparator)
-                ?.firstOrNull { it.isNotBlank() && it.endsWith(".jar") }
-                ?.let(::File)?.takeIf { it.isFile }
-                ?: throw InstallationException(Messages.t("err.fatjar.noJar"))
+        /**
+         * The fat jar this process is running from, located through `java.class.path`. A dev launch
+         * puts many jars on the classpath and the first one is not necessarily this installer, so the
+         * pick prefers the jar carrying the installer's own catalogue resource; the first classpath
+         * jar stays the fallback (a packaged fat jar is the only jar there anyway).
+         */
+        fun runningJar(): File {
+            val candidates = System.getProperty("java.class.path")?.split(File.pathSeparator)
+                ?.mapNotNull { entry ->
+                    entry.takeIf { it.isNotBlank() && it.endsWith(".jar") }
+                        ?.let(::File)?.takeIf { it.isFile }
+                }
+                ?: emptyList()
+            return candidates.firstOrNull { jar ->
+                runCatching { java.util.zip.ZipFile(jar).use { zip -> zip.getEntry("oml-versions.json") != null } }
+                    .getOrDefault(false)
+            } ?: candidates.firstOrNull()
+            ?: throw InstallationException(Messages.t("err.fatjar.noJar"))
+        }
     }
 }
 

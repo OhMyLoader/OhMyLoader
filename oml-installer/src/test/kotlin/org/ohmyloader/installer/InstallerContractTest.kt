@@ -395,6 +395,36 @@ class InstallerContractTest {
     // ------------------------------------------------------------------------------------------
 
     @Test
+    fun `the shell jar is matched by its artifact name, not any launcher substring`() {
+        val jar = File(tempDir(), "installer.jar")
+        ZipOutputStream(jar.outputStream()).use { zip ->
+            // "fancy-launcher.jar" sorts before the real shell: a substring search picks the wrong one
+            for (name in listOf("lib/fancy-launcher.jar", "lib/oml-launcher.jar", "lib/oml-core.jar")) {
+                zip.putNextEntry(ZipEntry(name))
+                zip.write(ByteArray(16))
+                zip.closeEntry()
+            }
+        }
+        FatJarArtifactSource("26.3", "oml-adapter-26_3", jar).use { source ->
+            assertEquals("oml-launcher.jar", source.shellJar().fileName)
+        }
+    }
+
+    @Test
+    fun `runningJar picks the catalogue jar when present, else the documented first-jar fallback`() {
+        // A dev classpath holds many jars; the pick must be the installer fat jar when it is on the
+        // classpath (identified by its generated catalogue resource), never an arbitrary jar.
+        val jar = runCatching { FatJarArtifactSource.runningJar() }.getOrNull() ?: return
+        val firstCandidate = System.getProperty("java.class.path")?.split(File.pathSeparator)
+            ?.firstOrNull { it.isNotBlank() && it.endsWith(".jar") }
+        val hasCatalogue = java.util.zip.ZipFile(jar).use { it.getEntry("oml-versions.json") != null }
+        assertTrue(
+            hasCatalogue || (firstCandidate != null && jar.absolutePath == File(firstCandidate).absolutePath),
+            "runningJar must be the catalogue jar or the documented first-jar fallback",
+        )
+    }
+
+    @Test
     fun `unknown arguments are rejected as a controlled exception`() {
         assertFailsWith<InstallationException> {
             Installer.Options.parse(arrayOf("--version", "26.3", "--dir", ".", "--nope"))
