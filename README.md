@@ -12,7 +12,7 @@
   方块与实体的破坏、右键、使用 / 伤害（数值可改写）/ 死亡 / 聊天 / GUI / 世界加载 / 区块开始运行与卸载 / HUD /
   帧率限制 …）。
   事件载荷直接携带游戏自己的对象（`ServerPlayer`、`BlockPos`、`BlockState`、`DamageSource`、`Screen`…），
-  mod 拿到的就是游戏正在用的那一个，没有包装层也没有逃生舱。
+  mod 拿到的就是游戏正在用的那一个，没有包装层；个别句柄（命令源、网络上下文、已注册方块）保留 `platform` 逃生舱。
 - **26.3 游戏访问 API**（`org.ohmyloader.api26_3`）：`OMLGame.server` / `OMLGame.client` 就是
   `MinecraftServer` / `Minecraft` 本身，其余能力全部是以游戏类型为实现者的扩展函数与属性——不分配包装对象，
   也就没有跨 tick 失效的句柄。实体生成与查询（含活体专用入口）、运动向量、属性基础值与常驻修正、
@@ -59,7 +59,7 @@
 @Mod(id = "my_mod", name = "My Mod", version = "1.0.0")
 class MyMod : OMLModInitializer {
   override fun onInitialize(context: ModContext) {
-    Events.CLIENT_TICK.register { /* 每帧处理 */ }
+    Events.CLIENT_TICK.register { /* 每逻辑 tick 处理 */ }
     Events.CHAT_RECEIVED.register { event ->
       if (event.message.contains("bad_word")) {
         event.cancel() // 拦截聊天（cancellable 事件由 cancel() 取消，canceled 只读）
