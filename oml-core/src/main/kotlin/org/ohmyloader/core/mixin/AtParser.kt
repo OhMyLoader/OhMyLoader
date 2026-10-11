@@ -26,16 +26,28 @@ internal object AtParser {
      * recognizes (the caller is responsible for reporting the problem).
      *
      * An `ordinal` of -1 (the annotation default) is treated as "match all" -- consistent with Mixin.
+     *
+     * Mixin's specifier suffixes are parsed for `INVOKE`/`INVOKE_ASSIGN`: `:FIRST` selects the first
+     * match (ordinal 0), `:LAST` the last ([InjectionPoint.Call.last]). Any other suffix on any value —
+     * or a suffix combined with an explicit `ordinal` — makes the whole `@At` unrecognized, so it
+     * surfaces as a problem instead of silently degrading to "match all".
      */
     fun parse(node: AnnotationNode): InjectionPoint? {
         val rawValue = annotationValue(node, "value") as? String ?: return null
-        // Mixin allows specifier suffixes such as `"INVOKE:LAST"`. The with-in/ordinal semantics are
-        // already expressed via "from takes last, to takes first", so only the part before the colon is kept.
         val value = rawValue.substringBefore(':').trim().uppercase()
+        val suffix = if (':' in rawValue) rawValue.substringAfter(':').trim().uppercase() else null
         val ordinal = (annotationValue(node, "ordinal") as? Int)?.takeIf { it >= 0 }
         val opcode = (annotationValue(node, "opcode") as? Int)?.takeIf { it >= 0 }
         val after = shiftAfter(node)
         val target = (annotationValue(node, "target") as? String).orEmpty()
+
+        // FIRST/LAST are defined for call anchors; anything else carrying a suffix is unrecognized
+        val callSelector = when {
+            suffix == null -> Ordinal(ordinal, last = false)
+            value in CALL_VALUES && suffix == "FIRST" && ordinal == null -> Ordinal(0, last = false)
+            value in CALL_VALUES && suffix == "LAST" && ordinal == null -> Ordinal(null, last = true)
+            else -> return null
+        }
 
         return when (value) {
             "HEAD" -> InjectionPoint.Head
@@ -51,7 +63,8 @@ internal object AtParser {
                     name = m.name,
                     desc = m.desc,
                     after = after || value == "INVOKE_ASSIGN",
-                    ordinal = ordinal,
+                    ordinal = callSelector.ordinal,
+                    last = callSelector.last,
                     // `opcode = INVOKESTATIC` is Mixin's way of declaring "the target is a static call"
                     // used to decide whether the receiver enters the handler parameter list. When no
                     // opcode is given, `null` = unknown, and it is conservatively treated as an instance call.
@@ -101,6 +114,12 @@ internal object AtParser {
         "HEAD", "CTOR_HEAD", "RETURN", "TAIL", "INVOKE", "INVOKE_ASSIGN", "FIELD", "NEW", "CONSTANT",
         "STORE", "LOAD",
     )
+
+    /** The values a `:FIRST`/`:LAST` specifier suffix is defined for. */
+    private val CALL_VALUES = setOf("INVOKE", "INVOKE_ASSIGN")
+
+    /** The call anchor's match selector: [ordinal] plus whether the **last** match is wanted. */
+    private data class Ordinal(val ordinal: Int?, val last: Boolean)
 
     // ---------- member targets ----------
 

@@ -58,9 +58,22 @@ internal object AnchorResolver {
         if (point is InjectionPoint.Sliced) {
             val inner = resolveCandidates(point.inner, method, owner, superName, frames)
             val windowed = applySlice(inner, point, method, owner, superName, frames)
-            return applyOrdinal(windowed, ordinalOf(point), point)
+            return applySelector(windowed, point.inner)
         }
-        return applyOrdinal(resolveCandidates(point, method, owner, superName, frames), ordinalOf(point), point)
+        return applySelector(resolveCandidates(point, method, owner, superName, frames), point)
+    }
+
+    /** Ordinal / `:LAST` selection; both read off the anchor's core (a [InjectionPoint.Sliced] shell is transparent). */
+    private fun applySelector(candidates: List<AbstractInsnNode>, point: InjectionPoint): List<AbstractInsnNode> {
+        val core = point.core
+        if (core is InjectionPoint.Call && core.last) {
+            // The front end rejects ordinal + LAST; the DSL path only warns and lets LAST win
+            if (core.ordinal != null) {
+                OmlLog.error("Injection", "ordinal and the LAST specifier are mutually exclusive: $point — treating as LAST")
+            }
+            return listOfNotNull(candidates.lastOrNull())
+        }
+        return applyOrdinal(candidates, ordinalOf(point), point)
     }
 
     /** Only finds the location; does not apply the window or ordinal. */

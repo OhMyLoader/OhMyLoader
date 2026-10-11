@@ -142,6 +142,12 @@ sealed class InjectionPoint {
          * only blows up at runtime.
          */
         val isStatic: Boolean? = null,
+        /**
+         * Selects the **last** match instead of every/ordinal-th — the `INVOKE:LAST` specifier
+         * suffix. Mutually exclusive with [ordinal] by construction (the front end rejects the
+         * combination).
+         */
+        val last: Boolean = false,
     ) : InjectionPoint() {
         /** True only when known to be a static call (`null` counts as "uncertain", treated strictly as an instance call). */
         fun isStaticCall(): Boolean = isStatic == true

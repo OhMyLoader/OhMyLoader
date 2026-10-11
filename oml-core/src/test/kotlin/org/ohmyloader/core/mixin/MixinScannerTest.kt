@@ -97,10 +97,19 @@ class MixinScannerTest {
     }
 
     @Test
-    fun `at specifier suffix is tolerated`() {
-        // Mixin's "INVOKE:LAST" — the window semantics are already expressed by `within`; only the part
-        // before the colon is taken as the suffix
-        assertIs<InjectionPoint.Call>(parse("INVOKE:LAST", target = "foo()V"))
+    fun `at specifier suffixes FIRST and LAST select the match ends`() {
+        assertEquals(
+            InjectionPoint.Call(null, "foo", "()V", after = false, ordinal = 0),
+            parse("INVOKE:FIRST", target = "foo()V"),
+        )
+        val last = parse("INVOKE:LAST", target = "foo()V")
+        assertIs<InjectionPoint.Call>(last)
+        assertTrue(last.last)
+        // An unknown suffix is a rule error, not "match all": the whole @At goes unrecognized
+        assertNull(parse("INVOKE:ORDINAL", target = "foo()V"))
+        assertNull(parse("FIELD:LAST", target = "f:I"))
+        // and the suffix combined with an explicit ordinal is contradictory, so unrecognized too
+        assertNull(parse("INVOKE:FIRST", target = "foo()V", ordinal = 2))
     }
 
     @Test
