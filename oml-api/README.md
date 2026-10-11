@@ -8,7 +8,7 @@
 
 | 层 | 内容 | 承诺 |
 |----|------|------|
-| **契约层** | `@Mod` 入口、`OMLModInitializer` / `ModContext`、`Event` 基元与 `EventDefinition`、`ContentRegistry` 声明 DSL、注入 DSL（`@RuleSource` / `RuleSetProvider` / 锚点与改写原语） | 语义与签名按语义化版本向后兼容；破坏性变更必须先以弃用形式存在一个次版本 |
+| **契约层** | `@Mod` 入口、`OMLModInitializer` / `ModContext`、`Event` 基元与 `EventDefinition`、`ContentRegistry` 声明 DSL、注入 DSL（`@RuleSource` / `RuleSetProvider` / 锚点与改写原语） | 0.x 阶段：破坏性变更以 `!` 提交直接落地，不做弃用过渡，迁移方式逐条写入该提交的正文；1.0 起冻结，见下方版本号策略 |
 | **已提供、仍在沉淀** | 命令 DSL（`command`）、配置（`config`）、网络（`network`）、按键 / HUD / 创造标签（`client`）、主线程调度器（`tick`）、`ModContext.config` | 0.x 阶段允许随版本调整（调整记录进发布说明与 `docs/forensics.md`）；1.0 起升入契约层 |
 | **版本面向（随游戏版本变动）** | `oml-api-26_3`：事件载荷与扩展函数直接命名 26.3 的类（`ServerPlayer` / `BlockPos` / `DamageSource` / `BuiltInRegistries`…） | 不承诺跨游戏版本兼容——它的兼容对象就是那一版游戏。换版本是换工件（`oml-api-<version>`），不是改调用写法 |
 
@@ -24,10 +24,14 @@
   （附替换指引）保留到下一个大版本；弃用起在启动日志中以 WARN 提示一次。
 - "仍在沉淀"层在 1.0 之前不承诺兼容；进入 1.0 的内容会在发布说明中逐条宣布升层。
 
-## 弃用的执行方式
+## 破坏性变更的执行方式
 
-- 代码内：`@Deprecated`（附 `ReplaceWith` 与原因），不加 `error` 级别的运行期拦截——mod 的
-  运行不该被弃用打断。
+- 0.x 阶段（当前）：破坏性变更以 `!` 提交直接落地——被移除的签名不留弃用替身，替代写法逐条写入
+  该提交正文的 "Breaking for mods" 段；被移除表面的职责若随游戏版本演进（如事件载荷），移入
+  `oml-api-<game version>` 投影层而非保留在本工件。
 - 文档内：本文件的变更记录 + 发布说明逐条列出；面向 mod 作者的站点文档同步更新。
-- 仓库纪律：`oml-api` 的破坏性变更与弃用必须独立成提交（commit 信息里写明约束与迁移方式），
+- 1.0 起：破坏契约层的变更为大版本事件，旧签名经 `@Deprecated`（附 `ReplaceWith` 与原因）保留到
+  下一个大版本；弃用起在启动日志中以 WARN 提示一次，不加 `error` 级别的运行期拦截——mod 的运行
+  不该被弃用打断。
+- 仓库纪律：`oml-api` 的破坏性变更必须独立成提交（commit 信息里写明约束与迁移方式），
   不与功能修改混排。
