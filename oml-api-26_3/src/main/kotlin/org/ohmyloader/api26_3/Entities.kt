@@ -188,8 +188,8 @@ fun Player.giveItem(itemId: String, count: Int): Boolean {
 /**
  * Moves the player to [x], [y], [z] — and to [dimensionId] as well when one is given. Movement is
  * server-authoritative: a client-side player is served through the integrated server's counterpart of the same
- * uuid, so false means there was no counterpart to move, an unknown dimension, or the game refused the
- * destination.
+ * uuid, so false means there was no counterpart to move — including a handle the game has replaced, which
+ * reads removed and is gone — an unknown dimension, or the game refused the destination.
  */
 fun Player.teleport(x: Double, y: Double, z: Double, dimensionId: String? = null): Boolean {
     val server = OMLGame.server ?: return false
