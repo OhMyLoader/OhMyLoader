@@ -459,6 +459,44 @@ class InjectionAnchorTest {
     }
 
     @Test
+    fun `nested within takes the intersection of the two windows`() {
+        // Outer window = (last outerBegin, first outerEnd); inner = (innerBegin, innerEnd). Only the
+        // return inside BOTH windows may carry the hook — the inner window alone would also hit ret3.
+        val outerBegin1 = MethodInsnNode(Opcodes.INVOKESTATIC, "x/Y", "outerBegin", "()V", false)
+        val ret1 = InsnNode(Opcodes.RETURN)
+        val outerBegin2 = MethodInsnNode(Opcodes.INVOKESTATIC, "x/Y", "outerBegin", "()V", false)
+        val innerBegin = MethodInsnNode(Opcodes.INVOKESTATIC, "x/Y", "innerBegin", "()V", false)
+        val ret2 = InsnNode(Opcodes.RETURN)
+        val innerEnd = MethodInsnNode(Opcodes.INVOKESTATIC, "x/Y", "innerEnd", "()V", false)
+        val ret3 = InsnNode(Opcodes.RETURN)
+        val outerEnd = MethodInsnNode(Opcodes.INVOKESTATIC, "x/Y", "outerEnd", "()V", false)
+
+        val spec = spec {
+            classTarget(owner) {
+                method("m", desc = "()V") {
+                    within(from = Anchor.call(name = "outerBegin"), to = Anchor.call(name = "outerEnd")) {
+                        within(from = Anchor.call(name = "innerBegin"), to = Anchor.call(name = "innerEnd")) {
+                            atReturn { omlCall("hook") }
+                        }
+                    }
+                }
+            }
+        }
+        val cls = classNode(
+            methodNode("m", "()V") {
+                add(outerBegin1); add(ret1); add(outerBegin2); add(innerBegin)
+                add(ret2); add(innerEnd); add(ret3); add(outerEnd)
+            },
+        )
+
+        assertTrue(spec.transform(TransformContext(owner, cls)))
+
+        val hooks = hookCalls(cls, "m")
+        assertEquals(1, hooks.size, "only the return inside both windows hits")
+        assertEquals(ret2, hooks[0].next)
+    }
+
+    @Test
     fun `within uses the last match of the from bound`() {
         val begin1 = MethodInsnNode(Opcodes.INVOKESTATIC, "x/Y", "begin", "()V", false)
         val begin2 = MethodInsnNode(Opcodes.INVOKESTATIC, "x/Y", "begin", "()V", false)

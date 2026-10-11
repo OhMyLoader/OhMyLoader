@@ -199,8 +199,8 @@ class MethodRuleBuilder @PublishedApi internal constructor(
     private var expectCount: Int? = null
     private var optionalRule = false
 
-    /** The currently active search window (temporarily set by [within]): its `from to to` two bounds (null = unbounded). */
-    private var pendingSlice: Pair<InjectionPoint?, InjectionPoint?>? = null
+    /** The currently active search windows (pushed by [within], outer first): each is a `from to to` pair (null = unbounded). */
+    private val pendingSlices = mutableListOf<Pair<InjectionPoint?, InjectionPoint?>>()
 
     internal fun build(): MethodRule =
         MethodRule(selector, points.toList(), requireMin, expectCount, optionalRule, allowMax)
@@ -218,18 +218,21 @@ class MethodRuleBuilder @PublishedApi internal constructor(
         to: InjectionPoint? = null,
         block: MethodRuleBuilder.() -> Unit,
     ) {
-        val previous = pendingSlice
-        pendingSlice = from to to
+        pendingSlices += from to to
         try {
             block()
         } finally {
-            pendingSlice = previous
+            pendingSlices.removeAt(pendingSlices.size - 1)
         }
     }
 
-    /** Wraps the anchor in the current window (if any). Every entry point that attaches an injection point must go through here. */
+    /**
+     * Wraps the anchor in every open window (if any), innermost first: the engine applies the
+     * innermost window to the core, then trims by each outer one — the intersection of all windows.
+     * Every entry point that attaches an injection point must go through here.
+     */
     private fun at(point: InjectionPoint): InjectionPoint =
-        pendingSlice?.let { [from, to] -> InjectionPoint.Sliced(point, from, to) } ?: point
+        pendingSlices.foldRight(point) { slice, acc -> InjectionPoint.Sliced(acc, slice.first, slice.second) }
 
     /**
      * Hits **at least** [n] times, otherwise fails hard ([InjectionError]).
