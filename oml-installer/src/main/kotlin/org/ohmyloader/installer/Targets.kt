@@ -562,22 +562,20 @@ object DedicatedServerTarget : InstallationTarget {
         // the game itself: the modern (bundler) server artifact cannot be started directly, so the
         // client jar is used, exactly like the Gradle runServer task does
         val serverJar = File(base, "minecraft/$version/server.jar")
+        val librariesDir = File(base, "libraries")
+        // One environment for the whole batch: an environment resolves the version JSON once, so
+        // opening one per step re-fetched the same manifest and version documents several times.
         sink.stage(Messages.t("stage.downloadGame"))
-        withDownloader(sink) { _ ->
+        withDownloader(sink) { progress ->
             GameEnvironment.open(version).use { env ->
                 ctx.log(Messages.t("log.bundlerClientJar", version))
                 env.downloadClientJar(serverJar)
                 ctx.journal.recordDownload(serverJar)
-            }
-        }
 
-        // libraries: the game's runtime libraries, natives included (selected for the platform the
-        // installer runs on, and the natives directory is what java.library.path in the start script
-        // points at)
-        sink.stage(Messages.t("stage.downloadLibraries"))
-        val librariesDir = File(base, "libraries")
-        withDownloader(sink) { progress ->
-            GameEnvironment.open(version).use { env ->
+                // libraries: the game's runtime libraries, natives included (selected for the
+                // platform the installer runs on, and the natives directory is what
+                // java.library.path in the start script points at)
+                sink.stage(Messages.t("stage.downloadLibraries"))
                 env.downloadLibraries(librariesDir, progress)
                 env.extractNatives(librariesDir, nativesDir, progress)
             }

@@ -291,7 +291,7 @@ object AssetDownloader {
         // wrapper, while the client jar carries the flat, unified classes.
         val kind = "client"
         val label = "game main jar"
-        val vParsed = resolveVersionDetails(client, engine.version)
+        val vParsed = engine.versionDetails
         val downloads = vParsed["downloads"] as? Map<*, *>
             ?: throw IllegalStateException("downloads missing in the version details")
         val meta = downloads[kind] as? Map<*, *>
@@ -326,7 +326,7 @@ object AssetDownloader {
         progress: DownloadProgress?,
     ): List<File> = withEngine(engine) {
         librariesDir.mkdirs()
-        val vParsed = resolveVersionDetails(client, engine.version)
+        val vParsed = engine.versionDetails
         val libs = vParsed["libraries"] as? List<*>
             ?: throw IllegalStateException("libraries missing in the version details")
 
@@ -378,7 +378,7 @@ object AssetDownloader {
         val osName = PlatformRules.currentOsName()
         val arch = PlatformRules.currentArch()
         val classifier = PlatformRules.nativesClassifier(osName, arch)
-        val vParsed = resolveVersionDetails(client, engine.version)
+        val vParsed = engine.versionDetails
         val libs = vParsed["libraries"] as? List<*> ?: return@withEngine emptyList()
 
         // Locate the natives jars by asking the version JSON which ones they are, rather than by
@@ -440,9 +440,9 @@ object AssetDownloader {
             // when the id happens to be a version id, so try that first and fall back to the manifest
             // lookup inside ensureIndex.
             indexId = explicitIndex
-            indexRef = runCatching { indexRefFor(client, explicitIndex) }.getOrNull()
+            indexRef = runCatching { indexRefFor(resolveVersionDetails(client, explicitIndex), explicitIndex) }.getOrNull()
         } else {
-            val resolved = indexRefFor(client, version)
+            val resolved = indexRefFor(engine.versionDetails, version)
                 ?: throw IllegalStateException("version $version is missing assetIndex")
             indexId = resolved.id
             indexRef = resolved
@@ -511,8 +511,8 @@ object AssetDownloader {
      */
     private data class IndexRef(val id: String, val url: String?, val sha1: String?, val size: Long?)
 
-    private fun indexRefFor(client: HttpClient, version: String): IndexRef? {
-        val ai = resolveVersionDetails(client, version)["assetIndex"] as? Map<*, *> ?: return null
+    private fun indexRefFor(details: Map<*, *>, version: String): IndexRef? {
+        val ai = details["assetIndex"] as? Map<*, *> ?: return null
         val id = ai["id"] as? String ?: return null
         return IndexRef(
             id = id,
@@ -540,7 +540,7 @@ object AssetDownloader {
         // to resolving the index by name from the manifest.
         val url = ref?.url ?: run {
             log("[AssetDownloader] index missing; attempting to auto-download $index from the Mojang version manifest ...")
-            indexRefFor(client, index)?.url
+            indexRefFor(resolveVersionDetails(client, index), index)?.url
                 ?: throw IllegalStateException("assetIndex.url missing in the version details")
         }
 
@@ -920,7 +920,13 @@ object AssetDownloader {
         }
     }
 
-    private fun resolveVersionDetails(client: HttpClient, versionId: String): Map<*, *> {
+    /**
+     * The version JSON for [versionId], resolved through the manifest (the `snapshot` alias
+     * included). One call is one manifest fetch plus one version-JSON fetch — callers that need the
+     * document more than once should resolve it once, which is what the engine's
+     * [GameEnvironment.Engine.versionDetails] does.
+     */
+    internal fun resolveVersionDetails(client: HttpClient, versionId: String): Map<*, *> {
         val manifest = httpGet(client, VERSION_MANIFEST_URL)
             ?: throw IllegalStateException("无法获取版本清单（version_manifest_v2.json）")
         val parsed = parseToPlain(manifest)

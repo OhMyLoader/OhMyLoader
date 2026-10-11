@@ -30,7 +30,15 @@ class GameEnvironment private constructor(
         val version: String,
         val client: HttpClient,
         val permits: Semaphore,
-    )
+    ) {
+        /**
+         * The version JSON, resolved on first use and then shared by every operation on this
+         * environment. Resolving it is a manifest fetch plus a version-JSON fetch, so an environment
+         * used for a whole batch (jar, libraries, natives, assets) fetches the pair once, not per
+         * step.
+         */
+        val versionDetails: Map<*, *> by lazy { AssetDownloader.resolveVersionDetails(client, version) }
+    }
 
     private val engine = Engine(
         version = version,
