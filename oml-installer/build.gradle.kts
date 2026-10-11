@@ -146,13 +146,26 @@ val generateVersionCatalog = tasks.register("generateVersionCatalog") {
     val adapters: Map<String, String> = bundledAdapters
     val resourcesDir: File = layout.buildDirectory.dir("resources/main").get().asFile
     val javaMajor: Int = requiredJavaMajor
+    // The Java 8 bootstrap cannot read this build's constants (empty compile classpath), so it
+    // carries its own copy of the Java requirement; the build fails when the two drift.
+    val bootstrapSource: File = layout.projectDirectory
+        .file("src/bootstrap/java/org/ohmyloader/installer/InstallerBootstrap.java").asFile
+    val javaMajorConst = Regex("""REQUIRED_JAVA_MAJOR\s*=\s*(\d+)""")
 
     outputs.dir(resourcesDir)
     // the catalogue content is an input: a changed version list must re-run this task
     inputs.property("bundledVersions", versions.joinToString(","))
     inputs.property("javaMajor", javaMajor.toString())
+    inputs.file(bootstrapSource)
 
     doLast {
+        // single source of truth: the catalogue value wins, the bootstrap copy must agree
+        val declared = javaMajorConst.find(bootstrapSource.readText())
+            ?.groupValues?.get(1)?.toIntOrNull()
+        require(declared == javaMajor) {
+            "InstallerBootstrap's REQUIRED_JAVA_MAJOR ($declared) disagrees with requiredJavaMajor ($javaMajor)"
+        }
+
         // A file an older build produced but this one no longer does must not keep being packaged.
         File(resourcesDir, "names").deleteRecursively()
 
