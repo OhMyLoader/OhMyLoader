@@ -452,7 +452,7 @@ object AssetDownloader {
         val indexFile = ensureIndex(client, assetsDir, indexId, indexRef)
         // Record the index id actually used — see ASSET_INDEX_MARKER: the game cannot derive it from
         // its own jar, and this marker, straight from the version metadata above, is authoritative.
-        File(assetsDir, ASSET_INDEX_MARKER).writeText(indexId)
+        writeAtomically(File(assetsDir, ASSET_INDEX_MARKER), indexId.toByteArray(Charsets.UTF_8))
         val index = json.decodeFromString<AssetIndex>(indexFile.readText())
         // The hash is simultaneously the file name and the URL path, so it is a path component too:
         // a malformed (or tampered) index must never be able to point the downloader outside

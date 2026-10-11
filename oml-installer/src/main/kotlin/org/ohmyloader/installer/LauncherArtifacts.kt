@@ -54,8 +54,13 @@ fun writeAtomicText(target: File, text: String, journal: InstallJournal? = null)
     journal?.recordWrite(target)
     target.parentFile?.mkdirs()
     val tmp = File(target.parentFile, "${target.name}.tmp")
-    tmp.writeText(text, Charsets.UTF_8)
-    Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+    try {
+        tmp.writeText(text, Charsets.UTF_8)
+        Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+    } catch (t: Throwable) {
+        tmp.delete()
+        throw t
+    }
 }
 
 internal fun sha1Of(file: File): String {
@@ -436,10 +441,18 @@ $args
 /** The launcher expects a jar with the same name as the version directory; the real classes live in `libraries/`. */
 fun writeVersionStubJar(target: File, journal: InstallJournal? = null) {
     journal?.recordWrite(target)
-    ZipOutputStream(target.outputStream().buffered()).use { zip ->
-        zip.putNextEntry(ZipEntry("META-INF/MANIFEST.MF"))
-        zip.write("Manifest-Version: 1.0\r\n\r\n".toByteArray(Charsets.UTF_8))
-        zip.closeEntry()
+    target.parentFile?.mkdirs()
+    val tmp = File(target.parentFile, "${target.name}.tmp")
+    try {
+        ZipOutputStream(tmp.outputStream().buffered()).use { zip ->
+            zip.putNextEntry(ZipEntry("META-INF/MANIFEST.MF"))
+            zip.write("Manifest-Version: 1.0\r\n\r\n".toByteArray(Charsets.UTF_8))
+            zip.closeEntry()
+        }
+        Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+    } catch (t: Throwable) {
+        tmp.delete()
+        throw t
     }
 }
 
