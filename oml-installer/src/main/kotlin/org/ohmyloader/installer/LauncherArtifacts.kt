@@ -147,6 +147,12 @@ class InstalledLibrary(val coordinate: String, val mavenPath: String, val sha1: 
  * The oml-native entry for the two launcher formats this installer writes, built from what
  * [installOmlNativePackages] deployed. Two shapes, because the two consumers disagree on how a jar
  * is declared: a version JSON downloads, a Prism component patch points at a local file.
+ *
+ * The version-JSON shape declares **only** `downloads.classifiers`, no `artifact`: the plain main jar
+ * (`oml-native-<v>.jar`, classifier null) is never written to the Maven tree — the launchers extract
+ * the classified jar the `natives` block names, and nothing resolves the plain coordinate from the
+ * game's library list. Declaring an `artifact` would point the launcher at a file that does not
+ * exist; the classes that would live in the main jar travel in the layer's own entries instead.
  */
 class InstalledNativeLibrary(
     val coordinateVersion: String,
