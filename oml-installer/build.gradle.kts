@@ -191,8 +191,15 @@ val generateVersionCatalog = tasks.register("generateVersionCatalog") {
     }
 }
 
+// The four generators write into subdirectories of this task's own output directory
+// (resources/main/{lib,natives,natives-jars}); dependsOn schedules them and mustRunAfter states the
+// direction explicitly, so a refactor that drops the dependency cannot silently let processResources
+// run first. Task references only — configuration-cache safe.
+val resourceGenerators = listOf(embedBundled, embedOmlNative, embedNativesJars, generateVersionCatalog)
+
 tasks.processResources {
-    dependsOn(embedBundled, embedOmlNative, embedNativesJars, generateVersionCatalog)
+    dependsOn(resourceGenerators)
+    mustRunAfter(resourceGenerators)
 }
 
 tasks.shadowJar {
