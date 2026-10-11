@@ -202,8 +202,11 @@ class OMLDimensionTypeDeclaration {
     /** `height`: the total dimension height in blocks. The game's own window is 16..4064. */
     var height: Int = 384
 
-    /** `logical_height`: the height the day-light cycle uses. The game's own window is 0..4064. */
-    var logicalHeight: Int = 384
+    /**
+     * `logical_height`: the height the day-light cycle uses. Null (the default) writes [height], which the
+     * game requires this value not to exceed; its own window is 0..4064.
+     */
+    var logicalHeight: Int? = null
 
     /** `infiniburn`: the block tag fire burns forever in, spelled as a tag reference (`#minecraft:infiniburn_overworld`). */
     var infiniburn: String = "#minecraft:infiniburn_overworld"

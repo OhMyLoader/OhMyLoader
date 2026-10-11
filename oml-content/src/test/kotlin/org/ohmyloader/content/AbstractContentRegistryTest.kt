@@ -503,6 +503,10 @@ class AbstractContentRegistryTest {
         facade.declareDimensionType("min_y_out") { minY = -2033 }
         facade.declareDimensionType("height_out") { height = 15 }
         facade.declareDimensionType("logical_out") { logicalHeight = 4065 }
+        facade.declareDimensionType("height_unaligned") { height = 100 }
+        facade.declareDimensionType("min_y_unaligned") { minY = 5 }
+        facade.declareDimensionType("logical_above") { height = 128; logicalHeight = 256 }
+        facade.declareDimensionType("past_ceiling") { minY = 0; height = 4064 }
         facade.declareDimensionType("light_out") { ambientLight = 1.5f }
         facade.declareDimensionType("monster_out") { monsterSpawnLightLevel = 16 }
         facade.declareDimensionType("no_tag") { infiniburn = "minecraft:infiniburn_overworld" }

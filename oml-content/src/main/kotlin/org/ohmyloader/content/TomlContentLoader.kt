@@ -535,7 +535,7 @@ object TomlContentLoader {
             coordinateScale = doubleValue(fields, "coordinate_scale", source, "dimension_type '$id'") ?: 1.0
             minY = intValue(fields, "min_y", source, "dimension_type '$id'") ?: -64
             height = intValue(fields, "height", source, "dimension_type '$id'") ?: 384
-            logicalHeight = intValue(fields, "logical_height", source, "dimension_type '$id'") ?: 384
+            logicalHeight = intValue(fields, "logical_height", source, "dimension_type '$id'") ?: height
             infiniburn = fields["infiniburn"] as? String ?: "#minecraft:infiniburn_overworld"
             ambientLight = floatValue(fields, "ambient_light", source, "dimension_type '$id'") ?: 0f
             monsterSpawnLightLevel =

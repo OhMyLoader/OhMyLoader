@@ -509,6 +509,9 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
 
             override fun declareDimensionType(id: String, configure: OMLDimensionTypeDeclaration.() -> Unit) {
                 val spec = OMLDimensionTypeDeclaration().apply(configure)
+                // The codec marks logical_height required and its constructor rejects a value above height,
+                // so an unset declaration is written as height itself rather than as a fixed default.
+                val logicalHeight = spec.logicalHeight ?: spec.height
                 val clock = spec.clock?.let { qualify(namespace, it) }
                 val badTimeline = spec.timelines.firstOrNull { !DATAPACK_NAME.matches(it.substringAfterLast(':')) }
                 val refusal = when {
@@ -524,9 +527,18 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                     spec.height !in DIMENSION_MIN_HEIGHT..DIMENSION_HEIGHT_SPAN ->
                         "dimension type '$id' height ${spec.height} is outside the game's " +
                             "$DIMENSION_MIN_HEIGHT..$DIMENSION_HEIGHT_SPAN"
-                    spec.logicalHeight !in 0..DIMENSION_HEIGHT_SPAN ->
-                        "dimension type '$id' logical height ${spec.logicalHeight} is outside the game's " +
+                    logicalHeight !in 0..DIMENSION_HEIGHT_SPAN ->
+                        "dimension type '$id' logical height $logicalHeight is outside the game's " +
                             "0..$DIMENSION_HEIGHT_SPAN"
+                    spec.height % 16 != 0 ->
+                        "dimension type '$id' height ${spec.height} is not a multiple of 16"
+                    spec.minY % 16 != 0 ->
+                        "dimension type '$id' min_y ${spec.minY} is not a multiple of 16"
+                    logicalHeight > spec.height ->
+                        "dimension type '$id' logical height $logicalHeight exceeds its height ${spec.height}"
+                    spec.minY + spec.height > DIMENSION_BUILD_CEILING ->
+                        "dimension type '$id' spans min_y ${spec.minY} + height ${spec.height} past the " +
+                            "game's build ceiling of $DIMENSION_BUILD_CEILING"
                     spec.ambientLight !in 0f..1f ->
                         "dimension type '$id' ambient light ${spec.ambientLight} is not between 0.0 and 1.0"
                     spec.monsterSpawnLightLevel !in 0..15 || spec.monsterSpawnBlockLightLimit !in 0..15 ->
@@ -787,7 +799,7 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
         append("\"has_skylight\":${spec.skyLight},")
         append("\"height\":${spec.height},")
         append("\"infiniburn\":\"${spec.infiniburn}\",")
-        append("\"logical_height\":${spec.logicalHeight},")
+        append("\"logical_height\":${spec.logicalHeight ?: spec.height},")
         append("\"min_y\":${spec.minY},")
         append("\"monster_spawn_block_light_limit\":${spec.monsterSpawnBlockLightLimit},")
         append("\"monster_spawn_light_level\":${spec.monsterSpawnLightLevel}")
@@ -934,7 +946,9 @@ private val DATAPACK_NAME = Regex("[a-z0-9_.-]+")
 /**
  * The game's own `DimensionType` codec windows, read off 26.3: `intRange(MIN_Y, MAX_Y)` for `min_y`,
  * `intRange(16, Y_SIZE)` for `height` and `intRange(0, Y_SIZE)` for `logical_height`, where
- * `Y_SIZE = (1 << BlockPos.PACKED_Y_LENGTH) - 32 = 4064`, `MAX_Y = 2031` and `MIN_Y = -2032`.
+ * `Y_SIZE = (1 << BlockPos.PACKED_Y_LENGTH) - 32 = 4064`, `MAX_Y = 2031` and `MIN_Y = -2032`. The
+ * constructor adds `height % 16 == 0`, `min_y % 16 == 0`, `logical_height <= height` and
+ * `min_y + height <= BUILD_CEILING`, where `BUILD_CEILING = 2032`.
  */
 private const val COORDINATE_SCALE_MIN = 9.999999747378752E-6
 private const val COORDINATE_SCALE_MAX = 3.0E7
@@ -942,6 +956,7 @@ private const val DIMENSION_MIN_Y = -2032
 private const val DIMENSION_MAX_Y = 2031
 private const val DIMENSION_MIN_HEIGHT = 16
 private const val DIMENSION_HEIGHT_SPAN = 4064
+private const val DIMENSION_BUILD_CEILING = 2032
 
 private val SKYBOXES = setOf("none", "overworld", "end")
 private val GENERATORS = setOf("flat", "noise", "debug")
