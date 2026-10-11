@@ -974,6 +974,25 @@ class MixinScannerTest {
         assertIs<IllegalStateException>(cause)
     }
 
+    @Test
+    fun `a handler descriptor matching no overload fails instead of binding the first candidate`() {
+        // MirrorMixin.handler(I)I is the only same-name/same-param-count candidate, but the rule declared
+        // a long capture: the wanted descriptor is (J)I, no candidate matches. Binding "the first one" in
+        // an undefined order would silently invoke a method the rule did not declare — refuse instead.
+        newBridge()
+        val id = OMLMixinRegistry.register(
+            "testmod", MirrorMixin::class.java.name, "handler", "someMethod", false,
+            captureTypes = listOf("J"), handlerParamCount = 1, returnType = "I", mirror = true,
+        )
+        installBridge()
+
+        val failure = assertFailsWith<Exception> { invokeBridgeMethod("redirect$$id", arrayOf(7L)) }
+        val cause = (failure as? InvocationTargetException)?.targetException ?: failure
+        assertIs<NoSuchMethodException>(cause)
+        assertTrue(cause.message!!.contains("no overload"), cause.message)
+        assertTrue(cause.message!!.contains("(J)I"), cause.message)
+    }
+
     // ---------- fixtures ----------
 
     private fun parse(

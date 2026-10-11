@@ -439,9 +439,7 @@ object OMLMixinRegistry {
      * cached: they throw on every dispatch, matching the pre-cache failure behavior.
      */
     private fun handlerMethod(handler: Handler, clazz: Class<*>): Method =
-        resolvedMethods[handler.id]
-            ?: resolveHandlerMethod(clazz, handler)?.also { resolvedMethods[handler.id] = it }
-            ?: throw NoSuchMethodException(handlerDescription(handler))
+        resolvedMethods[handler.id] ?: resolveHandlerMethod(clazz, handler).also { resolvedMethods[handler.id] = it }
 
     private fun handlerDescription(handler: Handler): String = when {
         handler.returnsValue -> "${handler.mixinClass}.${handler.handlerMethod} (expected ${handler.handlerParamCount} parameter(s)," +
@@ -467,13 +465,15 @@ object OMLMixinRegistry {
     /**
      * Pick out the handler method for this id.
      *
-     * **Match by exact descriptor first, then fall back to parameter count.** Matching only by count picks the
-     * wrong overload when the same mixin class has multiple overloads with the same parameter count, and the
-     * order of `declaredMethods` / `methods` is undefined. The expected parameter table varies by kind:
-     * notify/short-circuit kinds end with the callback handle; [BridgeKind.MODIFY] / [BridgeKind.MIRROR] have
-     * no handle, their parameters are captures + the return type.
+     * **Match by exact descriptor only.** When the same mixin class has multiple overloads with the same
+     * parameter count, the order of `declaredMethods` / `methods` is undefined — binding "the first
+     * candidate" would invoke an arbitrary overload. A descriptor mismatch is a provable rule error, so
+     * it fails the dispatch (isolated for notify kinds, propagated for value-modifying kinds) instead of
+     * picking a method the rule did not declare. The expected parameter table varies by kind:
+     * notify/short-circuit kinds end with the callback handle; [BridgeKind.MODIFY] / [BridgeKind.MIRROR]
+     * have no handle, their parameters are captures + the return type.
      */
-    private fun resolveHandlerMethod(clazz: Class<*>, handler: Handler): Method? {
+    private fun resolveHandlerMethod(clazz: Class<*>, handler: Handler): Method {
         val wanted = when (kindOf(handler)) {
             BridgeKind.NOTIFY, BridgeKind.CANCELLABLE ->
                 "(${handler.captureTypes.joinToString("")}$CALLBACK_INFO_DESC)V"
@@ -488,7 +488,10 @@ object OMLMixinRegistry {
             it.name == handler.handlerMethod && it.parameterCount == handler.handlerParamCount
         }
         return candidates.firstOrNull { Type.getMethodDescriptor(it) == wanted }
-            ?: candidates.firstOrNull()
+            ?: throw NoSuchMethodException(
+                "${handlerDescription(handler)} — no overload of ${clazz.name} matches the wanted descriptor " +
+                    "$wanted (candidates: ${candidates.joinToString { Type.getMethodDescriptor(it) }.ifEmpty { "none" }})",
+            )
     }
 
     /**
