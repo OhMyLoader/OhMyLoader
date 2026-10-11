@@ -22,16 +22,6 @@ object ModAssetInjector {
     private const val PACK_NAME = "OML Mod Resources"
 
 
-    /**
-     * Idempotent injection: mount the mod resource pack into PackRepository's sources and add it
-     * to the selection list. Called by [EventBridge.onPackRepositoryReload] at the head of
-     * `PackRepository.openAllSelected()`. `PackRepository.sources` is a `Set` immutable in
-     * practice, so it is replaced wholesale with a `HashSet` carrying the extra source.
-     * The re-selection (`reload()` + `addPack()`) runs on **every** reload on purpose: the options
-     * load and the resource pack screen rewrite the selection list, and a reload we are not part
-     * of would silently drop this pack; `addPack` on an already-selected id is a no-op, so this
-     * stays idempotent.
-     */
     /** The pack instance, shared by every repository that mounts it (it answers both pack types). */
     @Volatile
     private var pack: Any? = null
@@ -50,6 +40,16 @@ object ModAssetInjector {
             clazz.getMethod("getNamespace") to clazz.getMethod("getPath")
         }
 
+    /**
+     * Idempotent injection: mount the mod resource pack into PackRepository's sources and add it
+     * to the selection list. Called by [EventBridge.onPackRepositoryReload] at the head of
+     * `PackRepository.openAllSelected()`. `PackRepository.sources` is a `Set` immutable in
+     * practice, so it is replaced wholesale with a `HashSet` carrying the extra source.
+     * The re-selection (`reload()` + `addPack()`) runs on **every** reload on purpose: the options
+     * load and the resource pack screen rewrite the selection list, and a reload we are not part
+     * of would silently drop this pack; `addPack` on an already-selected id is a no-op, so this
+     * stays idempotent.
+     */
     @Synchronized
     fun ensureInjected(repo: Any) {
         val loader = OMLCore.gameClassLoader()

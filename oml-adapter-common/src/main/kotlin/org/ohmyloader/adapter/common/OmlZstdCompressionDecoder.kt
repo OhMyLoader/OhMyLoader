@@ -20,7 +20,7 @@ import java.util.zip.Inflater
  */
 class OmlZstdCompressionDecoder(private var threshold: Int, private var validate: Boolean) : ByteToMessageDecoder() {
 
-    /** 2 MiB — the protocol's largest legitimate packet, and the malformed-packet guard. */
+    /** 8 MiB — the protocol's largest legitimate packet, and the malformed-packet guard. */
     private val maxUncompressedLength = 8 * 1024 * 1024
 
     private val inflater = Inflater()
