@@ -76,6 +76,29 @@ class ModRuleSetsTest {
     }
 
     @Test
+    fun `an MR-JAR versioned copy is not scanned as a rule source`() {
+        // The same fixture bytecode placed only under META-INF/versions/: scanning it would register the
+        // rule class from the versioned copy instead of (or in addition to) the base entry — MR-JAR
+        // versioning is the class loader's business, not the scanner's.
+        val file = File.createTempFile("oml-mrjar-", ".jar")
+        file.deleteOnExit()
+        JarOutputStream(file.outputStream()).use { out ->
+            val path = OkRules::class.java.name.replace('.', '/') + ".class"
+            val bytes = OkRules::class.java.getResourceAsStream("/$path")?.readBytes()
+                ?: error("test fixture bytecode not on the classpath: $path")
+            out.putNextEntry(JarEntry("META-INF/versions/17/$path"))
+            out.write(bytes)
+            out.closeEntry()
+        }
+        val mod = ModContainer("fixture", "Fixture", "1.0", "x.Y", file)
+
+        val loaded = ModRuleSets.load(listOf(mod), javaClass.classLoader)
+
+        assertTrue(loaded.rules.targets.isEmpty(), "the versioned copy must not become a rule source")
+        assertTrue(loaded.problems.isEmpty(), loaded.problems.toString())
+    }
+
+    @Test
     fun `a missing jar is skipped instead of failing the bootstrap`() {
         val mod = ModContainer("gone", "Gone", "1.0", "x.Y", File("no/such/mod.jar"))
         val loaded = ModRuleSets.load(listOf(mod), javaClass.classLoader)

@@ -115,6 +115,10 @@ internal object ModRuleSets {
                 val all = zip.entries()
                 while (all.hasMoreElements()) {
                     val name = all.nextElement().name
+                    // MR-JAR versioned copies are not rule sources: scanning them would register the same
+                    // class a second time (and a versioned duplicate shadowing the base class is the exact
+                    // ambiguity the MR-JAR mechanism resolves by class loader, not by scanner).
+                    if (name.startsWith("META-INF/")) continue
                     if (name.endsWith(".class")) entries += name.removeSuffix(".class")
                 }
                 val own = entries.toSet()

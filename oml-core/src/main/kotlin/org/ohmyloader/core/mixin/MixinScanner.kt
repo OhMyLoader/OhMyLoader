@@ -211,6 +211,9 @@ object MixinScanner {
             while (entries.hasMoreElements()) {
                 val entry = entries.nextElement()
                 if (!entry.name.endsWith(".class")) continue
+                // MR-JAR versioned copies are not mixin declarations: scanning them would register the
+                // same mixin class twice (duplicate @Overwrite ledger entries / double member synthesis).
+                if (entry.name.startsWith("META-INF/")) continue
                 try {
                     zip.getInputStream(entry).use { stream ->
                         val node = ClassNode(Opcodes.ASM9)

@@ -800,6 +800,25 @@ class MixinScannerTest {
         assertEquals(emptyList(), parsed.problems)
     }
 
+    @Test
+    fun `an MR-JAR versioned copy is not scanned as a mixin`() {
+        // A mixin class placed only under META-INF/versions/: scanning it would register the same mixin
+        // a second time (duplicate @Overwrite ledger entries / double member synthesis). MR-JAR
+        // versioning is the class loader's business, not the scanner's.
+        val jar = java.io.File.createTempFile("oml-mixin-mrjar-", ".jar")
+        jar.deleteOnExit()
+        java.util.jar.JarOutputStream(jar.outputStream()).use { out ->
+            val writer = ClassWriter(ClassWriter.COMPUTE_MAXS)
+            injectClass(handler("h", "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V")).accept(writer)
+            out.putNextEntry(java.util.jar.JarEntry("META-INF/versions/17/org/ohmyloader/testmod/TestMixin.class"))
+            out.write(writer.toByteArray())
+            out.closeEntry()
+        }
+        val mod = org.ohmyloader.core.mod.ModContainer("m", "M", "1.0", "x.Y", jar)
+
+        assertNull(MixinScanner.createTransformer(listOf(mod)))
+    }
+
     // ---------- Bridge: dispatch & exception isolation ----------
 
     @Test
