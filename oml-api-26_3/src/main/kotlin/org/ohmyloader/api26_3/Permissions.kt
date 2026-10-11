@@ -4,6 +4,7 @@ import net.minecraft.commands.CommandSourceStack
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.server.permissions.Permission
 import net.minecraft.server.permissions.PermissionLevel
+import net.minecraft.server.permissions.LevelBasedPermissionSet
 import net.minecraft.server.permissions.PermissionSet
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -114,10 +115,20 @@ object OMLPermissionGrants {
     private class Overridden(
         private val base: PermissionSet,
         private val table: Map<String, Boolean>,
-    ) : PermissionSet {
+    ) : LevelBasedPermissionSet {
         override fun hasPermission(permission: Permission): Boolean {
             val id = permissionNodeId(permission) ?: return base.hasPermission(permission)
             return table[id] ?: base.hasPermission(permission)
         }
+
+        /**
+         * The operator level the game holds underneath, because an override changes node answers and never the
+         * ladder. The interface is carried rather than wrapped for one reason: `permissions()` is read by casts
+         * as well as by `hasPermission` — the game's own command gate and every other mod in the run — and a
+         * wrapper that only answered `PermissionSet` would break them. A base that carries no level answers the
+         * lowest one, which is what the game means by "no authority".
+         */
+        override fun level(): PermissionLevel =
+            (base as? LevelBasedPermissionSet)?.level() ?: PermissionLevel.ALL
     }
 }
