@@ -48,21 +48,28 @@ fun LivingEntity.applyEffect(effectId: String, durationTicks: Int, amplifier: In
 fun LivingEntity.removeEffect(effectId: String): Boolean =
     OMLRegistries.mobEffect(effectId)?.let(::removeEffect) ?: false
 
-private fun LivingEntity.attributeInstance(attributeId: String): AttributeInstance? =
-    OMLRegistries.attribute(attributeId)?.let(::getAttribute)
+/**
+ * The game's instance of [attributeId] on this entity. Null when the id is unregistered **or** when this kind of
+ * entity carries no such attribute: `minecraft:attack_damage` belongs to attackers, so a cow has none, and the
+ * game's own getter throws for that case rather than answering null — the check has to come first.
+ */
+private fun LivingEntity.attributeInstance(attributeId: String): AttributeInstance? {
+    val holder = OMLRegistries.attribute(attributeId) ?: return null
+    return holder.takeIf(attributes::hasAttribute)?.let(::getAttribute)
+}
 
 /**
- * The value the game computes for [attributeId] (`minecraft:max_health`) — base plus modifiers — or null for an
- * unregistered id. Health, speed and attack damage all live in these attributes.
+ * The value the game computes for [attributeId] (`minecraft:max_health`) — base plus modifiers — or null when
+ * this entity carries no such attribute. Health, speed and attack damage all live in these attributes.
  */
-fun LivingEntity.attributeValue(attributeId: String): Double? =
-    OMLRegistries.attribute(attributeId)?.let(::getAttributeValue)
+fun LivingEntity.attributeValue(attributeId: String): Double? = attributeInstance(attributeId)?.value
 
-/** The value before any modifier, which is the number a mod writes; null for an unregistered id. */
+/** The value before any modifier, which is the number a mod writes; null when there is no such instance. */
 fun LivingEntity.attributeBase(attributeId: String): Double? = attributeInstance(attributeId)?.baseValue
 
 /**
- * Sets the base value; false for an unregistered id. The game clamps the number into the attribute's own range
+ * Sets the base value; false when this entity carries no such attribute. The game clamps the number into the
+ * attribute's own range
  * and applies its own consequence (a raised maximum does not refill health, a lowered one caps it), so read
  * [attributeValue] back rather than assuming the write is the answer.
  */
@@ -76,7 +83,8 @@ fun LivingEntity.setAttributeBase(attributeId: String, value: Double): Boolean {
  * Adds a permanent modifier under [modifierId] (`my_mod:sword_bonus`) — permanent in the game's own sense: it
  * stays until removed, unlike one the game drops when the attribute recomputes. A modifier already held under
  * that id is replaced. [operation] is one of the game's three, in lower case: `add_value`,
- * `add_multiplied_base`, `add_multiplied_total`. False for an unregistered attribute or unknown operation.
+ * `add_multiplied_base`, `add_multiplied_total`. False for an attribute this entity does not carry or an
+ * unknown operation.
  */
 fun LivingEntity.addAttributeModifier(
     attributeId: String,
