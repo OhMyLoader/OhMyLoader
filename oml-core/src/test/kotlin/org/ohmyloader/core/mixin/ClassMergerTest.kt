@@ -153,6 +153,72 @@ class ClassMergerTest {
     }
 
     @Test
+    fun `branched clinit merge drops the mixin's frames and re-derives the merged ones`() {
+        // The mixin's <clinit> branches and carries a FrameNode compiled for **its own** method (empty
+        // locals); the target's <clinit> has a live local variable. Splicing the frame in unchanged, or
+        // leaving the branch target without a frame, both fail class verification (COMPUTE_MAXS does not
+        // rebuild frames) — only "drop the spliced frames, re-derive from dataflow" defines and runs.
+        val t = target().apply {
+            fields.add(FieldNode(Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "base", "I", null, null))
+            fields.add(FieldNode(Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "clash", "I", null, null))
+            methods.add(
+                MethodNode(Opcodes.ACC_STATIC, "<clinit>", "()V", null, null).apply {
+                    val end = LabelNode()
+                    instructions.apply {
+                        // int pick = 3; if (pick == 0) base = 9;
+                        add(IntInsnNode(Opcodes.BIPUSH, 3))
+                        add(VarInsnNode(Opcodes.ISTORE, 0))
+                        add(VarInsnNode(Opcodes.ILOAD, 0))
+                        add(JumpInsnNode(Opcodes.IFEQ, end))
+                        add(InsnNode(Opcodes.ICONST_1))
+                        add(FieldInsnNode(Opcodes.PUTSTATIC, targetName, "base", "I"))
+                        add(end)
+                        add(FrameNode(Opcodes.F_NEW, 1, arrayOf<Any>(Opcodes.INTEGER), 0, arrayOf<Any>()))
+                        add(InsnNode(Opcodes.RETURN))
+                    }
+                    maxStack = 2
+                    maxLocals = 1
+                },
+            )
+        }
+        val mixin = plainMixin().apply {
+            fields.add(FieldNode(Opcodes.ACC_PRIVATE or Opcodes.ACC_STATIC, "extra", "I", null, null))
+            fields.add(FieldNode(Opcodes.ACC_PRIVATE or Opcodes.ACC_STATIC, "flag", "I", null, null))
+            methods.add(
+                MethodNode(Opcodes.ACC_STATIC, "<clinit>", "()V", null, null).apply {
+                    val join = LabelNode()
+                    instructions.apply {
+                        add(IntInsnNode(Opcodes.BIPUSH, 7))
+                        add(FieldInsnNode(Opcodes.PUTSTATIC, mixinName, "extra", "I"))
+                        add(InsnNode(Opcodes.ICONST_0))
+                        add(JumpInsnNode(Opcodes.IFEQ, join))
+                        add(InsnNode(Opcodes.ICONST_1))
+                        add(FieldInsnNode(Opcodes.PUTSTATIC, mixinName, "flag", "I"))
+                        add(join)
+                        // Frame compiled for the mixin's own <clinit>: no local variables live there
+                        add(FrameNode(Opcodes.F_NEW, 0, arrayOf<Any>(), 0, arrayOf<Any>()))
+                        add(InsnNode(Opcodes.RETURN))
+                    }
+                    maxStack = 2
+                    maxLocals = 0
+                },
+            )
+        }
+
+        val [merged, result] = mergeInto(t, mixin)
+
+        assertEquals(emptyList(), result.problems, result.problems.toString())
+        val clazz = define(merged)
+        clazz.getDeclaredConstructor().newInstance()
+
+        // Semantics: the target's own branch saw pick = 3 (base = 1); the spliced segment's branch saw
+        // 0 (flag untouched); the mixin's initializer ran after the target's (static init order).
+        assertEquals(1, staticInt(clazz, "base"))
+        assertEquals(0, staticInt(clazz, "flag"))
+        assertEquals(7, staticInt(clazz, "extra"))
+    }
+
+    @Test
     fun `self references are re-owned to the target class`() {
         val [merged, result] = mergeInto(target(), richMixin())
         assertEquals(emptyList(), result.problems)
@@ -644,6 +710,9 @@ class ClassMergerTest {
 
     private fun invoke(clazz: Class<*>, instance: Any, name: String): Any? =
         clazz.methods.first { it.name == name }.invoke(instance)
+
+    private fun staticInt(clazz: Class<*>, name: String): Int =
+        clazz.getDeclaredField(name).also { it.isAccessible = true }.getInt(null)
 
     // ---------- fixtures ----------
 

@@ -4,6 +4,10 @@ import org.objectweb.asm.Handle
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.*
+import org.objectweb.asm.tree.analysis.Analyzer
+import org.objectweb.asm.tree.analysis.BasicInterpreter
+import org.objectweb.asm.tree.analysis.BasicValue
+import org.objectweb.asm.tree.analysis.Frame
 import org.ohmyloader.core.mixin.ClassMerger.inspectConstructor
 import org.ohmyloader.core.mixin.ClassMerger.isMergeableCtorInsn
 
@@ -782,6 +786,13 @@ internal object ClassMerger {
      * It must go at the end: static-field initialization order is semantically meaningful (a later
      * initializer can read a value assigned earlier), and inserting ahead of the target's initializers
      * would change that order.
+     *
+     * Pseudo-instructions do not survive the splice: the segment's stack frames describe the **mixin's**
+     * `<clinit>` state (its own locals, its own offsets) and are wrong in the target's method, so they
+     * are dropped — the same stripping the constructor merge segment applies (labels are kept here, since
+     * a static initializer may branch, unlike the branch-free constructor segment). A segment containing
+     * branches then needs frames at its (moved) branch targets, so the whole merged `<clinit>` gets its
+     * frames recomputed from dataflow — see [rebuildClinitFrames].
      */
     private fun appendClinit(
         target: ClassNode,
@@ -804,11 +815,78 @@ internal object ClassMerger {
                 " (if it cannot be spliced in, @Unique static field initializers would be lost; better to report an error than to stay silent)"
             return
         }
-        val lastReturn = mixinClinit.instructions.toArray().lastOrNull { it.opcode == Opcodes.RETURN }
-        for (insn in mixinClinit.instructions.toArray()) {
+        val segment = mixinClinit.instructions.toArray()
+            .filter { it !is FrameNode && it !is LineNumberNode }
+        val lastReturn = segment.lastOrNull { it.opcode == Opcodes.RETURN }
+        for (insn in segment) {
             if (insn === lastReturn) continue
             existing.instructions.insertBefore(tail, insn)
         }
+        if (segment.any { it is JumpInsnNode || it is TableSwitchInsnNode || it is LookupSwitchInsnNode }) {
+            rebuildClinitFrames(existing, where, problems)
+        }
+    }
+
+    /**
+     * Recompute [clinit]'s stack map frames from dataflow and replace the existing ones.
+     *
+     * Needed because the spliced segment's branch targets land at offsets that carry no frame in the
+     * target's method — a class file of version ≥ 50 requires a frame at every branch target, and
+     * write-back uses `COMPUTE_MAXS` only (see the class doc, why `COMPUTE_FRAMES` is not an option).
+     * [BasicInterpreter] needs no class-hierarchy resolution; a coarser reference type is verifier-legal
+     * (the verifier only requires the declared frame type to be a supertype of the computed one).
+     * A failed analysis reports a problem instead of writing guessed frames.
+     */
+    private fun rebuildClinitFrames(clinit: MethodNode, where: String, problems: MutableList<String>) {
+        val targets = HashSet<LabelNode>()
+        for (insn in clinit.instructions.toArray()) {
+            when (insn) {
+                is JumpInsnNode -> targets += insn.label
+                is TableSwitchInsnNode -> targets += insn.labels + insn.dflt
+                is LookupSwitchInsnNode -> targets += insn.labels + insn.dflt
+                else -> {}
+            }
+        }
+        for (handler in clinit.tryCatchBlocks.orEmpty()) targets += handler.handler
+        // Strip first, then analyze: the frames table is indexed by instruction position, so it must be
+        // computed against the exact list the targets' indices are taken from (no removed node in between,
+        // no inserted one yet).
+        clinit.instructions.toArray().filterIsInstance<FrameNode>().forEach { clinit.instructions.remove(it) }
+        val analyzer = Analyzer(BasicInterpreter())
+        val frames = try {
+            analyzer.analyze(clinit.name, clinit)
+            @Suppress("UNCHECKED_CAST")
+            analyzer.frames as Array<Frame<BasicValue>?>
+        } catch (t: Throwable) {
+            problems += "$where —— the stack map frames of the merged <clinit> could not be recomputed " +
+                "(${t.javaClass.simpleName}: ${t.message}); the spliced segment branches, so it cannot go out without frames"
+            return
+        }
+        // Indices are taken before any insertion: an inserted frame would shift every later label's index.
+        val landing = targets.mapNotNull { label ->
+            frames.getOrNull(clinit.instructions.indexOf(label))?.let { label to it }
+        }
+        landing.forEach { (label, frame) -> clinit.instructions.insertBefore(label, frameNode(frame)) }
+    }
+
+    /** [Frame] → the `F_NEW` [FrameNode] form (locals and stack encoded the way the verifier reads them). */
+    private fun frameNode(frame: Frame<BasicValue>): FrameNode {
+        val locals = Array(frame.locals) { i -> encodeFrameValue(frame.getLocal(i), stack = false) }
+        val stack = Array(frame.stackSize) { i -> encodeFrameValue(frame.getStack(i), stack = true) }
+        return FrameNode(Opcodes.F_NEW, locals.size, locals, stack.size, stack)
+    }
+
+    /** A `null` type is the `ACONST_NULL` value on the stack (`NULL`), and "no live value" in a local (`TOP`). */
+    private fun encodeFrameValue(value: BasicValue, stack: Boolean): Any = when {
+        value.type == null -> if (stack) Opcodes.NULL else Opcodes.TOP
+        value.type.sort == Type.BOOLEAN || value.type.sort == Type.BYTE ||
+            value.type.sort == Type.CHAR || value.type.sort == Type.SHORT ||
+            value.type.sort == Type.INT -> Opcodes.INTEGER
+
+        value.type.sort == Type.FLOAT -> Opcodes.FLOAT
+        value.type.sort == Type.LONG -> Opcodes.LONG
+        value.type.sort == Type.DOUBLE -> Opcodes.DOUBLE
+        else -> value.type.internalName
     }
 
     // ---------- utility helpers ----------
