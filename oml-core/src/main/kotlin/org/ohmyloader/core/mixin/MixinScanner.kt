@@ -1447,8 +1447,21 @@ object MixinScanner {
             }
             return point
         }
-        val from = (annotationValue(sliceNode, "from") as? AnnotationNode)?.let { AtParser.parse(it) }
-        val to = (annotationValue(sliceNode, "to") as? AnnotationNode)?.let { AtParser.parse(it) }
+        val fromNode = annotationValue(sliceNode, "from") as? AnnotationNode
+        val toNode = annotationValue(sliceNode, "to") as? AnnotationNode
+        val from = fromNode?.let { AtParser.parse(it) }
+        val to = toNode?.let { AtParser.parse(it) }
+        // A boundary that is written but unrecognizable is a rule error, not "no boundary": silently
+        // dropping it would widen the search window to the whole method (the engine side refuses for
+        // the same reason when a boundary cannot be resolved, see Anchors.applySlice).
+        if (fromNode != null && from == null) {
+            problems += "$where —— $shortName's @Slice(from = @At(\"${annotationValue(fromNode, "value")}\")) " +
+                "is not a recognized injection point (available: ${AtParser.SUPPORTED.joinToString("/")})"
+        }
+        if (toNode != null && to == null) {
+            problems += "$where —— $shortName's @Slice(to = @At(\"${annotationValue(toNode, "value")}\")) " +
+                "is not a recognized injection point (available: ${AtParser.SUPPORTED.joinToString("/")})"
+        }
         if (from == null && to == null) return point
         return InjectionPoint.Sliced(point, from, to)
     }

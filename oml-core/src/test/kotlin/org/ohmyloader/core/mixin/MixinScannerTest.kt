@@ -781,6 +781,18 @@ class MixinScannerTest {
     }
 
     @Test
+    fun `a written but unrecognizable slice boundary is reported`() {
+        // Dropping a boundary silently would widen the search window to the whole method — reported
+        // like any other unrecognizable @At instead, so the self-check fails startup
+        val node = injectClass(handler("h", "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V", at = "RETURN"))
+        node.methods[0].visibleAnnotations[0].put("slice", sliceNode("JUMP", "BOGUS"))
+        val parsed = MixinScanner.parseMixinClass(node, "m")
+
+        assertTrue(parsed.problems.any { it.contains("@Slice(from") && it.contains("JUMP") }, parsed.problems.toString())
+        assertTrue(parsed.problems.any { it.contains("@Slice(to") && it.contains("BOGUS") }, parsed.problems.toString())
+    }
+
+    @Test
     fun `scan survives a real class-file round trip`() {
         // Exercise the real ClassWriter → ClassReader path: hand-rolled ClassNode fixtures do not cover
         // the read path. The key is that checks like "the injected handler must have a method body"
