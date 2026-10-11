@@ -4,9 +4,11 @@ import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.*
 import org.ohmyloader.api.inject.DslValue
+import org.ohmyloader.core.transformer.TransformContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * Reproduces the multi-anchor injection shape: the frame table is addressed by instruction
@@ -73,5 +75,40 @@ class MethodFramesTest {
         val resolution = frames.at(anchorB, after = false).frame()
             ?.resolve(DslValue.Local(index = 2), isStatic = true)
         assertEquals(2, (resolution as? LocalResolution.Found)?.slot, "slot 2 must resolve at anchor B after the shift")
+    }
+
+    @Test
+    fun `two rules on one method share the dataflow across the rule boundary`() {
+        // The cache hangs on the method, not the rule: rule one inserts (mutating the list), rule two
+        // reads slot 2 by type — with per-rule frames the answer is the same, so sharing must not
+        // degrade it; a stale table would resolve the wrong slot or hard-fail the transform.
+        val node = ClassNode(Opcodes.ASM9).apply {
+            version = Opcodes.V17
+            access = Opcodes.ACC_PUBLIC
+            name = owner
+            superName = "java/lang/Object"
+            methods.add(buildMethod())
+        }
+        val spec = specOf {
+            classTarget(owner) {
+                method("m") {
+                    beforeCall(owner = "sink", name = "a") {
+                        call("omltest/Hook", "enter", "()V")
+                    }
+                }
+                method("m") {
+                    beforeCall(owner = "sink", name = "b") {
+                        call("omltest/Hook", "count", "(I)V", args = listOf(DslValue.Local(index = 2, type = "I")))
+                    }
+                }
+            }
+        }
+
+        assertTrue(spec.transform(TransformContext(owner, node)), "both rules must inject")
+
+        val method = node.methods.first()
+        // Rule two resolved slot 2 from the post-insertion list: the emitted load is ILOAD 2
+        val loads = method.instructions.toArray().filterIsInstance<VarInsnNode>().filter { it.opcode == Opcodes.ILOAD }
+        assertEquals(listOf(2), loads.map { it.`var` }, "slot 2 must be loaded as an int at anchor B")
     }
 }

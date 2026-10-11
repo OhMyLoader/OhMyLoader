@@ -246,6 +246,19 @@ internal class MethodFrames(private val owner: String, private val method: Metho
     }
 
     /**
+     * Drops the cached table: the instruction list was mutated (a block inserted, an anchor removed)
+     * and the table is addressed by index. An insertion also changes the list size, so [ensure] would
+     * re-run anyway — but a removal can leave the size **unchanged** (insert-then-remove within one
+     * payload, e.g. a Redirect), which the size check cannot see. Mutation sites call this explicitly;
+     * the size check stays as the lazy path for code that bypasses them.
+     */
+    fun invalidate() {
+        analyzedAtSize = -1
+        table = null
+        failure = null
+    }
+
+    /**
      * The local-variable table **before** some instruction executes, encoded into the form [FrameNode] understands
      * (`Opcodes.INTEGER` / `LONG` / … or a class internal-name string).
      *

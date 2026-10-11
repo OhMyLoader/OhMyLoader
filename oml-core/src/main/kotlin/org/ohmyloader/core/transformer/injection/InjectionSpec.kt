@@ -79,6 +79,9 @@ class InjectionSpec internal constructor(
         val classRules = ruleSet.classes[context.internalName] ?: return false
         var changed = false
 
+        // One dataflow cache per method node, shared by every rule touching that method (see MethodFrames)
+        val frames = HashMap<MethodNode, MethodFrames>()
+
         // Access flags land first: they are **declaration-level**, and body injection and class merging both build
         // on the final flags. Only flag bits change, no instructions, so no stack frames are involved; the class is
         // still fully rewritten on write-back, but the bytes differ only in those flag bits.
@@ -99,7 +102,10 @@ class InjectionSpec internal constructor(
             val injectable = named.filter { it.instructions.size() > 0 }
             var hits = 0
             for (method in injectable) {
-                hits += applyToMethod(context.internalName, context.node.superName, method, rule.points)
+                // The dataflow cache hangs on the method, not the rule: several rules hitting the same
+                // method share one MethodFrames, re-analyzed only when a rule actually mutated the list
+                val frames = frames.getOrPut(method) { MethodFrames(context.internalName, method) }
+                hits += applyToMethod(context.internalName, context.node.superName, method, rule.points, frames)
             }
             reportHits(
                 "${context.internalName} :: ${rule.selector.describe()}",
@@ -214,6 +220,8 @@ class InjectionSpec internal constructor(
         }
         if (after) method.instructions.insert(anchor, block)
         else method.instructions.insertBefore(anchor, block)
+        // The table is addressed by instruction index — every mutation must drop it (see MethodFrames.invalidate)
+        frames?.invalidate()
         return true
     }
 
@@ -222,11 +230,9 @@ class InjectionSpec internal constructor(
         superName: String?,
         method: MethodNode,
         points: List<Pair<InjectionPoint, Payload>>,
+        frames: MethodFrames,
     ): Int {
         var inserted = 0
-        // Dataflow analysis is a whole-method-level cost; all injection points in one method share a single copy
-        // (lazy: only runs when a local-variable read is actually needed; see where AnchorLocals is consumed)
-        val frames = MethodFrames(owner, method)
         for ([point, payload] in points) {
             // Collect all anchors first, then process each: processing doesn't affect the node references of other anchors
             val anchors = AnchorResolver.resolve(point, method, owner, superName, frames)
@@ -525,6 +531,7 @@ class InjectionSpec internal constructor(
                                 )
                                 if (!insertBlock(method, anchor, list, after = false, frames)) continue
                                 method.instructions.remove(anchor)
+                                frames.invalidate()
                                 inserted++
                             }
                         }
@@ -580,6 +587,7 @@ class InjectionSpec internal constructor(
                         val block = InsnList().apply { add(replacement) }
                         if (!insertBlock(method, anchor, block, after = true, frames)) continue
                         method.instructions.remove(anchor)
+                        frames.invalidate()
                         inserted++
                     }
 
