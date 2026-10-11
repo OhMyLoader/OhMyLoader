@@ -20,8 +20,12 @@ import net.minecraft.world.level.Level
 val Level.clockInstance: ClockInstance?
     get() = clock?.let { clockManager().instanceOf(it) }
 
-/** The game's own record for [clock]; null when this manager does not hold it — the game would otherwise
- * throw. */
+/**
+ * The game's own record for [clock]; null when this manager does not hold it — the game would otherwise
+ * throw. The manager's table is keyed by `Holder.Reference` identity, so a holder re-resolved after a
+ * `/reload` swapped the registries throws `IllegalStateException` even though the clock id still exists;
+ * every accessor below answers "not held" instead of propagating that.
+ */
 fun ClockManager.instanceOf(clock: Holder<WorldClock>): ClockInstance? =
     runCatching { getInstance(clock) }.getOrNull()
 
@@ -35,27 +39,30 @@ fun MinecraftServer.clockById(clockId: String): Holder<WorldClock>? = OMLRegistr
  * Puts the clock at absolute [ticks] and reports whether the game holds it there. The clock has to be one this
  * manager knows: an unregistered holder moves nothing and answers false.
  */
-fun ServerClockManager.applyTotalTicks(clock: Holder<WorldClock>, ticks: Long): Boolean {
-    setTotalTicks(clock, ticks)
-    return getInstance(clock).totalTicks() == ticks
-}
+fun ServerClockManager.applyTotalTicks(clock: Holder<WorldClock>, ticks: Long): Boolean =
+    runCatching {
+        setTotalTicks(clock, ticks)
+        getInstance(clock).totalTicks() == ticks
+    }.getOrDefault(false)
 
 /** Moves the clock by [ticks], negative to wind it back, and reports whether it landed there. */
-fun ServerClockManager.applyTicks(clock: Holder<WorldClock>, ticks: Int): Boolean {
-    val before = getInstance(clock).totalTicks()
-    addTicks(clock, ticks)
-    return getInstance(clock).totalTicks() == before + ticks
-}
+fun ServerClockManager.applyTicks(clock: Holder<WorldClock>, ticks: Int): Boolean =
+    runCatching {
+        val before = getInstance(clock).totalTicks()
+        addTicks(clock, ticks)
+        getInstance(clock).totalTicks() == before + ticks
+    }.getOrDefault(false)
 
 /**
  * Stops or resumes the clock, leaving its position where it is; reports whether the game now reports it
  * paused. The game's own `advance_time` game rule freezes every clock too, without pausing any of them, and a
  * pause reaches clients as a zero rate.
  */
-fun ServerClockManager.applyPaused(clock: Holder<WorldClock>, paused: Boolean): Boolean {
-    setPaused(clock, paused)
-    return getInstance(clock).isPaused() == paused
-}
+fun ServerClockManager.applyPaused(clock: Holder<WorldClock>, paused: Boolean): Boolean =
+    runCatching {
+        setPaused(clock, paused)
+        getInstance(clock).isPaused() == paused
+    }.getOrDefault(false)
 
 /**
  * Sets the counting speed to [rate] (ticks added per game tick: 1.0 normally, 2.0 twice as fast); reports
@@ -65,8 +72,10 @@ fun ServerClockManager.applyPaused(clock: Holder<WorldClock>, paused: Boolean): 
  */
 fun ServerClockManager.applyRate(clock: Holder<WorldClock>, rate: Float): Boolean {
     if (rate < CLOCK_RATE_MIN || rate > CLOCK_RATE_MAX) return false
-    setRate(clock, rate)
-    return getInstance(clock).rate() == rate
+    return runCatching {
+        setRate(clock, rate)
+        getInstance(clock).rate() == rate
+    }.getOrDefault(false)
 }
 
 /** Marker ids this clock offers. */
