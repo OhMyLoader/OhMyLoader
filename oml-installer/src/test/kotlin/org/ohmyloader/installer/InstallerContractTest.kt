@@ -1,6 +1,9 @@
 package org.ohmyloader.installer
 
 import org.ohmyloader.devtools.AssetDownloader
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.nio.file.Files
@@ -628,6 +631,30 @@ class InstallerContractTest {
         assertEquals("oml-core-0.1.0-SNAPSHOT-26.3-OML.jar", prismFlatName)
         // and it must be distinguishable from the source jar name, which lacks the install id
         assertNotEquals("oml-core-0.1.0-SNAPSHOT.jar", prismFlatName)
+    }
+
+    @Test
+    fun `arguments carrying json syntax stay valid json`() {
+        // The arguments are hand-interpolated into the JSON; a Windows path containing a double
+        // quote would end the string early and corrupt the whole document.
+        val dir = File("""C:\games"quoted""")
+        val target = File(tempDir(), "26.3-OML.json")
+        writeVersionJson(
+            target = target,
+            id = "26.3-OML",
+            inherits = "26.3",
+            mainClass = "main",
+            javaMajor = 27,
+            libraries = emptyList(),
+            jvmArgs = launcherJvmArgs(
+                RuntimeProperties(gameJar = File(dir, "26.3.jar"), modsDir = File(dir, "mods"), side = "client"),
+            ),
+        )
+        // a parse failure is the regression
+        val args = kotlinx.serialization.json.Json.parseToJsonElement(target.readText())
+            .jsonObject["arguments"]!!.jsonObject["jvm"]!!.jsonArray
+            .map { it.jsonPrimitive.content }
+        assertContains(args, "-Doml.game.jar=${dir.path.replace('\\', '/')}/26.3.jar")
     }
 
     @Test

@@ -419,7 +419,7 @@ object PrismComponentTarget : InstallationTarget {
         // read a Minecraft version JSON (HMCL / PCL2 / official). Prism builds the classpath and the
         // natives directory itself out of the component's libraries, so those two entries are its
         // business — handing it a `${classpath}` it may not define would risk a literal argument.
-        val jvmArgs = props.asJvmArgs().joinToString(",\n") { "    \"${it.replace("\\", "\\\\")}\"" }
+        val jvmArgs = props.asJvmArgs().joinToString(",\n") { "    \"${jsonEscape(it)}\"" }
         val libEntries = libraries.map {
             """    {
       "name": "$it",

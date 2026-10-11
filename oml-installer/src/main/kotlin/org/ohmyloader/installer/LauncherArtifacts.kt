@@ -343,6 +343,14 @@ fun installLibrary(
 private val JSON_TIME: DateTimeFormatter =
     DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'").withZone(ZoneOffset.UTC)
 
+/**
+ * Escapes a string for the hand-built JSON documents (the version JSON's `arguments.jvm`, the Prism
+ * patch). The interpolated content that can carry JSON syntax is a path: a Windows directory name
+ * containing a double quote would otherwise end the argument string and corrupt the document.
+ */
+internal fun jsonEscape(value: String): String =
+    value.replace("\\", "\\\\").replace("\"", "\\\"")
+
 /** The `-D` properties the runtime reads. Kept next to the Java requirement: both are contract. */
 class RuntimeProperties(
     val gameJar: File,
@@ -417,7 +425,7 @@ fun writeVersionJson(
 ) {
     val libs = (libraries.map { it.toJson() } + listOfNotNull(nativeLibrary?.toJson()))
         .joinToString(",\n")
-    val args = jvmArgs.joinToString(",\n") { "      \"$it\"" }
+    val args = jvmArgs.joinToString(",\n") { "      \"${jsonEscape(it)}\"" }
     val now = JSON_TIME.format(Instant.now())
     val json = """{
   "id": "$id",
