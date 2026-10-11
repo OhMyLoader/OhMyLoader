@@ -634,6 +634,27 @@ class AbstractContentRegistryTest {
         assertEquals(null, registry.tagJsonAt("mymod", "tags/item/no_group.json"))
     }
 
+    /**
+     * The adapter lists the `minecraft` namespace for the server datapack reload exactly when one of
+     * its minecraft signals is populated — ores, loot, or the tags here. A mod whose only vanilla
+     * touch is a tag augmentation (no ore, no loot) has no other signal: if the tag write did not
+     * show up under `minecraft`, the reload would not scan the pack's minecraft folder and the
+     * augmentation would die silently.
+     */
+    @Test
+    fun `a vanilla tag augmentation alone populates the minecraft namespace signal`() {
+        val registry = RecordingRegistry()
+        registry.forNamespace("mymod").declareTag("minecraft:block", "minecraft:mineable/pickaxe") {
+            element("my_ore")
+        }
+
+        assertEquals(listOf("block/mineable/pickaxe.json"), registry.tagPathsFor("minecraft"))
+        val json = registry.tagJsonAt("minecraft", "tags/block/mineable/pickaxe.json")
+        assertEquals("{\"values\":[\"mymod:my_ore\"]}", json)
+        // nothing else was declared, so the other signals stay empty — the tags are the whole reason
+        assertEquals(emptyList(), registry.lootIdsFor("minecraft"))
+    }
+
     @Test
     fun `a tag the game cannot read is refused at declaration`() {
         val registry = RecordingRegistry()

@@ -194,16 +194,20 @@ object ModAssetInjector {
                 "getNamespaces" -> {
                     val base = assetIndex().namespaces()
                     // The minecraft namespace must be listed for the SERVER datapack reload when the pack
-                    // carries data for it — declared ores merge into vanilla biome files, and a vanilla
-                    // block's loot override lands in the minecraft folder — otherwise the reload never
-                    // looks inside it. For CLIENT_RESOURCES it must NOT be listed, ever: the pack sits at
-                    // Position.TOP, and a minecraft-claiming pack would shadow every vanilla asset with
-                    // whatever loader.getResource("assets/minecraft/…") finds — the game jar's own copy,
-                    // which ships 69-byte placeholder panorama textures where the real ones come from
-                    // the downloaded asset index (the missing title-screen background).
+                    // carries data for it — declared ores merge into vanilla biome files, a vanilla
+                    // block's loot override lands in the minecraft folder, and a vanilla tag
+                    // augmentation (declareTag("minecraft:…") against an original tag, with no ore or
+                    // loot of its own) writes data/minecraft/tags/… — otherwise the reload never looks
+                    // inside the pack and the augmentation dies in silence. For CLIENT_RESOURCES it
+                    // must NOT be listed, ever: the pack sits at Position.TOP, and a minecraft-claiming
+                    // pack would shadow every vanilla asset with whatever
+                    // loader.getResource("assets/minecraft/…") finds — the game jar's own copy, which
+                    // ships 69-byte placeholder panorama textures where the real ones come from the
+                    // downloaded asset index (the missing title-screen background).
                     if (args.getOrNull(0) == serverData &&
                         (MinecraftContentRegistry.oreTargetedBiomes().isNotEmpty() ||
-                            MinecraftContentRegistry.lootIdsFor("minecraft").isNotEmpty()) &&
+                            MinecraftContentRegistry.lootIdsFor("minecraft").isNotEmpty() ||
+                            MinecraftContentRegistry.tagPathsFor("minecraft").isNotEmpty()) &&
                         "minecraft" !in base
                     ) {
                         base + "minecraft"
