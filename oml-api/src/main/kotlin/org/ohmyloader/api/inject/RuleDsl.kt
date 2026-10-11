@@ -29,7 +29,13 @@ class InjectionBuilder @PublishedApi internal constructor() {
             methods = (previous?.methods ?: emptyList()) + target.rules,
             accessRules = (previous?.accessRules ?: emptyList()) + target.accessRules,
         )
-        merges += target.merges
+        // The same source merged into the same target twice would collide on every name at the
+        // merger; dedup here so a duplicate declared within one builder never reaches the engine
+        // (RuleSet.merge applies the same dedup across sets).
+        for (merge in target.merges) {
+            if (merges.any { it.targetInternal == merge.targetInternal && it.sourceInternal == merge.sourceInternal }) continue
+            merges += merge
+        }
     }
 }
 

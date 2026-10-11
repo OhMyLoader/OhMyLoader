@@ -4,6 +4,7 @@ import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.*
 import org.ohmyloader.api.inject.DslValue
 import org.ohmyloader.api.inject.InjectionBuilder
+import org.ohmyloader.api.inject.injection
 import org.ohmyloader.core.transformer.TransformContext
 import kotlin.test.*
 
@@ -457,5 +458,21 @@ class InjectionDslTest {
 
         assertFalse(spec.transform(TransformContext("a/B", cls)))
         assertEquals(2, cls.methods[0].instructions.size())
+    }
+
+    /** The same source merged into the same target twice collides at the merger; the builder dedups. */
+    @Test
+    fun `a merge source declared twice in one builder is deduplicated`() {
+        val rules = injection {
+            classTarget("a/B") {
+                merge("a/Src")
+                merge("a/Other")
+                merge("a/Src")
+            }
+            classTarget("a/B") { merge("a/Src") }
+        }
+
+        assertEquals(listOf("a/Src", "a/Other"), rules.merges.map { it.sourceInternal })
+        assertEquals(listOf("a/B", "a/B"), rules.merges.map { it.targetInternal })
     }
 }
