@@ -25,7 +25,7 @@ class LevelTickEvent(val level: Level) : Event()
 
 /**
  * A chunk has become a ticking chunk of [level]: its tile entities are live and its block ticks run.
- * [chunk] is the game's own `LevelChunk`, position included (`chunk.pos`), and the dispatch is a
+ * [chunk] is the game's own `LevelChunk`, position included (`chunk.pos`), and the dispatch is an
  * observation rather than a decision — the game has already promoted it.
  */
 class ChunkStartedTickingEvent(val level: ServerLevel, val chunk: LevelChunk) : Event()

@@ -84,8 +84,9 @@ interface ContentRegistry {
     fun declareBlockDrop(block: String, drop: String, dropCountMin: Int = 1, dropCountMax: Int = 1)
 
     /**
-     * Declares a damage type, which the game loads from OML's injected content pack: [org.ohmyloader.api26_3.hurt]
-     * takes its id, and a `LIVING_HURT` handler reports [messageId] as the damage type of the hit.
+     * Declares a damage type, which the game loads from OML's injected content pack: the version
+     * adapter's `LivingEntity.hurt` extension (in `oml-api-<game version>`) takes its id, and a
+     * `LIVING_HURT` handler reports [messageId] as the damage type of the hit.
      * [scaling] is how the game multiplies the amount by difficulty (`never`,
      * `when_caused_by_living_non_player`, `always`), [effects] the vanilla sounds and particles that come
      * with it (`hurt`, `thorns`, `drowning`, `burning`, `poking`, `freezing`; null keeps the game's own
