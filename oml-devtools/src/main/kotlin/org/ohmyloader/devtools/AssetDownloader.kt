@@ -18,7 +18,6 @@ import java.security.DigestInputStream
 import java.security.MessageDigest
 import java.time.Duration
 import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.zip.ZipInputStream
@@ -355,22 +354,14 @@ object AssetDownloader {
         val skipped = AtomicInteger()
         progress?.onProgress(0, artifacts.size.toLong(), "游戏运行库")
 
-        val pool = Executors.newVirtualThreadPerTaskExecutor()
-        try {
-            for (artifact in artifacts) {
-                pool.submit {
-                    try {
-                        downloadArtifactSingle(client, permits, artifact, librariesDir, added, skipped)
-                    } finally {
-                        val n = done.incrementAndGet()
-                        progress?.onProgress(n, artifacts.size.toLong(), "游戏运行库")
-                    }
-                }
-            }
-        } finally {
-            pool.shutdown()
-            while (!pool.awaitTermination(1, TimeUnit.SECONDS)) {
-                // wait for all downloads to finish
+        // Every task's failure must surface: a retry-exhausted download left unobserved ended the
+        // install "successfully" without that library on disk.
+        fanOut(artifacts.size) { index ->
+            try {
+                downloadArtifactSingle(client, permits, artifacts[index], librariesDir, added, skipped)
+            } finally {
+                val n = done.incrementAndGet()
+                progress?.onProgress(n, artifacts.size.toLong(), "游戏运行库")
             }
         }
 
@@ -479,23 +470,20 @@ object AssetDownloader {
 
         progress?.onProgress(0, hashes.size.toLong(), "游戏资源")
 
-        val pool = Executors.newVirtualThreadPerTaskExecutor()
-        try {
-            hashes.forEach { obj ->
-                pool.submit {
-                    verifyOrDownload(client, permits, assetsDir, obj, baseUrl, force, downloaded, skipped)
-                    val n = done.incrementAndGet()
-                    if (n % 64 == 0L || n == hashes.size.toLong()) {
-                        progress?.onProgress(n, hashes.size.toLong(), "游戏资源")
-                    }
+        fanOut(hashes.size) { index ->
+            val obj = hashes[index]
+            try {
+                verifyOrDownload(client, permits, assetsDir, obj, baseUrl, force, downloaded, skipped)
+            } finally {
+                val n = done.incrementAndGet()
+                if (n % 64 == 0L || n == hashes.size.toLong()) {
+                    progress?.onProgress(n, hashes.size.toLong(), "游戏资源")
                 }
             }
-        } finally {
-            pool.shutdown()
-            while (!pool.awaitTermination(1, TimeUnit.SECONDS)) {
-                // wait for all downloads to finish
-            }
         }
+        // Accounting invariant: a task either downloaded the object or found it present. Anything
+        // else is a hole in the asset store that reports as success, so it fails the fetch instead.
+        requireAllAssetsAccounted(hashes.size, downloaded.get(), skipped.get())
 
         log("[AssetDownloader] done: skipped ${skipped.get()}, downloaded ${downloaded.get()}, total ${hashes.size} resources")
         downloaded.get()
@@ -623,8 +611,11 @@ object AssetDownloader {
                 downloaded.incrementAndGet()
                 return
             } catch (e: Exception) {
-                if (attempt == 2) error("[AssetDownloader] download failed $url -> ${e.message}")
-                else Thread.sleep(200L * (attempt + 1))
+                if (attempt == 2) {
+                    error("[AssetDownloader] download failed $url -> ${e.message}")
+                    throw IllegalStateException("下载失败（重试耗尽）：$url，原因：${e.message}", e)
+                }
+                Thread.sleep(200L * (attempt + 1))
             }
         }
     }
@@ -705,6 +696,46 @@ object AssetDownloader {
     // -----------------------------------------------------------------------------------------------
     // Shared plumbing
     // -----------------------------------------------------------------------------------------------
+
+    /**
+     * Runs [task] for every index in `0 until count` on a virtual-thread pool, waits for **all** of
+     * them, then rethrows the first failure. Every download fan-out must go through here: a submitted
+     * Future nobody inspects turns a retry-exhausted download into a silently missing file. [task]
+     * must be safe to run concurrently; [count] of 0 is a no-op.
+     */
+    internal fun fanOut(count: Int, task: (Int) -> Unit) {
+        if (count == 0) return
+        val pool = Executors.newVirtualThreadPerTaskExecutor()
+        try {
+            val futures = (0 until count).map { index ->
+                pool.submit(java.util.concurrent.Callable {
+                    task(index)
+                    Unit
+                })
+            }
+            futures.forEach { it.get() }
+        } catch (e: java.util.concurrent.ExecutionException) {
+            // unwrap: the caller cares about the download's own failure, not the executor wrapper
+            throw e.cause?.let { it as? RuntimeException ?: RuntimeException(it.message, it) } ?: e
+        } finally {
+            pool.shutdown()
+        }
+    }
+
+    /**
+     * The fan-out's closing check: every object must be accounted for as downloaded or verified
+     * present. A task that returns having done neither means the fetch would finish "successfully"
+     * with assets missing, so the fetch fails instead.
+     */
+    internal fun requireAllAssetsAccounted(total: Int, downloaded: Int, skipped: Int) {
+        val unaccounted = total - downloaded - skipped
+        if (unaccounted != 0) {
+            throw IllegalStateException(
+                "[AssetDownloader] $unaccounted of $total assets were neither downloaded nor verified " +
+                    "present (downloaded $downloaded, skipped $skipped) — refusing to report success",
+            )
+        }
+    }
 
     /**
      * Streams a URL into [target] through a `.tmp` file: reports progress as bytes arrive, enforces
