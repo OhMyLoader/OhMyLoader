@@ -29,7 +29,10 @@ object Events {
     /** Player sending a chat message (cancellable). */
     val CHAT_SENT = EventDefinition<ChatSentEvent>("chat_sent")
 
-    /** Chat message received (cancellable; cancelling prevents it from being displayed). */
+    /**
+     * Chat message received (cancellable; cancelling prevents it from being displayed). Dispatches on the
+     * network thread — move work to the tick scheduler before touching world state.
+     */
     val CHAT_RECEIVED = EventDefinition<ChatReceivedEvent>("chat_received")
 
     /** World load/disconnect: [WorldLoadEvent.world] being null indicates a disconnect. */
