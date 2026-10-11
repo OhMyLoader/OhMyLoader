@@ -684,13 +684,19 @@ object Anchor {
 
     fun returnAt(ordinal: Int? = null): InjectionPoint = InjectionPoint.Return(ordinal)
 
+    /**
+     * A method-call position (for `within` bounds). [isStatic] declares whether the call is
+     * `INVOKESTATIC` (`null` = undeclared) — the same tri-state [MethodRuleBuilder.beforeCall]
+     * takes; bounds never carry a payload, so it only pins the declaration's intent.
+     */
     fun call(
         owner: String? = null,
         name: String? = null,
         desc: String? = null,
         after: Boolean = false,
         ordinal: Int? = null,
-    ): InjectionPoint = InjectionPoint.Call(owner, name, desc, after, ordinal)
+        isStatic: Boolean? = null,
+    ): InjectionPoint = InjectionPoint.Call(owner, name, desc, after, ordinal, isStatic)
 
     fun field(
         owner: String? = null,
