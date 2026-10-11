@@ -320,7 +320,11 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
     final override fun forNamespace(namespace: String): ContentRegistry =
         forNamespace(namespace, reloadable = false)
 
-    /** [reloadable] marks TOML-pack declarations: re-collected from disk on every reload. */
+    /**
+     * [reloadable] marks TOML-pack declarations: re-collected from disk on every reload. The
+     * declarations below write the queues the serving-side readers synchronize on, so every
+     * writer holds this registry's monitor — @Synchronized on the facade would lock the facade.
+     */
     override fun forNamespace(namespace: String, reloadable: Boolean): ContentRegistry =
         object : ContentRegistry {
             override fun declareBlock(id: String, configure: OMLBlockDeclaration.() -> Unit): OMLBlock =
@@ -335,7 +339,7 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                 furnace: Furnace,
                 experience: Double,
                 cookingTime: Int,
-            ) {
+            ): Unit = synchronized(this@AbstractContentRegistry) {
                 val full = recipeJson(input, result, namespace, furnace, experience, cookingTime)
                 collectedRecipes += RecipeDecl(
                     namespace,
@@ -352,7 +356,7 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                 pattern: List<String>,
                 key: Map<Char, String>,
                 count: Int,
-            ) {
+            ): Unit = synchronized(this@AbstractContentRegistry) {
                 validateShaped(pattern, key, count)
                 val resultId = qualify(namespace, result)
                 val keyJson = key.entries.joinToString(",") { [c, id] ->
@@ -372,7 +376,11 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                 )
             }
 
-            override fun declareShapelessCrafting(result: String, ingredients: List<String>, count: Int) {
+            override fun declareShapelessCrafting(
+                result: String,
+                ingredients: List<String>,
+                count: Int,
+            ): Unit = synchronized(this@AbstractContentRegistry) {
                 if (ingredients.isEmpty() || ingredients.size > 9) {
                     throw IllegalStateException(
                         "shapeless crafting for '$result' needs 1-9 ingredients (got ${ingredients.size})",
@@ -394,7 +402,12 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                 )
             }
 
-            override fun declareBlockDrop(block: String, drop: String, dropCountMin: Int, dropCountMax: Int) {
+            override fun declareBlockDrop(
+                block: String,
+                drop: String,
+                dropCountMin: Int,
+                dropCountMax: Int,
+            ): Unit = synchronized(this@AbstractContentRegistry) {
                 val key = qualify(namespace, block).replace(':', '_')
                 // A block has exactly one default loot table (its id derives from the file name), so a
                 // second declaration cannot also take effect — suffixing would emit an orphan table
@@ -417,7 +430,7 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                 effects: String?,
                 exhaustion: Float,
                 deathMessageType: String?,
-            ) {
+            ): Unit = synchronized(this@AbstractContentRegistry) {
                 val refusal = when {
                     !DATAPACK_NAME.matches(id) -> "'$id' is not a lowercase datapack name"
                     scaling !in DAMAGE_SCALINGS -> "unknown damage scaling '$scaling'"
@@ -442,7 +455,7 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                 )
             }
 
-            override fun declareClock(id: String) {
+            override fun declareClock(id: String): Unit = synchronized(this@AbstractContentRegistry) {
                 val refusal = when {
                     !DATAPACK_NAME.matches(id) -> "'$id' is not a lowercase datapack name"
                     collectedClocks.any { it.namespace == namespace && it.key == id } ->
@@ -456,7 +469,10 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                 collectedClocks += ClockDecl(namespace, id, reloadable)
             }
 
-            override fun declareTimeline(id: String, configure: OMLTimelineDeclaration.() -> Unit) {
+            override fun declareTimeline(
+                id: String,
+                configure: OMLTimelineDeclaration.() -> Unit,
+            ): Unit = synchronized(this@AbstractContentRegistry) {
                 val spec = OMLTimelineDeclaration().apply(configure)
                 val clock = spec.clock?.let { qualify(namespace, it) }
                     ?: run {
@@ -511,7 +527,10 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                 )
             }
 
-            override fun declareDimensionType(id: String, configure: OMLDimensionTypeDeclaration.() -> Unit) {
+            override fun declareDimensionType(
+                id: String,
+                configure: OMLDimensionTypeDeclaration.() -> Unit,
+            ): Unit = synchronized(this@AbstractContentRegistry) {
                 val spec = OMLDimensionTypeDeclaration().apply(configure)
                 // The codec marks logical_height required and its constructor rejects a value above height,
                 // so an unset declaration is written as height itself rather than as a fixed default.
@@ -571,7 +590,10 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                 )
             }
 
-            override fun declareDimension(id: String, configure: OMLDimensionDeclaration.() -> Unit) {
+            override fun declareDimension(
+                id: String,
+                configure: OMLDimensionDeclaration.() -> Unit,
+            ): Unit = synchronized(this@AbstractContentRegistry) {
                 val spec = OMLDimensionDeclaration().apply(configure)
                 val type = spec.type?.let { qualify(namespace, it) }
                     ?: run {
@@ -613,7 +635,11 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                 )
             }
 
-            override fun declareTag(registryId: String, tagId: String, configure: OMLTagDeclaration.() -> Unit) {
+            override fun declareTag(
+                registryId: String,
+                tagId: String,
+                configure: OMLTagDeclaration.() -> Unit,
+            ): Unit = synchronized(this@AbstractContentRegistry) {
                 val spec = OMLTagDeclaration().apply(configure)
                 val registry = qualify(namespace, registryId)
                 val tag = qualify(namespace, tagId)
@@ -886,6 +912,7 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
      * Declares a block: immediately returns a handle (whose [OMLBlock.platform] is lazy-resolved
      * and errors if accessed before materialization), and queues the declaration for materialization.
      */
+    @Synchronized
     protected fun collect(namespace: String, id: String, spec: OMLBlockDeclaration): OMLBlock {
         val key = "$namespace:$id"
         val ore = spec.oreDeclaration
