@@ -67,4 +67,26 @@ class OMLConfigImplTest {
 
         assertEquals(42, config.getInt("speed"))
     }
+
+    @Test
+    fun `string defaults with quotes, backslashes and windows paths round-trip through the file`() {
+        // Without escaping, the quote terminates the basic string and the backslash reinterprets what
+        // follows; the generated file would be unreadable (or read back a different value)
+        val dir = tempConfigDir()
+        val config = OMLConfigImpl("mymod", dir)
+        config.define("quoted", "say \"hi\"", "")
+        config.define("path", "C:\\Users\\fuban\\game\\mods", "")
+        config.define("multiline", "line1\nline2", "")
+        config.generateIfMissing()
+
+        // A fresh instance reads the generated file through the same minimal TOML reader
+        val reread = OMLConfigImpl("mymod", dir)
+        reread.define("quoted", "untouched", "")
+        reread.define("path", "untouched", "")
+        reread.define("multiline", "untouched", "")
+
+        assertEquals("say \"hi\"", reread.getString("quoted"))
+        assertEquals("C:\\Users\\fuban\\game\\mods", reread.getString("path"))
+        assertEquals("line1\nline2", reread.getString("multiline"))
+    }
 }
