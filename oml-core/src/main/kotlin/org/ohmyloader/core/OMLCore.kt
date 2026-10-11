@@ -108,7 +108,10 @@ object OMLCore {
         // from different working directories (the server writes eula / server.properties / world under
         // run/server/), and it lets them share the single run/mods copy.
         val modsDir = System.getProperty("oml.mods.dir")?.let(::File) ?: File(gameDir, "mods")
-        val mods = ModScanner.scan(modsDir)
+        // The dependency graph is validated and ordered here, at the cheapest possible failure point:
+        // no main loader built, no transformer run, no game class loaded. initMods reuses this exact
+        // order later.
+        val mods = ModGraph.order(ModScanner.scan(modsDir))
         loadedMods.addAll(mods)
 
         // The main loader is built before the adapter is discovered, and the adapter is discovered
@@ -601,7 +604,8 @@ object OMLCore {
     }
 
     private fun initMods() {
-        val ordered = ModGraph.order(loadedMods)
+        // The order was computed (and the graph validated) in start(), before the main loader was built
+        val ordered = loadedMods
         initOrder.addAll(ordered)
         registerBuiltinCommands()
         for (mod in ordered) {
