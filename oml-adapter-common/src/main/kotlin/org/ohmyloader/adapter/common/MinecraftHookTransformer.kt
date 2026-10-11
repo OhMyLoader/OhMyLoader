@@ -367,6 +367,10 @@ class MinecraftHookTransformer(private val idPrefix: String) : InjectingTransfor
                         index = 2,
                     )
                 }
+                // The point rewrites every clamp(III) call in the method, so pin the count to exactly
+                // one: a second call site must fail install loudly, not take the narrowed bound too.
+                require(1)
+                allow(1)
             }
         }
         classTarget("net/minecraft/client/multiplayer/ClientLevel") {
