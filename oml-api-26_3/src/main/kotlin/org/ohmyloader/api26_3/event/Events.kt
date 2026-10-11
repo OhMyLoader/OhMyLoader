@@ -31,7 +31,7 @@ object Events {
 
     /**
      * Chat message received (cancellable; cancelling prevents it from being displayed). Dispatches on the
-     * network thread — move work to the tick scheduler before touching world state.
+     * client's game thread — the packet handlers re-dispatch there before this fires.
      */
     val CHAT_RECEIVED = EventDefinition<ChatReceivedEvent>("chat_received")
 

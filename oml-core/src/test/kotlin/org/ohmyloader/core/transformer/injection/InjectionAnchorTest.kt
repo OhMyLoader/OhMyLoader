@@ -487,6 +487,93 @@ class InjectionAnchorTest {
         assertEquals(retLate, hooks[0].next)
     }
 
+    // ---------- define and run: CheckCall after a call ----------
+
+    /**
+     * The packet-handler shape the 26.3 CHAT_RECEIVED hook rides on: a void static call first
+     * (the re-dispatch, which consumes the packet argument like the real one does), the hook right
+     * after it, observable work afterwards. Defining the class fails with VerifyError if the
+     * continuation frame the engine derives is wrong, and running it shows the hook fires once with
+     * the short-circuit still covering the code after it.
+     */
+    @Test
+    fun `checkCall after a void call lands there and stays cancellable`() {
+        val spec = spec {
+            classTarget(owner) {
+                method("m", desc = "(Ljava/lang/String;)V") {
+                    afterCall(owner = Handlers.OWNER, name = "sink") {
+                        cancellableCall(
+                            Handlers.OWNER, "onChat", "(Ljava/lang/String;)Z",
+                            args = listOf(DslValue.Arg(0)),
+                        )
+                    }
+                }
+            }
+        }
+        assertTrue(spec.verify().isEmpty(), "an after-call anchor is a legal CheckCall anchor")
+        val clazz = define(
+            classNode(
+                methodNode("m", "(Ljava/lang/String;)V") {
+                    add(VarInsnNode(Opcodes.ALOAD, 0))
+                    add(MethodInsnNode(Opcodes.INVOKESTATIC, Handlers.OWNER, "sink", "(Ljava/lang/String;)V", false))
+                    add(VarInsnNode(Opcodes.ALOAD, 0))
+                    add(
+                        MethodInsnNode(
+                            Opcodes.INVOKESTATIC, Handlers.OWNER, "record", "(Ljava/lang/String;)V", false,
+                        ),
+                    )
+                    add(InsnNode(Opcodes.RETURN))
+                },
+            ),
+            spec,
+        )
+
+        Handlers.checked.clear()
+        Handlers.recorded.clear()
+        clazz.getDeclaredMethod("m", String::class.java).invoke(null, "hello")
+        assertEquals(listOf("hello"), Handlers.checked, "the hook fires exactly once, after the call")
+        assertEquals(listOf("hello"), Handlers.recorded, "not cancelled, the rest of the body runs")
+
+        Handlers.checked.clear()
+        Handlers.recorded.clear()
+        clazz.getDeclaredMethod("m", String::class.java).invoke(null, "cancel")
+        assertEquals(listOf("cancel"), Handlers.checked)
+        assertTrue(Handlers.recorded.isEmpty(), "cancelled, the rest of the body is short-circuited")
+    }
+
+    /**
+     * A local stored before the anchored call makes the continuation frame differ from the method's
+     * entry frame — the case that forces the engine to derive the frame from dataflow instead of
+     * synthesizing the entry one (the entry frame here would fail verification at define time).
+     */
+    @Test
+    fun `checkCall after a call derives the continuation frame from dataflow`() {
+        val spec = spec {
+            classTarget(owner) {
+                method("m", desc = "()V") {
+                    afterCall(owner = Handlers.OWNER, name = "sink0") {
+                        cancellableCall(Handlers.OWNER, "onChatNoArgs", "()Z")
+                    }
+                }
+            }
+        }
+        val clazz = define(
+            classNode(
+                methodNode("m", "()V") {
+                    add(LdcInsnNode("stored"))
+                    add(VarInsnNode(Opcodes.ASTORE, 1))
+                    add(MethodInsnNode(Opcodes.INVOKESTATIC, Handlers.OWNER, "sink0", "()V", false))
+                    add(InsnNode(Opcodes.RETURN))
+                },
+            ),
+            spec,
+        )
+
+        Handlers.checked.clear()
+        clazz.getDeclaredMethod("m").invoke(null)
+        assertEquals(listOf("noop"), Handlers.checked)
+    }
+
     // ---------- scaffolding ----------
 
     private fun spec(block: InjectionBuilder.() -> Unit): InjectionSpec = specOf(block)
@@ -573,8 +660,42 @@ object Handlers {
 
     val constructed = mutableListOf<Any>()
 
+    /** What the CheckCall handler observed; `onChat` records here too. */
+    val checked = mutableListOf<String>()
+
+    /** What the code after the CheckCall hook executed. */
+    val recorded = mutableListOf<String>()
+
     @JvmStatic
     fun onConstructed(instance: Any) {
         constructed += instance
+    }
+
+    /** Records and cancels only on the marker string — both sides of the short-circuit in one handler. */
+    @JvmStatic
+    fun onChat(message: String?): Boolean {
+        checked += message ?: "<null>"
+        return message == "cancel"
+    }
+
+    @JvmStatic
+    fun onChatNoArgs(): Boolean {
+        checked += "noop"
+        return false
+    }
+
+    /** The re-dispatch role: a void static call that consumes its argument (like `ensureRunningOnSameThread`). */
+    @JvmStatic
+    fun sink(message: String) {
+    }
+
+    /** The re-dispatch role without an argument. */
+    @JvmStatic
+    fun sink0() {
+    }
+
+    @JvmStatic
+    fun record(message: String) {
+        recorded += message
     }
 }

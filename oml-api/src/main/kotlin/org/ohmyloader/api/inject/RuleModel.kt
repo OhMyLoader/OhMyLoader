@@ -61,12 +61,24 @@ sealed class InjectionPoint {
      * Whether this is a "method entry" anchor ([Head], or [ConstructorHead] for
      * constructors).
      *
-     * Short-circuiting payloads (`CheckCall` / `CancellableReturn`) may only land
-     * on these two kinds: both must decide "whether to run / what to return"
-     * before the method body executes. Note that **only [ConstructorHead] may be
-     * used inside constructors** — returning early before `super()` is illegal.
+     * Short-circuiting payloads (`CheckCall` / `CancellableReturn`) may land here:
+     * both must decide "whether to run / what to return" before the method body
+     * executes. Note that **only [ConstructorHead] may be used inside
+     * constructors** — returning early before `super()` is illegal.
      */
     fun isMethodHead(): Boolean = core is Head || core is ConstructorHead
+
+    /**
+     * Whether this is an "after a method call" anchor ([Call] with `after = true`).
+     *
+     * [Payload.CheckCall] may also land here — after a **void** call the operand
+     * stack is empty, so the short-circuit `RETURN` is stack-legal, and landing
+     * after a re-dispatch call (`PacketUtils.ensureRunningOnSameThread` and its
+     * like) fires the hook once, on the thread the call re-dispatched to. The
+     * continuation frame is derived from dataflow, not assumed to be the method
+     * entry's.
+     */
+    fun isAfterCallAnchor(): Boolean = (core as? Call)?.after == true
 
     /**
      * Whether this is a "return-type" anchor ([Return] / [FinalReturn]).
@@ -323,11 +335,12 @@ sealed class Payload {
     ) : Payload()
 
     /**
-     * Cancellable check (rewrite-level): HEAD anchor only, and the target method
-     * must be void. At the method head it calls a static handler shaped
-     * `(...args)Z`; returning true short-circuits the whole method body with an
-     * immediate `RETURN` (the engine synthesizes an entry stack frame for the
-     * branch target).
+     * Cancellable check (rewrite-level): a method-entry anchor ([InjectionPoint.isMethodHead]) or an
+     * after-call anchor ([InjectionPoint.isAfterCallAnchor]); the target method must be void. Calls a
+     * static handler shaped `(...args)Z`; returning true short-circuits the rest of the method body
+     * with an immediate `RETURN`. At method entry the continuation frame is the method's own entry
+     * frame; after a call it is derived from dataflow at the anchor (the stack there must be empty,
+     * which a void call guarantees).
      */
     data class CheckCall(
         val owner: String,

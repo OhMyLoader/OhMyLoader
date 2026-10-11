@@ -65,15 +65,7 @@ internal object PayloadEmitter {
 
         is Payload.CheckCall -> {
             validateArgTypes(payload.desc, payload.args, 0, method, owner, locals, "CheckCall")
-            val list = InsnList()
-            if (!emitValues(list, payload.args, method, locals)) return null
-            list.add(MethodInsnNode(Opcodes.INVOKESTATIC, payload.owner, payload.method, payload.desc, false))
-            val label = LabelNode()
-            list.add(JumpInsnNode(Opcodes.IFEQ, label))
-            list.add(InsnNode(Opcodes.RETURN))
-            list.add(label)
-            list.add(entryFrame(owner, method))
-            list
+            emitCheckCall(payload, method, owner, locals, null)
         }
 
         is Payload.Redirect -> error("Redirect substitutes the instruction directly in the engine and does not go through emit")
@@ -102,6 +94,43 @@ internal object PayloadEmitter {
             error("${payload.javaClass.simpleName} needs the anchor instruction; the engine calls emitModify*/emitInPlaceValue directly")
 
         is Payload.Raw -> InsnList().apply { payload.build(this, method, owner) }
+    }
+
+    /**
+     * The void short-circuit sequence: call the static handler `(captures…)Z`, and on `true` return
+     * from the whole method immediately; otherwise continue with the original body.
+     *
+     * [continuationLocals] is the frame the instruction after the injected block must see: `null`
+     * (method-entry anchors) synthesizes the method's entry frame, which is implicit in the frame
+     * table; an after-call anchor passes the dataflow-derived locals of the instruction following the
+     * call (see [MethodFrames.frameLocalsAt]) — once the body has stored locals, the entry frame no
+     * longer describes that point and a wrong frame fails verification at class load.
+     */
+    fun emitCheckCall(
+        payload: Payload.CheckCall,
+        method: MethodNode,
+        owner: String,
+        locals: AnchorLocals?,
+        continuationLocals: Array<Any>?,
+    ): InsnList? {
+        val list = InsnList()
+        if (!emitValues(list, payload.args, method, locals)) return null
+        list.add(MethodInsnNode(Opcodes.INVOKESTATIC, payload.owner, payload.method, payload.desc, false))
+        val label = LabelNode()
+        list.add(JumpInsnNode(Opcodes.IFEQ, label))
+        list.add(InsnNode(Opcodes.RETURN))
+        list.add(label)
+        list.add(
+            if (continuationLocals == null) entryFrame(owner, method)
+            else FrameNode(
+                Opcodes.F_NEW,
+                continuationLocals.size,
+                continuationLocals,
+                0,
+                emptyArray(),
+            ),
+        )
+        return list
     }
 
     /**

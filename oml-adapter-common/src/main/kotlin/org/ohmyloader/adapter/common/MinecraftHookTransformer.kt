@@ -270,10 +270,17 @@ class MinecraftHookTransformer(private val idPrefix: String) : InjectingTransfor
                     )
                 }
             }
-            // ChatReceivedEvent (cancellable): head of the three inbound chat packet handlers,
-            // packet = Arg(0)
+            // ChatReceivedEvent (cancellable): the three inbound chat packet handlers, packet = Arg(0).
+            // Each handler re-dispatches itself: PacketUtils.ensureRunningOnSameThread is its first call
+            // and on the netty thread re-schedules the packet and throws (caught by the network loop),
+            // so the anchor sits AFTER that call — a HEAD hook would fire once per message on the netty
+            // thread and again on the game thread.
             method("handleSystemChat", desc = "(Lnet/minecraft/network/protocol/game/ClientboundSystemChatPacket;)V") {
-                atHead {
+                afterCall(
+                    owner = "net/minecraft/network/protocol/PacketUtils",
+                    name = "ensureRunningOnSameThread",
+                    opcode = org.objectweb.asm.Opcodes.INVOKESTATIC,
+                ) {
                     cancellableCall(
                         "org/ohmyloader/adapter/common/EventBridge", "onChatReceived",
                         "(Lnet/minecraft/network/protocol/Packet;)Z",
@@ -282,7 +289,11 @@ class MinecraftHookTransformer(private val idPrefix: String) : InjectingTransfor
                 }
             }
             method("handlePlayerChat", desc = "(Lnet/minecraft/network/protocol/game/ClientboundPlayerChatPacket;)V") {
-                atHead {
+                afterCall(
+                    owner = "net/minecraft/network/protocol/PacketUtils",
+                    name = "ensureRunningOnSameThread",
+                    opcode = org.objectweb.asm.Opcodes.INVOKESTATIC,
+                ) {
                     cancellableCall(
                         "org/ohmyloader/adapter/common/EventBridge", "onChatReceived",
                         "(Lnet/minecraft/network/protocol/Packet;)Z",
@@ -294,7 +305,11 @@ class MinecraftHookTransformer(private val idPrefix: String) : InjectingTransfor
                 "handleDisguisedChat",
                 desc = "(Lnet/minecraft/network/protocol/game/ClientboundDisguisedChatPacket;)V",
             ) {
-                atHead {
+                afterCall(
+                    owner = "net/minecraft/network/protocol/PacketUtils",
+                    name = "ensureRunningOnSameThread",
+                    opcode = org.objectweb.asm.Opcodes.INVOKESTATIC,
+                ) {
                     cancellableCall(
                         "org/ohmyloader/adapter/common/EventBridge", "onChatReceived",
                         "(Lnet/minecraft/network/protocol/Packet;)Z",

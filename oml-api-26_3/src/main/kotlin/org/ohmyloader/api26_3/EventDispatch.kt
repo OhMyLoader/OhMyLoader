@@ -238,7 +238,7 @@ object EventDispatch {
      *
      * Returns the canceled state, or `false` for a packet that carries no readable text — no event is
      * fired for it, so an unexpected packet type degrades to "no ChatReceivedEvent" rather than
-     * crashing the network thread.
+     * crashing the game thread.
      */
     @JvmStatic
     fun onChatReceived(packet: Packet<ClientGamePacketListener>): Boolean {

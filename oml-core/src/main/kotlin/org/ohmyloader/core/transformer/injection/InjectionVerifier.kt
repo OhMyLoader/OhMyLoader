@@ -458,9 +458,9 @@ internal object InjectionVerifier {
             }
 
             is Payload.CheckCall -> {
-                if (!point.isMethodHead()) {
-                    problems += "$where — CheckCall only supports method-entry anchors (HEAD / CTOR_HEAD), " +
-                        "currently ${AnchorResolver.describe(point)}"
+                if (!point.isMethodHead() && !point.isAfterCallAnchor()) {
+                    problems += "$where — CheckCall supports method-entry anchors (HEAD / CTOR_HEAD) and " +
+                        "after-call anchors, currently ${AnchorResolver.describe(point)}"
                 }
                 problems += earlyReturnProblem(where, point, isConstructor, "CheckCall")
                 val desc = runCatching { Type.getMethodType(payload.desc) }.getOrNull()

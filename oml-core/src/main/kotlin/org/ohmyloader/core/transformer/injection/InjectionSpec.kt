@@ -243,11 +243,11 @@ class InjectionSpec internal constructor(
                 val locals = if (needsLocals) frames.at(anchor, point.after) else null
                 when (payload) {
                     is Payload.CheckCall -> {
-                        if (!point.isMethodHead()) {
+                        if (!point.isMethodHead() && !point.isAfterCallAnchor()) {
                             OmlLog.error(
                                 "Injection",
-                                "CheckCall only supports method-entry anchors (HEAD / CTOR_HEAD), " +
-                                    "currently ${AnchorResolver.describe(point)}: ${method.name}",
+                                "CheckCall supports method-entry anchors (HEAD / CTOR_HEAD) and after-call " +
+                                    "anchors, currently ${AnchorResolver.describe(point)}: ${method.name}",
                             )
                             continue
                         }
@@ -258,8 +258,41 @@ class InjectionSpec internal constructor(
                             )
                             continue
                         }
-                        val list = PayloadEmitter.emit(payload, method, owner, locals) ?: continue
-                        if (!insertBlock(method, anchor, list, after = false, frames)) continue
+                        // After a void call the stack is empty, so the short-circuit RETURN is stack-legal; the
+                        // continuation frame comes from dataflow (the method's entry frame would misstate the
+                        // locals once the body has stored any). Deriving it can fail (unreachable anchor /
+                        // analysis limit) — refusing beats emitting a frame the verifier rejects at class load.
+                        val continuationLocals =
+                            if (point.isMethodHead()) {
+                                null
+                            } else {
+                                val call = anchor as? MethodInsnNode
+                                when {
+                                    call == null ||
+                                        org.objectweb.asm.Type.getReturnType(call.desc) !=
+                                        org.objectweb.asm.Type.VOID_TYPE -> {
+                                        OmlLog.error(
+                                            "Injection",
+                                            "CheckCall after a call needs a void method-call anchor: " +
+                                                "${method.name}${method.desc}",
+                                        )
+                                        continue
+                                    }
+
+                                    else -> frames.frameLocalsAt(anchor, after = true) ?: run {
+                                        OmlLog.error(
+                                            "Injection",
+                                            "injection skipped: the local state after the anchored call in " +
+                                                "${method.name}${method.desc} cannot be derived (dataflow failed)",
+                                        )
+                                        continue
+                                    }
+                                }
+                            }
+                        val list =
+                            PayloadEmitter.emitCheckCall(payload, method, owner, locals, continuationLocals)
+                                ?: continue
+                        if (!insertBlock(method, anchor, list, after = !point.isMethodHead(), frames)) continue
                         inserted++
                     }
 

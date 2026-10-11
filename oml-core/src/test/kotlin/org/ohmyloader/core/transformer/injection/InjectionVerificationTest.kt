@@ -291,7 +291,10 @@ class InjectionVerificationTest {
         }
 
         val problems = spec.verify()
-        assertTrue(problems.any { it.contains("CheckCall only supports method-entry anchors") }, problems.toString())
+        assertTrue(
+            problems.any { it.contains("CheckCall supports method-entry anchors") },
+            problems.toString(),
+        )
     }
 
     @Test

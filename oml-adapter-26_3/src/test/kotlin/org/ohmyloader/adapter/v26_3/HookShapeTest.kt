@@ -248,6 +248,33 @@ class HookShapeTest {
 
     // ---------------------------------------------------------------------------------------------
 
+    @Test
+    fun `the inbound chat handlers still re-dispatch through ensureRunningOnSameThread`() {
+        JarFile(clientJar).use { jar ->
+            val listener = assertNotNull(classNode(jar, "net/minecraft/client/multiplayer/ClientPacketListener"))
+            for (name in listOf("handleSystemChat", "handlePlayerChat", "handleDisguisedChat")) {
+                val handler = listener.methods.firstOrNull { it.name == name }
+                assertNotNull(handler) { "ClientPacketListener.$name is gone — CHAT_RECEIVED has no target" }
+                // The CHAT_RECEIVED hook lands immediately after this call, because the call is what
+                // re-dispatches the packet onto the game thread: on the netty thread it re-schedules and
+                // throws, so only the game-thread invocation reaches the instruction after it. If the
+                // re-dispatch call is no longer the handler's first, the hook fires once per thread.
+                val redispatches = handler.instructions.toArray().take(12).filterIsInstance<MethodInsnNode>()
+                    .any {
+                        it.opcode == org.objectweb.asm.Opcodes.INVOKESTATIC &&
+                            it.owner == "net/minecraft/network/protocol/PacketUtils" &&
+                            it.name == "ensureRunningOnSameThread"
+                    }
+                assertTrue(
+                    redispatches,
+                    "ClientPacketListener.$name no longer re-dispatches through " +
+                        "PacketUtils.ensureRunningOnSameThread at its head — the CHAT_RECEIVED hook would " +
+                        "fire on the netty thread and again on the game thread",
+                )
+            }
+        }
+    }
+
     private fun <T> failIfNotEmpty(what: String, items: Collection<T>, render: (T) -> String) {
         if (items.isEmpty()) return
         fail("${items.size} $what:\n" + items.joinToString("\n") { " - " + render(it) })
