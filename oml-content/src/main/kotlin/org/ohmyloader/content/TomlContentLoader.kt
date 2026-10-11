@@ -467,7 +467,8 @@ object TomlContentLoader {
      * timelines, dimensions, tags) from [toml] into [registry]. Blocks and items are silently skipped — their
      * registries are
      * frozen, they cannot be re-materialized, and reloading must not grow the declaration queues. Everything
-     * else behaves like [load]: a malformed section throws with the reason.
+     * else behaves like [load]: a malformed section throws with the reason, and an unknown section is warned
+     * about instead of being swallowed.
      */
     fun loadDataDeclarations(namespace: String, source: String, toml: String, registry: ContentRegistry) {
         require(NAMESPACE.matches(namespace)) {
@@ -508,6 +509,18 @@ object TomlContentLoader {
 
                 path.startsWith("tag.") && path.count { it == '.' } == 1 ->
                     declareTagSection(path.removePrefix("tag."), fields, source, registry)
+
+                // Block and item sections stay silent: the same pack file reloads as written, and its
+                // [block.*] / [item.*] tables are skipped on every pass because those registries are frozen.
+                path.startsWith("block.") && path.count { it == '.' } == 1 -> Unit
+                path.startsWith("item.") && path.count { it == '.' } == 1 -> Unit
+
+                else -> OmlLog.warn(
+                    TAG,
+                    "$source: ignoring section [$path] — the reload pass covers only the datapack sections " +
+                        "[crafting.<id>] / [smelting.<id>] / [loot.<block>] / [damage_type.<id>] / [clock.<id>] / " +
+                        "[timeline.<id>] / [dimension_type.<id>] / [dimension.<id>] / [tag.<label>]",
+                )
             }
         }
     }
