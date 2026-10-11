@@ -161,6 +161,20 @@ class UninstallRollbackContractTest {
     }
 
     @Test
+    fun `a sibling of the mods dir is removed, not kept by a path-prefix match`() {
+        val gameDir = standardGameDir()
+        val stale = File(gameDir, "versions/my-OML/mods-old").apply {
+            mkdirs()
+            File(this, "stale.jar").writeBytes(ByteArray(8))
+        }
+
+        Uninstaller.perform(UninstallContext(StandardLauncherTarget, gameDir, "my-OML"))
+
+        assertFalse(stale.exists(), "\"mods-old\" merely prefixes the mods dir's path; it must go")
+        assertTrue(File(gameDir, "versions/my-OML/mods/my-mod.jar").isFile, "the real mods dir survives")
+    }
+
+    @Test
     fun `uninstalling a directory OML never touched is a controlled error`() {
         val empty = tempDir()
         val e = assertFailsWith<InstallationException> {

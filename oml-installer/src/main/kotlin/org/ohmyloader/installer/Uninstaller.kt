@@ -82,11 +82,14 @@ object Uninstaller {
             pruneEmptyParents(file.parentFile, stop = librariesRoot, log = ctx.log)
         }
 
-        // The version directory is ours except for the isolated mods dir. The kept-dir check is a
-        // path-prefix check against the recorded mods dir, so it covers the mods dir itself and
-        // any (theoretical) ancestor level of it inside the version dir.
+        // The version directory is ours except for the isolated mods dir. The kept-dir check is
+        // boundary-aware (the child itself or an ancestor level of the mods dir), so a bare prefix
+        // cannot keep a sibling like `mods-old` alive alongside the real `mods`.
         versionDir.listFiles()?.forEach { child ->
-            if (modsDir != null && modsDir.absoluteFile.path.startsWith(child.absoluteFile.path)) {
+            val childPath = child.absoluteFile.path
+            if (modsDir != null && (modsDir.absoluteFile.path == childPath ||
+                    modsDir.absoluteFile.path.startsWith(childPath + File.separator))
+            ) {
                 ctx.log(Messages.t("uninstall.modsKept", child.absolutePath))
                 return@forEach
             }
