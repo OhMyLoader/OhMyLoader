@@ -17,7 +17,10 @@ import java.util.*
  */
 class OMLBlockDataStore : OMLBlockData {
 
-    private val values = LinkedHashMap<String, Any>()
+    // `OMLBlockData` may be read from outside the ticker thread (the API allows netty-thread reads), so
+    // the map is synchronized and every iteration holds the map's monitor; `dirty` is a cross-thread hint.
+    private val values = Collections.synchronizedMap(LinkedHashMap<String, Any>())
+    @Volatile
     private var dirty = false
 
     /** True once since the last call and any value was written — the ticker's save hint. */
@@ -51,14 +54,13 @@ class OMLBlockDataStore : OMLBlockData {
     override fun hasKey(key: String): Boolean = values.containsKey(key)
 
     override fun remove(key: String): Boolean {
-        if (!values.containsKey(key)) return false
-        values.remove(key)
-        dirty = true
-        return true
+        val removed = values.remove(key) != null
+        if (removed) dirty = true
+        return removed
     }
 
     /** A copy: the caller must not be able to drop a key the encoder has no tag for. */
-    override fun keys(): Set<String> = LinkedHashSet(values.keys)
+    override fun keys(): Set<String> = synchronized(values) { LinkedHashSet(values.keys) }
 
     fun writeTo(output: ValueOutput) {
         if (values.isEmpty()) return
@@ -73,32 +75,34 @@ class OMLBlockDataStore : OMLBlockData {
     fun encode(): String {
         val bytes = ByteArrayOutputStream().use { buffer ->
             DataOutputStream(buffer).use { out ->
-                out.writeInt(values.size)
-                values.forEach { [key, value] ->
-                    out.writeUTF(key)
-                    when (value) {
-                        is Boolean -> {
-                            out.writeByte(TAG_BOOLEAN); out.writeBoolean(value)
-                        }
+                synchronized(values) {
+                    out.writeInt(values.size)
+                    values.forEach { [key, value] ->
+                        out.writeUTF(key)
+                        when (value) {
+                            is Boolean -> {
+                                out.writeByte(TAG_BOOLEAN); out.writeBoolean(value)
+                            }
 
-                        is Int -> {
-                            out.writeByte(TAG_INT); out.writeInt(value)
-                        }
+                            is Int -> {
+                                out.writeByte(TAG_INT); out.writeInt(value)
+                            }
 
-                        is Long -> {
-                            out.writeByte(TAG_LONG); out.writeLong(value)
-                        }
+                            is Long -> {
+                                out.writeByte(TAG_LONG); out.writeLong(value)
+                            }
 
-                        is Float -> {
-                            out.writeByte(TAG_FLOAT); out.writeFloat(value)
-                        }
+                            is Float -> {
+                                out.writeByte(TAG_FLOAT); out.writeFloat(value)
+                            }
 
-                        is Double -> {
-                            out.writeByte(TAG_DOUBLE); out.writeDouble(value)
-                        }
+                            is Double -> {
+                                out.writeByte(TAG_DOUBLE); out.writeDouble(value)
+                            }
 
-                        is String -> {
-                            out.writeByte(TAG_STRING); out.writeUTF(value)
+                            is String -> {
+                                out.writeByte(TAG_STRING); out.writeUTF(value)
+                            }
                         }
                     }
                 }
@@ -109,21 +113,23 @@ class OMLBlockDataStore : OMLBlockData {
     }
 
     fun decode(encoded: String) {
-        values.clear()
-        if (encoded.isEmpty()) return
-        DataInputStream(ByteArrayInputStream(Base64.getDecoder().decode(encoded))).use { input ->
-            repeat(input.readInt()) {
-                val key = input.readUTF()
-                when (val tag = input.readByte().toInt()) {
-                    TAG_BOOLEAN -> values[key] = input.readBoolean()
-                    TAG_INT -> values[key] = input.readInt()
-                    TAG_LONG -> values[key] = input.readLong()
-                    TAG_FLOAT -> values[key] = input.readFloat()
-                    TAG_DOUBLE -> values[key] = input.readDouble()
-                    TAG_STRING -> values[key] = input.readUTF()
-                    else -> throw IllegalStateException(
-                        "corrupt block-entity data: unknown type tag $tag for key [$key] — the saved value is unreadable",
-                    )
+        synchronized(values) {
+            values.clear()
+            if (encoded.isEmpty()) return
+            DataInputStream(ByteArrayInputStream(Base64.getDecoder().decode(encoded))).use { input ->
+                repeat(input.readInt()) {
+                    val key = input.readUTF()
+                    when (val tag = input.readByte().toInt()) {
+                        TAG_BOOLEAN -> values[key] = input.readBoolean()
+                        TAG_INT -> values[key] = input.readInt()
+                        TAG_LONG -> values[key] = input.readLong()
+                        TAG_FLOAT -> values[key] = input.readFloat()
+                        TAG_DOUBLE -> values[key] = input.readDouble()
+                        TAG_STRING -> values[key] = input.readUTF()
+                        else -> throw IllegalStateException(
+                            "corrupt block-entity data: unknown type tag $tag for key [$key] — the saved value is unreadable",
+                        )
+                    }
                 }
             }
         }
