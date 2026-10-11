@@ -965,6 +965,7 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
      * warning — the first declaration wins; the handle returned for the refused call then resolves
      * to that same materialization.
      */
+    @Synchronized
     protected fun collectItem(namespace: String, id: String, spec: OMLItemDeclaration): OMLItem {
         val key = "$namespace:$id"
         if (collectedItems.any { it.namespace == namespace && it.id == id }) {
