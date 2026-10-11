@@ -201,24 +201,55 @@ object SwingInstaller {
 
         fun selectedVersion(): SupportedVersion = supportedByLabel[versionBox.selectedItem as String]!!
 
+        // Defaults are applied only while the user has not typed into the field themselves: once
+        // they have, switching target or version must not silently discard their entry. The
+        // programmatic default write is marked so it cannot count as a user edit.
+        var dirEditedByUser = false
+        var idEditedByUser = false
+        var applyingDefault = false
+        fun watchUserEdits(field: JTextField, edited: () -> Unit) {
+            field.document.addDocumentListener(object : javax.swing.event.DocumentListener {
+                private fun mark() {
+                    if (!applyingDefault) edited()
+                }
+                override fun insertUpdate(e: javax.swing.event.DocumentEvent) = mark()
+                override fun removeUpdate(e: javax.swing.event.DocumentEvent) = mark()
+                override fun changedUpdate(e: javax.swing.event.DocumentEvent) = mark()
+            })
+        }
+        watchUserEdits(dirField) { dirEditedByUser = true }
+        watchUserEdits(idField) { idEditedByUser = true }
+
         /** Defaults per target: a real path the user recognizes, never "wherever the jar lives". */
         fun applyDefaultDir() {
-            val version = selectedVersion().version
-            dirField.text = when (selectedTargetId()) {
-                // A Prism install goes into a concrete *instance*, not the `instances/` parent, so the
-                // default names one. The parent is not a valid target — it has no `instance.cfg` — and
-                // showing it reads as "this is the right folder", which is the wrong thing to believe.
-                PRISM -> File(defaultPrismRoot(), "instances/$version").absolutePath
-                SERVER -> File(System.getProperty("user.dir", "."), "oml-server-$version").absolutePath
-                else -> StandardLauncherTarget.defaultGameDir().absolutePath
+            if (dirEditedByUser) return
+            applyingDefault = true
+            try {
+                val version = selectedVersion().version
+                dirField.text = when (selectedTargetId()) {
+                    // A Prism install goes into a concrete *instance*, not the `instances/` parent, so the
+                    // default names one. The parent is not a valid target — it has no `instance.cfg` — and
+                    // showing it reads as "this is the right folder", which is the wrong thing to believe.
+                    PRISM -> File(defaultPrismRoot(), "instances/$version").absolutePath
+                    SERVER -> File(System.getProperty("user.dir", "."), "oml-server-$version").absolutePath
+                    else -> StandardLauncherTarget.defaultGameDir().absolutePath
+                }
+            } finally {
+                applyingDefault = false
             }
         }
 
         fun applyDefaultId() {
-            val version = selectedVersion().version
-            idField.text = when (selectedTargetId()) {
-                SERVER -> "server"
-                else -> "$version-OML"
+            if (idEditedByUser) return
+            applyingDefault = true
+            try {
+                val version = selectedVersion().version
+                idField.text = when (selectedTargetId()) {
+                    SERVER -> "server"
+                    else -> "$version-OML"
+                }
+            } finally {
+                applyingDefault = false
             }
         }
 
@@ -274,46 +305,20 @@ object SwingInstaller {
         }
 
         // ---- install ---------------------------------------------------------------------------
-        installButton.addActionListener {
-            val target = selectedTarget()
-            val targetDir = File(dirField.text.trim())
-
-            val proxy = proxyField.text.trim()
-            if (proxy.isNotEmpty()) {
-                val selector = AssetDownloader.parseProxy(proxy)
-                if (selector == null) {
-                    JOptionPane.showMessageDialog(
-                        null, Messages.t("dlg.proxyInvalid", proxy),
-                        Messages.t("app.title"), JOptionPane.ERROR_MESSAGE,
-                    )
-                    return@addActionListener
-                }
-                AssetDownloader.proxyOverride = selector
-            }
-
-            // The `snapshot` entry is an alias: resolve it (network) before anything else, so a
-            // failure is an ordinary error dialog instead of a half-built install.
-            val supported = try {
-                resolveSnapshotAlias(selectedVersion())
-            } catch (e: Exception) {
-                JOptionPane.showMessageDialog(
-                    null,
-                    (e as? InstallationException)?.message ?: e.message,
-                    Messages.t("app.title"), JOptionPane.ERROR_MESSAGE,
-                )
-                return@addActionListener
-            }
-
+        fun startInstall(target: InstallationTarget, targetDir: File, supported: SupportedVersion) {
             val artifacts = try {
                 FatJarArtifactSource(supported.version, supported.adapterArtifact)
             } catch (e: Exception) {
+                installButton.isEnabled = true
+                progressBar.isIndeterminate = false
+                progressBar.string = Messages.t("ui.ready")
                 JOptionPane.showMessageDialog(
                     null,
                     Messages.t("dlg.resourcesFailed", e.message),
                     Messages.t("app.title"),
                     JOptionPane.ERROR_MESSAGE,
                 )
-                return@addActionListener
+                return
             }
 
             val ctx = InstallContext(
@@ -333,12 +338,15 @@ object SwingInstaller {
             val validation = target.validate(ctx)
             if (!validation.ok) {
                 artifacts.close()
+                installButton.isEnabled = true
+                progressBar.isIndeterminate = false
+                progressBar.string = Messages.t("ui.ready")
                 JOptionPane.showMessageDialog(
                     null,
                     validation.errors.joinToString("\n\n"),
                     Messages.t("dlg.validate.title"), JOptionPane.ERROR_MESSAGE,
                 )
-                return@addActionListener
+                return
             }
             if (validation.warnings.isNotEmpty()) {
                 val choice = JOptionPane.showConfirmDialog(
@@ -348,11 +356,14 @@ object SwingInstaller {
                 )
                 if (choice != JOptionPane.YES_OPTION) {
                     artifacts.close()
-                    return@addActionListener
+                    installButton.isEnabled = true
+                    progressBar.isIndeterminate = false
+                    progressBar.string = Messages.t("ui.ready")
+                    return
                 }
             }
 
-            installButton.isEnabled = false
+            progressBar.isIndeterminate = false
             progressBar.value = 0
             progressBar.string = Messages.t("ui.preparing")
 
@@ -376,6 +387,52 @@ object SwingInstaller {
                     }
                 },
             )
+        }
+
+        installButton.addActionListener {
+            val target = selectedTarget()
+            val targetDir = File(dirField.text.trim())
+
+            val proxy = proxyField.text.trim()
+            if (proxy.isNotEmpty()) {
+                val selector = AssetDownloader.parseProxy(proxy)
+                if (selector == null) {
+                    JOptionPane.showMessageDialog(
+                        null, Messages.t("dlg.proxyInvalid", proxy),
+                        Messages.t("app.title"), JOptionPane.ERROR_MESSAGE,
+                    )
+                    return@addActionListener
+                }
+                AssetDownloader.proxyOverride = selector
+            }
+
+            // The `snapshot` entry is an alias: resolving it is a network call, so it must not run
+            // on the EDT — a slow manifest fetch froze the whole window. The worker resolves it in
+            // the background; a failure is an ordinary dialog, success continues on the EDT.
+            val versionEntry = selectedVersion()
+            installButton.isEnabled = false
+            progressBar.isIndeterminate = true
+            progressBar.string = Messages.t("ui.preparing")
+            object : SwingWorker<SupportedVersion, Unit>() {
+                override fun doInBackground(): SupportedVersion = resolveSnapshotAlias(versionEntry)
+
+                override fun done() {
+                    val supported = try {
+                        get()
+                    } catch (t: Throwable) {
+                        installButton.isEnabled = true
+                        progressBar.isIndeterminate = false
+                        progressBar.string = Messages.t("ui.ready")
+                        JOptionPane.showMessageDialog(
+                            null,
+                            (t.cause as? InstallationException)?.message ?: t.message,
+                            Messages.t("app.title"), JOptionPane.ERROR_MESSAGE,
+                        )
+                        return
+                    }
+                    startInstall(target, targetDir, supported)
+                }
+            }.execute()
         }
 
         // ---- assembly --------------------------------------------------------------------------
@@ -516,8 +573,12 @@ object SwingInstaller {
             SwingUtilities.invokeLater {
                 if (total > 0L) {
                     bar.isIndeterminate = false
-                    bar.maximum = total.toInt().coerceAtLeast(1)
-                    bar.value = done.toInt().coerceIn(0, bar.maximum)
+                    // JProgressBar is Int-based while the installer reports Long counts: a value
+                    // beyond Int range must clamp, never wrap into a negative bar position.
+                    val max = total.coerceAtMost(Int.MAX_VALUE.toLong()).toInt().coerceAtLeast(1)
+                    bar.maximum = max
+                    bar.value = done.coerceIn(0, total)
+                        .coerceAtMost(Int.MAX_VALUE.toLong()).toInt().coerceIn(0, max)
                     bar.string = Messages.t("progress.item", label, done, total)
                 } else {
                     // byte-level progress without a known total: show what we know in text form
