@@ -77,6 +77,11 @@ object Installer {
      * "nearly installed" one.
      */
     fun performInstall(ctx: InstallContext, target: InstallationTarget, sink: ProgressSink): String {
+        // The snapshot adapter is verified against one concrete snapshot; a later one may change
+        // hook shapes without any report, and this is the only place the user is told.
+        if (ctx.target.adapterArtifact == SNAPSHOT_ADAPTER_ARTIFACT) {
+            ctx.log(Messages.t("log.snapshotAdapter", ctx.target.version))
+        }
         val validation = target.validate(ctx)
         validation.warnings.forEach { ctx.log("${Messages.t("log.prefix")} " + Messages.t("cli.warning", it)) }
         if (!validation.ok) {
@@ -268,6 +273,9 @@ object Installer {
  * [resolveSnapshotAlias] resolves it to the manifest's latest snapshot at install time.
  */
 const val SNAPSHOT_ALIAS = "snapshot"
+
+/** The adapter artifact the snapshot alias resolves to (the thin module's own name). */
+const val SNAPSHOT_ADAPTER_ARTIFACT = "oml-adapter-snapshot"
 
 /**
  * Resolves the `snapshot` catalogue entry to its real version id. Everything written downstream —

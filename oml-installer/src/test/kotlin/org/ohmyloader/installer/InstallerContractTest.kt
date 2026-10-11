@@ -425,6 +425,38 @@ class InstallerContractTest {
     }
 
     @Test
+    fun `a snapshot install declares the adapter's verification scope in the log`() {
+        fun loggedFor(adapter: String): List<String> {
+            val lines = mutableListOf<String>()
+            val ctx = InstallContext(
+                target = SupportedVersion("26.4-snapshot-9", 27, adapter),
+                targetDir = File(tempDir(), "missing"),
+                installId = "snap-OML",
+                isolation = true,
+                acceptEula = true,
+                allowSharedMods = false,
+                artifacts = DirectoryArtifactSource("26.4-snapshot-9", emptyList(), null),
+                side = "client",
+                log = { lines += it },
+            )
+            // validation fails on the missing dir, but the declaration is logged before it
+            assertFailsWith<InstallationException> {
+                Installer.performInstall(ctx, StandardLauncherTarget, ProgressSink.NOP)
+            }
+            return lines
+        }
+
+        assertTrue(
+            loggedFor("oml-adapter-snapshot").any { it.contains("26.4-snapshot-2") },
+            "the snapshot install must state the adapter's verification scope",
+        )
+        assertTrue(
+            loggedFor("oml-adapter-26_3").none { it.contains("26.4-snapshot-2") },
+            "a stable-adapter install must not carry the snapshot notice",
+        )
+    }
+
+    @Test
     fun `unknown arguments are rejected as a controlled exception`() {
         assertFailsWith<InstallationException> {
             Installer.Options.parse(arrayOf("--version", "26.3", "--dir", ".", "--nope"))
