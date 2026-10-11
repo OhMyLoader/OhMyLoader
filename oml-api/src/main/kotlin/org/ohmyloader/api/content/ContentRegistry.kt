@@ -20,7 +20,8 @@ interface ContentRegistry {
      * every field is optional and defaults to vanilla's. With any behavior hook present the
      * adapter materializes its behavior-carrying Block subclass instead of a plain one.
      *
-     * [id] contains no namespace; OML binds it using the declaring mod's id.
+     * [id] contains no namespace; OML binds it using the declaring mod's id. A second declaration
+     * for the same id is refused with a warning — the first one wins.
      */
     fun declareBlock(id: String, configure: OMLBlockDeclaration.() -> Unit = {}): OMLBlock
 
@@ -29,6 +30,8 @@ interface ContentRegistry {
      * covers max durability, attribute modifiers (attack damage / attack speed on the main hand)
      * and tool mining rules, which the version adapter materializes into `DataComponents.MAX_DAMAGE`,
      * `DataComponents.ATTRIBUTE_MODIFIERS` and `DataComponents.TOOL` at the freeze point.
+     *
+     * A second declaration for the same id is refused with a warning — the first one wins.
      */
     fun declareItem(id: String, configure: OMLItemDeclaration.() -> Unit = {}): OMLItem
 

@@ -934,10 +934,16 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
     /**
      * Declares a block: immediately returns a handle (whose [OMLBlock.platform] is lazy-resolved
      * and errors if accessed before materialization), and queues the declaration for materialization.
+     * A duplicate id is refused with a warning — the first declaration wins; the handle
+     * returned for the refused call then resolves to that same materialization.
      */
     @Synchronized
     protected fun collect(namespace: String, id: String, spec: OMLBlockDeclaration): OMLBlock {
         val key = "$namespace:$id"
+        if (collected.any { it.namespace == namespace && it.id == id }) {
+            OmlLog.warn("Content", "block '$key' is declared twice; keeping the first, ignoring this one")
+            return OMLBlock(key) { materialized[key]?.platform ?: error("block $key has not been materialized") }
+        }
         val ore = spec.oreDeclaration
         if (ore != null) {
             // snapshotted at collect time: the block queue is drained after materialization, but
@@ -954,9 +960,17 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
             .also { collected += BlockDecl(namespace, id, spec) }
     }
 
-    /** Declares an item: same two-phase contract as [collect]. */
+    /**
+     * Declares an item: same two-phase contract as [collect]. A duplicate id is refused with a
+     * warning — the first declaration wins; the handle returned for the refused call then resolves
+     * to that same materialization.
+     */
     protected fun collectItem(namespace: String, id: String, spec: OMLItemDeclaration): OMLItem {
         val key = "$namespace:$id"
+        if (collectedItems.any { it.namespace == namespace && it.id == id }) {
+            OmlLog.warn("Content", "item '$key' is declared twice; keeping the first, ignoring this one")
+            return OMLItem(key) { materializedItems[key]?.platform ?: error("item $key has not been materialized") }
+        }
         return OMLItem(key) { materializedItems[key]?.platform ?: error("item $key has not been materialized") }
             .also { collectedItems += ItemDecl(namespace, id, spec) }
     }

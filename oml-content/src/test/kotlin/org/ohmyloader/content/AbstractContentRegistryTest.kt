@@ -119,6 +119,29 @@ class AbstractContentRegistryTest {
     }
 
     @Test
+    fun `a duplicate block or item id keeps the first declaration`() {
+        val registry = RecordingRegistry()
+        val facade = registry.forNamespace("mymod")
+
+        val firstBlock = facade.declareBlock("ruby_ore") { destroyTime = 3.0f }
+        val secondBlock = facade.declareBlock("ruby_ore") { destroyTime = 1.0f }
+        val firstItem = facade.declareItem("ruby")
+        val secondItem = facade.declareItem("ruby") { maxDamage = 100 }
+
+        registry.materializeAll()
+
+        assertEquals(listOf("ruby_ore"), registry.blocks.map { it.id })
+        assertEquals(3.0f, registry.blocks.single().spec.destroyTime)
+        assertEquals(listOf("ruby"), registry.items.map { it.id })
+
+        // the refused declarations resolve to the first declaration's materialization, not their own spec
+        assertEquals("block-platform", firstBlock.platform)
+        assertEquals("block-platform", secondBlock.platform)
+        assertEquals("item-platform", firstItem.platform)
+        assertEquals("item-platform", secondItem.platform)
+    }
+
+    @Test
     fun `declarations are collected in order with their specs`() {
         val registry = RecordingRegistry()
         val facade = registry.forNamespace("mymod")
