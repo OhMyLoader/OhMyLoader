@@ -145,8 +145,16 @@ class OMLClassLoader(
      * `java.lang` as of Java 26, this class exposes its own public method instead of
      * forcing access via reflection from outside.
      */
-    fun defineGeneratedClass(internalName: String, bytes: ByteArray): Class<*> =
-        defineClass(internalName.replace('/', '.'), bytes, 0, bytes.size)
+    fun defineGeneratedClass(internalName: String, bytes: ByteArray): Class<*> {
+        val name = internalName.replace('/', '.')
+        // A second defineClass under the same name throws LinkageError (duplicate class definition);
+        // under the loading lock, "already defined" means "return that one" — the JVM's own loadClass
+        // semantics, applied to the generated-class channel.
+        synchronized(getClassLoadingLock(name)) {
+            findLoadedClass(name)?.let { return it }
+            return defineClass(name, bytes, 0, bytes.size)
+        }
+    }
 
     private companion object {
         /**
