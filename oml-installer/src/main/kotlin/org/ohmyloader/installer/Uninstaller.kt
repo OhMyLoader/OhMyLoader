@@ -2,7 +2,6 @@ package org.ohmyloader.installer
 
 import kotlinx.serialization.json.*
 import java.io.File
-import java.nio.file.Files
 
 /** Everything [Uninstaller] needs: which shape, which directory, which install id. */
 class UninstallContext(
@@ -169,11 +168,10 @@ object Uninstaller {
         }
         val updated = JsonObject(root.entries.associate { it.toPair() } + ("components" to JsonArray(kept)))
         val pretty = Json { prettyPrint = true }
+        // the atomic text write the install itself uses: a truncated mmc-pack.json is an instance
+        // Prism refuses to load, so the rewrite goes through a .tmp file
         runCatching {
-            Files.writeString(
-                pack.toPath(),
-                pretty.encodeToString(JsonElement.serializer(), updated) + "\n",
-            )
+            writeAtomicText(pack, pretty.encodeToString(JsonElement.serializer(), updated) + "\n")
         }.onSuccess { ctx.log(Messages.t("uninstall.componentRemoved", uid)) }
     }
 
