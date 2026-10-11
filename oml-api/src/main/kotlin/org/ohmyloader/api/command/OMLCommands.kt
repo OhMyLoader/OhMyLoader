@@ -15,7 +15,9 @@ class OMLCommandDeclaration(
 ) {
     /**
      * Minimum permission level required to execute this node (0 = everyone, vanilla op levels
-     * above). Applies to this node and everything below it.
+     * above). Applies to this node and everything below it. A value outside 0..4 is refused with
+     * an error when the tree is translated into the game's dispatcher — the command is not
+     * registered and the log names the declaring mod.
      */
     var permissionLevel: Int = 0
 

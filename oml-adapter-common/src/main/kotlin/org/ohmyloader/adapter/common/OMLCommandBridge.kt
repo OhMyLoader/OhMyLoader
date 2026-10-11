@@ -59,6 +59,13 @@ object OMLCommandBridge {
             )
         }
         val level = node.permissionLevel
+        // The game's own tiers are 0..4; a value outside that range must be refused here, not mapped
+        // onto the closest tier — the `level > 0` gates below would silently drop the gate for a
+        // negative level (everyone can run the command) and read 5+ as owner.
+        require(level in 0..4) {
+            "command node '$node' declares permission level $level, which is outside 0..4 " +
+                "(0 = everyone, 1-4 = vanilla op levels)"
+        }
         val requiredNode = node.permissionNode
         if (level > 0 && requiredNode != null) {
             builder.requires { permissionCheck(level).check(it.permissions()) && it.hasPermissionNode(requiredNode) }
@@ -115,6 +122,9 @@ object OMLCommandBridge {
             1 -> Commands.LEVEL_MODERATORS
             2 -> Commands.LEVEL_GAMEMASTERS
             3 -> Commands.LEVEL_ADMINS
-            else -> Commands.LEVEL_OWNERS
+            4 -> Commands.LEVEL_OWNERS
+            else -> throw IllegalArgumentException(
+                "command permission level $level is outside 0..4 (0 = everyone, 1-4 = vanilla op levels)",
+            )
         }
 }
