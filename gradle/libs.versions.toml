@@ -5,11 +5,11 @@
 # hook classes run inside a patched game JVM where a silent codegen change is a runtime failure,
 # not a build failure.
 kotlin = "2.5.0-Beta1"
-asm = "9.10.1"
+asm = "9.11"
 kotlinxSerialization = "1.11.0"
 shadow = "9.6.1"
 flatlaf = "3.7.2"
-netty = "4.2.18.Final"
+netty = "4.2.19.Final"
 gson = "2.14.0"
 brigadier = "1.3.11"
 datafixerupper = "10.0.21"
