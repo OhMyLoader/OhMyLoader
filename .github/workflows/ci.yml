@@ -63,7 +63,27 @@ jobs:
       - name: Compute the release version for tag builds
         if: startsWith(github.ref, 'refs/tags/v')
         run: echo "OML_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+      # The Gradle task runs `zig build --install` only, so the C library's own unit tests are not
+      # part of `build` and would never run without this step.
+      - name: oml-native unit tests
+        working-directory: oml-native
+        run: zig build test
       - run: ./gradlew ${OML_VERSION:+-Poml_version=$OML_VERSION} build
+      # `build` never executes the artifact it ships. The Java 8 bootstrap, the Main-Class, the
+      # embedded layer, the packaged natives and both message bundles are only proven by running the
+      # jar — and this runs before the upload, so a jar that cannot install is never published.
+      - name: The installer fat jar must run and install offline
+        run: |
+          set -e
+          jar=$(ls dist/oml-installer-*.jar)
+          java -jar "$jar" --help > /dev/null
+          mkdir -p "$RUNNER_TEMP/oml-smoke"
+          java -jar "$jar" --target standard --dir "$RUNNER_TEMP/oml-smoke" \
+            --version 26.3 --isolation true --side client
+          json="$RUNNER_TEMP/oml-smoke/versions/26.3-OML/26.3-OML.json"
+          grep -q '"mainClass": "org.ohmyloader.launcher.OMLBootstrap"' "$json"
+          compgen -G "$RUNNER_TEMP/oml-smoke/versions/26.3-OML/natives/*" > /dev/null
+          test -d "$RUNNER_TEMP/oml-smoke/versions/26.3-OML/mods"
       - uses: actions/upload-artifact@v7
         with:
           name: oml-installer
