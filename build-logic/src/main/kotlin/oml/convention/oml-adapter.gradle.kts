@@ -123,27 +123,32 @@ afterEvaluate {
                 artifacts.filter { it.id.componentIdentifier is ModuleComponentIdentifier }.map { it.file }
             }
 
-        // hoisted out of the action: a captured java.io.File is config-cache-serializable, a Project is not
+        // Read at configuration time into plain values. `providers` inside the action resolves against
+        // the Project rather than the Task, and a task action holding a Project makes the
+        // configuration-cache store fail *after* the install has run — a captured java.io.File or String
+        // serializes, a Project does not. `-P` properties are configuration inputs, so the cache entry
+        // is rebuilt when one changes.
         val defaultInstallDir = file("run/install")
+        val configuredInstallDir = providers.gradleProperty("omlInstallDir").orNull
+        val configuredInstallId = providers.gradleProperty("omlInstallId").orNull
+        val configuredIsolation = providers.gradleProperty("omlIsolation").orNull
+        val configuredSide = providers.gradleProperty("omlSide").orNull
 
         doFirst {
-            val installDir = providers.gradleProperty("omlInstallDir")
-                .getOrElse(defaultInstallDir.absolutePath)
-            val installId = providers.gradleProperty("omlInstallId").getOrElse("$versionId-OML")
             val taskArgs = mutableListOf(
                 "--target", "standard",
                 "--version", versionId,
-                "--dir", installDir,
-                "--id", installId,
+                "--dir", configuredInstallDir ?: defaultInstallDir.absolutePath,
+                "--id", configuredInstallId ?: "$versionId-OML",
             )
 
             // Decides which mods directory to create and is pinned into the version JSON.
-            val isolation = providers.gradleProperty("omlIsolation").orNull?.lowercase()
+            val isolation = configuredIsolation?.lowercase()
                 ?: throw GradleException("installLauncher requires -PomlIsolation=true|false (mandatory)")
             if (isolation != "true" && isolation != "false") throw GradleException("-PomlIsolation accepts only true / false")
             taskArgs += listOf("--isolation", isolation)
 
-            val side = providers.gradleProperty("omlSide").orNull?.lowercase() ?: "client"
+            val side = configuredSide?.lowercase() ?: "client"
             if (side != "client" && side != "server") throw GradleException("-PomlSide accepts only client / server")
             taskArgs += listOf("--side", side)
             if (side == "server") {
