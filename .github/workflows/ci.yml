@@ -143,7 +143,10 @@ jobs:
   # the tag too — is attached to the GitHub Release. No rebuild of the installer here.
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    # windows-test is a prerequisite because the release publishes oml-native and ships the installer:
+    # that job is the only coverage of the Windows library load and the installer's Windows branches,
+    # and a release must not go out while either is red.
+    needs: [build, windows-test]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -155,6 +158,12 @@ jobs:
         with:
           distribution: zulu
           java-version: '27'
+      # `publish` at the root includes :oml-native, whose natives jars dependOn buildOmlNative — the
+      # publish shells out to zig. Depending on a remote build-cache hit from the build job would make
+      # the release fail on one cache eviction.
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
       - uses: gradle/actions/setup-gradle@v6
       - run: ./gradlew -Poml_version="${GITHUB_REF_NAME#v}" publish
         env:
