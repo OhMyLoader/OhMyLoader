@@ -224,11 +224,11 @@ class InstallerContractTest {
         // follow the bundle, not the machine.
         val platforms = listOf(
             "windows" to "oml-native.dll",
-            "linux" to "liboml-native.so",
-            "osx" to "liboml-native.dylib",
+            "linux" to "oml-native.so",
+            "osx" to "oml-native.dylib",
             "windows-arm64" to "oml-native.dll",
-            "linux-arm64" to "liboml-native.so",
-            "osx-arm64" to "liboml-native.dylib",
+            "linux-arm64" to "oml-native.so",
+            "osx-arm64" to "oml-native.dylib",
         )
         listOf(true, false).forEach { mavenTree ->
             val root = tempDir()
@@ -698,8 +698,11 @@ class InstallerContractTest {
     @Test
     fun `arguments carrying json syntax stay valid json`() {
         // The arguments are hand-interpolated into the JSON; a Windows path containing a double
-        // quote would end the string early and corrupt the whole document.
-        val dir = File("""C:\games"quoted""")
+        // quote would end the string early and corrupt the whole document. The quote goes into a
+        // real temporary directory rather than a literal `C:\…`: that literal is absolute only on
+        // Windows, and the argument carries absolutePath — a Unix runner would compare it against
+        // a path missing the working directory.
+        val dir = File(tempDir(), """games"quoted""")
         val target = File(tempDir(), "26.3-OML.json")
         writeVersionJson(
             target = target,
@@ -716,7 +719,7 @@ class InstallerContractTest {
         val args = kotlinx.serialization.json.Json.parseToJsonElement(target.readText())
             .jsonObject["arguments"]!!.jsonObject["jvm"]!!.jsonArray
             .map { it.jsonPrimitive.content }
-        assertContains(args, "-Doml.game.jar=${dir.path.replace('\\', '/')}/26.3.jar")
+        assertContains(args, "-Doml.game.jar=${dir.invariantSeparatorsPath}/26.3.jar")
     }
 
     @Test

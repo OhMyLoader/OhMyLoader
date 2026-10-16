@@ -42,12 +42,15 @@ class InstallEndToEndTest {
 
     /** Every platform slot: neither target directory is guaranteed to stay on the installing machine. */
     private fun nativePackages(dir: File): List<File> = listOf(
+        // The bare spelling, as :oml-native packages it (BuildOmlNativeTask renames zig's Unix
+        // `lib`-prefixed artifact on the way into the layout): the entry name is what the installer
+        // deploys verbatim, and the runtime resolves that same bare name from natives/.
         "windows" to "oml-native.dll",
-        "linux" to "liboml-native.so",
-        "osx" to "liboml-native.dylib",
+        "linux" to "oml-native.so",
+        "osx" to "oml-native.dylib",
         "windows-arm64" to "oml-native.dll",
-        "linux-arm64" to "liboml-native.so",
-        "osx-arm64" to "liboml-native.dylib",
+        "linux-arm64" to "oml-native.so",
+        "osx-arm64" to "oml-native.dylib",
     ).map { [os, name] ->
         val jar = File(dir, "oml-native-0.1.0-SNAPSHOT-natives-$os.jar")
         ZipOutputStream(jar.outputStream()).use { zip ->
