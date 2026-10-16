@@ -1,0 +1,13 @@
+# The sources are LF in this repository, and the scripts are read by Linux runners: a CRLF shebang
+# there is "bad interpreter", and a contributor whose git has core.autocrlf=true silently rewrites
+# whole files to CRLF on checkout or `git apply`. Pinning the endings here keeps that out of everyone's
+# hands. Only the listed types are touched — nothing is renormalized wholesale.
+*.kt text eol=lf
+*.kts text eol=lf
+*.java text eol=lf
+*.zig text eol=lf
+*.toml text eol=lf
+gradlew text eol=lf
+*.sh text eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
