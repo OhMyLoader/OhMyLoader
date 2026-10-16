@@ -70,10 +70,11 @@ jobs:
           path: dist/oml-installer-*.jar
           if-no-files-found: error
 
-  # Windows coverage for the installer's platform branches (CRLF batch scripts, path separators,
-  # code page handling): these are decided by data and arguments, so the contract tests exercise
-  # them without a real install. zig is needed because the installer's processResources embeds
-  # the zig-built oml-native library.
+  # Windows coverage for two things the ubuntu job cannot decide: the installer's platform branches
+  # (CRLF batch scripts, path separators, code page handling) and the real `oml-native.dll` load —
+  # oml-core's codec tests dlopen the library zig built for this platform, so they are the only place
+  # the Windows artifact's exports are ever bound. zig is needed for both: the installer's
+  # processResources embeds the library, and the codec tests read its build layout.
   windows-test:
     runs-on: windows-latest
     timeout-minutes: 60
@@ -99,7 +100,22 @@ jobs:
           key: gradle-build-cache-${{ runner.os }}-${{ hashFiles('**/*.kt', '**/*.kts', '**/*.java', 'gradle/libs.versions.toml', 'gradle.properties') }}
           restore-keys: |
             gradle-build-cache-${{ runner.os }}-
-      - run: ./gradlew.bat :oml-installer:test :oml-devtools:test
+      # The codec tests look for the library in zig's build layout and assume-skip when it is absent,
+      # so the build has to be realized before them and the skip has to be checked after — a green job
+      # in which every native test skipped would prove nothing.
+      - run: ./gradlew.bat :oml-native:buildOmlNative
+      - run: ./gradlew.bat :oml-core:test :oml-installer:test :oml-devtools:test
+      - name: The native codec tests must not have skipped
+        shell: bash
+        run: |
+          for suite in OmlNativeZstdTest ZstdChunkCodecTest; do
+            f="oml-core/build/test-results/test/TEST-org.ohmyloader.core.compression.$suite.xml"
+            if ! grep -q 'skipped="0"' "$f"; then
+              echo "::error::$suite never loaded oml-native.dll (skipped or absent): $f"
+              exit 1
+            fi
+            echo "$suite ran against the real oml-native.dll"
+          done
 
   # Tag build: all Maven coordinates published to GitHub Packages (the interim Maven server
   # until a dedicated one exists) with the proper version via -Poml_version, and the installer
