@@ -20,6 +20,7 @@ class OMLBlockDataStore : OMLBlockData {
     // `OMLBlockData` may be read from outside the ticker thread (the API allows netty-thread reads), so
     // the map is synchronized and every iteration holds the map's monitor; `dirty` is a cross-thread hint.
     private val values = Collections.synchronizedMap(LinkedHashMap<String, Any>())
+
     @Volatile
     private var dirty = false
 

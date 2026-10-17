@@ -176,9 +176,7 @@ jobs:
       # from `build`, this fails the job instead of publishing a release with nothing attached.
       - name: The installer fat jar must exist before publishing
         run: ls -l dist/oml-installer-*.jar
-      # pinned to the commit the v3 tag points at (release 3.0.3); the tag object sha is
-      # 5113cdc90fd4d541c801c55356214017bf5ae34b
-      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64
+      - uses: softprops/action-gh-release@v3
         with:
           files: dist/oml-installer-*.jar
           fail_on_unmatched_files: true

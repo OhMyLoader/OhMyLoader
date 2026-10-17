@@ -13,6 +13,7 @@ import org.ohmyloader.api.content.OMLContentProvider
 import org.ohmyloader.api.network.*
 import org.ohmyloader.content.AbstractContentRegistry
 import org.ohmyloader.content.TomlContentLoader
+import org.ohmyloader.core.OMLCore.contentPackFiles
 import org.ohmyloader.core.OMLCore.installLogFile
 import org.ohmyloader.core.classloader.OMLClassLoader
 import org.ohmyloader.core.client.KeyBindingDeclarations
@@ -607,7 +608,7 @@ object OMLCore {
         initOrder.addAll(ordered)
         registerBuiltinCommands()
         for (mod in ordered) {
-            val (id, name, version, entryClass) = mod
+            val (id, name, version, _) = mod
             try {
                 val instance = modInstance(mod)
                 if (instance is OMLModInitializer) {

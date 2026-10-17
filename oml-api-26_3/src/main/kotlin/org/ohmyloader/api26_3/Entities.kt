@@ -75,7 +75,7 @@ fun LivingEntity.attributeBase(attributeId: String): Double? = attributeInstance
  */
 fun LivingEntity.setAttributeBase(attributeId: String, value: Double): Boolean {
     val instance = attributeInstance(attributeId) ?: return false
-    instance.setBaseValue(value)
+    instance.baseValue = value
     return true
 }
 
@@ -145,7 +145,7 @@ fun LivingEntity.extinguish(): Boolean {
  */
 val Player.openedMenuId: String?
     get() = containerMenu
-        ?.takeIf { it !== inventoryMenu }
+        .takeIf { it !== inventoryMenu }
         ?.let { BuiltInRegistries.MENU.getKey(it.type)?.toString() }
 
 /**
@@ -175,7 +175,7 @@ val Player.permissionLevel: Int
  * (a multiplayer client's own local player) is a no-op — there is no channel to write on.
  */
 fun Player.sendSystemMessage(text: String) {
-    val target: ServerPlayer? = (this as? ServerPlayer) ?: OMLGame.server?.getPlayerList()?.getPlayer(uuid)
+    val target: ServerPlayer? = (this as? ServerPlayer) ?: OMLGame.server?.playerList?.getPlayer(uuid)
     target?.connection?.send(ClientboundSystemChatPacket(Component.literal(text), false))
 }
 
@@ -193,7 +193,7 @@ fun Player.giveItem(itemId: String, count: Int): Boolean {
  */
 fun Player.teleport(x: Double, y: Double, z: Double, dimensionId: String? = null): Boolean {
     val server = OMLGame.server ?: return false
-    val target = (this as? ServerPlayer) ?: server.getPlayerList().getPlayer(uuid) ?: return false
+    val target = (this as? ServerPlayer) ?: server.playerList.getPlayer(uuid) ?: return false
     val level = if (dimensionId != null) {
         OMLRegistries.dimension(dimensionId)?.let(server::getLevel) ?: return false
     } else {

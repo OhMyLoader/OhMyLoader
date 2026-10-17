@@ -138,7 +138,7 @@ internal fun InjectionBuilder.serverEventRules() {
         method(
             "respawn",
             desc = "(Lnet/minecraft/server/level/ServerPlayer;ZLnet/minecraft/world/entity/Entity" +
-                "\$RemovalReason;)Lnet/minecraft/server/level/ServerPlayer;",
+                $$"$RemovalReason;)Lnet/minecraft/server/level/ServerPlayer;",
         ) {
             atTail {
                 transformReturn(
@@ -153,7 +153,7 @@ internal fun InjectionBuilder.serverEventRules() {
     classTarget("net/minecraft/server/level/ServerPlayerGameMode") {
         // The single funnel for both break paths: creative `destroyAndAck` calls this directly, the
         // survival delayed break completes inside it via `tick()`. Its return value is the resync
-        // signal — false makes `destroyAndAck` send the block back to the client, so a cancelled break
+        // signal — false makes `destroyAndAck` send the block back to the client, so a canceled break
         // snaps the block into place again without the mod sending anything.
         method("destroyBlock", desc = "(Lnet/minecraft/core/BlockPos;)Z") {
             atHead {

@@ -13,9 +13,9 @@ val Minecraft.scaledWidth: Int get() = window.guiScaledWidth
 val Minecraft.scaledHeight: Int get() = window.guiScaledHeight
 
 /**
- * Draws [text] at a GUI-space position in the game's own default font, with vanilla's chat colour codes
- * honoured. The HUD surface a `HUD_RENDER` handler is handed is a draw-state extractor: it records what to
- * draw for the frame, and the game's own rendering pass puts it on screen. The colour is full-alpha white on
+ * Draws [text] at a GUI-space position in the game's own default font, with vanilla's chat color codes
+ * honored. The HUD surface a `HUD_RENDER` handler is handed is a draw-state extractor: it records what to
+ * draw for the frame, and the game's own rendering pass puts it on screen. The color is full-alpha white on
  * purpose — the extractor drops any draw whose ARGB alpha is 0, so an RGB-only literal never appears.
  */
 fun GuiGraphicsExtractor.drawText(text: String, x: Int, y: Int) {

@@ -208,14 +208,17 @@ object SwingInstaller {
         var idEditedByUser = false
         var applyingDefault = false
         fun watchUserEdits(field: JTextField, edited: () -> Unit) {
-            field.document.addDocumentListener(object : javax.swing.event.DocumentListener {
-                private fun mark() {
-                    if (!applyingDefault) edited()
-                }
-                override fun insertUpdate(e: javax.swing.event.DocumentEvent) = mark()
-                override fun removeUpdate(e: javax.swing.event.DocumentEvent) = mark()
-                override fun changedUpdate(e: javax.swing.event.DocumentEvent) = mark()
-            })
+            field.document.addDocumentListener(
+                object : javax.swing.event.DocumentListener {
+                    private fun mark() {
+                        if (!applyingDefault) edited()
+                    }
+
+                    override fun insertUpdate(e: javax.swing.event.DocumentEvent) = mark()
+                    override fun removeUpdate(e: javax.swing.event.DocumentEvent) = mark()
+                    override fun changedUpdate(e: javax.swing.event.DocumentEvent) = mark()
+                },
+            )
         }
         watchUserEdits(dirField) { dirEditedByUser = true }
         watchUserEdits(idField) { idEditedByUser = true }

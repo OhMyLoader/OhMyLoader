@@ -10,6 +10,7 @@ import org.objectweb.asm.tree.analysis.BasicValue
 import org.objectweb.asm.tree.analysis.Frame
 import org.ohmyloader.core.mixin.ClassMerger.inspectConstructor
 import org.ohmyloader.core.mixin.ClassMerger.isMergeableCtorInsn
+import org.ohmyloader.core.mixin.ClassMerger.rebuildClinitFrames
 
 /**
  * **Class-merge engine**: merges the mixin class's fields/methods into the target class so the merged code
@@ -866,7 +867,7 @@ internal object ClassMerger {
         val landing = targets.mapNotNull { label ->
             frames.getOrNull(clinit.instructions.indexOf(label))?.let { label to it }
         }
-        landing.forEach { (label, frame) -> clinit.instructions.insertBefore(label, frameNode(frame)) }
+        landing.forEach { [label, frame] -> clinit.instructions.insertBefore(label, frameNode(frame)) }
     }
 
     /** [Frame] → the `F_NEW` [FrameNode] form (locals and stack encoded the way the verifier reads them). */

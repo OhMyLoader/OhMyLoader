@@ -3,23 +3,19 @@ package org.ohmyloader.api26_3
 import net.minecraft.client.multiplayer.ClientLevel
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Holder
-import net.minecraft.core.particles.BlockParticleOption
-import net.minecraft.core.particles.DustParticleOptions
-import net.minecraft.core.particles.ItemParticleOption
-import net.minecraft.core.particles.ParticleOptions
-import net.minecraft.core.particles.ParticleTypes
+import net.minecraft.core.particles.*
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.Container
+import net.minecraft.world.clock.WorldClock
 import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.EntitySpawnReason
 import net.minecraft.world.entity.LivingEntity
-import net.minecraft.world.clock.WorldClock
 import net.minecraft.world.level.Level
+import net.minecraft.world.level.block.entity.BlockEntity
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.entity.EntityTypeTest
-import net.minecraft.world.level.block.entity.BlockEntity
 import org.ohmyloader.api.content.OMLBlockData
 import org.ohmyloader.api.content.OMLBlockDataCarrier
 
@@ -37,7 +33,7 @@ fun Level.blockIdAt(pos: BlockPos): String = BuiltInRegistries.BLOCK.getKey(getB
 fun Level.blockStateAt(pos: BlockPos): BlockState? = pos.takeIf(::isLoaded)?.let(::getBlockState)
 
 /**
- * Places [blockId]'s default state at [pos] with vanilla's neighbour-update flags, and reports whether the
+ * Places [blockId]'s default state at [pos] with vanilla's neighbor-update flags, and reports whether the
  * position now holds that block — the game's `setBlock` return value is not it, since the game can answer
  * false for a state it did store. False for an unknown id or an unloaded position. Writes take effect on a
  * server-side level: the client's level holds a prediction the server overwrites.
@@ -50,7 +46,7 @@ fun Level.setBlockAt(pos: BlockPos, blockId: String): Boolean {
 }
 
 /**
- * Places [state] at [pos] with vanilla's neighbour updates and client resync, and reports whether the
+ * Places [state] at [pos] with vanilla's neighbor updates and client resync, and reports whether the
  * position now holds it. A state read from one position can be placed at another; the game refuses an
  * impossible state rather than storing it, which is why this reads the position back instead of trusting
  * the write.
@@ -193,7 +189,7 @@ fun ServerLevel.spawnLivingEntity(typeId: String, x: Double, y: Double, z: Doubl
 
 /**
  * Shows [particleId] (`minecraft:poof`) at the position to every client that can see it; false for an
- * unregistered id or a particle that needs arguments of its own — dust colour, an item stack — which a bare
+ * unregistered id or a particle that needs arguments of its own — dust color, an item stack — which a bare
  * id cannot carry. [count] of 0 means one particle at the exact position, the game's own convention, while a
  * larger count spreads that many through the offset box. [speed] is the game's per-particle parameter, whose
  * meaning belongs to the particle type.

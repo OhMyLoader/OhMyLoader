@@ -17,7 +17,7 @@ import net.minecraft.world.timeline.Timeline
 
 /** The clock [timelineId] drives, spelled the way the game resolved it; null when no such timeline is registered. */
 fun Registry<Timeline>.clockDrivenBy(timelineId: String): String? =
-    byId(timelineId)?.clock()?.getRegisteredName()
+    byId(timelineId)?.clock()?.registeredName
 
 /** Every marker [timelineId] declares, id to the tick of the cycle it names — including the ones `/time set` hides. */
 fun Registry<Timeline>.timeMarkersOf(timelineId: String): Map<String, Int> {

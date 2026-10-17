@@ -2,11 +2,11 @@ package org.ohmyloader.api26_3
 
 import net.minecraft.commands.CommandSourceStack
 import net.minecraft.server.level.ServerPlayer
+import net.minecraft.server.permissions.LevelBasedPermissionSet
 import net.minecraft.server.permissions.Permission
 import net.minecraft.server.permissions.PermissionLevel
-import net.minecraft.server.permissions.LevelBasedPermissionSet
 import net.minecraft.server.permissions.PermissionSet
-import java.util.UUID
+import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
 /*
@@ -28,7 +28,7 @@ private fun atomNode(id: String): Permission.Atom? =
 
 /** One of the game's command levels by its own lower-case name (`all`, `moderators`, …); null for another string. */
 fun permissionLevelOf(name: String): PermissionLevel? =
-    PermissionLevel.values().firstOrNull { it.serializedName.equals(name, ignoreCase = true) }
+    PermissionLevel.entries.firstOrNull { it.serializedName.equals(name, ignoreCase = true) }
 
 /** Whether this set answers [nodeId]. An id the game cannot parse answers false, not an exception. */
 fun PermissionSet.hasNode(nodeId: String): Boolean =
@@ -54,7 +54,7 @@ fun CommandSourceStack.hasPermissionNode(nodeId: String): Boolean = permissions(
 fun ServerPlayer.grantPermissionNode(nodeId: String): Boolean =
     OMLPermissionGrants.put(uuid, nodeId, true)
 
-/** Forces [nodeId] to be answered false for this player, the check the game's own chat gate then honours. */
+/** Forces [nodeId] to be answered false for this player, the check the game's own chat gate then honors. */
 fun ServerPlayer.revokePermissionNode(nodeId: String): Boolean =
     OMLPermissionGrants.put(uuid, nodeId, false)
 

@@ -55,7 +55,7 @@ object ModScanner {
                             // an array annotation member arrives as ArrayList<String>
                             "dependencies" -> dependencies = (values[i + 1] as? ArrayList<*>)
                                 .orEmpty()
-                                .mapNotNull { it as? String }
+                                .filterIsInstance<String>()
                                 .map(DependencySpec::parse)
                         }
                         i += 2

@@ -314,7 +314,7 @@ object TomlContentLoader {
         registry.declareTimeline(id) {
             this.clock = clock
             this.periodTicks = periodTicks
-            for ((name, value) in (markers as Map<*, *>? ?: emptyMap<Any?, Any?>())) {
+            for ([name, value] in (markers ?: emptyMap<Any?, Any?>())) {
                 val markerName = name as? String
                     ?: fail(source, "timeline '$id': marker names must be strings")
                 val ctx = "timeline '$id' marker '$markerName'"
@@ -327,8 +327,11 @@ object TomlContentLoader {
                         value["in_commands"] as? Boolean ?: false,
                     )
 
-                    else -> fail(source, "$ctx must be a tick number or a table like " +
-                        "{ ticks = 12000, in_commands = true }")
+                    else -> fail(
+                        source,
+                        "$ctx must be a tick number or a table like " +
+                            "{ ticks = 12000, in_commands = true }",
+                    )
                 }
             }
         }

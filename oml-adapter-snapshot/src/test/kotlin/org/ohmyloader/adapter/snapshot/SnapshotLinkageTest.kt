@@ -4,14 +4,7 @@ import org.objectweb.asm.ClassReader
 import org.objectweb.asm.ConstantDynamic
 import org.objectweb.asm.Handle
 import org.objectweb.asm.Type
-import org.objectweb.asm.tree.AbstractInsnNode
-import org.objectweb.asm.tree.ClassNode
-import org.objectweb.asm.tree.FieldInsnNode
-import org.objectweb.asm.tree.InvokeDynamicInsnNode
-import org.objectweb.asm.tree.LdcInsnNode
-import org.objectweb.asm.tree.MethodInsnNode
-import org.objectweb.asm.tree.MultiANewArrayInsnNode
-import org.objectweb.asm.tree.TypeInsnNode
+import org.objectweb.asm.tree.*
 import java.io.File
 import java.util.jar.JarFile
 import kotlin.test.Test
@@ -184,10 +177,12 @@ class SnapshotLinkageTest {
                 types += instruction.owner
                 members += Member(instruction.owner, instruction.name, instruction.desc)
             }
+
             is FieldInsnNode -> {
                 types += instruction.owner
                 members += Member(instruction.owner, instruction.name, instruction.desc)
             }
+
             is TypeInsnNode -> elementType(instruction.desc)?.let(types::add)
             is MultiANewArrayInsnNode -> elementType(instruction.desc)?.let(types::add)
             is LdcInsnNode -> {
@@ -198,13 +193,18 @@ class SnapshotLinkageTest {
                     types += objectTypes(constant.descriptor)
                 }
             }
+
             is InvokeDynamicInsnNode -> {
                 types += objectTypes(instruction.desc)
-                listOf(instruction.bsm, *instruction.bsmArgs.filterIsInstance<Handle>().toTypedArray()).forEach { handle ->
+                listOf(
+                    instruction.bsm,
+                    *instruction.bsmArgs.filterIsInstance<Handle>().toTypedArray(),
+                ).forEach { handle ->
                     types += handle.owner
                     members += Member(handle.owner, handle.name, handle.desc)
                 }
             }
+
             else -> Unit
         }
     }
@@ -221,9 +221,12 @@ class SnapshotLinkageTest {
     @Test
     fun `the version-neutral API names no game type`() {
         requireGame()
-        assertTrue(neutralJar.isFile, "oml.neutralJar must point at the version-neutral API jar, got ${neutralJar.path}")
+        assertTrue(
+            neutralJar.isFile,
+            "oml.neutralJar must point at the version-neutral API jar, got ${neutralJar.path}",
+        )
         val offenders = shippedNodes(neutralJar)
-            .flatMap { node -> val (types, members) = referencesOf(node); types + members.map { it.owner } }
+            .flatMap { node -> val [types, members] = referencesOf(node); types + members.map { it.owner } }
             .filter(::isGameOwner)
             .distinct()
             .sorted()
@@ -242,11 +245,12 @@ class SnapshotLinkageTest {
         val failures = mutableListOf<String>()
         for (jar in linkageJars) {
             for (node in shippedNodes(jar)) {
-                val (types, members) = referencesOf(node)
+                val [types, members] = referencesOf(node)
                 for (owner in types.filter(::isGameOwner).filter { it !in index.superOf }.sorted()) {
                     failures += "${node.name}: type $owner is absent from the snapshot"
                 }
-                for (member in members.filter { isGameOwner(it.owner) }.sortedBy { "${it.owner}.${it.name} ${it.desc}" }) {
+                for (member in members.filter { isGameOwner(it.owner) }
+                    .sortedBy { "${it.owner}.${it.name} ${it.desc}" }) {
                     if (member.owner !in index.superOf) continue // already reported as a missing type
                     if (resolves(index, member)) continue
                     val chain = chain(index, member.owner)

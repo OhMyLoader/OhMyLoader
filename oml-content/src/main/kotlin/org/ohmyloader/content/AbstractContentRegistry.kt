@@ -450,8 +450,10 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                     effects != null && effects !in DAMAGE_EFFECTS -> "unknown damage effects '$effects'"
                     deathMessageType != null && deathMessageType !in DEATH_MESSAGE_TYPES ->
                         "unknown death message type '$deathMessageType'"
+
                     collectedDamageTypes.any { it.namespace == namespace && it.key == id } ->
                         "damage type '$id' is declared twice"
+
                     else -> null
                 }
                 if (refusal != null) {
@@ -473,6 +475,7 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                     !DATAPACK_NAME.matches(id) -> "'$id' is not a lowercase datapack name"
                     collectedClocks.any { it.namespace == namespace && it.key == id } ->
                         "clock '$id' is declared twice"
+
                     else -> null
                 }
                 if (refusal != null) {
@@ -504,23 +507,31 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                     !DATAPACK_NAME.matches(id) -> "'$id' is not a lowercase datapack name"
                     !DATAPACK_NAME.matches(clock.substringAfterLast(':')) ->
                         "clock '${spec.clock}' is not a lowercase datapack name"
+
                     collectedTimelines.any { it.namespace == namespace && it.key == id } ->
                         "timeline '$id' is declared twice"
+
                     period != null && period <= 0 ->
                         "timeline '$id' period $period is not a positive number of ticks"
+
                     clock.substringBefore(':') == namespace &&
                         collectedClocks.none { it.namespace == namespace && it.key == clock.substringAfter(':') } ->
                         "timeline '$id' drives clock '$clock', which this pack has not declared " +
                             "(declare the clock before the timeline that drives it)"
+
                     unreachable != null ->
                         "timeline '$id' marker '${unreachable.id}' names tick ${unreachable.ticks}, which " +
                             "the cycle it declares never reaches"
+
                     spec.markers.map { it.id }.distinct().size != spec.markers.size ->
                         "timeline '$id' declares one marker twice"
+
                     spec.markers.any { !DATAPACK_NAME.matches(it.id) } ->
                         "timeline '$id' declares a marker that is not a lowercase datapack name"
+
                     claimed != null ->
                         "marker '${claimed.id}' is already declared on clock '$clock' by another timeline"
+
                     else -> null
                 }
                 if (refusal != null) {
@@ -554,42 +565,57 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                     !DATAPACK_NAME.matches(id) -> "'$id' is not a lowercase datapack name"
                     collectedDimensionTypes.any { it.namespace == namespace && it.key == id } ->
                         "dimension type '$id' is declared twice"
+
                     spec.coordinateScale !in COORDINATE_SCALE_MIN..COORDINATE_SCALE_MAX ->
                         "dimension type '$id' scale ${spec.coordinateScale} is outside the game's " +
                             "$COORDINATE_SCALE_MIN..$COORDINATE_SCALE_MAX"
+
                     spec.minY !in DIMENSION_MIN_Y..DIMENSION_MAX_Y ->
                         "dimension type '$id' min_y ${spec.minY} is outside the game's " +
                             "$DIMENSION_MIN_Y..$DIMENSION_MAX_Y"
+
                     spec.height !in DIMENSION_MIN_HEIGHT..DIMENSION_HEIGHT_SPAN ->
                         "dimension type '$id' height ${spec.height} is outside the game's " +
                             "$DIMENSION_MIN_HEIGHT..$DIMENSION_HEIGHT_SPAN"
+
                     logicalHeight !in 0..DIMENSION_HEIGHT_SPAN ->
                         "dimension type '$id' logical height $logicalHeight is outside the game's " +
                             "0..$DIMENSION_HEIGHT_SPAN"
+
                     spec.height % 16 != 0 ->
                         "dimension type '$id' height ${spec.height} is not a multiple of 16"
+
                     spec.minY % 16 != 0 ->
                         "dimension type '$id' min_y ${spec.minY} is not a multiple of 16"
+
                     logicalHeight > spec.height ->
                         "dimension type '$id' logical height $logicalHeight exceeds its height ${spec.height}"
+
                     spec.minY + spec.height > DIMENSION_BUILD_CEILING ->
                         "dimension type '$id' spans min_y ${spec.minY} + height ${spec.height} past the " +
                             "game's build ceiling of $DIMENSION_BUILD_CEILING"
+
                     spec.ambientLight !in 0f..1f ->
                         "dimension type '$id' ambient light ${spec.ambientLight} is not between 0.0 and 1.0"
+
                     spec.monsterSpawnLightLevel !in 0..15 || spec.monsterSpawnBlockLightLimit !in 0..15 ->
                         "dimension type '$id' monster spawn light is not a 0..15 light level"
+
                     !spec.infiniburn.startsWith("#") ||
                         !DATAPACK_NAME.matches(spec.infiniburn.removePrefix("#").substringAfterLast(':')) ->
                         "dimension type '$id' infiniburn '${spec.infiniburn}' is not a `#namespace:tag` reference"
+
                     spec.skybox != null && spec.skybox !in SKYBOXES ->
                         "dimension type '$id' has unknown skybox '${spec.skybox}' (none, overworld, end)"
+
                     badTimeline != null ->
                         "dimension type '$id' names timeline '$badTimeline', which is not a datapack id"
+
                     clock != null && clock.substringBefore(':') == namespace &&
                         collectedClocks.none { it.namespace == namespace && it.key == clock.substringAfter(':') } ->
                         "dimension type '$id' runs on clock '$clock', which this pack has not declared " +
                             "(declare the clock before the type that runs on it)"
+
                     else -> null
                 }
                 if (refusal != null) {
@@ -621,22 +647,28 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                     !DATAPACK_NAME.matches(id) -> "'$id' is not a lowercase datapack name"
                     collectedDimensions.any { it.namespace == namespace && it.key == id } ->
                         "dimension '$id' is declared twice"
+
                     spec.generator !in GENERATORS ->
                         "dimension '$id' generator '${spec.generator}' is not one of ${GENERATORS.sorted()}"
+
                     type.substringBefore(':') == namespace &&
                         collectedDimensionTypes.none {
                             it.namespace == namespace && it.key == type.substringAfter(':')
                         } ->
                         "dimension '$id' runs on type '$type', which this pack has not declared " +
                             "(declare the type before the dimension that uses it)"
+
                     spec.generator == "noise" &&
                         (spec.noiseSettings == null || spec.biome == null || !isDataPackId(spec.biome!!)) ->
                         "dimension '$id' needs a noise 'settings' id and a fixed 'biome' id"
+
                     spec.generator == "flat" && spec.biome != null && !isDataPackId(spec.biome!!) ->
                         "dimension '$id' names biome '${spec.biome}', which is not a datapack id"
+
                     badLayer != null ->
                         "dimension '$id' layer '${badLayer.block}' x${badLayer.height} is not a " +
                             "block id with a positive height"
+
                     else -> null
                 }
                 if (refusal != null) {
@@ -663,6 +695,7 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
                     badEntry != null -> "tag '$tagId' names member '${badEntry.id}', which is not a datapack id"
                     spec.entries.isEmpty() && !spec.replace ->
                         "tag '$tagId' adds no member, so there is nothing for the file to say"
+
                     else -> null
                 }
                 if (refusal != null) {

@@ -568,14 +568,19 @@ object ModAssetInjector {
                 "recipe" -> MinecraftContentRegistry.recipeIdsFor(namespace).forEach { emit("recipe/$it.json") }
                 "loot_table/blocks" -> MinecraftContentRegistry.lootIdsFor(namespace)
                     .forEach { emit("loot_table/blocks/$it.json") }
+
                 "damage_type" -> MinecraftContentRegistry.damageTypeIdsFor(namespace)
                     .forEach { emit("damage_type/$it.json") }
+
                 "world_clock" -> MinecraftContentRegistry.clockIdsFor(namespace)
                     .forEach { emit("world_clock/$it.json") }
+
                 "timeline" -> MinecraftContentRegistry.timelineIdsFor(namespace)
                     .forEach { emit("timeline/$it.json") }
+
                 "dimension_type" -> MinecraftContentRegistry.dimensionTypeIdsFor(namespace)
                     .forEach { emit("dimension_type/$it.json") }
+
                 "dimension" -> MinecraftContentRegistry.dimensionIdsFor(namespace)
                     .forEach { emit("dimension/$it.json") }
             }

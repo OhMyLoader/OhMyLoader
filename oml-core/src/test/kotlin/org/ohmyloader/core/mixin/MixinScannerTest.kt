@@ -811,7 +811,10 @@ class MixinScannerTest {
         node.methods[0].visibleAnnotations[0].put("slice", sliceNode("JUMP", "BOGUS"))
         val parsed = MixinScanner.parseMixinClass(node, "m")
 
-        assertTrue(parsed.problems.any { it.contains("@Slice(from") && it.contains("JUMP") }, parsed.problems.toString())
+        assertTrue(
+            parsed.problems.any { it.contains("@Slice(from") && it.contains("JUMP") },
+            parsed.problems.toString(),
+        )
         assertTrue(parsed.problems.any { it.contains("@Slice(to") && it.contains("BOGUS") }, parsed.problems.toString())
     }
 

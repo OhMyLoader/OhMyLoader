@@ -3,7 +3,6 @@ package org.ohmyloader.devtools
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 import org.ohmyloader.devtools.AssetDownloader.parseToPlain
-import org.ohmyloader.devtools.AssetDownloader.resolveVersionDetails
 import java.io.File
 import java.net.InetSocketAddress
 import java.net.ProxySelector
@@ -440,7 +439,8 @@ object AssetDownloader {
             // when the id happens to be a version id, so try that first and fall back to the manifest
             // lookup inside ensureIndex.
             indexId = explicitIndex
-            indexRef = runCatching { indexRefFor(resolveVersionDetails(client, explicitIndex), explicitIndex) }.getOrNull()
+            indexRef =
+                runCatching { indexRefFor(resolveVersionDetails(client, explicitIndex), explicitIndex) }.getOrNull()
         } else {
             val resolved = indexRefFor(engine.versionDetails, version)
                 ?: throw IllegalStateException("version $version is missing assetIndex")
@@ -708,10 +708,11 @@ object AssetDownloader {
         val pool = Executors.newVirtualThreadPerTaskExecutor()
         try {
             val futures = (0 until count).map { index ->
-                pool.submit(java.util.concurrent.Callable {
-                    task(index)
-                    Unit
-                })
+                pool.submit(
+                    java.util.concurrent.Callable {
+                        task(index)
+                    },
+                )
             }
             futures.forEach { it.get() }
         } catch (e: java.util.concurrent.ExecutionException) {

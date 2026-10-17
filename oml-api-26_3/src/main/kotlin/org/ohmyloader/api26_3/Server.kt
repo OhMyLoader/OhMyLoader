@@ -15,7 +15,7 @@ val MinecraftServer.dimensionIds: List<String> get() = allLevels.map { it.dimens
 /** The players on the server now; on an integrated server that is the singleplayer player. */
 val MinecraftServer.onlinePlayers: List<ServerPlayer> get() = playerList.players
 
-fun MinecraftServer.playerByName(name: String): ServerPlayer? = getPlayerList().getPlayerByName(name)
+fun MinecraftServer.playerByName(name: String): ServerPlayer? = playerList.getPlayerByName(name)
 
 /** The loaded level of [dimensionId] (`minecraft:overworld`); null when that dimension is not loaded. */
 fun MinecraftServer.levelById(dimensionId: String): ServerLevel? =

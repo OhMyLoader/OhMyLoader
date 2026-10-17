@@ -3,13 +3,8 @@ package org.ohmyloader.api26_3
 import net.minecraft.server.permissions.Permission
 import net.minecraft.server.permissions.PermissionLevel
 import net.minecraft.server.permissions.PermissionSet
-import java.util.UUID
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.fail
-import kotlin.test.assertFalse
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
+import java.util.*
+import kotlin.test.*
 
 /**
  * The node-addressed half of the permission surface, pinned against a set the test writes itself. The
@@ -24,10 +19,7 @@ class PermissionsTest {
     private fun setAnswering(vararg nodeIds: String, level: PermissionLevel? = null): PermissionSet {
         val allowed = nodeIds.mapNotNull { permissionNode(it) }.toSet()
         val levelNode = level?.let { Permission.HasCommandLevel(it) }
-        return object : PermissionSet {
-            override fun hasPermission(permission: Permission): Boolean =
-                permission in allowed || permission == levelNode
-        }
+        return PermissionSet { permission -> permission in allowed || permission == levelNode }
     }
 
     @Test

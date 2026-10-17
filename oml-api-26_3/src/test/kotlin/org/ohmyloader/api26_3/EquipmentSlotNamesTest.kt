@@ -14,7 +14,7 @@ class EquipmentSlotNamesTest {
 
     @Test
     fun `every slot the game names resolves and round-trips`() {
-        for (slot in EquipmentSlot.values()) {
+        for (slot in EquipmentSlot.entries) {
             assertEquals(slot, equipmentSlotOf(slot.slotName), slot.slotName)
             assertEquals(slot, equipmentSlotOf(slot.slotName.uppercase()), "the lookup is by name, not by case")
         }

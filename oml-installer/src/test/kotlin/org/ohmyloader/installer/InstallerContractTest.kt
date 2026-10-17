@@ -1,9 +1,9 @@
 package org.ohmyloader.installer
 
-import org.ohmyloader.devtools.AssetDownloader
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import org.ohmyloader.devtools.AssetDownloader
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.nio.file.Files

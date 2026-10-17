@@ -61,7 +61,7 @@ fun ServerClockManager.applyTicks(clock: Holder<WorldClock>, ticks: Int): Boolea
 fun ServerClockManager.applyPaused(clock: Holder<WorldClock>, paused: Boolean): Boolean =
     runCatching {
         setPaused(clock, paused)
-        getInstance(clock).isPaused() == paused
+        getInstance(clock).isPaused == paused
     }.getOrDefault(false)
 
 /**
@@ -71,8 +71,7 @@ fun ServerClockManager.applyPaused(clock: Holder<WorldClock>, paused: Boolean): 
  * refuses to create.
  */
 fun ServerClockManager.applyRate(clock: Holder<WorldClock>, rate: Float): Boolean {
-    if (rate < CLOCK_RATE_MIN || rate > CLOCK_RATE_MAX) return false
-    return runCatching {
+    return rate in CLOCK_RATE_MIN..CLOCK_RATE_MAX && runCatching {
         setRate(clock, rate)
         getInstance(clock).rate() == rate
     }.getOrDefault(false)

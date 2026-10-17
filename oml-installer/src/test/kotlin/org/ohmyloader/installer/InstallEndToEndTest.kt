@@ -124,7 +124,10 @@ class InstallEndToEndTest {
             .map { it.jsonPrimitive.content }
             .first { it.startsWith("-Doml.mods.dir=") }
             .removePrefix("-Doml.mods.dir=")
-        assertEquals(File(versionDir, "mods").absoluteFile.invariantSeparatorsPath, File(modsDirArg).absoluteFile.invariantSeparatorsPath)
+        assertEquals(
+            File(versionDir, "mods").absoluteFile.invariantSeparatorsPath,
+            File(modsDirArg).absoluteFile.invariantSeparatorsPath,
+        )
         assertTrue(File(versionDir, "mods").isDirectory)
 
         // every declared library is on disk and matches the declaration (sha1 / size)
@@ -176,7 +179,10 @@ class InstallEndToEndTest {
     fun `a prism install lays out the component model and uninstalls cleanly`() {
         val instance = tempDir()
         File(instance, "instance.cfg").writeText("instanceType=OneSix\n")
-        File(instance, "mmc-pack.json").writeText("""{ "components": [ { "uid": "net.minecraft", "version": "26.3" } ] }""")
+        File(
+            instance,
+            "mmc-pack.json",
+        ).writeText("""{ "components": [ { "uid": "net.minecraft", "version": "26.3" } ] }""")
         File(instance, "minecraft/saves/world").mkdirs()
         val levelDat = File(instance, "minecraft/saves/world/level.dat").apply { writeBytes(ByteArray(8)) }
 
@@ -210,14 +216,18 @@ class InstallEndToEndTest {
             val written = File(instance, "libraries/$flat")
             assertTrue(written.isFile, "$flat must land flat under libraries/")
             assertEquals(sha1Of(artifact), sha1Of(written), "$flat must carry the source bytes")
-            val entry = declaredFlatNames.first { it["name"]!!.jsonPrimitive.content == "org.ohmyloader:$base:26.3-OML" }
+            val entry =
+                declaredFlatNames.first { it["name"]!!.jsonPrimitive.content == "org.ohmyloader:$base:26.3-OML" }
             assertEquals("local", entry["MMC-hint"]!!.jsonPrimitive.content)
         }
 
         // the natives entry declares every platform and points at the flat jars
         val nativesEntry = declaredFlatNames.first { it["natives"] != null }
         val declaredPlatforms = nativesEntry["natives"]!!.jsonObject.keys
-        assertEquals(listOf("windows", "linux", "osx", "windows-arm64", "linux-arm64", "osx-arm64").sorted(), declaredPlatforms.sorted())
+        assertEquals(
+            listOf("windows", "linux", "osx", "windows-arm64", "linux-arm64", "osx-arm64").sorted(),
+            declaredPlatforms.sorted(),
+        )
         for (os in declaredPlatforms) {
             val classifier = nativesEntry["natives"]!!.jsonObject[os]!!.jsonPrimitive.content
             assertTrue(

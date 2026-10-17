@@ -53,7 +53,7 @@ class RuleApplyTest {
             if (failures.isNotEmpty()) {
                 fail(
                     "${failures.size} rule applications failed against the jar:\n" +
-                        failures.joinToString("\n") { " - " + it },
+                        failures.joinToString("\n") { " - $it" },
                 )
             }
         }
@@ -92,7 +92,7 @@ class RuleApplyTest {
         val dispatch = bridgeCalls.indexOf("onLivingHurt")
         val rewrite = bridgeCalls.indexOf("onHurtAmount")
         assertTrue(
-            dispatch >= 0 && rewrite > dispatch,
+            dispatch in 0..<rewrite,
             "expected onLivingHurt then onHurtAmount in that order, got $bridgeCalls",
         )
     }

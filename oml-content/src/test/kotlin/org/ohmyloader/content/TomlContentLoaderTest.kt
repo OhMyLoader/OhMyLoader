@@ -585,7 +585,12 @@ class TomlContentLoaderTest {
     @Test
     fun `a reload re-collects every datapack declaration the load pass collected`() {
         val registry = RecordingRegistry()
-        TomlContentLoader.load("tides", "tides.toml", sampleDamageType + "\n" + sampleClockTimeline + "\n" + sampleDimension + "\n" + sampleTag, registry)
+        TomlContentLoader.load(
+            "tides",
+            "tides.toml",
+            sampleDamageType + "\n" + sampleClockTimeline + "\n" + sampleDimension + "\n" + sampleTag,
+            registry,
+        )
         val reloaded = RecordingRegistry()
         TomlContentLoader.loadDataDeclarations(
             "tides", "tides.toml",

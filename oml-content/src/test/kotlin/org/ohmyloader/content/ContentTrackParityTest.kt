@@ -189,8 +189,14 @@ class ContentTrackParityTest {
         // sanity: the compared artifacts are not trivially empty
         assertTrue(code.recipeJsonFor("ruby", "ruby_raw_ruby")!!.contains("smelting"))
         assertTrue(code.recipeJsonFor("ruby", "ruby_ruby")!!.contains("crafting_shapeless"))
-        assertTrue(code.timelineJsonFor("ruby", "surge")!!.contains("\"ruby:high_tide\""), "the marker id is bound to the pack namespace")
-        assertTrue(code.dimensionJsonFor("ruby", "deep_home")!!.contains("\"type\":\"ruby:deep\""), "the stem binds the type to the pack namespace")
+        assertTrue(
+            code.timelineJsonFor("ruby", "surge")!!.contains("\"ruby:high_tide\""),
+            "the marker id is bound to the pack namespace",
+        )
+        assertTrue(
+            code.dimensionJsonFor("ruby", "deep_home")!!.contains("\"type\":\"ruby:deep\""),
+            "the stem binds the type to the pack namespace",
+        )
         assertTrue(
             code.tagJsonAt("minecraft", "tags/damage_type/is_fire.json")!!.contains("\"ruby:melt\""),
             "a bare member id binds to the declaring namespace on both tracks",

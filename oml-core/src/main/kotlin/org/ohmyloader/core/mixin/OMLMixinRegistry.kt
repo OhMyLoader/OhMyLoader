@@ -490,7 +490,9 @@ object OMLMixinRegistry {
         return candidates.firstOrNull { Type.getMethodDescriptor(it) == wanted }
             ?: throw NoSuchMethodException(
                 "${handlerDescription(handler)} — no overload of ${clazz.name} matches the wanted descriptor " +
-                    "$wanted (candidates: ${candidates.joinToString { Type.getMethodDescriptor(it) }.ifEmpty { "none" }})",
+                    "$wanted (candidates: ${
+                        candidates.joinToString { Type.getMethodDescriptor(it) }.ifEmpty { "none" }
+                    })",
             )
     }
 

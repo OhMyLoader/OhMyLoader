@@ -222,7 +222,7 @@ class AbstractContentRegistryTest {
 
         val decls = registry.oreGenDecls
         assertEquals(1, decls.size)
-        val [ns, key, feature, placed] = listOf(
+        val [_, key, feature, placed] = listOf(
             decls[0].namespace, decls[0].key, decls[0].featureJson, decls[0].placedJson,
         )
         assertEquals("ore_tin_ore", key)

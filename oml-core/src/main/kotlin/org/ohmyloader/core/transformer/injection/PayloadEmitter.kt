@@ -5,12 +5,7 @@ import org.objectweb.asm.Type
 import org.objectweb.asm.tree.*
 import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.inject.*
-import org.ohmyloader.core.mixin.ARGS
-import org.ohmyloader.core.mixin.ARGS_DESC
-import org.ohmyloader.core.mixin.CALLBACK_INFO
-import org.ohmyloader.core.mixin.CALLBACK_INFO_DESC
-import org.ohmyloader.core.mixin.CALLBACK_RETURNABLE
-import org.ohmyloader.core.mixin.CALLBACK_RETURNABLE_DESC
+import org.ohmyloader.core.mixin.*
 import org.ohmyloader.core.transformer.injection.PayloadEmitter.emitCancellableReturn
 import org.ohmyloader.core.transformer.injection.PayloadEmitter.emitValue
 

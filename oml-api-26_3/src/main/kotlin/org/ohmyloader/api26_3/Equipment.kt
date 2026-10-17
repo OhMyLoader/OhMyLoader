@@ -1,3 +1,5 @@
+@file:Suppress("EnumValuesSoftDeprecate")
+
 package org.ohmyloader.api26_3
 
 import net.minecraft.world.entity.EquipmentSlot
@@ -13,7 +15,7 @@ import net.minecraft.world.item.ItemStack
 
 /** The slot the game names [slotName]; null for a name the game does not use. */
 fun equipmentSlotOf(slotName: String): EquipmentSlot? =
-    EquipmentSlot.values().firstOrNull { it.serializedName.equals(slotName, ignoreCase = true) }
+    EquipmentSlot.entries.firstOrNull { it.serializedName.equals(slotName, ignoreCase = true) }
 
 /** The name the game gives this slot — the one `EquipmentSlot.CODEC` encodes, and what the lookups here take. */
 val EquipmentSlot.slotName: String get() = serializedName
@@ -50,7 +52,7 @@ fun LivingEntity.equip(slotName: String, itemId: String, count: Int = 1): ItemSt
 fun LivingEntity.unequip(slotName: String): ItemStack? = equip(slotName, ItemStack.EMPTY)
 
 /**
- * The index this player container holds [slotName] at — 36..39 for the armour pieces and 40 for the offhand —
+ * The index this player container holds [slotName] at — 36..39 for the armor pieces and 40 for the offhand —
  * which is how a mod reads a worn stack out of the player's own `Container`. Null for a slot the container does
  * not address, the main hand among them.
  */

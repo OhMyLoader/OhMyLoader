@@ -1,6 +1,7 @@
 package org.ohmyloader.adapter.snapshot
 
 import org.objectweb.asm.ClassReader
+import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.ClassNode
 import org.objectweb.asm.tree.MethodInsnNode
 import org.ohmyloader.adapter.common.MinecraftHookTransformer
@@ -9,11 +10,7 @@ import org.ohmyloader.adapter.common.ServerHookTransformer
 import org.ohmyloader.api.inject.InjectionPoint
 import java.io.File
 import java.util.jar.JarFile
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
-import kotlin.test.fail
+import kotlin.test.*
 
 /**
  * **Anti-drift shape assertions**: every hook this adapter declares is checked against the *real* `26.4-snapshot-2-client.jar` bytecode, so the
@@ -201,7 +198,7 @@ class HookShapeTest {
             val list = assertNotNull(classNode(jar, "net/minecraft/server/players/PlayerList"))
             val place = list.methods.firstOrNull { it.name == "placeNewPlayer" }
             assertNotNull(place) { "PlayerList.placeNewPlayer is gone — PLAYER_JOINED has no target" }
-            val returns = place.instructions.toArray().count { it.opcode == org.objectweb.asm.Opcodes.RETURN }
+            val returns = place.instructions.toArray().count { it.opcode == Opcodes.RETURN }
             // With more than one exit, "before the last return" is no longer "after the player is in the
             // list": a mod could get the event for a player the game then rejects.
             assertEquals(
@@ -239,9 +236,10 @@ class HookShapeTest {
             assertNotNull(playerField) { "ServerPlayerGameMode.player is gone; the constructor hook needs a new owner" }
             // The association hook exists only because the field is protected; if Mojang published an
             // accessor, the WeakHashMap in EventBridge should go and this test says so.
-            assertTrue(
-                playerField.access and org.objectweb.asm.Opcodes.ACC_PUBLIC == 0,
-                "ServerPlayerGameMode.player is now public — project it directly instead of tracking the constructor argument",
+            assertEquals(
+                0,
+                playerField.access and Opcodes.ACC_PUBLIC,
+                "ServerPlayerGameMode.player is now public — project it directly instead of tracking the constructor argument"
             )
         }
     }

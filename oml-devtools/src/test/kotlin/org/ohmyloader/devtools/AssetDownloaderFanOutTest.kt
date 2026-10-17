@@ -1,6 +1,6 @@
 package org.ohmyloader.devtools
 
-import java.util.Collections
+import java.util.*
 import kotlin.test.*
 
 /**

@@ -4,9 +4,9 @@ import net.minecraft.ChatFormatting
 import net.minecraft.network.chat.Component
 import net.minecraft.network.protocol.game.ClientboundSystemChatPacket
 import net.minecraft.network.protocol.game.ClientboundTickingStatePacket
-import org.ohmyloader.api26_3.event.Events
 import org.ohmyloader.api26_3.EventDispatch.chatTextOf
 import org.ohmyloader.api26_3.EventDispatch.startsNow
+import org.ohmyloader.api26_3.event.Events
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -58,7 +58,11 @@ class EventDispatchTest {
         val styled = Component.literal("hello ").withStyle(ChatFormatting.RED).append(Component.literal("world"))
         val packet = ClientboundSystemChatPacket(styled, false)
 
-        assertEquals("hello world", chatTextOf(packet), "styles are stripped, as they are for the game's own display text")
+        assertEquals(
+            "hello world",
+            chatTextOf(packet),
+            "styles are stripped, as they are for the game's own display text",
+        )
 
         val seen = mutableListOf<String>()
         Events.CHAT_RECEIVED.register { seen += it.message }

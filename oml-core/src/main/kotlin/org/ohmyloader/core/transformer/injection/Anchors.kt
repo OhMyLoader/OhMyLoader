@@ -69,7 +69,10 @@ internal object AnchorResolver {
         if (core is InjectionPoint.Call && core.last) {
             // The front end rejects ordinal + LAST; the DSL path only warns and lets LAST win
             if (core.ordinal != null) {
-                OmlLog.error("Injection", "ordinal and the LAST specifier are mutually exclusive: $point — treating as LAST")
+                OmlLog.error(
+                    "Injection",
+                    "ordinal and the LAST specifier are mutually exclusive: $point — treating as LAST",
+                )
             }
             return listOfNotNull(candidates.lastOrNull())
         }

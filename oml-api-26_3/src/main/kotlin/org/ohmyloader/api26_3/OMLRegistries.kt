@@ -1,7 +1,9 @@
 package org.ohmyloader.api26_3
 
 import net.minecraft.commands.arguments.blocks.BlockStateParser
+import net.minecraft.core.Holder
 import net.minecraft.core.Registry
+import net.minecraft.core.particles.ParticleType
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.core.registries.Registries
 import net.minecraft.resources.Identifier
@@ -24,8 +26,6 @@ import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.gamerules.GameRule
 import net.minecraft.world.level.gamerules.GameRules
-import net.minecraft.core.Holder
-import net.minecraft.core.particles.ParticleType
 
 /**
  * Registry ids (`minecraft:stone`) addressed to the game's own objects. A lookup answers null for an
@@ -63,11 +63,11 @@ object OMLRegistries {
 
     /** One of the game's sound categories by its own lower-case name (`master`, `blocks`, …). */
     fun soundSource(category: String): SoundSource? =
-        SoundSource.values().firstOrNull { it.name.lowercase() == category.lowercase() }
+        SoundSource.entries.firstOrNull { it.name.equals(category, ignoreCase = true) }
 
     /** One of the game's three attribute operations, by its own lower-case name. */
     fun attributeOperation(name: String): AttributeModifier.Operation? =
-        AttributeModifier.Operation.values().firstOrNull { it.name.lowercase() == name.lowercase() }
+        AttributeModifier.Operation.entries.firstOrNull { it.name.equals(name, ignoreCase = true) }
 
     /** Damage types are a datapack registry, so the table comes from the level the damage happens in. */
     fun damageType(level: Level, id: String): Holder<DamageType>? =

@@ -1,7 +1,7 @@
 package org.ohmyloader.api.tick
 
 import org.ohmyloader.api.OmlLog
-import java.util.TreeMap
+import java.util.*
 
 /** Which logical thread a task belongs to. */
 enum class OMLSide {

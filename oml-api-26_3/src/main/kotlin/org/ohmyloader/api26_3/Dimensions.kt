@@ -43,8 +43,8 @@ fun ServerLevel.releaseForceLoadedChunk(position: BlockPos): Boolean =
 /** The chunks this dimension's ticket table holds as force-loaded, unpacked from the longs the game packs.
  * Named apart from `getForceLoadedChunks()` because that member already owns the shorter property name. */
 val ServerLevel.forceLoadedChunkPositions: List<ChunkPos>
-    get() = getForceLoadedChunks().map { ChunkPos.unpack(it) }
+    get() = forceLoadedChunks.map { ChunkPos.unpack(it) }
 
 /** Whether [position]'s chunk is force-loaded, asked of that same table rather than remembered. */
 fun ServerLevel.isForceLoaded(position: BlockPos): Boolean =
-    getForceLoadedChunks().contains(ChunkPos.containing(position).pack())
+    forceLoadedChunks.contains(ChunkPos.containing(position).pack())

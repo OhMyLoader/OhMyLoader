@@ -30,7 +30,7 @@ class RegistryReadsTest {
 
     /** Tags bind while writes are open, and freezing is what binds the holders — the order the game's own bootstrap uses. */
     private fun probeRegistry(): Registry<String> {
-        val table = MappedRegistry<String>(registryKey, RegistrationInfo.BUILT_IN.lifecycle())
+        val table = MappedRegistry(registryKey, RegistrationInfo.BUILT_IN.lifecycle())
         val alpha = table.register(alphaKey, "alpha", RegistrationInfo.BUILT_IN)
         table.register(betaKey, "beta", RegistrationInfo.BUILT_IN)
         table.bindTags(mapOf(TagKey.create(registryKey, Identifier.parse("oml:group")) to listOf(alpha)))

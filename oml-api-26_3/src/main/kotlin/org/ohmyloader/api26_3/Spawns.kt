@@ -3,7 +3,6 @@ package org.ohmyloader.api26_3
 import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.Registries
 import net.minecraft.server.MinecraftServer
-import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.level.storage.LevelData
 
@@ -39,7 +38,7 @@ fun ServerPlayer.setRespawnAnchor(
     announce: Boolean = true,
 ): Boolean {
     val dimension = OMLRegistries.dimension(dimensionId) ?: return false
-    val server = (level() as? ServerLevel)?.server ?: return false
+    val server = level().server
     if (server.registry(Registries.DIMENSION)?.contains(dimensionId) != true) return false
     setRespawnPosition(
         ServerPlayer.RespawnConfig(LevelData.RespawnData.of(dimension, position, yaw, pitch), true),
@@ -72,7 +71,7 @@ val MinecraftServer.worldSpawn: LevelData.RespawnData get() = overworld().respaw
  *
  * False when the game will not respawn a player at [position]: the record is kept, then moved inside
  * [dimensionId]'s world border before being handed back, so a position outside the border reads back as the
- * border's centre. The angles are what a player is set to on arrival.
+ * border's center. The angles are what a player is set to on arrival.
  */
 fun MinecraftServer.setWorldSpawn(
     dimensionId: String,
@@ -82,7 +81,7 @@ fun MinecraftServer.setWorldSpawn(
 ): Boolean {
     val dimension = OMLRegistries.dimension(dimensionId) ?: return false
     if (registry(Registries.DIMENSION)?.contains(dimensionId) != true) return false
-    overworld().setRespawnData(LevelData.RespawnData.of(dimension, position, yaw, pitch))
+    overworld().respawnData = LevelData.RespawnData.of(dimension, position, yaw, pitch)
     val held = worldSpawn
     return held.pos() == position && held.yaw() == yaw && held.pitch() == pitch &&
         held.globalPos().dimension().identifier() == dimension.identifier()
