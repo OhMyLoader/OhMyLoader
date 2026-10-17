@@ -299,6 +299,7 @@ object AssetDownloader {
             ?: throw IllegalStateException("downloads.$kind.url missing in the version details")
         val expected = (meta["size"] as? Number)?.toLong()
         val sha1 = meta["sha1"] as? String
+        requireDigest(url, sha1, label)
 
         // An existing file is only trusted when it passes the *same* checks a fresh download would:
         // size when the JSON gives one, digest when it gives one. Otherwise, a corrupted jar is
@@ -643,6 +644,9 @@ object AssetDownloader {
         skipped: AtomicInteger,
     ) {
         val target = File(destDir, artifact.path)
+        // Checked before the reuse branch: an artifact with no digest is unverifiable whether it arrives
+        // over the wire or comes off the disk, and the reuse path would otherwise never ask.
+        requireDigest(artifact.url, artifact.sha1, artifact.path)
         // same rule as the game jar: an existing file must pass the digest too, or a library that
         // was corrupted by an interrupted earlier run stays corrupt forever
         if (target.isFile && (artifact.size == null || target.length() == artifact.size) &&
@@ -757,6 +761,8 @@ object AssetDownloader {
         progress: DownloadProgress?,
         expectedSha1: String? = null,
     ): Long {
+        // Fail before spending a transfer on bytes nothing can vouch for.
+        requireDigest(url, expectedSha1, label)
         target.parentFile?.mkdirs()
         val tmp = File(target.parentFile, "${target.name}.tmp")
         var lastError: Exception? = null
@@ -885,18 +891,57 @@ object AssetDownloader {
         return sha1HexOfDigest(digest)
     }
 
+    /** SHA-1 of bytes already in memory, same hex form as [sha1Hex] — the two must never disagree. */
+    fun sha1Hex(bytes: ByteArray): String = sha1HexOfDigest(
+        MessageDigest.getInstance("SHA-1").also { it.update(bytes) },
+    )
+
     /**
      * True when [file] is an acceptable copy of [expectedSha1].
      *
-     * A missing or blank [expectedSha1] means "the source does not publish a digest"; Piston gives
-     * every game jar and library one, so in practice this falls back to size-only rarely. The
-     * enforcement is deliberately **not** symmetric: a digest that disagrees always fails, whereas a
-     * digest we simply do not have can only be skipped.
+     * A null/blank [expectedSha1] means "the source publishes no digest" — that is **not** a passed
+     * check, only the absence of one, so callers must additionally ask [missingDigestIsAcceptable]
+     * before trusting the bytes. A digest that disagrees always fails.
      *
      * Public for the same reason as [sha1Hex]: the installer's tests must exercise the real rule.
      */
     fun digestMatches(file: File, expectedSha1: String?): Boolean {
         return expectedSha1.isNullOrBlank() || sha1Hex(file).equals(expectedSha1, ignoreCase = true)
+    }
+
+    /** Mojang's own hosts: every document they serve carries a SHA-1, so a missing one there is a fault. */
+    private fun isMojangOrigin(url: String): Boolean =
+        URI.create(url).host?.let { it.endsWith(".mojang.com") || it.endsWith(".minecraft.net") } == true
+
+    /**
+     * Whether bytes that nothing can verify may still be taken from [url].
+     *
+     * A missing digest is a different failure from a wrong one: the file may be perfectly fine and
+     * equally may be a substitute served by a mirror. Mojang's version documents always carry a SHA-1,
+     * so an absent one there means the document is truncated, rewritten by a proxy, or not Mojang's at
+     * all. Third-party maven mirrors (Forge / MCP) genuinely publish no digest for some artifacts, and
+     * even those are taken only when the caller states `-Doml.allow.missing.digest=true`.
+     *
+     * Public for the installer's contract tests, which must assert the shipped rule rather than a copy.
+     */
+    fun missingDigestIsAcceptable(url: String, expectedSha1: String?): Boolean {
+        if (!expectedSha1.isNullOrBlank()) return true
+        if (isMojangOrigin(url)) return false
+        return System.getProperty("oml.allow.missing.digest", "false").toBoolean()
+    }
+
+    /** Refuse an artifact no digest can vouch for, unless [missingDigestIsAcceptable] says the caller opted in. */
+    private fun requireDigest(url: String, expectedSha1: String?, what: String) {
+        if (!expectedSha1.isNullOrBlank()) return
+        if (missingDigestIsAcceptable(url, expectedSha1)) {
+            log("[AssetDownloader] $what publishes no digest — accepted because -Doml.allow.missing.digest is set ($url)")
+            return
+        }
+        throw IllegalStateException(
+            "SHA-1 缺失：$what 的来源没有发布任何摘要（$url），字节内容无从校验。" +
+                "Mojang 主机的每个文档都带 SHA-1，缺它说明这份清单被截断、被代理改写，或本就不是 Mojang 的；" +
+                "确实没有摘要的第三方镜像，需显式加 -Doml.allow.missing.digest=true 才会取用。",
+        )
     }
 
     internal fun newClient(proxy: ProxySelector? = null): HttpClient {
@@ -927,8 +972,12 @@ object AssetDownloader {
      * document more than once should resolve it once, which is what the engine's
      * [GameEnvironment.Engine.versionDetails] does.
      */
-    internal fun resolveVersionDetails(client: HttpClient, versionId: String): Map<*, *> {
-        val manifest = httpGet(client, VERSION_MANIFEST_URL)
+    internal fun resolveVersionDetails(
+        client: HttpClient,
+        versionId: String,
+        manifestUrl: String = VERSION_MANIFEST_URL,
+    ): Map<*, *> {
+        val manifest = httpGet(client, manifestUrl)
             ?: throw IllegalStateException("无法获取版本清单（version_manifest_v2.json）")
         val parsed = parseToPlain(manifest)
         val versionList = parsed?.get("versions") as? List<*> ?: throw IllegalStateException("版本清单格式异常")
@@ -946,13 +995,25 @@ object AssetDownloader {
             versionId
         }
 
-        val versionUrl = versionList.mapNotNull { v ->
-            val m = v as? Map<*, *> ?: return@mapNotNull null
-            if (m["id"] == effectiveId) m["url"] as? String else null
-        }.firstOrNull() ?: throw IllegalStateException("版本清单里没有 id=$effectiveId")
+        val entry = versionList.filterIsInstance<Map<*, *>>().firstOrNull { it["id"] == effectiveId }
+            ?: throw IllegalStateException("版本清单里没有 id=$effectiveId")
+        val versionUrl = entry["url"] as? String
+            ?: throw IllegalStateException("版本清单里 id=$effectiveId 没有 url")
+        val declaredSha1 = entry["sha1"] as? String
+            ?: throw IllegalStateException("版本清单里 id=$effectiveId 没有 sha1，版本详情无从校验")
 
-        val versionJson = httpGet(client, versionUrl) ?: throw IllegalStateException("无法获取 $versionId 的版本详情")
-        return parseToPlain(versionJson)
+        // The manifest entry's SHA-1 is the only thing tying the version document to the list that named
+        // it, and that document decides every digest checked downstream — jar, libraries, asset index. A
+        // version JSON swapped or truncated in transit would otherwise be the thing that defines "verified".
+        val versionBytes = httpGetBytes(client, versionUrl)
+            ?: throw IllegalStateException("无法获取 $versionId 的版本详情")
+        val actualSha1 = sha1Hex(versionBytes)
+        if (!actualSha1.equals(declaredSha1, ignoreCase = true)) {
+            throw IllegalStateException(
+                "版本详情校验失败（SHA-1 不符）：清单声明 $declaredSha1，实际 $actualSha1（$versionUrl）",
+            )
+        }
+        return parseToPlain(String(versionBytes, Charsets.UTF_8))
             ?: throw IllegalStateException("版本详情格式异常")
     }
 

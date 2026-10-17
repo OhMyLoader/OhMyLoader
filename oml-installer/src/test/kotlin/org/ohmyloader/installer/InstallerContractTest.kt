@@ -528,14 +528,35 @@ class InstallerContractTest {
     }
 
     @Test
-    fun `a source without a published digest degrades to size-only instead of failing every time`() {
+    fun `an unknown digest is not a passed check but a separate decision`() {
         val dir = tempDir()
         val file = File(dir, "no-digest.bin").apply { writeBytes(ByteArray(16)) }
-        // Piston publishes SHA-1 for game jars and libraries; the MCP / Forge maven artifacts do not.
-        // A null/blank expectation therefore means "unknown", never "must not exist".
+        // digestMatches answers "do these bytes agree with the published digest?". With none published
+        // there is nothing to agree with, so agreeing is vacuous and the accept/refuse call moves to
+        // missingDigestIsAcceptable — which is what made this file's old "degrades to size-only" rule wrong.
         assertTrue(AssetDownloader.digestMatches(file, null))
-        assertTrue(AssetDownloader.digestMatches(file, ""))
         assertTrue(AssetDownloader.digestMatches(file, "   "))
+
+        val mojang = "https://piston-data.mojang.com/v1/objects/deadbeef/client.jar"
+        val mirror = "https://maven.minecraftforge.net/net/minecraftforge/forge/x/forge-x.jar"
+        assertFalse(AssetDownloader.missingDigestIsAcceptable(mojang, null), "Mojang hosts always publish a SHA-1")
+        assertFalse(AssetDownloader.missingDigestIsAcceptable(mojang, ""))
+        assertFalse(AssetDownloader.missingDigestIsAcceptable(mirror, null), "no opt-in set yet")
+        assertTrue(AssetDownloader.missingDigestIsAcceptable(mojang, "0".repeat(40)), "a published digest needs no opt-in")
+    }
+
+    @Test
+    fun `the missing-digest opt-in opens mirrors and never Mojang`() {
+        val mojang = "https://libraries.minecraft.net/com/mojang/x/1/x-1.jar"
+        val mirror = "https://maven.minecraftforge.net/net/minecraftforge/forge/x/forge-x.jar"
+        System.setProperty("oml.allow.missing.digest", "true")
+        try {
+            assertTrue(AssetDownloader.missingDigestIsAcceptable(mirror, null))
+            assertFalse(AssetDownloader.missingDigestIsAcceptable(mojang, null))
+        } finally {
+            System.clearProperty("oml.allow.missing.digest")
+        }
+        assertFalse(AssetDownloader.missingDigestIsAcceptable(mirror, null), "the opt-in must not outlive the JVM flag")
     }
 
     @Test
