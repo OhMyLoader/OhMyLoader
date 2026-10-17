@@ -33,6 +33,8 @@ object ModScanner {
             val entries = zip.entries()
             while (entries.hasMoreElements()) {
                 val entry = entries.nextElement()
+                // Directory entries, `kotlin/…`, `.json` payloads: only class files are read as bytecode.
+                if (!entry.name.endsWith(".class")) continue
                 reservedClassName(entry.name)?.let { packed ->
                     reserved += packed
                     continue

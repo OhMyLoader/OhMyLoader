@@ -80,6 +80,28 @@ class ModScannerTest {
         assertEquals(listOf("one", "two"), found.map { it.id }.sorted())
     }
 
+    @Test
+    fun `non-class entries are never read as bytecode`() {
+        // What a real mod jar actually carries besides classes: directory entries, `.json` data, a
+        // `kotlin/…` module descriptor. Any of them reaching the class reader aborts the whole scan —
+        // "Unsupported class file version" from a text file — so a jar with resources must still yield
+        // its mods. This is the shape the reserved-namespace check nearly broke.
+        val modsDir = createTempDirectory("oml-mods").toFile()
+        JarOutputStream(File(modsDir, "with-resources.jar").outputStream()).use { jar ->
+            jar.putNextEntry(JarEntry("data/")); jar.closeEntry()
+            jar.putNextEntry(JarEntry("data/table.json"))
+            jar.write("""{"ten_thousand": true}""".toByteArray()); jar.closeEntry()
+            jar.putNextEntry(JarEntry("kotlin/foo.kotlin_module"))
+            jar.write(ByteArray(24)); jar.closeEntry()
+            jar.putNextEntry(JarEntry("org/example/Real.class"))
+            jar.write(modClassBytes("org/example/Real", "real")); jar.closeEntry()
+        }
+
+        val found = ModScanner.scan(modsDir)
+
+        assertEquals(listOf("real"), found.map { it.id })
+    }
+
     /** One real mod entry point plus [reservedEntries], which decide whether the jar is refused. */
     private fun modsDirWith(vararg reservedEntries: String): File {
         val modsDir = createTempDirectory("oml-mods").toFile()
