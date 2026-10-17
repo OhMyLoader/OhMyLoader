@@ -76,7 +76,8 @@ class MyMod : OMLModInitializer {
 > mod 的编译类路径由官方 Gradle 插件挂好：`oml-api`、`oml-api-26_3`（按 `oml { minecraftVersion }`
 > 推导坐标）、游戏本体 jar 与该版本运行库。因此 mod 的类**不能**放在 `org.ohmyloader.` 前缀下——那一段
 > 是 parent-first，模组类会被启动器层定义，而启动器层没有游戏运行库，直接引用 `net.minecraft.*` 会以
-> `NoClassDefFoundError` 收场。
+> `NoClassDefFoundError` 收场。加载器在扫描 `mods/` 时就会拒绝并跳过这种 jar，点名 jar 与被打进去的类；
+> `omlJar` 打包同样拒绝。
 
 修改游戏内部未暴露的逻辑时，直接写注入规则（无需 Mixin）：规则放在一个 `@RuleSource` 标注、实现
 `RuleSetProvider` 的类里，由 loader 在启动期读取并自检。

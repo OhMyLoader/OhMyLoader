@@ -9,13 +9,22 @@ import java.util.jar.Manifest
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * Reproduces the MR-JAR shape: an @Mod class whose base copy is shadowed by a
  * `META-INF/versions/` copy. Scanning both yields two containers for one modId —
  * preInit/init run twice and every event listener is registered twice.
+ *
+ * Also reproduces the reserved-namespace shape: a jar that carries `org/ohmyloader/` classes of its own.
+ * The launcher layer defines that prefix parent-first, so without a scan-time refusal the mod either
+ * replaces OML's own classes or dies later with `NoClassDefFoundError` on a game library the launcher
+ * layer never had — and by then the jar name is gone from the message.
  */
 class ModScannerTest {
+
+    /** Strips the MR-JAR wrapper so the packed bytes declare the name their entry path implies. */
+    private val versionedPrefix = Regex("^META-INF/versions/[^/]+/")
 
     private fun modClassBytes(internalName: String, modId: String): ByteArray {
         val writer = ClassWriter(0)
@@ -69,5 +78,51 @@ class ModScannerTest {
 
         val found = ModScanner.scan(modsDir)
         assertEquals(listOf("one", "two"), found.map { it.id }.sorted())
+    }
+
+    /** One real mod entry point plus [reservedEntries], which decide whether the jar is refused. */
+    private fun modsDirWith(vararg reservedEntries: String): File {
+        val modsDir = createTempDirectory("oml-mods").toFile()
+        JarOutputStream(File(modsDir, "packed.jar").outputStream()).use { jar ->
+            for (name in listOf("org/example/Real.class") + reservedEntries) {
+                jar.putNextEntry(JarEntry(name))
+                jar.write(modClassBytes(versionedPrefix.replace(name, "").removeSuffix(".class"), "real"))
+                jar.closeEntry()
+            }
+        }
+        return modsDir
+    }
+
+    @Test
+    fun `a jar that packs oml's own namespace is skipped whole`() {
+        val modsDir = modsDirWith("org/ohmyloader/api/Mod.class")
+
+        val found = ModScanner.scan(modsDir)
+
+        assertEquals(emptyList(), found.map { it.id }, "a packed loader class disqualifies every mod in that jar")
+    }
+
+    @Test
+    fun `a versioned copy under oml's namespace is refused too`() {
+        // The base copy is absent here, so a JVM reading this jar defines the versioned one — same namespace,
+        // same damage, and the reason the check does not simply skip META-INF on its way to the refusal.
+        val modsDir = modsDirWith("META-INF/versions/21/org/ohmyloader/api/Mod.class")
+
+        assertEquals(emptyList(), ModScanner.scan(modsDir).map { it.id })
+    }
+
+    @Test
+    fun `a jar that stays out of oml's namespace is scanned normally`() {
+        // `ohmyloader_not` pins the boundary: the reserved namespace is the prefix with its dot, not the word.
+        val modsDir = modsDirWith(
+            "org/example/Extra.class",
+            "META-INF/versions/21/org/example/Extra.class",
+            "org/ohmyloader_not/Thing.class",
+        )
+
+        val found = ModScanner.scan(modsDir)
+
+        assertEquals(3, found.size, "only the base copies are entry points; the jar is not refused")
+        assertTrue(found.all { it.id == "real" })
     }
 }
