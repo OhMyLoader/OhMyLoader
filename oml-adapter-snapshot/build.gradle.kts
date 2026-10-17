@@ -34,11 +34,11 @@ tasks.withType<Test>().configureEach {
 // file paths. Two configurations, one per role: the version-neutral surface and the 26.3-built jars.
 // Neither is published — they are read at configuration time, and the jars they name are already
 // built by the test task's own classpath.
-val linkageNeutral by configurations.creating {
+val linkageNeutral = configurations.create("linkageNeutral") {
     isCanBeConsumed = false
     isTransitive = false
 }
-val linkageVersionFacing by configurations.creating {
+val linkageVersionFacing = configurations.create("linkageVersionFacing") {
     isCanBeConsumed = false
     isTransitive = false
 }
