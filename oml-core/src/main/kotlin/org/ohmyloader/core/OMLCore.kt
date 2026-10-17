@@ -188,20 +188,35 @@ object OMLCore {
      *
      * [loader] is the main loader, and adapter classes must be defined by it — that is what puts them
      * in the same loader as the game classes they reference (see [OMLClassLoader]'s `CHILD_FIRST_PREFIXES`)
-     * and in the loader the injected hooks resolve them through. The check below turns the one way this
-     * can break — an adapter class defined by some other loader, hence a second copy of every
-     * adapter-side singleton — into a startup error instead of content that silently never materializes.
+     * and in the loader the injected hooks resolve them through. The two checks below turn the ways this
+     * can break — an adapter defined by some other loader, hence a second copy of every adapter-side
+     * singleton, and more than one adapter on the search path — into a startup error instead of content
+     * that silently never materializes.
      *
      * A failed discovery throws: a startup that cannot proceed must be observable to the launcher (a
      * non-zero exit code with the reason on stderr), not look like a successful hand-over to a game
      * that then never starts.
      */
-    private fun discoverAdapter(loader: ClassLoader): IAdapter {
-        val adapter = ServiceLoader.load(IAdapter::class.java, loader).firstOrNull() ?: run {
+    internal fun discoverAdapter(loader: ClassLoader): IAdapter {
+        // Providers are named, not instantiated: two adapters on the path is a packaging fault to report
+        // by name, and running both adapters' initializers to discover it is not a harmless way to ask.
+        val candidates = ServiceLoader.load(IAdapter::class.java, loader).stream().toList()
+        if (candidates.isEmpty()) {
             val problem = "no IAdapter implementation found (check classpath and META-INF/services)"
             OmlLog.error("OMLCore", "Fatal: $problem")
             throw IllegalStateException(problem)
         }
+        if (candidates.size > 1) {
+            val problem = "the install layer carries ${candidates.size} IAdapter implementations (" +
+                candidates.joinToString { it.type().name } + ") but exactly one belongs in lib/. The installer " +
+                "packages the shared jars plus one adapter jar, so an extra one is a stale copy of an " +
+                "earlier install; which copy would be used follows ServiceLoader order (the classpath, " +
+                "then the library directory walk), and the wrong one transforms the game against another " +
+                "version's member names."
+            OmlLog.error("OMLCore", "Fatal: $problem")
+            throw IllegalStateException(problem)
+        }
+        val adapter = candidates.first().get()
         if (adapter.javaClass.classLoader !== loader) {
             val problem = "the adapter ${adapter.javaClass.name} was defined by " +
                 "${adapter.javaClass.classLoader} instead of the OML main loader ($loader). Adapter classes must sit " +
@@ -210,6 +225,9 @@ object OMLCore {
             OmlLog.error("OMLCore", "Fatal: $problem")
             throw IllegalStateException(problem)
         }
+        // Which layer the run is on, in the log the CI evidence trail keeps: a wrong-adapter install must
+        // be readable from the log alone, not inferred from which rules failed to hit.
+        OmlLog.info("OMLCore", "adapter ${adapter.javaClass.name} (game version ${adapter.versionId})")
         return adapter
     }
 
