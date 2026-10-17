@@ -147,10 +147,11 @@ class HookShapeTest {
         JarFile(clientJar).use { jar ->
             val main = assertNotNull(classNode(jar, "net/minecraft/client/main/Main"))
             val method = main.methods.firstOrNull { it.name == "main" && it.desc == "([Ljava/lang/String;)V" }
-            assertNotNull(method) {
+            assertNotNull(
+                method,
                 "net/minecraft/client/main/Main no longer has main([Ljava/lang/String;)V — " +
-                    "the entry-point intercept anchor has drifted"
-            }
+                    "the entry-point intercept anchor has drifted",
+            )
         }
     }
 
@@ -159,7 +160,10 @@ class HookShapeTest {
         JarFile(clientJar).use { jar ->
             val registries = assertNotNull(classNode(jar, "net/minecraft/core/registries/BuiltInRegistries"))
             val bootStrap = registries.methods.firstOrNull { it.name == "bootStrap" && it.desc == "()V" }
-            assertNotNull(bootStrap) { "BuiltInRegistries.bootStrap()V is gone — the registry freeze redirect has no target" }
+            assertNotNull(
+                bootStrap,
+                "BuiltInRegistries.bootStrap()V is gone — the registry freeze redirect has no target",
+            )
             val freezeCall = bootStrap.instructions.toArray().filterIsInstance<MethodInsnNode>()
                 .any { it.name == "freeze" && it.desc == "()V" }
             assertTrue(
@@ -174,9 +178,10 @@ class HookShapeTest {
     fun `Minecraft runTick still takes the per-frame boolean`() {
         JarFile(clientJar).use { jar ->
             val minecraft = assertNotNull(classNode(jar, "net/minecraft/client/Minecraft"))
-            assertNotNull(minecraft.methods.firstOrNull { it.name == "runTick" && it.desc == "(Z)V" }) {
-                "net/minecraft/client/Minecraft.runTick(Z)V is gone — the client tick hook has no target"
-            }
+            assertNotNull(
+                minecraft.methods.firstOrNull { it.name == "runTick" && it.desc == "(Z)V" },
+                "net/minecraft/client/Minecraft.runTick(Z)V is gone — the client tick hook has no target",
+            )
         }
     }
 
@@ -188,7 +193,9 @@ class HookShapeTest {
                 server.methods.firstOrNull {
                     it.name == "tickServer" && it.desc == "(Ljava/util/function/BooleanSupplier;)V"
                 },
-            ) { "net/minecraft/server/MinecraftServer.tickServer(Ljava/util/function/BooleanSupplier;)V is gone — the server tick hook has no target" }
+                "net/minecraft/server/MinecraftServer.tickServer(Ljava/util/function/BooleanSupplier;)V is " +
+                    "gone — the server tick hook has no target",
+            )
         }
     }
 
@@ -197,7 +204,7 @@ class HookShapeTest {
         JarFile(clientJar).use { jar ->
             val list = assertNotNull(classNode(jar, "net/minecraft/server/players/PlayerList"))
             val place = list.methods.firstOrNull { it.name == "placeNewPlayer" }
-            assertNotNull(place) { "PlayerList.placeNewPlayer is gone — PLAYER_JOINED has no target" }
+            assertNotNull(place, "PlayerList.placeNewPlayer is gone — PLAYER_JOINED has no target")
             val returns = place.instructions.toArray().count { it.opcode == Opcodes.RETURN }
             // With more than one exit, "before the last return" is no longer "after the player is in the
             // list": a mod could get the event for a player the game then rejects.
@@ -218,10 +225,9 @@ class HookShapeTest {
                     it.name == "hurtServer" &&
                         it.desc == "(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/damagesource/DamageSource;F)Z"
                 },
-            ) {
                 "LivingEntity.hurtServer is no longer the base declaration — hooking it would fire " +
-                    "zero or several times per damage application instead of exactly once"
-            }
+                    "zero or several times per damage application instead of exactly once",
+            )
         }
     }
 
@@ -231,9 +237,10 @@ class HookShapeTest {
             val gameMode = assertNotNull(classNode(jar, "net/minecraft/server/level/ServerPlayerGameMode"))
             assertNotNull(
                 gameMode.methods.firstOrNull { it.name == "destroyBlock" && it.desc == "(Lnet/minecraft/core/BlockPos;)Z" },
-            ) { "ServerPlayerGameMode.destroyBlock(BlockPos)Z is gone — BLOCK_BREAK has no target" }
+                "ServerPlayerGameMode.destroyBlock(BlockPos)Z is gone — BLOCK_BREAK has no target",
+            )
             val playerField = gameMode.fields.firstOrNull { it.name == "player" }
-            assertNotNull(playerField) { "ServerPlayerGameMode.player is gone; the constructor hook needs a new owner" }
+            assertNotNull(playerField, "ServerPlayerGameMode.player is gone; the constructor hook needs a new owner")
             // The association hook exists only because the field is protected; if Mojang published an
             // accessor, the WeakHashMap in EventBridge should go and this test says so.
             assertEquals(
@@ -252,7 +259,7 @@ class HookShapeTest {
             val listener = assertNotNull(classNode(jar, "net/minecraft/client/multiplayer/ClientPacketListener"))
             for (name in listOf("handleSystemChat", "handlePlayerChat", "handleDisguisedChat")) {
                 val handler = listener.methods.firstOrNull { it.name == name }
-                assertNotNull(handler) { "ClientPacketListener.$name is gone — CHAT_RECEIVED has no target" }
+                assertNotNull(handler, "ClientPacketListener.$name is gone — CHAT_RECEIVED has no target")
                 // The CHAT_RECEIVED hook lands immediately after this call, because the call is what
                 // re-dispatches the packet onto the game thread: on the netty thread it re-schedules and
                 // throws, so only the game-thread invocation reaches the instruction after it. If the
