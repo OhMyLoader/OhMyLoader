@@ -32,7 +32,20 @@ class NetworkPayloadBridgeTest {
         val label: String,
         val who: UUID,
         val blob: ByteArray,
-    )
+    ) {
+        /**
+         * Content equality for [blob]: the generated data-class version compares an array by identity, so a
+         * decoded [Point] — whose bytes are always a fresh array from `readBytes()` — would never equal the
+         * one that went in, and the only way to make that pass was to compare an instance with itself.
+         */
+        override fun equals(other: Any?): Boolean =
+            other is Point && other.flag == flag && other.tiny == tiny && other.count == count &&
+                other.big == big && other.ratio == ratio && other.amount == amount &&
+                other.label == label && other.who == who && other.blob.contentEquals(blob)
+
+        override fun hashCode(): Int =
+            blob.contentHashCode() * 31 + listOf(flag, tiny, count, big, ratio, amount, label, who).hashCode()
+    }
 
     private object PointCodec : OMLPayloadCodec<Point> {
         override fun write(buffer: OMLPacketBuffer, value: Point) {
@@ -102,9 +115,10 @@ class NetworkPayloadBridgeTest {
         val decoded = assertIs<OMLNetworkBridge.Envelope<*>>(dispatch.decode(buf))
         assertEquals("rt1:ping", decoded.wireId)
         val value = assertIs<Point>(decoded.value)
-        // The blob is a ByteArray, whose equality is identity — content equality asserted separately.
+        // Kept apart from the structural check below only for its diagnostic: a Point mismatch prints the
+        // blob as an identity hash, while assertContentEquals names the byte that came back wrong.
         assertContentEquals(sample.blob, value.blob)
-        assertEquals(sample.copy(blob = value.blob), value)
+        assertEquals(sample, value)
     }
 
     @Test
