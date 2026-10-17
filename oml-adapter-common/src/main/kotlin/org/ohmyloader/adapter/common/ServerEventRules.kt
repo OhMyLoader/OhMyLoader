@@ -90,8 +90,9 @@ internal fun InjectionBuilder.serverEventRules() {
         // The one funnel every consumer of a player's authority reads through — chat gates, command gates,
         // `/oml`-style checks. TAIL with a return transform: the game builds the level-based set itself, and
         // OML hands back either that very object (nothing granted: identity, no allocation) or a wrapper over
-        // it. A wrapper is safe because the callers only ever invoke `PermissionSet.hasPermission`; nothing
-        // casts the result back to `LevelBasedPermissionSet`.
+        // it. The wrapper must implement `LevelBasedPermissionSet`, not merely `PermissionSet`: at least one
+        // consumer casts the returned object back to that interface to read the level, so a wrapper answering
+        // only the narrower type fails inside the game rather than inside OML.
         method("permissions", desc = "()Lnet/minecraft/server/permissions/PermissionSet;") {
             atTail {
                 transformReturn(
