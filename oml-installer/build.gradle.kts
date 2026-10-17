@@ -68,7 +68,7 @@ dependencies {
     // thin per-version adapters carry only their entry point.
     embedShared(project(":oml-adapter-common"))
     for ((version, adapter) in bundledAdapters) {
-        add(adapterEmbeds.getValue(version).name, project(":" + adapter))
+        add(adapterEmbeds.getValue(version).name, project(":$adapter"))
     }
 
     testImplementation(kotlin("test"))
@@ -77,6 +77,8 @@ dependencies {
 // Sync, not Copy: a Copy task never removes files that dropped out of its inputs, so a removed
 // layer dependency would keep shipping in the fat jar forever.
 val embedBundled = tasks.register<Sync>("embedBundled") {
+    group = "ohmyloader"
+    description = "Embed the shared loader layers and every bundled adapter into the installer's lib/ resources"
     from(embedShared)
     for (embed in adapterEmbeds.values) {
         from(embed)
