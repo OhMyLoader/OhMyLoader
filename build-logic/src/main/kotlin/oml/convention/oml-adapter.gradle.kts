@@ -170,9 +170,11 @@ afterEvaluate {
     fetchClientJar.configure { doFirst { runDir.mkdirs() } }
 
     // HookShapeTest asserts the hook rules against the real client jar, so fetching it is part of
-    // the test task graph; the tests locate the jar through this system property.
+    // the test task graph; the tests locate the jar through this system property. SnapshotLinkageTest
+    // additionally resolves supertypes, which for the game means the version JSON library tree.
     tasks.withType<Test>().configureEach {
         dependsOn(fetchClientJar)
         systemProperty("oml.clientJar", clientJar.absolutePath)
+        systemProperty("oml.gameLibraries", gameLibraries.absolutePath)
     }
 }

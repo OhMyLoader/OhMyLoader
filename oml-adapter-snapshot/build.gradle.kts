@@ -29,6 +29,32 @@ tasks.withType<Test>().configureEach {
     jvmArgs("--enable-native-access=ALL-UNNAMED")
 }
 
+// SnapshotLinkageTest parses the bytecode that ships into a snapshot launch instead of loading it
+// (the game classes it references are not on this JVM's classpath), so those jars have to reach it as
+// file paths. Two configurations, one per role: the version-neutral surface and the 26.3-built jars.
+// Neither is published — they are read at configuration time, and the jars they name are already
+// built by the test task's own classpath.
+val linkageNeutral by configurations.creating {
+    isCanBeConsumed = false
+    isTransitive = false
+}
+val linkageVersionFacing by configurations.creating {
+    isCanBeConsumed = false
+    isTransitive = false
+}
+dependencies {
+    linkageNeutral(project(":oml-api"))
+    linkageVersionFacing(project(":oml-api-26_3"))
+    linkageVersionFacing(project(":oml-adapter-common"))
+}
+
+tasks.withType<Test>().configureEach {
+    // The paths above are recorded at configuration time; the edge here is what makes the jars exist.
+    dependsOn(linkageNeutral, linkageVersionFacing)
+    systemProperty("oml.neutralJar", linkageNeutral.singleFile.absolutePath)
+    systemProperty("oml.linkage.jars", linkageVersionFacing.asPath)
+}
+
 omlAdapter {
     // The only per-version fact left to declare: which game line this driver targets. 26.x jars are not
     // obfuscated — Mojang stopped publishing the official mappings with this line (the version JSON has
