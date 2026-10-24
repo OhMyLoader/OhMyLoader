@@ -191,6 +191,13 @@ class TomlContentLoaderTest {
     }
 
     @Test
+    fun `light level maps through the toml track and refuses the out-of-scale`() {
+        val registry = loadFile("block", "lamp", "light_level = 14")
+        assertEquals(14, registry.blocks.single().second.lightLevel)
+        assertFailsWith<IllegalArgumentException> { loadFile("block", "lamp", "light_level = 16") }
+    }
+
+    @Test
     fun `tool rules map onto the rule DSL`() {
         val registry = loadFile(
             "item", "pick",

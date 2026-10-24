@@ -43,7 +43,7 @@ object TomlContentLoader {
      */
     val RELOADABLE_TYPES = CONTENT_TYPES - setOf("block", "item")
 
-    private val BLOCK_KEYS = setOf("hardness", "blast_resistance", "drops_require_correct_tool", "ore")
+    private val BLOCK_KEYS = setOf("hardness", "blast_resistance", "drops_require_correct_tool", "light_level", "ore")
     private val ITEM_KEYS = setOf(
         "max_durability", "attack_damage", "attack_speed", "mining_speed",
         "tool_damage_per_block", "breaks_blocks_in_creative",
@@ -135,6 +135,7 @@ object TomlContentLoader {
             blastResistance = floatValue(fields, "blast_resistance", source, "block '$id'")
             dropsRequireCorrectTool =
                 boolValue(fields, "drops_require_correct_tool", source, "block '$id'") ?: false
+            lightLevel = intValue(fields, "light_level", source, "block '$id'")
             if (ore != null) {
                 val oreFields = LinkedHashMap<String, Any>()
                 for ([k, v] in ore) {

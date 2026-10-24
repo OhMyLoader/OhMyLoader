@@ -350,6 +350,16 @@ class OMLBlockDeclaration {
      */
     var dropsRequireCorrectTool: Boolean = false
 
+    /**
+     * Emitted light level, 0–15 (the scale the game's own light engine reads). `null` = the block
+     * emits nothing, vanilla's default. A value outside 0–15 is refused at declaration time.
+     */
+    var lightLevel: Int? = null
+        set(value) {
+            require(value == null || value in 0..15) { "lightLevel must be 0–15, got $value" }
+            field = value
+        }
+
     // Public but not mod-facing API: the version adapter reads these to decide between a plain
     // Block and its behavior subclass. Mods register through onStepOn / onHit.
     val stepOnHandlers = mutableListOf<(OMLStepOnEvent) -> Unit>()

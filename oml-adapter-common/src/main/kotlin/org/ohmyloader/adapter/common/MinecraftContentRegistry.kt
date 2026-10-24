@@ -246,6 +246,16 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
         if (spec.dropsRequireCorrectTool) {
             propertiesClass.getMethod("requiresCorrectToolForDrops").invoke(properties)
         }
+        spec.lightLevel?.let { level ->
+            // lightLevel takes the game's ToIntFunction<BlockState>; a constant emits the same
+            // brightness in every state, which is all a declaration can ask for.
+            val functionClass = Class.forName("java.util.function.ToIntFunction")
+            val constant = java.lang.reflect.Proxy.newProxyInstance(
+                propertiesClass.classLoader,
+                arrayOf(functionClass),
+            ) { _, _, _ -> level }
+            propertiesClass.getMethod("lightLevel", functionClass).invoke(properties, constant)
+        }
     }
 
     /**
