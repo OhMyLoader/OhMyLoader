@@ -4,9 +4,9 @@
 # module's tests plus a real client and server boot from OhMyLoaderTestMod), because the compiled
 # hook classes run inside a patched game JVM where a silent codegen change is a runtime failure,
 # not a build failure.
-kotlin = "2.5.0-Beta1"
-asm = "9.11"
-kotlinxSerialization = "1.11.0"
+kotlin = "2.5.0-Beta2"
+asm = "9.11.1"
+kotlinxSerialization = "1.12.0"
 shadow = "9.6.1"
 flatlaf = "3.7.2"
 netty = "4.2.19.Final"
