@@ -274,6 +274,8 @@ class AbstractContentRegistryTest {
         override fun putBoolean(key: String, value: Boolean) {}
         override fun getString(key: String): String? = null
         override fun putString(key: String, value: String) {}
+        override fun getItemStack(key: String): org.ohmyloader.api.content.OMLDataItemStack? = null
+        override fun putItemStack(key: String, value: org.ohmyloader.api.content.OMLDataItemStack) {}
         override fun hasKey(key: String) = false
         override fun remove(key: String) = false
         override fun keys(): Set<String> = emptySet()

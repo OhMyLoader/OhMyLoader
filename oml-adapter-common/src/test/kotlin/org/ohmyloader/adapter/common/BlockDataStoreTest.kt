@@ -1,5 +1,6 @@
 package org.ohmyloader.adapter.common
 
+import org.ohmyloader.api.content.OMLDataItemStack
 import kotlin.test.*
 
 /**
@@ -18,6 +19,7 @@ class BlockDataStoreTest {
         store.putFloat("speed", 1.5f)
         store.putDouble("precise", 3.25)
         store.putString("name", "value with\nnewlines and ünïcode")
+        store.putItemStack("output", OMLDataItemStack("techmod:copper_plate", 3))
 
         val restored = OMLBlockDataStore().also { it.decode(store.encode()) }
         assertEquals(true, restored.getBoolean("flag"))
@@ -26,6 +28,7 @@ class BlockDataStoreTest {
         assertEquals(1.5f, restored.getFloat("speed"))
         assertEquals(3.25, restored.getDouble("precise"))
         assertEquals("value with\nnewlines and ünïcode", restored.getString("name"))
+        assertEquals(OMLDataItemStack("techmod:copper_plate", 3), restored.getItemStack("output"))
     }
 
     @Test

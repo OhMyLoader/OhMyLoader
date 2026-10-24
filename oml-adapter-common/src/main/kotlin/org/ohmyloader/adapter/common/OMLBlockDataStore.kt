@@ -3,6 +3,7 @@ package org.ohmyloader.adapter.common
 import net.minecraft.world.level.storage.ValueInput
 import net.minecraft.world.level.storage.ValueOutput
 import org.ohmyloader.api.content.OMLBlockData
+import org.ohmyloader.api.content.OMLDataItemStack
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
@@ -51,6 +52,9 @@ class OMLBlockDataStore : OMLBlockData {
     override fun putBoolean(key: String, value: Boolean) = put(key, value)
     override fun getString(key: String): String? = values[key] as? String
     override fun putString(key: String, value: String) = put(key, value)
+
+    override fun getItemStack(key: String): OMLDataItemStack? = values[key] as? OMLDataItemStack
+    override fun putItemStack(key: String, value: OMLDataItemStack) = put(key, value)
 
     override fun hasKey(key: String): Boolean = values.containsKey(key)
 
@@ -104,6 +108,10 @@ class OMLBlockDataStore : OMLBlockData {
                             is String -> {
                                 out.writeByte(TAG_STRING); out.writeUTF(value)
                             }
+
+                            is OMLDataItemStack -> {
+                                out.writeByte(TAG_ITEM_STACK); out.writeUTF(value.itemId); out.writeInt(value.count)
+                            }
                         }
                     }
                 }
@@ -127,6 +135,7 @@ class OMLBlockDataStore : OMLBlockData {
                         TAG_FLOAT -> values[key] = input.readFloat()
                         TAG_DOUBLE -> values[key] = input.readDouble()
                         TAG_STRING -> values[key] = input.readUTF()
+                        TAG_ITEM_STACK -> values[key] = OMLDataItemStack(input.readUTF(), input.readInt())
                         else -> throw IllegalStateException(
                             "corrupt block-entity data: unknown type tag $tag for key [$key] — the saved value is unreadable",
                         )
@@ -144,5 +153,6 @@ class OMLBlockDataStore : OMLBlockData {
         const val TAG_FLOAT = 3
         const val TAG_DOUBLE = 4
         const val TAG_STRING = 5
+        const val TAG_ITEM_STACK = 6
     }
 }
