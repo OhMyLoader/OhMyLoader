@@ -208,4 +208,25 @@ object MinimalToml {
             fail("unsupported value '$this' (numbers, booleans and strings only)")
         }
     }
+
+    /**
+     * Inverse of the reader's basic-string parsing: the backslash and the quote terminate or
+     * reinterpret the string, so they must be escaped, and a control character cannot appear
+     * literally inside a single-line basic string. Writers of TOML values (the config layer)
+     * must go through this so the escape table cannot drift from the reader's.
+     */
+    fun escapeBasicString(s: String): String = buildString {
+        for (c in s) {
+            when (c) {
+                '\\' -> append("\\\\")
+                '"' -> append("\\\"")
+                '\n' -> append("\\n")
+                '\t' -> append("\\t")
+                '\r' -> append("\\r")
+                '\b' -> append("\\b")
+                '\u000C' -> append("\\f")
+                else -> append(c)
+            }
+        }
+    }
 }

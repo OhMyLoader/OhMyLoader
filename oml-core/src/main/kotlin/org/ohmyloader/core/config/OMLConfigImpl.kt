@@ -88,27 +88,7 @@ class OMLConfigImpl(modId: String, configDir: File) : OMLConfig {
     }
 
     private fun literal(value: Any): String = when (value) {
-        is String -> "\"${value.escapeBasicString()}\""
+        is String -> "\"${MinimalToml.escapeBasicString(value)}\""
         else -> "$value"
-    }
-
-    /**
-     * TOML basic-string rules: the backslash and the quote terminate or reinterpret the string, so
-     * they must be escaped, and a control character cannot appear literally inside a single-line
-     * basic string — it goes out in the escape form [MinimalToml] reads back.
-     */
-    private fun String.escapeBasicString(): String = buildString {
-        for (c in this@escapeBasicString) {
-            when (c) {
-                '\\' -> append("\\\\")
-                '"' -> append("\\\"")
-                '\n' -> append("\\n")
-                '\t' -> append("\\t")
-                '\r' -> append("\\r")
-                '\b' -> append("\\b")
-                '\u000C' -> append("\\f")
-                else -> append(c)
-            }
-        }
     }
 }
