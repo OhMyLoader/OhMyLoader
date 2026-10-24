@@ -30,7 +30,7 @@ jobs:
       # oml-native is built from source as part of `build` (the installer embeds it)
       - uses: mlugg/setup-zig@v2
         with:
-          version: 0.16.0
+          version: 0.17.0
       - uses: gradle/actions/setup-gradle@v6
       # Build-cache entries are content-addressed by task inputs, so a stale snapshot only
       # lowers the hit rate, never yields wrong outputs — the key can err on the coarse side.
@@ -106,7 +106,7 @@ jobs:
           java-version: '27'
       - uses: mlugg/setup-zig@v2
         with:
-          version: 0.16.0
+          version: 0.17.0
       - uses: gradle/actions/setup-gradle@v6
       # Same build-cache snapshot design as the build job (see there). Keyed per OS: the cached
       # artifacts are platform-specific compilation outputs. The zig toolchain installed above
@@ -163,7 +163,7 @@ jobs:
       # the release fail on one cache eviction.
       - uses: mlugg/setup-zig@v2
         with:
-          version: 0.16.0
+          version: 0.17.0
       - uses: gradle/actions/setup-gradle@v6
       - run: ./gradlew -Poml_version="${GITHUB_REF_NAME#v}" publish
         env:
