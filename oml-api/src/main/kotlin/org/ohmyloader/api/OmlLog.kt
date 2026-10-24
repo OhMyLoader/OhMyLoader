@@ -6,9 +6,13 @@ package org.ohmyloader.api
  * every line carries exactly one recognizable prefix.
  *
  * Shapes: [info] stdout `[<tag>] <message>`; [warn] stderr `[<tag>] WARN: …`; [error] stderr
- * `[<tag>] ERROR: …` plus the stack trace. "No OML error line in the log" is the regex
- * `\[OML[A-Za-z-]*\] (WARN|ERROR):` — a new diagnostic must go through here, or that judgment
- * silently stops covering it.
+ * `[<tag>] ERROR: …` plus the stack trace. Tags are free-form and mostly not `OML`-prefixed
+ * (`Content`, `Network`, `Commands` — the module doing the talking).
+ *
+ * What the gates actually check is the E2E verdict line (`[OML-E2E] …`), not these lines: WARN and
+ * ERROR are part of normal operation (a skipped biome merge, the scheduler's deliberate-throw probe),
+ * so "no error line anywhere" is not a gate property and must not be written as one. Diagnostics go
+ * through here so humans — and the `-Doml.log.file` mirror — see one consistent shape.
  */
 object OmlLog {
 

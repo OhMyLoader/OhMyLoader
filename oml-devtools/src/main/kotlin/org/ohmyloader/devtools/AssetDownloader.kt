@@ -754,7 +754,7 @@ object AssetDownloader {
      * downloads. The digest is computed **while the bytes stream to the `.tmp` file** rather than by
      * re-reading it: an extra pass over a ~26 MB jar is a visible pause right at the end of an install.
      */
-    private fun downloadToFile(
+    internal fun downloadToFile(
         client: HttpClient,
         permits: java.util.concurrent.Semaphore,
         url: String,
