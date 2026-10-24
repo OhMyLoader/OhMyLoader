@@ -10,9 +10,6 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
-import java.nio.file.AtomicMoveNotSupportedException
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import java.security.DigestInputStream
 import java.security.MessageDigest
 import java.time.Duration
@@ -141,6 +138,12 @@ object AssetDownloader {
 
     /** Emits one error line to [errorSink]. */
     internal fun error(message: String) = errorSink(message)
+
+    init {
+        // the downgrade report must reach the same sink as every other failure line, dynamically —
+        // callers reassign errorSink at runtime (CLI collector, installer's Swing log pane)
+        AtomicFiles.report = { error(it) }
+    }
 
     /** Parses `host:port` (or `http://host:port`) into a single-proxy selector. */
     fun parseProxy(spec: String): ProxySelector? {
@@ -564,7 +567,7 @@ object AssetDownloader {
     private fun indexMatches(bytes: ByteArray, ref: IndexRef): Boolean {
         if (ref.size != null && bytes.size.toLong() != ref.size) return false
         if (ref.sha1.isNullOrBlank()) return true
-        val actual = MessageDigest.getInstance("SHA-1").digest(bytes).joinToString("") { "%02x".format(it) }
+        val actual = AtomicFiles.sha1(bytes)
         return actual.equals(ref.sha1, ignoreCase = true)
     }
 
@@ -604,11 +607,11 @@ object AssetDownloader {
                 if (bytes.size != obj.size.toInt()) {
                     throw IllegalStateException("download size mismatch: expected ${obj.size}, got ${bytes.size}")
                 }
-                val actual = MessageDigest.getInstance("SHA-1").digest(bytes).joinToString("") { "%02x".format(it) }
+                val actual = AtomicFiles.sha1(bytes)
                 if (!actual.equals(obj.hash, ignoreCase = true)) {
                     throw IllegalStateException("asset hash mismatch: expected ${obj.hash}, got $actual")
                 }
-                writeAtomically(target, bytes)
+                AtomicFiles.write(target, bytes)
                 downloaded.incrementAndGet()
                 return
             } catch (e: Exception) {
@@ -813,13 +816,13 @@ object AssetDownloader {
                 // truncated response that happens to hit the right size, a mirror serving a substitute,
                 // or a proxy rewriting the body. Delete and retry; if all attempts fail the throw below
                 // carries the reason, and nothing partial is ever moved into place.
-                if (expectedSha1 != null && !sha1HexOfDigest(digest).equals(expectedSha1, ignoreCase = true)) {
+                if (expectedSha1 != null && !AtomicFiles.hex(digest).equals(expectedSha1, ignoreCase = true)) {
                     throw IllegalStateException(
                         "下载内容校验失败（SHA-1 不符）：期望 $expectedSha1，实际 " +
-                            "${sha1HexOfDigest(digest)}（$url）",
+                            "${AtomicFiles.hex(digest)}（$url）",
                     )
                 }
-                moveIntoPlace(tmp, target)
+                AtomicFiles.moveIntoPlace(tmp, target)
                 progress?.onProgress(if (total > 0) total else done, if (total > 0) total else done, label)
                 return done
             } catch (e: Exception) {
@@ -839,62 +842,14 @@ object AssetDownloader {
         )
     }
 
-    /** Lowercase hex of a completed digest. */
-    private fun sha1HexOfDigest(digest: MessageDigest): String =
-        digest.digest().joinToString("") { "%02x".format(it) }
+    /** Writes [bytes] through a `.tmp` file; the landing rules live in [AtomicFiles]. */
+    private fun writeAtomically(target: File, bytes: ByteArray) = AtomicFiles.write(target, bytes)
 
-    /** Writes [bytes] through a `.tmp` file, so an interrupted write cannot leave a half file behind. */
-    private fun writeAtomically(target: File, bytes: ByteArray) {
-        target.parentFile?.mkdirs()
-        val tmp = File(target.parentFile, "${target.name}.tmp")
-        tmp.writeBytes(bytes)
-        moveIntoPlace(tmp, target)
-    }
-
-    /**
-     * Moves a fully written `.tmp` file onto [target].
-     *
-     * `ATOMIC_MOVE` is the guarantee the caller wants: a reader sees the old file or the new one, never
-     * a partial one. Across filesystems (a `.tmp` on a different mount, a network share, a container
-     * bind mount) the JDK cannot rename — this is the one place the guarantee has to be **downgraded
-     * rather than assumed**. Only the move itself is retried without it; the bytes were already
-     * verified by the caller, so a non-atomic move still lands a complete file.
-     */
-    private fun moveIntoPlace(tmp: File, target: File) {
-        try {
-            Files.move(
-                tmp.toPath(), target.toPath(),
-                StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE,
-            )
-        } catch (e: AtomicMoveNotSupportedException) {
-            // cross-device: REPORT the downgrade (never silently), then finish the move
-            error("[AssetDownloader] 原子替换不可用（跨文件系统），退化为普通移动：${target.absolutePath}")
-            Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
-        }
-    }
-
-    /**
-     * SHA-1 of a file, lowercase hex. Streamed rather than read into memory: the callers include a
-     * ~26 MB game jar, and a checksum must be cheap enough that nobody is tempted to skip it.
-     *
-     * Public so the installer's contract tests can assert the *same* algorithm the download path uses,
-     * instead of testing a reimplementation.
-     */
-    fun sha1Hex(file: File): String {
-        val digest = MessageDigest.getInstance("SHA-1")
-        DigestInputStream(file.inputStream().buffered(), digest).use { input ->
-            val buffer = ByteArray(1 shl 16)
-            while (input.read(buffer) >= 0) {
-                // DigestInputStream does the work on read
-            }
-        }
-        return sha1HexOfDigest(digest)
-    }
+    /** Lowercase hex SHA-1 of a file, same algorithm the installer reports — see [AtomicFiles.sha1]. */
+    fun sha1Hex(file: File): String = AtomicFiles.sha1(file)
 
     /** SHA-1 of bytes already in memory, same hex form as [sha1Hex] — the two must never disagree. */
-    fun sha1Hex(bytes: ByteArray): String = sha1HexOfDigest(
-        MessageDigest.getInstance("SHA-1").also { it.update(bytes) },
-    )
+    fun sha1Hex(bytes: ByteArray): String = AtomicFiles.sha1(bytes)
 
     /**
      * True when [file] is an acceptable copy of [expectedSha1].

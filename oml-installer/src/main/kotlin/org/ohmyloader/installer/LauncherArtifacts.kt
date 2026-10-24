@@ -4,7 +4,6 @@ import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.InputStream
 import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.time.Instant
 import java.time.ZoneOffset
@@ -12,6 +11,7 @@ import java.time.format.DateTimeFormatter
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
+import org.ohmyloader.devtools.AtomicFiles
 
 // ---------------------------------------------------------------------------------------------------
 // Every jar the installer writes out is (a) streamed exactly once, (b) hashed while it is written, and
@@ -42,12 +42,12 @@ fun writeAtomic(target: File, journal: InstallJournal? = null, open: () -> Input
             }
         }
         if (size == 0L) throw InstallationException(Messages.t("err.writeZeroBytes", target.name))
-        Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        AtomicFiles.moveIntoPlace(tmp, target)
     } catch (t: Throwable) {
         tmp.delete()
         throw t
     }
-    return WrittenFile(target, digest.digest().joinToString("") { "%02x".format(it) }, size)
+    return WrittenFile(target, AtomicFiles.hex(digest), size)
 }
 
 fun writeAtomicText(target: File, text: String, journal: InstallJournal? = null) {
@@ -56,24 +56,11 @@ fun writeAtomicText(target: File, text: String, journal: InstallJournal? = null)
     val tmp = File(target.parentFile, "${target.name}.tmp")
     try {
         tmp.writeText(text, Charsets.UTF_8)
-        Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        AtomicFiles.moveIntoPlace(tmp, target)
     } catch (t: Throwable) {
         tmp.delete()
         throw t
     }
-}
-
-internal fun sha1Of(file: File): String {
-    val digest = MessageDigest.getInstance("SHA-1")
-    file.inputStream().use { input ->
-        val buffer = ByteArray(1 shl 16)
-        while (true) {
-            val read = input.read(buffer)
-            if (read < 0) break
-            digest.update(buffer, 0, read)
-        }
-    }
-    return digest.digest().joinToString("") { "%02x".format(it) }
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -460,10 +447,10 @@ fun writeVersionStubJar(target: File, journal: InstallJournal? = null) {
     try {
         ZipOutputStream(tmp.outputStream().buffered()).use { zip ->
             zip.putNextEntry(ZipEntry("META-INF/MANIFEST.MF"))
-            zip.write("Manifest-Version: 1.0\r\n\r\n".toByteArray(Charsets.UTF_8))
-            zip.closeEntry()
+        zip.write("Manifest-Version: 1.0\r\n\r\n".toByteArray(Charsets.UTF_8))
+        zip.closeEntry()
         }
-        Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        AtomicFiles.moveIntoPlace(tmp, target)
     } catch (t: Throwable) {
         tmp.delete()
         throw t

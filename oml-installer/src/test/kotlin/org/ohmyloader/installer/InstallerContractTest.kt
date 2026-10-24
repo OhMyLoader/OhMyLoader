@@ -3,6 +3,7 @@ package org.ohmyloader.installer
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import org.ohmyloader.devtools.AtomicFiles
 import org.ohmyloader.devtools.AssetDownloader
 import java.io.ByteArrayInputStream
 import java.io.File
@@ -494,7 +495,7 @@ class InstallerContractTest {
 
         assertTrue(target.isFile)
         assertEquals(payload.size.toLong(), written.size)
-        assertEquals(sha1Of(target), written.sha1)
+        assertEquals(AtomicFiles.sha1(target), written.sha1)
         assertFalse(File(dir, "sub/thing.bin.tmp").exists(), "the .tmp file must not survive a successful write")
     }
 
@@ -521,7 +522,7 @@ class InstallerContractTest {
         assertFalse(
             AssetDownloader.digestMatches(
                 file,
-                sha1Of(File(dir, "other.bin").apply { writeBytes(payload.reversedArray()) }),
+                AtomicFiles.sha1(File(dir, "other.bin").apply { writeBytes(payload.reversedArray()) }),
             ),
         )
         assertFalse(AssetDownloader.digestMatches(file, "0".repeat(40)))
@@ -562,10 +563,10 @@ class InstallerContractTest {
     @Test
     fun `the download path verifies with the same algorithm the installer reports`() {
         // Guards against a reimplementation drifting: the version JSON written for the launcher records
-        // sha1Of(...) over the same bytes the downloader computes internally, so the two must agree.
+        // AtomicFiles.sha1(...) over the same bytes the downloader computes internally, so the two must agree.
         val dir = tempDir()
         val file = File(dir, "layer.jar").apply { writeBytes(ByteArray(8192) { (it * 7).toByte() }) }
-        assertEquals(sha1Of(file), AssetDownloader.sha1Hex(file))
+        assertEquals(AtomicFiles.sha1(file), AssetDownloader.sha1Hex(file))
     }
 
     @Test
@@ -575,13 +576,13 @@ class InstallerContractTest {
         // a same-filesystem rename. Assert on the source, because the property is not observable from
         // the result of a successful move.
         val src =
-            File("src/main/kotlin/org/ohmyloader/installer/../../../../oml-devtools/src/main/kotlin/org/ohmyloader/devtools/AssetDownloader.kt")
+            File("src/main/kotlin/org/ohmyloader/installer/../../../../oml-devtools/src/main/kotlin/org/ohmyloader/devtools/AtomicFiles.kt")
         val candidates = listOf(
-            File("../oml-devtools/src/main/kotlin/org/ohmyloader/devtools/AssetDownloader.kt"),
+            File("../oml-devtools/src/main/kotlin/org/ohmyloader/devtools/AtomicFiles.kt"),
             src.canonicalFile,
         )
         val source = candidates.firstOrNull { it.isFile }
-            ?: fail("cannot locate AssetDownloader.kt from ${File(".").absolutePath}")
+            ?: fail("cannot locate AtomicFiles.kt from ${File(".").absolutePath}")
 
         val text = source.readText()
         assertTrue(
@@ -595,9 +596,18 @@ class InstallerContractTest {
         // Every Files.move in the file must go through the single helper, so a new call site cannot
         // quietly reintroduce a non-atomic move.
         val rawMoves = Regex("""Files\.move\(""").findAll(text).count()
-        val helper = Regex("""private fun moveIntoPlace""").findAll(text).count()
+        val helper = Regex("""fun moveIntoPlace""").findAll(text).count()
         assertEquals(2, rawMoves, "only moveIntoPlace's atomic attempt and its downgrade may call Files.move")
         assertEquals(1, helper, "there must be exactly one move helper")
+
+        // The installer's own write helpers delegate instead of moving directly: a Files.move here
+        // would be a second, non-atomic landing path.
+        val launcher = File("src/main/kotlin/org/ohmyloader/installer/LauncherArtifacts.kt")
+        assertEquals(
+            0,
+            Regex("""Files\.move\(""").findAll(launcher.readText()).count(),
+            "installer writes must land through AtomicFiles.moveIntoPlace, never a direct Files.move",
+        )
     }
 
     // ------------------------------------------------------------------------------------------

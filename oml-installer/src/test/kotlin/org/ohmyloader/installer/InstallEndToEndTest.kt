@@ -4,6 +4,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import org.ohmyloader.devtools.AtomicFiles
 import java.io.File
 import java.nio.file.Files
 import java.util.zip.ZipEntry
@@ -80,7 +81,7 @@ class InstallEndToEndTest {
                 val file = File(librariesRoot, path)
                 assertTrue(file.isFile, "the declared file must exist on disk: $path")
                 assertEquals(artifact["size"]!!.jsonPrimitive.content.toLong(), file.length(), path)
-                assertEquals(artifact["sha1"]!!.jsonPrimitive.content, sha1Of(file), path)
+                assertEquals(artifact["sha1"]!!.jsonPrimitive.content, AtomicFiles.sha1(file), path)
             }
         }
     }
@@ -136,7 +137,7 @@ class InstallEndToEndTest {
             val mavenPath = LayerLayout.mavenPath(artifact.name.removeSuffix(".jar"), "26.3-OML")
             val written = File(gameDir, "libraries/$mavenPath")
             assertTrue(written.isFile, "$mavenPath must be laid out in the Maven tree")
-            assertEquals(sha1Of(artifact), sha1Of(written), "$mavenPath must carry the source bytes")
+            assertEquals(AtomicFiles.sha1(artifact), AtomicFiles.sha1(written), "$mavenPath must carry the source bytes")
         }
 
         // the stub jar the launcher expects next to the JSON, and a real zip with a manifest
@@ -215,7 +216,7 @@ class InstallEndToEndTest {
             val flat = "$base-26.3-OML.jar"
             val written = File(instance, "libraries/$flat")
             assertTrue(written.isFile, "$flat must land flat under libraries/")
-            assertEquals(sha1Of(artifact), sha1Of(written), "$flat must carry the source bytes")
+            assertEquals(AtomicFiles.sha1(artifact), AtomicFiles.sha1(written), "$flat must carry the source bytes")
             val entry =
                 declaredFlatNames.first { it["name"]!!.jsonPrimitive.content == "org.ohmyloader:$base:26.3-OML" }
             assertEquals("local", entry["MMC-hint"]!!.jsonPrimitive.content)
