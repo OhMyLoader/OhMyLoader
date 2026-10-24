@@ -62,6 +62,15 @@ class OMLCommandDeclaration(
         executes = handler
     }
 
+    /**
+     * The answering form of [executes] for a leaf that computes a text: the returned string is
+     * replied on the success channel, so computing an answer and answering cannot come apart. A
+     * leaf with a conditional failure channel (`replyError`) still wants [executes].
+     */
+    fun answers(handler: (OMLCommandSource) -> String) {
+        executes = { source -> source.reply(handler(source)) }
+    }
+
     /** A literal subcommand: `/root <name> …`. */
     fun subcommand(name: String, configure: OMLCommandDeclaration.() -> Unit) {
         children += OMLCommandDeclaration(name, null).apply(configure)
