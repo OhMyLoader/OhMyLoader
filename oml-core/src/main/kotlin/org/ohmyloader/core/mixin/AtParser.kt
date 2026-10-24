@@ -253,13 +253,4 @@ internal object AtParser {
 
     private fun isValidFieldDesc(desc: String): Boolean =
         runCatching { Type.getType(desc) }.getOrNull()?.let { it.sort != Type.METHOD && it.sort != Type.VOID } == true
-
-    /** For diagnostics: describe the anchor point in plain words (reusing the engine's labels). */
-    fun opcodeName(opcode: Int): String = when (opcode) {
-        Opcodes.GETFIELD -> "GETFIELD"
-        Opcodes.PUTFIELD -> "PUTFIELD"
-        Opcodes.GETSTATIC -> "GETSTATIC"
-        Opcodes.PUTSTATIC -> "PUTSTATIC"
-        else -> "opcode=$opcode"
-    }
 }

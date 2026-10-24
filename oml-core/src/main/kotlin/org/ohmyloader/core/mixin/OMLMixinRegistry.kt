@@ -340,15 +340,7 @@ object OMLMixinRegistry {
             mv.visitTypeInsn(Opcodes.CHECKCAST, unbox.owner)
             mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, unbox.owner, unbox.name, unbox.desc, false)
         }
-        mv.visitInsn(returnOpcode(type))
-    }
-
-    private fun returnOpcode(type: Type): Int = when (type.sort) {
-        Type.BOOLEAN, Type.BYTE, Type.CHAR, Type.SHORT, Type.INT -> Opcodes.IRETURN
-        Type.LONG -> Opcodes.LRETURN
-        Type.FLOAT -> Opcodes.FRETURN
-        Type.DOUBLE -> Opcodes.DRETURN
-        else -> Opcodes.ARETURN
+        mv.visitInsn(Boxing.returnOpcode(type))
     }
 
     /** Load instruction for a local via [Boxing] -- the mapping is maintained in exactly one place (shared with the injection engine). */

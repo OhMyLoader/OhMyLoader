@@ -295,7 +295,7 @@ internal object PayloadEmitter {
             list.add(VarInsnNode(Opcodes.ALOAD, slot))
             list.add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, CALLBACK_RETURNABLE, accessor.name, accessor.desc, false))
             if (accessor.needsCast) list.add(TypeInsnNode(Opcodes.CHECKCAST, ret.internalName))
-            list.add(InsnNode(returnOpcode(ret)))
+            list.add(InsnNode(Boxing.returnOpcode(ret)))
             list.add(cont)
             list.add(entryFrame(owner, method, extraLocals = mapOf(slot to CALLBACK_RETURNABLE)))
         }
@@ -360,7 +360,7 @@ internal object PayloadEmitter {
         val accessor = returnAccessor(ret)
         list.add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, CALLBACK_RETURNABLE, accessor.name, accessor.desc, false))
         if (accessor.needsCast) list.add(TypeInsnNode(Opcodes.CHECKCAST, ret.internalName))
-        list.add(InsnNode(returnOpcode(ret)))
+        list.add(InsnNode(Boxing.returnOpcode(ret)))
 
         list.add(cont)
         list.add(entryFrame(owner, method, extraLocals = mapOf(slot to CALLBACK_RETURNABLE)))
@@ -380,17 +380,6 @@ internal object PayloadEmitter {
         Type.FLOAT -> ReturnAccessor("getReturnValueF", "()F", false)
         Type.DOUBLE -> ReturnAccessor("getReturnValueD", "()D", false)
         else -> ReturnAccessor("getReturnValue", "()Ljava/lang/Object;", true)
-    }
-
-    private fun returnOpcode(type: Type): Int = when (type.sort) {
-        Type.BOOLEAN, Type.BYTE, Type.CHAR,
-        Type.SHORT, Type.INT,
-            -> Opcodes.IRETURN
-
-        Type.LONG -> Opcodes.LRETURN
-        Type.FLOAT -> Opcodes.FRETURN
-        Type.DOUBLE -> Opcodes.DRETURN
-        else -> Opcodes.ARETURN
     }
 
     /**

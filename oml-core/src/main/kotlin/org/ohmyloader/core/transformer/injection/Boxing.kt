@@ -37,6 +37,15 @@ internal object Boxing {
         else -> Opcodes.ASTORE
     }
 
+    /** Return opcode (one-to-one with [loadOpcode]). */
+    fun returnOpcode(type: Type): Int = when (type.sort) {
+        Type.LONG -> Opcodes.LRETURN
+        Type.DOUBLE -> Opcodes.DRETURN
+        Type.FLOAT -> Opcodes.FRETURN
+        Type.INT, Type.SHORT, Type.BYTE, Type.CHAR, Type.BOOLEAN -> Opcodes.IRETURN
+        else -> Opcodes.ARETURN
+    }
+
     /**
      * Boxing call `Box.valueOf(T)`; returns null for reference types (already in the object domain).
      */

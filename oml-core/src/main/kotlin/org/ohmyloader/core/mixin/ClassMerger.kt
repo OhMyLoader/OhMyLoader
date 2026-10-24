@@ -978,13 +978,5 @@ internal object ClassMerger {
         return after.size == 1 && after[0].opcode == Opcodes.RETURN
     }
 
-    private fun annotationValue(node: AnnotationNode, name: String): Any? {
-        val values = node.values ?: return null
-        var i = 0
-        while (i + 1 < values.size) {
-            if (values[i] == name) return values[i + 1]
-            i += 2
-        }
-        return null
-    }
+    private fun annotationValue(node: AnnotationNode, name: String): Any? = AtParser.annotationValue(node, name)
 }
