@@ -12,14 +12,17 @@ import net.minecraft.server.level.ServerPlayer
 import net.minecraft.server.level.ServerPlayerGameMode
 import net.minecraft.world.InteractionHand
 import net.minecraft.world.InteractionResult
+import net.minecraft.world.MenuProvider
 import net.minecraft.world.damagesource.DamageSource
 import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.entity.player.Player
+import net.minecraft.world.inventory.AbstractContainerMenu
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.chunk.LevelChunk
 import net.minecraft.world.phys.BlockHitResult
+import java.util.OptionalInt
 import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.mixin.CallbackInfoReturnable
 import org.ohmyloader.api26_3.EventDispatch
@@ -329,6 +332,33 @@ object EventBridge {
     @JvmStatic
     fun onLivingDied(entity: LivingEntity, source: DamageSource): Boolean =
         EventDispatch.onLivingDied(entity, source)
+
+    /**
+     * [ServerPlayer.openMenu head] Cancelling answers `OptionalInt.empty()` — the game's own "nothing
+     * opened", so the click does nothing and no menu exists to clean up. The title comes from the
+     * provider the game was about to open; a misbehaving provider degrades to an empty string rather
+     * than taking the click down.
+     */
+    @JvmStatic
+    fun onMenuOpen(
+        player: ServerPlayer,
+        provider: MenuProvider,
+        @Suppress("UNUSED_PARAMETER") id: Int,
+        cir: CallbackInfoReturnable<OptionalInt>,
+    ) {
+        val title = runCatching { provider.displayName.string }.getOrDefault("")
+        if (EventDispatch.onMenuOpen(player, title)) cir.setReturnValue(OptionalInt.empty())
+    }
+
+    /**
+     * [ServerPlayer.doCloseContainer head] The menu is still readable here; the body clears it.
+     * Opening another menu runs this first, so a swap reads closed → opened.
+     */
+    @JvmStatic
+    fun onMenuClosed(player: ServerPlayer) {
+        val menu = player.containerMenu ?: return
+        EventDispatch.onMenuClosed(player, menu)
+    }
 
     /** [Minecraft.setScreenAndShow head] */
     @JvmStatic

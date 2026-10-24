@@ -301,4 +301,28 @@ internal fun InjectionBuilder.serverEventRules() {
             require(1)
         }
     }
+
+    classTarget("net/minecraft/server/level/ServerPlayer") {
+        // Server-side dispatch only: the client's player opens its own predicted menu, and a server
+        // event would count every screen twice in singleplayer. Cancelling answers OptionalInt.empty()
+        // — the game's own "nothing opened", so the click simply does nothing.
+        method("openMenu", desc = "(Lnet/minecraft/world/MenuProvider;)Ljava/util/OptionalInt;") {
+            atHead {
+                cancellableReturn(
+                    BRIDGE, "onMenuOpen",
+                    "(Lnet/minecraft/server/level/ServerPlayer;Lnet/minecraft/world/MenuProvider;I$CIR)V",
+                    bridgeArgs = listOf(DslValue.This, DslValue.Arg(0), DslValue.IntVal(0)),
+                )
+            }
+            require(1)
+        }
+        // HEAD, not tail: the body clears `containerMenu`, so by the tail the menu is already gone.
+        // Opening another menu closes the current one first, so that sequence reads closed → opened.
+        method("doCloseContainer", desc = "()V") {
+            atHead {
+                call(BRIDGE, "onMenuClosed", "(Lnet/minecraft/server/level/ServerPlayer;)V", args = listOf(DslValue.This))
+            }
+            require(1)
+        }
+    }
 }

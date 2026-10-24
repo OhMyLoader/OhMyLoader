@@ -17,6 +17,7 @@ import net.minecraft.world.damagesource.DamageSource
 import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.item.ItemStack
+import net.minecraft.world.inventory.AbstractContainerMenu
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.chunk.LevelChunk
@@ -144,6 +145,18 @@ object EventDispatch {
         val event = ItemUsedEvent(player, stack, hand)
         Events.ITEM_USED.fire(event)
         return event.canceled
+    }
+
+    @JvmStatic
+    fun onMenuOpen(player: ServerPlayer, menuTitle: String): Boolean {
+        val event = MenuOpenEvent(player, menuTitle)
+        Events.MENU_OPEN.fire(event)
+        return event.canceled
+    }
+
+    @JvmStatic
+    fun onMenuClosed(player: ServerPlayer, menu: AbstractContainerMenu) {
+        Events.MENU_CLOSED.fire(MenuClosedEvent(player, menu))
     }
 
     /**

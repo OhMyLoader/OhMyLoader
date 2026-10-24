@@ -85,6 +85,12 @@ object Events {
     /** Damage is about to be applied to a living entity (cancellable, [LivingHurtEvent.amount] is writable). */
     val LIVING_HURT = EventDefinition<LivingHurtEvent>("living_hurt")
 
+    /** A player is about to open a menu (cancellable). */
+    val MENU_OPEN = EventDefinition<MenuOpenEvent>("menu_open")
+
+    /** A player closed a menu (opening another one closes the first). */
+    val MENU_CLOSED = EventDefinition<MenuClosedEvent>("menu_closed")
+
     /** A living entity's death routine is starting (cancellable). */
     val LIVING_DIED = EventDefinition<LivingDiedEvent>("living_died")
 }
