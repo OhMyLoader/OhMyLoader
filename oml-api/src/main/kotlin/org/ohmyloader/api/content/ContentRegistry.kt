@@ -339,17 +339,16 @@ class OMLItem(val id: String, platformSupplier: () -> Any) {
  * vanilla sources.
  */
 class OMLBlockDeclaration {
-    /** Hardness (`destroyTime`): how long breaking takes, in vanilla units. `null` = vanilla default (0). */
-    var destroyTime: Float? = null
+    /** Hardness: how long breaking takes, in vanilla units. `null` = vanilla default (0). */
+    var hardness: Float? = null
 
-    /** Blast resistance (`explosionResistance`). `null` = follows [destroyTime] when set, vanilla default otherwise. */
-    var explosionResistance: Float? = null
+    /** Blast resistance. `null` = follows [hardness] when set, vanilla default otherwise. */
+    var blastResistance: Float? = null
 
     /**
-     * Whether the block only drops when broken with a tool that is "correct" for it (vanilla
-     * `requiresCorrectToolForDrops`). Default `false`.
+     * Whether the block only drops when broken with a tool that is "correct" for it. Default `false`.
      */
-    var requiresCorrectToolForDrops: Boolean = false
+    var dropsRequireCorrectTool: Boolean = false
 
     // Public but not mod-facing API: the version adapter reads these to decide between a plain
     // Block and its behavior subclass. Mods register through onStepOn / onHit.
@@ -429,7 +428,7 @@ class OMLBlockOreDeclaration {
 
 /**
  * Data-component configuration for [ContentRegistry.declareItem]; everything maps onto native 26.3 item components at materialization
- * time: [maxDamage] → `DataComponents.MAX_DAMAGE` (enables the durability bar and durability loss); [attackDamage] / [attackSpeed] →
+ * time: [maxDurability] → `DataComponents.MAX_DAMAGE` (enables the durability bar and durability loss); [attackDamage] / [attackSpeed] →
  * `DataComponents.ATTRIBUTE_MODIFIERS`, `ADD_VALUE` modifiers on `Attributes.ATTACK_DAMAGE` / `Attributes.ATTACK_SPEED` in the MAINHAND
  * group — the values are the **modifier amounts** a hand adds while holding the item (vanilla fists are 1.0 attack damage / 4.0 attack
  * speed), matching how vanilla swords are written; the tool fields → `DataComponents.TOOL`: [miningSpeed] is the default speed for blocks
@@ -438,7 +437,7 @@ class OMLBlockOreDeclaration {
 class OMLItemDeclaration {
 
     /** Maximum durability; `null` = unbreakable plain item (no durability bar). */
-    var maxDamage: Int? = null
+    var maxDurability: Int? = null
 
     /** Attack damage **modifier** (main hand, `ADD_VALUE`). `null` = no modifier. */
     var attackDamage: Double? = null
@@ -453,7 +452,7 @@ class OMLItemDeclaration {
     var toolDamagePerBlock: Int = 1
 
     /** Whether the item breaks blocks in creative mode (tool component). */
-    var canDestroyBlocksInCreative: Boolean = true
+    var breaksBlocksInCreative: Boolean = true
 
     // Public but not mod-facing API: the version adapter reads these to materialize the tool
     // component. Mods build them through minesAndDrops / deniesDrops / overrideSpeed.

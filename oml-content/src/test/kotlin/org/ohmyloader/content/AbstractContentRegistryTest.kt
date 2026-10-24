@@ -123,15 +123,15 @@ class AbstractContentRegistryTest {
         val registry = RecordingRegistry()
         val facade = registry.forNamespace("mymod")
 
-        val firstBlock = facade.declareBlock("ruby_ore") { destroyTime = 3.0f }
-        val secondBlock = facade.declareBlock("ruby_ore") { destroyTime = 1.0f }
+        val firstBlock = facade.declareBlock("ruby_ore") { hardness = 3.0f }
+        val secondBlock = facade.declareBlock("ruby_ore") { hardness = 1.0f }
         val firstItem = facade.declareItem("ruby")
-        val secondItem = facade.declareItem("ruby") { maxDamage = 100 }
+        val secondItem = facade.declareItem("ruby") { maxDurability = 100 }
 
         registry.materializeAll()
 
         assertEquals(listOf("ruby_ore"), registry.blocks.map { it.id })
-        assertEquals(3.0f, registry.blocks.single().spec.destroyTime)
+        assertEquals(3.0f, registry.blocks.single().spec.hardness)
         assertEquals(listOf("ruby"), registry.items.map { it.id })
 
         // the refused declarations resolve to the first declaration's materialization, not their own spec
@@ -147,11 +147,11 @@ class AbstractContentRegistryTest {
         val facade = registry.forNamespace("mymod")
 
         val block = facade.declareBlock("fancy_block") {
-            destroyTime = 1.5f
-            requiresCorrectToolForDrops = true
+            hardness = 1.5f
+            dropsRequireCorrectTool = true
         }
         val item = facade.declareItem("fancy_sword") {
-            maxDamage = 250
+            maxDurability = 250
             attackDamage = 5.0
             minesAndDrops("minecraft:stone", 4.0f)
         }
@@ -164,10 +164,10 @@ class AbstractContentRegistryTest {
 
         // Specs survive the trip untouched
         val blockDecl = registry.blocks.single()
-        assertEquals(1.5f, blockDecl.spec.destroyTime)
-        assertTrue(blockDecl.spec.requiresCorrectToolForDrops)
+        assertEquals(1.5f, blockDecl.spec.hardness)
+        assertTrue(blockDecl.spec.dropsRequireCorrectTool)
         val itemDecl = registry.items.single()
-        assertEquals(250, itemDecl.spec.maxDamage)
+        assertEquals(250, itemDecl.spec.maxDurability)
         assertEquals(5.0, itemDecl.spec.attackDamage)
         assertEquals(OMLItemDeclaration.ToolRuleKind.MINES_AND_DROPS, itemDecl.spec.toolRules.single().kind)
 

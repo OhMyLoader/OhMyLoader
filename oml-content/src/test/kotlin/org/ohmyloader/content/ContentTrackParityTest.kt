@@ -27,9 +27,9 @@ class ContentTrackParityTest {
 
         // --- the same content, declared twice -----------------------------------------------
         code.forNamespace("ruby").declareBlock("ruby_ore") {
-            destroyTime = 3.0f
-            explosionResistance = 3.0f
-            requiresCorrectToolForDrops = true
+            hardness = 3.0f
+            blastResistance = 3.0f
+            dropsRequireCorrectTool = true
             generateAsOre {
                 veinSize = 8
                 perChunk = 6
@@ -39,7 +39,7 @@ class ContentTrackParityTest {
             }
         }
         code.forNamespace("ruby").declareItem("ruby") {
-            maxDamage = 250
+            maxDurability = 250
             attackDamage = 5.0
         }
         code.forNamespace("ruby")
@@ -84,13 +84,13 @@ class ContentTrackParityTest {
             "parity-test content.toml",
             """
             [block.ruby_ore]
-            destroy_time = 3.0
-            explosion_resistance = 3.0
-            requires_correct_tool = true
+            hardness = 3.0
+            blast_resistance = 3.0
+            drops_require_correct_tool = true
             ore = { vein_size = 8, per_chunk = 6, min_y = 16, max_y = 64, biomes = ["minecraft:forest", "minecraft:taiga"] }
 
             [item.ruby]
-            max_damage = 250
+            max_durability = 250
             attack_damage = 5.0
 
             [smelting.ruby]
@@ -145,9 +145,9 @@ class ContentTrackParityTest {
         // --- and the results must not be distinguishable ------------------------------------
         val codeBlock = code.blockSpec("ruby_ore")
         val dataBlock = data.blockSpec("ruby_ore")
-        assertEquals(codeBlock.destroyTime, dataBlock.destroyTime)
-        assertEquals(codeBlock.explosionResistance, dataBlock.explosionResistance)
-        assertEquals(codeBlock.requiresCorrectToolForDrops, dataBlock.requiresCorrectToolForDrops)
+        assertEquals(codeBlock.hardness, dataBlock.hardness)
+        assertEquals(codeBlock.blastResistance, dataBlock.blastResistance)
+        assertEquals(codeBlock.dropsRequireCorrectTool, dataBlock.dropsRequireCorrectTool)
         val codeOre = codeBlock.oreDeclaration ?: error("code track lost the ore declaration")
         val dataOre = dataBlock.oreDeclaration ?: error("data track lost the ore declaration")
         assertEquals(codeOre.veinSize, dataOre.veinSize)
@@ -158,7 +158,7 @@ class ContentTrackParityTest {
 
         val codeItem = code.itemSpec("ruby")
         val dataItem = data.itemSpec("ruby")
-        assertEquals(codeItem.maxDamage, dataItem.maxDamage)
+        assertEquals(codeItem.maxDurability, dataItem.maxDurability)
         assertEquals(codeItem.attackDamage, dataItem.attackDamage)
 
         // the datapack files the pack layer serves must be byte-identical (smelting keys by

@@ -10,6 +10,21 @@ interface OMLPayloadCodec<T> {
 }
 
 /**
+ * Builds a [OMLPayloadCodec] from its two shuffling directions, so a simple payload needs no named
+ * class: `val codec = codec({ b, v -> b.writeInt(v) }) { b -> b.readInt() }`.
+ */
+fun <T> codec(
+    write: (OMLPacketBuffer, T) -> Unit,
+    read: (OMLPacketBuffer) -> T,
+): OMLPayloadCodec<T> = object : OMLPayloadCodec<T> {
+    private val writeFn = write
+    private val readFn = read
+
+    override fun write(buffer: OMLPacketBuffer, value: T) = writeFn(buffer, value)
+    override fun read(buffer: OMLPacketBuffer): T = readFn(buffer)
+}
+
+/**
  * One payload declaration: its channel name plus its codec. An id without a namespace is published as
  * `<mod id>:<id>`, so a mod's own channels cannot collide with another's.
  */

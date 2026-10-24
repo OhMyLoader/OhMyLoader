@@ -1,7 +1,24 @@
 package org.ohmyloader.api.command
 
-/** The argument flavors the high-level command subset understands. */
-enum class OMLArgumentType { WORD, STRING, GREEDY_STRING, INTEGER, FLOAT, BOOLEAN }
+/**
+ * The argument flavors the high-level command subset understands, each carrying the Kotlin type its
+ * values read back as. The version adapter translates each flavor into the game's own argument type.
+ */
+sealed class OMLArgumentType<T> {
+    object WORD : OMLArgumentType<String>()
+    object STRING : OMLArgumentType<String>()
+    object GREEDY_STRING : OMLArgumentType<String>()
+    object INTEGER : OMLArgumentType<Int>()
+    object FLOAT : OMLArgumentType<Double>()
+    object BOOLEAN : OMLArgumentType<Boolean>()
+}
+
+/**
+ * A typed handle to one declared argument: returned by [OMLCommandDeclaration.argument] and read
+ * through [OMLCommandSource.get]. Carrying the handle (not the name string) is what makes the value's
+ * type a compile-time fact at the read site.
+ */
+class OMLArgument<T>(val name: String, val type: OMLArgumentType<T>)
 
 /**
  * One node of a declared command tree: the root literal, a subcommand, or a typed argument.
@@ -11,7 +28,7 @@ enum class OMLArgumentType { WORD, STRING, GREEDY_STRING, INTEGER, FLOAT, BOOLEA
 class OMLCommandDeclaration(
     // Constructed by the loader's registration facade; mods build nodes through the DSL.
     val name: String,
-    val argumentType: OMLArgumentType?,
+    val argumentType: OMLArgumentType<*>?,
 ) {
     /**
      * Minimum permission level required to execute this node (0 = everyone, vanilla op levels
@@ -50,9 +67,17 @@ class OMLCommandDeclaration(
         children += OMLCommandDeclaration(name, null).apply(configure)
     }
 
-    /** A typed argument: `/root <name> <value> …`; values are read in the handler via [OMLCommandSource]. */
-    fun argument(name: String, type: OMLArgumentType, configure: OMLCommandDeclaration.() -> Unit) {
-        children += OMLCommandDeclaration(name, type).apply(configure)
+    /**
+     * A typed argument: `/root <name> <value> …`. [configure] also receives the argument's handle —
+     * capture it (including in nested nodes' handlers) and read the value with [OMLCommandSource.get].
+     */
+    fun <T> argument(
+        name: String,
+        type: OMLArgumentType<T>,
+        configure: OMLCommandDeclaration.(OMLArgument<T>) -> Unit,
+    ) {
+        val argument = OMLArgument(name, type)
+        children += OMLCommandDeclaration(name, type).also { it.configure(argument) }
     }
 }
 
@@ -85,11 +110,8 @@ class OMLCommandSource(
     /** Reports a failure back to the invoker — rendered in red for players. */
     fun replyError(message: String) = replyErrorFn(message)
 
-    fun getString(name: String): String = argument(name) as String
-    fun getInt(name: String): Int = argument(name) as Int
-    fun getDouble(name: String): Double = argument(name) as Double
-    fun getBoolean(name: String): Boolean = argument(name) as Boolean
-
-    private fun argument(name: String): Any =
-        arguments[name] ?: error("command argument '$name' is not part of the executed path")
+    /** Reads a declared argument's value; the handle fixes both the identity and the type. */
+    operator fun <T> get(argument: OMLArgument<T>): T =
+        arguments[argument.name] as? T
+            ?: error("command argument '${argument.name}' is not part of the executed path")
 }

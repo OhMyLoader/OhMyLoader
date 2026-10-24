@@ -29,10 +29,10 @@ object TomlContentLoader {
     private val ID = Regex("[a-z0-9_.-]+")
     private val NAMESPACE = ID
 
-    private val BLOCK_KEYS = setOf("destroy_time", "explosion_resistance", "requires_correct_tool", "ore")
+    private val BLOCK_KEYS = setOf("hardness", "blast_resistance", "drops_require_correct_tool", "ore")
     private val ITEM_KEYS = setOf(
-        "max_damage", "attack_damage", "attack_speed", "mining_speed",
-        "tool_damage_per_block", "can_destroy_blocks_in_creative",
+        "max_durability", "attack_damage", "attack_speed", "mining_speed",
+        "tool_damage_per_block", "breaks_blocks_in_creative",
         "mines_and_drops", "denies_drops", "override_speed",
     )
 
@@ -190,10 +190,10 @@ object TomlContentLoader {
             )
         }
         registry.declareBlock(id) {
-            destroyTime = floatValue(fields, "destroy_time", source, "block '$id'")
-            explosionResistance = floatValue(fields, "explosion_resistance", source, "block '$id'")
-            requiresCorrectToolForDrops =
-                boolValue(fields, "requires_correct_tool", source, "block '$id'") ?: false
+            hardness = floatValue(fields, "hardness", source, "block '$id'")
+            blastResistance = floatValue(fields, "blast_resistance", source, "block '$id'")
+            dropsRequireCorrectTool =
+                boolValue(fields, "drops_require_correct_tool", source, "block '$id'") ?: false
             if (ore != null) {
                 val oreFields = LinkedHashMap<String, Any>()
                 for ([k, v] in ore) {
@@ -390,14 +390,14 @@ object TomlContentLoader {
     private fun declareItem(id: String, fields: Map<String, Any>, source: String, registry: ContentRegistry) {
         requireId(id, source, "item")
         registry.declareItem(id) {
-            maxDamage = intValue(fields, "max_damage", source, "item '$id'")
+            maxDurability = intValue(fields, "max_durability", source, "item '$id'")
             attackDamage = doubleValue(fields, "attack_damage", source, "item '$id'")
             attackSpeed = doubleValue(fields, "attack_speed", source, "item '$id'")
             miningSpeed = floatValue(fields, "mining_speed", source, "item '$id'")
             toolDamagePerBlock =
                 intValue(fields, "tool_damage_per_block", source, "item '$id'") ?: 1
-            canDestroyBlocksInCreative =
-                boolValue(fields, "can_destroy_blocks_in_creative", source, "item '$id'") ?: true
+            breaksBlocksInCreative =
+                boolValue(fields, "breaks_blocks_in_creative", source, "item '$id'") ?: true
             for (rule in listValue(fields, "mines_and_drops", source, "item '$id'").orEmpty()) {
                 minesAndDrops(ruleBlock(rule, "mines_and_drops", source), ruleSpeed(rule, "mines_and_drops", source))
             }

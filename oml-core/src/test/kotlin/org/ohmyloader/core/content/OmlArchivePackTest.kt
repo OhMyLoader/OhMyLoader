@@ -105,7 +105,7 @@ class OmlArchivePackTest {
         val texture = ByteArray(32) { it.toByte() }
         writeArchive(
             dir, "oml_pack",
-            "[block.ruby_ore]\ndestroy_time = 3.0\n\n[item.ruby]\nmax_damage = 64\n",
+            "[block.ruby_ore]\nhardness = 3.0\n\n[item.ruby]\nmax_durability = 64\n",
             "assets/oml_pack/textures/block/ruby_ore.png" to texture,
             "data/oml_pack/recipes/ruby.json" to "{}".toByteArray(),
         )
@@ -114,7 +114,7 @@ class OmlArchivePackTest {
 
         assertEquals(listOf("ruby_ore"), factory.registry.blocks.map { it.first })
         assertEquals(listOf("ruby"), factory.registry.items.map { it.first })
-        assertEquals(3.0f, factory.registry.blocks.single().second.destroyTime)
+        assertEquals(3.0f, factory.registry.blocks.single().second.hardness)
 
         // the two halves that must agree: the declared namespace is an asset domain, and the
         // archive's texture is indexed under it
@@ -134,7 +134,7 @@ class OmlArchivePackTest {
         val dir = tempDir()
         writeArchive(
             dir, "crafted_pack",
-            "[block.ruby_ore]\ndestroy_time = 3.0\n\n[crafting.ruby_block]\ntype = \"shaped\"\n" +
+            "[block.ruby_ore]\nhardness = 3.0\n\n[crafting.ruby_block]\ntype = \"shaped\"\n" +
                 "pattern = [\"RR\", \"RR\"]\nkey = { R = \"ruby\" }\n",
             "assets/crafted_pack/textures/block/ruby_ore.png" to ByteArray(8),
         )

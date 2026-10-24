@@ -152,12 +152,12 @@ class TomlContentLoaderTest {
             "ruby_pack.toml",
             """
             [block.ruby_ore]
-            destroy_time = 3.0
-            explosion_resistance = 6.0
-            requires_correct_tool = true
+            hardness = 3.0
+            blast_resistance = 6.0
+            drops_require_correct_tool = true
 
             [item.ruby_sword]
-            max_damage = 800
+            max_durability = 800
             attack_damage = 8.5
             attack_speed = -2.4
             mining_speed = 1.5
@@ -166,13 +166,13 @@ class TomlContentLoaderTest {
         assertEquals(TomlContentLoader.PackSummary("ruby_pack", 1, 1), summary)
         val (blockId, block) = registry.blocks.single()
         assertEquals("ruby_ore", blockId)
-        assertEquals(3.0f, block.destroyTime)
-        assertEquals(6.0f, block.explosionResistance)
-        assertEquals(true, block.requiresCorrectToolForDrops)
+        assertEquals(3.0f, block.hardness)
+        assertEquals(6.0f, block.blastResistance)
+        assertEquals(true, block.dropsRequireCorrectTool)
 
         val (itemId, item) = registry.items.single()
         assertEquals("ruby_sword", itemId)
-        assertEquals(800, item.maxDamage)
+        assertEquals(800, item.maxDurability)
         assertEquals(8.5, item.attackDamage)
         assertEquals(-2.4, item.attackSpeed)
         assertEquals(1.5f, item.miningSpeed)
@@ -216,30 +216,30 @@ class TomlContentLoaderTest {
         val (registry, summary) = loadPack("defaults.toml", "[block.plain]\n[item.thing]\n")
         assertEquals(TomlContentLoader.PackSummary("defaults", 1, 1), summary)
         val (_, block) = registry.blocks.single()
-        assertEquals(null, block.destroyTime)
-        assertEquals(null, block.explosionResistance)
-        assertEquals(false, block.requiresCorrectToolForDrops)
+        assertEquals(null, block.hardness)
+        assertEquals(null, block.blastResistance)
+        assertEquals(false, block.dropsRequireCorrectTool)
         val (_, item) = registry.items.single()
-        assertEquals(null, item.maxDamage)
+        assertEquals(null, item.maxDurability)
         assertEquals(1, item.toolDamagePerBlock)
-        assertEquals(true, item.canDestroyBlocksInCreative)
+        assertEquals(true, item.breaksBlocksInCreative)
     }
 
     @Test
     fun `int fields accept whole floats and reject fractions`() {
-        val (ok, _) = loadPack("whole.toml", "[item.a]\nmax_damage = 800.0\n")
-        assertEquals(800, ok.items.single().second.maxDamage)
-        val e = assertFailsWith<IllegalStateException> { loadPack("frac.toml", "[item.a]\nmax_damage = 1.5\n") }
+        val (ok, _) = loadPack("whole.toml", "[item.a]\nmax_durability = 800.0\n")
+        assertEquals(800, ok.items.single().second.maxDurability)
+        val e = assertFailsWith<IllegalStateException> { loadPack("frac.toml", "[item.a]\nmax_durability = 1.5\n") }
         assertTrue(e.message!!.contains("whole number"))
     }
 
     @Test
     fun `wrong value types fail loudly with field context`() {
         val e = assertFailsWith<IllegalStateException> {
-            loadPack("bad_type.toml", "[item.a]\nmax_damage = \"eight hundred\"\n")
+            loadPack("bad_type.toml", "[item.a]\nmax_durability = \"eight hundred\"\n")
         }
         assertTrue(e.message!!.contains("bad_type.toml"))
-        assertTrue(e.message!!.contains("item 'a'.max_damage"))
+        assertTrue(e.message!!.contains("item 'a'.max_durability"))
     }
 
     @Test
@@ -252,18 +252,18 @@ class TomlContentLoaderTest {
             [unknown_section]
             x = 1
             [item.good]
-            max_damage = 10
+            max_durability = 10
             """.trimIndent(),
         )
         assertEquals(TomlContentLoader.PackSummary("sloppy", 1, 1), summary)
-        assertEquals(null, registry.blocks.single().second.destroyTime) // typo'd field never landed
-        assertEquals(10, registry.items.single().second.maxDamage)
+        assertEquals(null, registry.blocks.single().second.hardness) // typo'd field never landed
+        assertEquals(10, registry.items.single().second.maxDurability)
     }
 
     @Test
     fun `malformed toml fails with the pack name and line info`() {
         val e = assertFailsWith<IllegalStateException> {
-            loadPack("broken.toml", "[block.ruby_ore]\ndestroy_time = \"oops")
+            loadPack("broken.toml", "[block.ruby_ore]\nhardness = \"oops")
         }
         assertTrue(e.message!!.contains("broken.toml"))
         assertTrue(e.message!!.contains("line 2"))
@@ -288,7 +288,7 @@ class TomlContentLoaderTest {
             "craft_pack.toml",
             """
             [block.ruby_ore]
-            destroy_time = 3.0
+            hardness = 3.0
 
             [crafting.ruby_block]
             type = "shaped"
@@ -454,7 +454,7 @@ class TomlContentLoaderTest {
             "miners",
             """
             [block.tin_ore]
-            destroy_time = 3.0
+            hardness = 3.0
             ore = { vein_size = 8, per_chunk = 6, min_y = 16, max_y = 64, biomes = ["minecraft:forest", "minecraft:taiga"] }
             """.trimIndent(),
         )

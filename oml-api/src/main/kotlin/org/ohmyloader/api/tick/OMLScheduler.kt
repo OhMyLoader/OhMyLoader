@@ -25,8 +25,47 @@ interface OMLTask {
  * ticks the [OMLSide] it was queued for — so a handler on a network thread can hand state-changing
  * work to the game loop with `schedule(OMLSide.SERVER) { … }` instead of touching game objects from
  * its own thread. A task that throws is logged and dropped; the rest of the queue still runs.
+ *
+ * Mods queue through the side receivers ([server] / [client]); the side-parameterized forms below
+ * exist for code whose side is only known at runtime.
  */
 object OMLScheduler {
+
+    /** The server thread's queue, dedicated or integrated. */
+    val server = Side(OMLSide.SERVER)
+
+    /** The client's thread queue; only ticks in a client process. */
+    val client = Side(OMLSide.CLIENT)
+
+    /** One side's queue as a receiver: `OMLScheduler.server.schedule { … }`. */
+    class Side internal constructor(private val side: OMLSide) {
+        /** Runs [task] after [delayTicks] ticks; 0 means the next tick. Safe from any thread. */
+        fun schedule(delayTicks: Int = 0, task: () -> Unit): OMLTask =
+            enqueue(side, delayTicks.coerceAtLeast(0), interval = -1, task)
+
+        /**
+         * Runs [task] every [intervalTicks] ticks, first after [initialDelay]. [intervalTicks] must be
+         * at least 1: a zero period would re-enter the same tick forever.
+         */
+        fun every(intervalTicks: Int, initialDelay: Int = 0, task: () -> Unit): OMLTask {
+            require(intervalTicks >= 1) { "every interval must be at least 1 tick, got $intervalTicks" }
+            return enqueue(side, initialDelay.coerceAtLeast(0), intervalTicks, task)
+        }
+    }
+
+    /** Runs [task] after [delayTicks] ticks of [side]; 0 means the next tick. Safe from any thread. */
+    fun schedule(side: OMLSide, delayTicks: Int = 0, task: () -> Unit): OMLTask =
+        enqueue(side, delayTicks.coerceAtLeast(0), interval = -1, task)
+
+    /**
+     * Runs [task] every [intervalTicks] ticks of [side], first after [initialDelay]. The receiver form
+     * ([server] / [client]) is preferred when the side is statically known. [intervalTicks] must be at
+     * least 1: a zero period would re-enter the same tick forever.
+     */
+    fun every(side: OMLSide, intervalTicks: Int, initialDelay: Int = 0, task: () -> Unit): OMLTask {
+        require(intervalTicks >= 1) { "every interval must be at least 1 tick, got $intervalTicks" }
+        return enqueue(side, initialDelay.coerceAtLeast(0), intervalTicks, task)
+    }
 
     /**
      * [interval] is positive for a repeating task (its period in ticks) and -1 for a one-shot. The
@@ -49,23 +88,9 @@ object OMLScheduler {
         val due = TreeMap<Long, MutableList<Entry>>()
     }
 
-    private val client = Queue()
-    private val server = Queue()
+    private val queues = mapOf(OMLSide.CLIENT to Queue(), OMLSide.SERVER to Queue())
 
-    private fun queueOf(side: OMLSide): Queue = if (side == OMLSide.CLIENT) client else server
-
-    /** Runs [task] after [delayTicks] ticks of [side]; 0 means the next tick. Safe from any thread. */
-    fun schedule(side: OMLSide, delayTicks: Int = 0, task: () -> Unit): OMLTask =
-        enqueue(side, delayTicks.coerceAtLeast(0), interval = -1, task)
-
-    /**
-     * Runs [task] every [intervalTicks] ticks, first after [initialDelay]. [intervalTicks] must be at
-     * least 1: a zero period would re-enter the same tick forever.
-     */
-    fun repeat(side: OMLSide, intervalTicks: Int, initialDelay: Int = 0, task: () -> Unit): OMLTask {
-        require(intervalTicks >= 1) { "repeat interval must be at least 1 tick, got $intervalTicks" }
-        return enqueue(side, initialDelay.coerceAtLeast(0), intervalTicks, task)
-    }
+    private fun queueOf(side: OMLSide): Queue = queues.getValue(side)
 
     /** Ticks this side's queue; driven by the loader's tick hooks, not by mods. */
     fun advance(side: OMLSide) {

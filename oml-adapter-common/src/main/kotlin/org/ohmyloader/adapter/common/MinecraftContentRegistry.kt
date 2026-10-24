@@ -235,15 +235,15 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
     /** Applies [org.ohmyloader.api.content.OMLBlockDeclaration] values onto `BlockBehaviour.Properties`. */
     private fun applyBlockProperties(properties: Any, propertiesClass: Class<*>, decl: BlockDecl) {
         val spec = decl.spec
-        val destroyTime = spec.destroyTime
-        val resistance = spec.explosionResistance
-        if (destroyTime != null || resistance != null) {
+        val hardness = spec.hardness
+        val resistance = spec.blastResistance
+        if (hardness != null || resistance != null) {
             // Either half unset falls back to vanilla's "unset" value (0.0), mirroring
             // Properties.strength(float, float) semantics.
             propertiesClass.getMethod("strength", Float::class.javaPrimitiveType, Float::class.javaPrimitiveType)
-                .invoke(properties, destroyTime ?: 0f, resistance ?: 0f)
+                .invoke(properties, hardness ?: 0f, resistance ?: 0f)
         }
-        if (spec.requiresCorrectToolForDrops) {
+        if (spec.dropsRequireCorrectTool) {
             propertiesClass.getMethod("requiresCorrectToolForDrops").invoke(properties)
         }
     }
@@ -267,8 +267,8 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
         // (verified by disassembly): MAX_DAMAGE, MAX_STACK_SIZE=1 and DAMAGE=0. Skipping the stack
         // size trips the game's /give-time validation — "Malformed item: Item cannot be both
         // damageable and stackable" — because the item keeps the default max stack size of 64.
-        spec.maxDamage?.let { maxDamage ->
-            component.invoke(itemProperties, dataComponent(loader, "MAX_DAMAGE"), maxDamage)
+        spec.maxDurability?.let { durability ->
+            component.invoke(itemProperties, dataComponent(loader, "MAX_DAMAGE"), durability)
             component.invoke(itemProperties, dataComponent(loader, "MAX_STACK_SIZE"), 1)
             component.invoke(itemProperties, dataComponent(loader, "DAMAGE"), 0)
         }
@@ -359,7 +359,7 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
                 rules,
                 spec.miningSpeed ?: 1.0f,
                 spec.toolDamagePerBlock,
-                spec.canDestroyBlocksInCreative,
+                spec.breaksBlocksInCreative,
             )
             component.invoke(itemProperties, dataComponent(loader, "TOOL"), tool)
         }

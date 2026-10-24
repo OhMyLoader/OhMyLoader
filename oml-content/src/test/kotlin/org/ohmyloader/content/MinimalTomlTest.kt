@@ -15,20 +15,20 @@ class MinimalTomlTest {
         val doc = parse(
             """
             [block.ruby_ore]
-            destroy_time = 3.0
-            explosion_resistance = 6.0
-            requires_correct_tool = true
+            hardness = 3.0
+            blast_resistance = 6.0
+            drops_require_correct_tool = true
 
             [item.ruby_sword]
-            max_damage = 800
+            max_durability = 800
             name = "Ruby Sword"
             """.trimIndent(),
         )
         assertEquals(
-            mapOf("destroy_time" to 3.0, "explosion_resistance" to 6.0, "requires_correct_tool" to true),
+            mapOf("hardness" to 3.0, "blast_resistance" to 6.0, "drops_require_correct_tool" to true),
             doc["block.ruby_ore"] as Map<String, Any>,
         )
-        assertEquals(mapOf("max_damage" to 800L, "name" to "Ruby Sword"), doc["item.ruby_sword"] as Map<String, Any>)
+        assertEquals(mapOf("max_durability" to 800L, "name" to "Ruby Sword"), doc["item.ruby_sword"] as Map<String, Any>)
     }
 
     @Test

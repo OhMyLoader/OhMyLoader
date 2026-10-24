@@ -48,7 +48,7 @@ object OMLCommandBridge {
     private fun build(
         modId: String,
         node: OMLCommandDeclaration,
-        path: List<Pair<String, OMLArgumentType>>,
+        path: List<Pair<String, OMLArgumentType<*>>>,
     ): ArgumentBuilder<CommandSourceStack, *> {
         val newPath = path + (node.argumentType?.let { listOf(node.name to it) } ?: emptyList())
         val builder = when (val type = node.argumentType) {
@@ -96,7 +96,7 @@ object OMLCommandBridge {
         return builder
     }
 
-    private fun extract(context: CommandContext<CommandSourceStack>, name: String, type: OMLArgumentType): Any =
+    private fun extract(context: CommandContext<CommandSourceStack>, name: String, type: OMLArgumentType<*>): Any =
         when (type) {
             OMLArgumentType.WORD, OMLArgumentType.STRING, OMLArgumentType.GREEDY_STRING ->
                 context.getArgument(name, String::class.java)
@@ -106,7 +106,7 @@ object OMLCommandBridge {
             OMLArgumentType.BOOLEAN -> context.getArgument(name, java.lang.Boolean.TYPE)
         }
 
-    private fun argumentTypeInstance(type: OMLArgumentType): Any =
+    private fun argumentTypeInstance(type: OMLArgumentType<*>): Any =
         when (type) {
             OMLArgumentType.WORD -> StringArgumentType.word()
             OMLArgumentType.STRING -> StringArgumentType.string()

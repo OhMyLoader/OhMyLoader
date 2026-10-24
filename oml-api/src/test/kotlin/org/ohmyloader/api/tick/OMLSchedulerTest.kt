@@ -29,7 +29,7 @@ class OMLSchedulerTest {
     fun `a repeating task keeps its period until cancelled`() {
         val fired = mutableListOf<Int>()
         var tick = 0
-        val task = OMLScheduler.repeat(OMLSide.SERVER, intervalTicks = 3, initialDelay = 1) { fired += tick }
+        val task = OMLScheduler.every(OMLSide.SERVER, intervalTicks = 3, initialDelay = 1) { fired += tick }
 
         repeat(10) {
             tick++
@@ -88,7 +88,7 @@ class OMLSchedulerTest {
     @Test
     fun `a zero repeat interval is rejected instead of spinning the same tick forever`() {
         assertFailsWith<IllegalArgumentException> {
-            OMLScheduler.repeat(OMLSide.CLIENT, intervalTicks = 0) { }
+            OMLScheduler.every(OMLSide.CLIENT, intervalTicks = 0) { }
         }
     }
 }
