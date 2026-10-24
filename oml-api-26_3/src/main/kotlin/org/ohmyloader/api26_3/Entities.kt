@@ -189,9 +189,17 @@ fun Player.giveItem(itemId: String, count: Int): Boolean {
  * Moves the player to [x], [y], [z] — and to [dimensionId] as well when one is given. Movement is
  * server-authoritative: a client-side player is served through the integrated server's counterpart of the same
  * uuid, so false means there was no counterpart to move — including a handle the game has replaced, which
- * reads removed and is gone — an unknown dimension, or the game refused the destination.
+ * reads removed and is gone — an unknown dimension, or the game refused the destination. [yRot] / [xRot]
+ * set the arrival facing (degrees, the game's own convention); null keeps the caller's current rotation.
  */
-fun Player.teleport(x: Double, y: Double, z: Double, dimensionId: String? = null): Boolean {
+fun Player.teleport(
+    x: Double,
+    y: Double,
+    z: Double,
+    dimensionId: String? = null,
+    yRot: Float? = null,
+    xRot: Float? = null,
+): Boolean {
     val server = OMLGame.server ?: return false
     val target = (this as? ServerPlayer) ?: server.playerList.getPlayer(uuid) ?: return false
     val level = if (dimensionId != null) {
@@ -199,26 +207,44 @@ fun Player.teleport(x: Double, y: Double, z: Double, dimensionId: String? = null
     } else {
         target.level()
     }
-    return target.teleportTo(level, x, y, z, emptySet(), target.yRot, target.xRot, false)
+    return target.teleportTo(level, x, y, z, emptySet(), yRot ?: target.yRot, xRot ?: target.xRot, false)
 }
 
 /**
  * Moves this entity into the dimension [dimensionId] names, through the same transition the portals and
- * `/teleport` run: rotation and motion come along, and anything riding it comes with it. Null when this
- * server has no such level loaded. The answer is the instance the game holds **after** the move, so a mod
- * that keeps a handle takes the answer rather than continuing to ask the one it had.
+ * `/teleport` run: motion comes along and anything riding it comes with it, while [yRot] / [xRot] set the
+ * arrival facing (null keeps the entity's current rotation). Null when this server has no such level
+ * loaded. The answer is the instance the game holds **after** the move, so a mod that keeps a handle
+ * takes the answer rather than continuing to ask the one it had.
  */
-fun Entity.teleportToLevel(dimensionId: String, x: Double, y: Double, z: Double): Entity? {
+fun Entity.teleportToLevel(
+    dimensionId: String,
+    x: Double,
+    y: Double,
+    z: Double,
+    yRot: Float? = null,
+    xRot: Float? = null,
+): Entity? {
     val level = level() as? ServerLevel ?: return null
     val target = level.server.levelById(dimensionId) ?: return null
     return teleport(
-        TeleportTransition(target, Vec3(x, y, z), deltaMovement, yRot, xRot, TeleportTransition.DO_NOTHING),
+        TeleportTransition(
+            target, Vec3(x, y, z), deltaMovement, yRot ?: this.yRot, xRot ?: this.xRot,
+            TeleportTransition.DO_NOTHING,
+        ),
     )
 }
 
 /** The same transition for a player, which stays the same instance: the game moves the connection with it. */
-fun ServerPlayer.teleportToLevel(dimensionId: String, x: Double, y: Double, z: Double): ServerPlayer? =
-    (this as Entity).teleportToLevel(dimensionId, x, y, z) as? ServerPlayer
+fun ServerPlayer.teleportToLevel(
+    dimensionId: String,
+    x: Double,
+    y: Double,
+    z: Double,
+    yRot: Float? = null,
+    xRot: Float? = null,
+): ServerPlayer? =
+    (this as Entity).teleportToLevel(dimensionId, x, y, z, yRot, xRot) as? ServerPlayer
 
 /**
  * Plays [soundId] (`minecraft:entity.pig.ambient`) so this player hears it: a packet to that client for a
