@@ -11,14 +11,15 @@ import kotlin.test.assertTrue
  * break a rule is an argument-list edit on one side only — the game's own startup check aborts on it,
  * and this test makes that a build failure instead of a real-machine run that never boots.
  *
- * The game classes resolve because the module's tests carry the 26.3 jar. Both version adapters build
- * their transformers from these same rule objects, so one walk covers both version lines.
+ * The game classes resolve because the module's tests carry the 26.3 jar. The 26.3 adapter builds
+ * its transformers from these same facts, so this walk covers that line; the tracked snapshot line
+ * branches through [HookShapes] onto handlers its own module carries, and its walk lives there.
  */
 class HandlerShapeTest {
 
     private val ruleSets: List<Any> = listOf(
-        MinecraftHookTransformer(idPrefix = "test"),
-        ServerHookTransformer(idPrefix = "test"),
+        MinecraftHookTransformer(idPrefix = "test", shapes = testHookShapes),
+        ServerHookTransformer(idPrefix = "test", shapes = testHookShapes),
         NetworkCompressionTransformer(idPrefix = "test"),
         NetworkPayloadTransformer(idPrefix = "test"),
     )

@@ -26,8 +26,8 @@ class RuleApplyTest {
         File(System.getProperty("oml.clientJar", "libs/26.3-client.jar"))
 
     private val transformers: List<InjectingTransformer> = listOf(
-        MinecraftHookTransformer(idPrefix = "test"),
-        ServerHookTransformer(idPrefix = "test"),
+        MinecraftHookTransformer(idPrefix = "test", shapes = testHookShapes),
+        ServerHookTransformer(idPrefix = "test", shapes = testHookShapes),
         NetworkCompressionTransformer(idPrefix = "test"),
         NetworkPayloadTransformer(idPrefix = "test"),
     )
@@ -80,7 +80,7 @@ class RuleApplyTest {
                 ClassNode().also { ClassReader(stream.readAllBytes()).accept(it, 0) }
             }
         }
-        ServerHookTransformer(idPrefix = "test").transform(TransformContext(target, node))
+        ServerHookTransformer(idPrefix = "test", shapes = testHookShapes).transform(TransformContext(target, node))
         val method = node.methods.single {
             it.name == "hurtServer" && it.desc == "(Lnet/minecraft/server/level/ServerLevel;" +
                 "Lnet/minecraft/world/damagesource/DamageSource;F)Z"

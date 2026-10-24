@@ -100,7 +100,7 @@ class CreativeTabPositionTest {
                     "arrays, so the bound rule is no longer what keeps the creative screen alive — recheck both",
             )
 
-            MinecraftHookTransformer(idPrefix = "test").transform(TransformContext(target, node))
+            MinecraftHookTransformer(idPrefix = "test", shapes = testHookShapes).transform(TransformContext(target, node))
             val button = node.methods.first { it.name == "extractTabButton" }
             val insns = instructionsOf(button)
             val clampAt = insns.indexOfFirst {

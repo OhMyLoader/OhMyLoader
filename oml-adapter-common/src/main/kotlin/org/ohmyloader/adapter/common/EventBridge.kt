@@ -28,7 +28,7 @@ import org.ohmyloader.core.adapter.Refl
 import java.lang.reflect.Field
 
 /**
- * 26.3 event bridge: injected hooks call into here, which reads the game's own objects off the call and hands
+ * Game event bridge for the shared hook declarations: injected hooks call into here, which reads the game's own objects off the call and hands
  * them to the dispatch layer. Every method is invoked from injected bytecode via INVOKESTATIC, so they must
  * stay `@JvmStatic` and keep their FQN and signatures unchanged.
  *
@@ -99,6 +99,10 @@ object EventBridge {
         extractor: GuiGraphicsExtractor,
         @Suppress("UNUSED_PARAMETER") delta: net.minecraft.client.DeltaTracker,
     ) = EventDispatch.onHudRender(extractor)
+
+    /** [Hud.extractRenderState head] Snapshot-5 dropped the frame's `DeltaTracker` from the extraction pass. */
+    @JvmStatic
+    fun onHudRender(extractor: GuiGraphicsExtractor) = EventDispatch.onHudRender(extractor)
 
     /**
      * [MinecraftServer.tickServer head] Carries the ticking server so the core can tell one server
@@ -369,7 +373,10 @@ object EventBridge {
      * content added here is also covered by vanilla's own validation pass.
      *
      * `freeze()` is private static in the game jar, hence the reflective call through the OML game
-     * class loader (the game classes are not on the parent loader's classpath).
+     * class loader (the game classes are not on the parent loader's classpath). The tracked snapshot
+     * line instead freezes through a private instance method on `BuiltinRegistryBuilder` — its
+     * handler lives in the snapshot module, not here: the shared layer ships into 26.3 installs,
+     * whose jar has no such class to name.
      */
     @JvmStatic
     fun onRegistryFreeze() {

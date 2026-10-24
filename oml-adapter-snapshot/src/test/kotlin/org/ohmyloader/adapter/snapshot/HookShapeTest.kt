@@ -13,7 +13,7 @@ import java.util.jar.JarFile
 import kotlin.test.*
 
 /**
- * **Anti-drift shape assertions**: every hook this adapter declares is checked against the *real* `26.4-snapshot-2-client.jar` bytecode, so the
+ * **Anti-drift shape assertions**: every hook this adapter declares is checked against the *real* `26.4-snapshot-5-client.jar` bytecode, so the
  * day Mojang renames or reshapes an anchor, this build fails instead of the game silently doing one thing less at launch.
  * The assertions are **derived from the live rule sets** (`MinecraftHookTransformer.rules` / `ServerHookTransformer.rules` / `NetworkPayloadTransformer.rules`), not a
  * hand-copied list: the rule declarations are the single source of truth, and this test walks them — every targeted class, method
@@ -24,12 +24,12 @@ import kotlin.test.*
 class HookShapeTest {
 
     private val clientJar: File =
-        File(System.getProperty("oml.clientJar", "libs/26.4-snapshot-2-client.jar"))
+        File(System.getProperty("oml.clientJar", "libs/26.4-snapshot-5-client.jar"))
 
     /** Client and server transformers instantiate cleanly without any game class on the classpath: rules are pure data. */
     private val ruleSets = listOf(
-        "client" to MinecraftHookTransformer(idPrefix = "snapshot").rules,
-        "server" to ServerHookTransformer(idPrefix = "snapshot").rules,
+        "client" to MinecraftHookTransformer(idPrefix = "snapshot", shapes = snapshotHookShapes).rules,
+        "server" to ServerHookTransformer(idPrefix = "snapshot", shapes = snapshotHookShapes).rules,
         "payload" to NetworkPayloadTransformer(idPrefix = "snapshot").rules,
     )
 
@@ -156,19 +156,19 @@ class HookShapeTest {
     }
 
     @Test
-    fun `BuiltInRegistries bootStrap still calls freeze before validation`() {
+    fun `BuiltinRegistryBuilder bootStrap still calls freeze before validation`() {
         JarFile(clientJar).use { jar ->
-            val registries = assertNotNull(classNode(jar, "net/minecraft/core/registries/BuiltInRegistries"))
-            val bootStrap = registries.methods.firstOrNull { it.name == "bootStrap" && it.desc == "()V" }
+            val builder = assertNotNull(classNode(jar, "net/minecraft/core/registries/BuiltinRegistryBuilder"))
+            val bootStrap = builder.methods.firstOrNull { it.name == "bootStrap" && it.desc == "()V" }
             assertNotNull(
                 bootStrap,
-                "BuiltInRegistries.bootStrap()V is gone — the registry freeze redirect has no target",
+                "BuiltinRegistryBuilder.bootStrap()V is gone — the registry freeze redirect has no target",
             )
             val freezeCall = bootStrap.instructions.toArray().filterIsInstance<MethodInsnNode>()
                 .any { it.name == "freeze" && it.desc == "()V" }
             assertTrue(
                 freezeCall,
-                "BuiltInRegistries.bootStrap()V no longer invokes freeze()V — mod content would materialize " +
+                "BuiltinRegistryBuilder.bootStrap()V no longer invokes freeze()V — mod content would materialize " +
                     "after the registry closes and be rejected by the freeze check",
             )
         }

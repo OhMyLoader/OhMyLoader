@@ -28,8 +28,8 @@ class HookShapeTest {
 
     /** Client and server transformers instantiate cleanly without any game class on the classpath: rules are pure data. */
     private val ruleSets = listOf(
-        "client" to MinecraftHookTransformer(idPrefix = "v26_3").rules,
-        "server" to ServerHookTransformer(idPrefix = "v26_3").rules,
+        "client" to MinecraftHookTransformer(idPrefix = "v26_3", shapes = v26_3HookShapes).rules,
+        "server" to ServerHookTransformer(idPrefix = "v26_3", shapes = v26_3HookShapes).rules,
         "payload" to NetworkPayloadTransformer(idPrefix = "v26_3").rules,
     )
 

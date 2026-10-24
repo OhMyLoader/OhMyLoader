@@ -26,8 +26,8 @@ import kotlin.test.fail
  */
 class SnapshotLinkageTest {
 
-    private val clientJar = File(System.getProperty("oml.clientJar", "libs/26.4-snapshot-2-client.jar"))
-    private val librariesDir = File(System.getProperty("oml.gameLibraries", "libs/26.4-snapshot-2-libraries"))
+    private val clientJar = File(System.getProperty("oml.clientJar", "libs/26.4-snapshot-5-client.jar"))
+    private val librariesDir = File(System.getProperty("oml.gameLibraries", "libs/26.4-snapshot-5-libraries"))
     private val linkageJars = propertyFiles("oml.linkage.jars")
     private val neutralJar = File(System.getProperty("oml.neutralJar", ""))
 
@@ -266,7 +266,7 @@ class SnapshotLinkageTest {
         }
         if (failures.isNotEmpty()) {
             failures.sorted().take(40).forEach { println("[OML-Linkage] $it") }
-            fail("${failures.size} game references in the shipped bytecode do not resolve in 26.4-snapshot-2 (40 printed)")
+            fail("${failures.size} game references in the shipped bytecode do not resolve in 26.4-snapshot-5 (40 printed)")
         }
     }
 

@@ -5,11 +5,11 @@ import org.ohmyloader.api.inject.injection
 import org.ohmyloader.core.transformer.injection.InjectingTransformer
 
 /**
- * 26.3 **server-side** game hook, kept separate from [MinecraftHookTransformer] because the two sides target different classes (the client hooks `Minecraft`, the server hooks `MinecraftServer`): a merged batch would let every rule silently miss on the other side — the most dangerous failure mode of this engine.
+ * **Server-side** game hook, shared by the two game lines this repository tracks, kept separate from [MinecraftHookTransformer] because the two sides target different classes (the client hooks `Minecraft`, the server hooks `MinecraftServer`): a merged batch would let every rule silently miss on the other side — the most dangerous failure mode of this engine.
  * The exception is rules targeting **shared bootstrap code**, written in both transformers — the duplication is deliberate, it is the same fact: `BuiltInRegistries.bootStrap()` runs on both sides and content must materialize on both (a block that exists only on the client cannot be placed, saved or sent); the region-file compression rules likewise.
  * 26.3 shape facts: `MinecraftServer` gained constructor parameters, so the constructor rule deliberately declares no descriptor and matches every overload — what the once-only [org.ohmyloader.core.OMLCore.onServerReady] guard expects; `tickServer` is `protected`, so its rule matches on the descriptor, not visibility; `bootStrap()` is reached from `Bootstrap.bootStrap()` in the dedicated-server call path, so the rule is live on the server.
  */
-class ServerHookTransformer(private val idPrefix: String) : InjectingTransformer(
+class ServerHookTransformer(private val idPrefix: String, private val shapes: HookShapes) : InjectingTransformer(
     injection {
         // Resource pack repo openAllSelected pre-hook — the SERVER half of the rule the client
         // transformer also carries (shared bootstrap code, the same deliberate duplication as the
@@ -76,18 +76,18 @@ class ServerHookTransformer(private val idPrefix: String) : InjectingTransformer
         serverEventRules()
 
         // Shared bootstrap code, so the same rule as in MinecraftHookTransformer (see the class doc
-        // for why it is written twice). Without it the dedicated server never reaches
-        // EventBridge.onRegistryFreeze, and the symptom is not a crash but an asymmetry: the client
+        // for why it is written twice). Without it the dedicated server never reaches the
+        // registry-freeze handler, and the symptom is not a crash but an asymmetry: the client
         // has the modded block and the server does not, so placing it produces a ghost block and the
         // next save drops it.
-        classTarget("net/minecraft/core/registries/BuiltInRegistries") {
+        classTarget(shapes.freezeAnchorClass) {
             method("bootStrap", desc = "()V") {
                 redirectCall(
-                    owner = "net/minecraft/core/registries/BuiltInRegistries",
+                    owner = shapes.freezeCallOwner,
                     name = "freeze",
                     desc = "()V",
-                    handlerOwner = "org/ohmyloader/adapter/common/EventBridge",
-                    handlerMethod = "onRegistryFreeze",
+                    handlerOwner = shapes.freezeHandlerOwner,
+                    handlerMethod = shapes.freezeHandlerMethod,
                 )
             }
         }

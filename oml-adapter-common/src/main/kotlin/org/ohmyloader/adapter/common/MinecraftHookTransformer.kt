@@ -6,13 +6,15 @@ import org.ohmyloader.api.inject.local
 import org.ohmyloader.core.transformer.injection.InjectingTransformer
 
 /**
- * 26.3 game hook. 26.x jars are **not obfuscated** (Mojang stopped publishing the official
- * mappings with this line and does not need to — class and member names ship readable), so there
- * is no mapping space to translate from: every name below is literally what the jar contains.
- * Each rule is asserted against the live `26.3-client.jar` by [HookShapeTest], so a Mojang rename
- * or reshape fails the build instead of the hook silently missing at launch.
+ * Client game hook, shared by the two game lines this repository tracks. 26.x jars are **not
+ * obfuscated** (Mojang stopped publishing the official mappings with this line and does not need
+ * to — class and member names ship readable), so there is no mapping space to translate from:
+ * every name below is literally what the jar contains. Each adapter's [HookShapeTest] asserts the
+ * declared rules against its own line's live jar, so a Mojang rename or reshape fails the build
+ * instead of the hook silently missing at launch; the three sites the lines shape differently are
+ * declared from [HookShapes].
  */
-class MinecraftHookTransformer(private val idPrefix: String) : InjectingTransformer(
+class MinecraftHookTransformer(private val idPrefix: String, private val shapes: HookShapes) : InjectingTransformer(
     injection {
         classTarget("net/minecraft/client/main/Main") {
             method("main", desc = "([Ljava/lang/String;)V") {
@@ -168,18 +170,21 @@ class MinecraftHookTransformer(private val idPrefix: String) : InjectingTransfor
                 }
             }
         }
-        classTarget("net/minecraft/core/registries/BuiltInRegistries") {
-            // Registry freeze-point redirect: 26.3's `bootStrap()` is `createContents()` (offset 0) ->
-            // `freeze()` (offset 3) -> `validate(REGISTRY)`. Redirecting the freeze inserts the mod
-            // content after vanilla content exists but before the registry is closed for writes (and
-            // before validation) — the window mod content must land in to be visible to the game.
+        classTarget(shapes.freezeAnchorClass) {
+            // Registry freeze-point redirect: both tracked lines run bootStrap as `createContents()`
+            // -> `freeze()` -> `validate(REGISTRY)`. Redirecting the freeze inserts the mod content
+            // after vanilla content exists but before the registry is closed for writes (and before
+            // validation) — the window mod content must land in to be visible to the game. 26.3
+            // freezes through a private static call; the snapshot line moved the bootstrap onto
+            // BuiltinRegistryBuilder, where freeze() is a private instance method and the handler
+            // receives the receiver (see HookShapes.freezeHandlerOwner).
             method("bootStrap", desc = "()V") {
                 redirectCall(
-                    owner = "net/minecraft/core/registries/BuiltInRegistries",
+                    owner = shapes.freezeCallOwner,
                     name = "freeze",
                     desc = "()V",
-                    handlerOwner = "org/ohmyloader/adapter/common/EventBridge",
-                    handlerMethod = "onRegistryFreeze",
+                    handlerOwner = shapes.freezeHandlerOwner,
+                    handlerMethod = shapes.freezeHandlerMethod,
                 )
             }
         }
@@ -350,15 +355,12 @@ class MinecraftHookTransformer(private val idPrefix: String) : InjectingTransfor
             // guarded by GameRenderState.shouldRenderLevel, so the hook fires exactly once per
             // frame and only while a world is loaded. Internal early-returns (loading screens, F1)
             // sit after HEAD, so the event means "the HUD pass begins", not "pixels will follow".
-            method(
-                "extractRenderState",
-                desc = "(Lnet/minecraft/client/gui/GuiGraphicsExtractor;Lnet/minecraft/client/DeltaTracker;)V",
-            ) {
+            method("extractRenderState", desc = shapes.hudExtractDesc) {
                 atHead {
                     call(
                         "org/ohmyloader/adapter/common/EventBridge", "onHudRender",
-                        "(Lnet/minecraft/client/gui/GuiGraphicsExtractor;Lnet/minecraft/client/DeltaTracker;)V",
-                        args = listOf(DslValue.Arg(0), DslValue.Arg(1)),
+                        shapes.onHudRenderDesc,
+                        args = shapes.hudRenderArgs,
                     )
                 }
             }
@@ -370,11 +372,8 @@ class MinecraftHookTransformer(private val idPrefix: String) : InjectingTransfor
             // screen throws ArrayIndexOutOfBoundsException while rendering it. Narrowing the bound to
             // the last entry keeps the button on the final vanilla sprite, which is still drawn with the
             // tab's own icon item.
-            method(
-                "extractTabButton",
-                desc = "(Lnet/minecraft/client/gui/GuiGraphicsExtractor;IILnet/minecraft/world/item/CreativeModeTab;)V",
-            ) {
-                beforeCall(owner = "net/minecraft/util/Mth", name = "clamp", desc = "(III)I") {
+            method("extractTabButton", desc = shapes.tabButtonDesc) {
+                beforeCall(owner = shapes.tabClampOwner, name = "clamp", desc = shapes.tabClampDesc) {
                     modifyArg(
                         owner = "org/ohmyloader/adapter/common/OMLCreativeTabs",
                         method = "spriteBound",
