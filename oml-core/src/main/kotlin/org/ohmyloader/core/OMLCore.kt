@@ -309,16 +309,19 @@ object OMLCore {
         for (pack in packFiles(modsDir)) {
             try {
                 val namespace = TomlContentLoader.namespaceOf(pack)
-                val text = archiveDeclaration(pack)
+                val sources = contentSources(pack)
+                if (sources.isEmpty()) {
+                    throw IllegalStateException("the archive carries no content/ declarations")
+                }
                 contentPackFiles += pack
-                val summary =
-                    TomlContentLoader.load(
-                        namespace,
-                        pack.name,
-                        text,
-                        contentRegistry.forNamespace(namespace, reloadable = true),
+                val registry = contentRegistry.forNamespace(namespace, reloadable = true)
+                for (source in sources) {
+                    TomlContentLoader.loadFile(
+                        namespace, "${pack.name}/${source.path}", source.type, source.id,
+                        source.text, registry,
                     )
-                flatContentNamespaces += summary.namespace
+                }
+                flatContentNamespaces += namespace
             } catch (t: Throwable) {
                 OmlLog.error("OMLCore", "Failed to load content pack ${pack.name}", t)
             }
@@ -326,29 +329,71 @@ object OMLCore {
     }
 
     private fun packFiles(modsDir: File): List<File> {
-        // Content packs ship as `mods/*.oml` archives: `content.toml` at the root plus the pack's
-        // own assets and data (`assets/<namespace>/...`, `data/<namespace>/...`), so a creator
-        // ships textures and lang files without a jar. The file name (minus extension) is the
-        // resource namespace. A loose `.toml` is not a pack form: it cannot carry assets, so its
-        // blocks render with missing textures — one found in the mods directory is reported and
-        // refused instead of loaded.
+        // Content packs ship as `mods/*.oml` archives: the declarations under `content/` plus the
+        // pack's own assets and data (`assets/<namespace>/...`, `data/<namespace>/...`), so a
+        // creator ships textures and lang files without a jar. The file name (minus extension) is
+        // the resource namespace. A loose `.toml` is not a pack form: it cannot carry assets, so
+        // its blocks render with missing textures — one found in the mods directory is reported
+        // and refused instead of loaded.
         for (stray in modsDir.listFiles { f -> f.isFile && f.name.endsWith(".toml", ignoreCase = true) }
             ?.sortedBy { it.name.lowercase() } ?: emptyList()) {
             OmlLog.warn(
                 "OMLCore",
                 "${stray.name}: loose .toml content packs are no longer supported — " +
-                    "pack it as an .oml archive (content.toml + assets/ at the root)",
+                    "pack it as an .oml archive (content/ + assets/ at the root)",
             )
         }
         return modsDir.listFiles { f -> f.isFile && f.name.endsWith(".oml", ignoreCase = true) }
             ?.sortedBy { it.name.lowercase() } ?: emptyList()
     }
 
-    private fun archiveDeclaration(pack: File): String =
+    /** One per-entity declaration file inside a pack archive. */
+    private class ContentSource(val path: String, val type: String, val id: String, val text: String)
+
+    /**
+     * The declaration files of a pack archive: every zip entry under `content/` as
+     * `content/<type>/<id>.toml`, sorted for deterministic load order. The single-file
+     * `content.toml` layout is refused with the migration path named, and two files claiming the
+     * same `type/id` abort the pack — with files, a duplicate is always fixable, so first-wins
+     * (which hides one of the two) would be the wrong call.
+     */
+    private fun contentSources(pack: File): List<ContentSource> =
         ZipFile(pack).use { zip ->
-            val entry = zip.getEntry(CONTENT_TOML)
-                ?: throw IllegalStateException("the archive has no $CONTENT_TOML at its root")
-            zip.getInputStream(entry).readBytes().toString(Charsets.UTF_8)
+            if (zip.getEntry(CONTENT_TOML) != null) {
+                throw IllegalStateException(
+                    "$CONTENT_TOML is no longer a supported layout — declare each entity as " +
+                        "content/<type>/<id>.toml (e.g. content/block/ruby_ore.toml)",
+                )
+            }
+            val seen = LinkedHashMap<String, String>()
+            val sources = ArrayList<ContentSource>()
+            for (entry in zip.entries().asSequence().sortedBy { it.name }) {
+                val name = entry.name
+                if (!name.startsWith("content/") || entry.isDirectory) continue
+                if (!name.endsWith(".toml")) {
+                    OmlLog.warn("OMLCore", "${pack.name}/$name: only .toml files are declarations, skipped")
+                    continue
+                }
+                val relative = name.removePrefix("content/").removeSuffix(".toml")
+                val type = relative.substringBefore('/', missingDelimiterValue = "")
+                val id = relative.substringAfter('/', missingDelimiterValue = "")
+                if (type !in TomlContentLoader.CONTENT_TYPES) {
+                    OmlLog.warn(
+                        "OMLCore",
+                        "${pack.name}/$name: '$type' is not a content type " +
+                            "(expected one of ${TomlContentLoader.CONTENT_TYPES.sorted()}), skipped",
+                    )
+                    continue
+                }
+                val previous = seen.put("$type/$id", name)
+                if (previous != null) {
+                    throw IllegalStateException(
+                        "duplicate declaration $type/$id: $previous and $name both declare it",
+                    )
+                }
+                sources += ContentSource(name, type, id, zip.getInputStream(entry).readBytes().toString(Charsets.UTF_8))
+            }
+            sources
         }
 
     /**
@@ -368,10 +413,17 @@ object OMLCore {
             try {
                 val namespace = TomlContentLoader.namespaceOf(pack)
                 contentPackFiles += pack
-                TomlContentLoader.loadDataDeclarations(
-                    namespace, pack.name, archiveDeclaration(pack),
-                    contentRegistry.forNamespace(namespace, reloadable = true),
-                )
+                val registry = contentRegistry.forNamespace(namespace, reloadable = true)
+                for (source in contentSources(pack)) {
+                    // block and item files are re-read as written but skipped: their registries are
+                    // frozen and reloading must not grow the declaration queues.
+                    if (source.type in TomlContentLoader.RELOADABLE_TYPES) {
+                        TomlContentLoader.loadFile(
+                            namespace, "${pack.name}/${source.path}", source.type, source.id,
+                            source.text, registry,
+                        )
+                    }
+                }
             } catch (t: Throwable) {
                 OmlLog.error("OMLCore", "Failed to reload content pack ${pack.name}", t)
             }

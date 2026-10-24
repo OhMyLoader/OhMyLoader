@@ -11,13 +11,13 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
- * The TOML-pack -> ContentRegistry mapping: field names, type coercion, defaults, and the loud
- * failure contract (malformed packs throw with the pack name in the message; callers catch per
- * pack so one bad file never takes the rest down).
+ * The per-entity TOML file -> ContentRegistry mapping: field names, type coercion, defaults, and the
+ * loud failure contract (a malformed file throws with the file name in the message; the caller
+ * catches per pack so one bad file never takes the rest down).
  */
 class TomlContentLoaderTest {
 
-    /** Captures the declarations a pack produced. */
+    /** Captures the declarations a file produced. */
     private class RecordingRegistry : ContentRegistry {
         val blocks = mutableListOf<Pair<String, OMLBlockDeclaration>>()
         val items = mutableListOf<Pair<String, OMLItemDeclaration>>()
@@ -123,15 +123,18 @@ class TomlContentLoaderTest {
         }
     }
 
-    /** Loads [text] as a pack named [name]. */
-    private fun loadPack(name: String, text: String): Pair<RecordingRegistry, TomlContentLoader.PackSummary> {
+    /** One content/ file: the type directory, the path id, the file's text. */
+    private data class Src(val type: String, val id: String, val text: String)
+
+    private fun loadFiles(vararg files: Src): RecordingRegistry {
         val registry = RecordingRegistry()
-        val summary = TomlContentLoader.load(
-            TomlContentLoader.namespaceOf(java.io.File(name)),
-            name, text, registry,
-        )
-        return registry to summary
+        for (file in files) {
+            TomlContentLoader.loadFile("ruby_pack", "ruby_pack.oml/${file.type}/${file.id}.toml", file.type, file.id, file.text, registry)
+        }
+        return registry
     }
+
+    private fun loadFile(type: String, id: String, text: String): RecordingRegistry = loadFiles(Src(type, id, text))
 
     /** Runs [block] with stderr captured — the loader's warnings are `[<tag>] WARN: …` lines on stderr. */
     private fun stderrLinesOf(block: () -> Unit): List<String> {
@@ -147,23 +150,26 @@ class TomlContentLoaderTest {
     }
 
     @Test
-    fun `acceptance pack maps onto the declaration DSL`() {
-        val (registry, summary) = loadPack(
-            "ruby_pack.toml",
-            """
-            [block.ruby_ore]
-            hardness = 3.0
-            blast_resistance = 6.0
-            drops_require_correct_tool = true
-
-            [item.ruby_sword]
-            max_durability = 800
-            attack_damage = 8.5
-            attack_speed = -2.4
-            mining_speed = 1.5
-            """.trimIndent(),
+    fun `a per-entity file maps onto the declaration DSL`() {
+        val registry = loadFiles(
+            Src(
+                "block", "ruby_ore",
+                """
+                hardness = 3.0
+                blast_resistance = 6.0
+                drops_require_correct_tool = true
+                """.trimIndent(),
+            ),
+            Src(
+                "item", "ruby_sword",
+                """
+                max_durability = 800
+                attack_damage = 8.5
+                attack_speed = -2.4
+                mining_speed = 1.5
+                """.trimIndent(),
+            ),
         )
-        assertEquals(TomlContentLoader.PackSummary("ruby_pack", 1, 1), summary)
         val (blockId, block) = registry.blocks.single()
         assertEquals("ruby_ore", blockId)
         assertEquals(3.0f, block.hardness)
@@ -179,11 +185,16 @@ class TomlContentLoaderTest {
     }
 
     @Test
+    fun `a path id may carry subdirectories`() {
+        val registry = loadFile("block", "ores/deep/ruby_ore", "hardness = 3.0")
+        assertEquals("ores/deep/ruby_ore", registry.blocks.single().first)
+    }
+
+    @Test
     fun `tool rules map onto the rule DSL`() {
-        val (registry, _) = loadPack(
-            "tool_pack.toml",
+        val registry = loadFile(
+            "item", "pick",
             """
-            [item.pick]
             mining_speed = 1.0
             tool_damage_per_block = 2
             mines_and_drops = [ { block = "minecraft:stone", speed = 8.0 } ]
@@ -212,9 +223,8 @@ class TomlContentLoaderTest {
     }
 
     @Test
-    fun `empty sections fall back to the code-API defaults`() {
-        val (registry, summary) = loadPack("defaults.toml", "[block.plain]\n[item.thing]\n")
-        assertEquals(TomlContentLoader.PackSummary("defaults", 1, 1), summary)
+    fun `an empty file falls back to the code-API defaults`() {
+        val registry = loadFiles(Src("block", "plain", ""), Src("item", "thing", ""))
         val (_, block) = registry.blocks.single()
         assertEquals(null, block.hardness)
         assertEquals(null, block.blastResistance)
@@ -227,78 +237,72 @@ class TomlContentLoaderTest {
 
     @Test
     fun `int fields accept whole floats and reject fractions`() {
-        val (ok, _) = loadPack("whole.toml", "[item.a]\nmax_durability = 800.0\n")
+        val ok = loadFile("item", "a", "max_durability = 800.0")
         assertEquals(800, ok.items.single().second.maxDurability)
-        val e = assertFailsWith<IllegalStateException> { loadPack("frac.toml", "[item.a]\nmax_durability = 1.5\n") }
+        val e = assertFailsWith<IllegalStateException> { loadFile("item", "a", "max_durability = 1.5") }
         assertTrue(e.message!!.contains("whole number"))
     }
 
     @Test
     fun `wrong value types fail loudly with field context`() {
         val e = assertFailsWith<IllegalStateException> {
-            loadPack("bad_type.toml", "[item.a]\nmax_durability = \"eight hundred\"\n")
+            loadFile("item", "a", "max_durability = \"eight hundred\"")
         }
-        assertTrue(e.message!!.contains("bad_type.toml"))
+        assertTrue(e.message!!.contains("item/a.toml"))
         assertTrue(e.message!!.contains("item 'a'.max_durability"))
     }
 
     @Test
-    fun `unknown fields and sections warn but do not reject the pack`() {
-        val (registry, summary) = loadPack(
-            "sloppy.toml",
-            """
-            [block.ruby_ore]
-            destory_time = 3.0
-            [unknown_section]
-            x = 1
-            [item.good]
-            max_durability = 10
-            """.trimIndent(),
+    fun `unknown fields warn but do not reject the file`() {
+        val lines = stderrLinesOf {
+            val registry = loadFile("block", "ruby_ore", "destory_time = 3.0")
+            assertEquals(null, registry.blocks.single().second.hardness) // typo'd field never landed
+        }
+        assertTrue(
+            lines.any { "WARN" in it && "destory_time" in it },
+            "the typo'd field must be reported loudly, got: $lines",
         )
-        assertEquals(TomlContentLoader.PackSummary("sloppy", 1, 1), summary)
-        assertEquals(null, registry.blocks.single().second.hardness) // typo'd field never landed
-        assertEquals(10, registry.items.single().second.maxDurability)
     }
 
     @Test
-    fun `malformed toml fails with the pack name and line info`() {
+    fun `a file declaring a section is a structural error`() {
+        // One file, one entity: a real TOML section means the author is writing the old
+        // single-file layout, and silently loading only the root keys would drop half the data.
         val e = assertFailsWith<IllegalStateException> {
-            loadPack("broken.toml", "[block.ruby_ore]\nhardness = \"oops")
+            loadFile("block", "ruby_ore", "hardness = 3.0\n\n[ore]\nvein_size = 8\n")
         }
-        assertTrue(e.message!!.contains("broken.toml"))
+        assertTrue("one file declares one entity" in e.message!!, e.message)
+    }
+
+    @Test
+    fun `malformed toml fails with the file name and line info`() {
+        val e = assertFailsWith<IllegalStateException> {
+            loadFile("block", "ruby_ore", "hardness = 3.0\nbroken = \"oops")
+        }
+        assertTrue(e.message!!.contains("block/ruby_ore.toml"))
         assertTrue(e.message!!.contains("line 2"))
     }
 
     @Test
-    fun `invalid ids and namespaces are rejected`() {
-        assertFailsWith<IllegalArgumentException> { loadPack("Bad Id.toml", "[block.x]\n") }
-        assertFailsWith<IllegalArgumentException> { loadPack("bad!name.toml", "[block.x]\n") }
-        val e = assertFailsWith<IllegalArgumentException> { loadPack("ok.toml", "[block.Ruby_Ore]\n") }
+    fun `invalid ids, types and namespaces are rejected`() {
+        val e = assertFailsWith<IllegalArgumentException> { loadFile("block", "Ruby_Ore", "") }
         assertTrue(e.message!!.contains("not a valid block id"))
+        assertFailsWith<IllegalArgumentException> { loadFile("block", "ores/Ruby", "") }
+        assertFailsWith<IllegalArgumentException> { loadFile("mystery", "x", "") }
+        assertEquals("ruby_pack", TomlContentLoader.namespaceOf(java.io.File("mods/ruby_pack.oml")))
     }
 
     @Test
-    fun `namespace is the file name sans extension`() {
-        assertEquals("ruby_pack", TomlContentLoader.namespaceOf(java.io.File("mods/ruby_pack.toml")))
-    }
-
-    @Test
-    fun `shaped crafting sections map onto the registry declaration`() {
-        val (registry, summary) = loadPack(
-            "craft_pack.toml",
+    fun `shaped crafting files map onto the registry declaration`() {
+        val registry = loadFile(
+            "crafting", "ruby_block",
             """
-            [block.ruby_ore]
-            hardness = 3.0
-
-            [crafting.ruby_block]
             type = "shaped"
             count = 1
             pattern = ["RR", "RR"]
             key = { R = "ruby" }
             """.trimIndent(),
         )
-
-        assertEquals(1, summary.recipes)
         assertEquals(listOf("ruby_block"), registry.shaped.map { it.first })
         assertEquals(listOf("RR", "RR"), registry.shaped.single().second)
         assertEquals(mapOf('R' to "ruby"), registry.shaped.single().third)
@@ -306,37 +310,34 @@ class TomlContentLoaderTest {
     }
 
     @Test
-    fun `shapeless crafting sections map onto the registry declaration`() {
-        val (registry, summary) = loadPack(
-            "craft_pack.toml",
+    fun `shapeless crafting files map onto the registry declaration`() {
+        val registry = loadFile(
+            "crafting", "ruby",
             """
-            [crafting.ruby]
             type = "shapeless"
             count = 2
             ingredients = ["ruby_ore", "minecraft:stick"]
             """.trimIndent(),
         )
-
-        assertEquals(1, summary.recipes)
         assertEquals(listOf("ruby"), registry.shapeless.map { it.first })
         assertEquals(listOf("ruby_ore", "minecraft:stick"), registry.shapeless.single().second)
     }
 
     @Test
-    fun `a malformed crafting section fails the pack`() {
+    fun `a malformed crafting file fails the pack`() {
         // unknown type
         assertFailsWith<IllegalStateException> {
-            loadPack("bad.toml", "[crafting.x]\ntype = \"weird\"\n")
+            loadFile("crafting", "x", "type = \"weird\"")
         }.let { assertTrue("unknown type" in it.message!!) }
 
         // shaped without a pattern
         assertFailsWith<IllegalStateException> {
-            loadPack("bad.toml", "[crafting.x]\ntype = \"shaped\"\nkey = { R = \"ruby\" }\n")
+            loadFile("crafting", "x", "type = \"shaped\"\nkey = { R = \"ruby\" }")
         }.let { assertTrue("'pattern' list" in it.message!!) }
 
         // shapeless with no ingredients at all is a registry-level failure
         assertFailsWith<IllegalStateException> {
-            loadPack("bad.toml", "[crafting.x]\ntype = \"shapeless\"\n")
+            loadFile("crafting", "x", "type = \"shapeless\"")
         }
     }
 
@@ -345,23 +346,22 @@ class TomlContentLoaderTest {
     // T-2.4: the data track aligns with the code track — smelting, loot and ore generation
     // ---------------------------------------------------------------------------------------------
 
-    private val sampleDamageType = """
-        [damage_type.melt]
-        message_id = "pack.melts"
-        effects = "burning"
-        exhaustion = 0.3
-        death_message_type = "intentional_game_design"
-
-        [damage_type.flop]
-        message_id = "pack.flops"
-    """.trimIndent()
-
     @Test
-    fun `damage_type sections map onto declareDamageType with the game's defaults filled in`() {
-        val (registry, summary) = loadPack("melter", sampleDamageType)
+    fun `damage_type files map onto declareDamageType with the game's defaults filled in`() {
+        val registry = loadFiles(
+            Src(
+                "damage_type", "melt",
+                """
+                message_id = "pack.melts"
+                effects = "burning"
+                exhaustion = 0.3
+                death_message_type = "intentional_game_design"
+                """.trimIndent(),
+            ),
+            Src("damage_type", "flop", "message_id = \"pack.flops\""),
+        )
 
         assertEquals(2, registry.damageTypes.size)
-        assertEquals(2, summary.damageTypes)
         val melt = registry.damageTypes.first { it.id == "melt" }
         assertEquals("pack.melts", melt.messageId)
         assertEquals("when_caused_by_living_non_player", melt.scaling)
@@ -374,32 +374,30 @@ class TomlContentLoaderTest {
     }
 
     @Test
-    fun `a damage_type section without its message_id fails the pack, not the loader`() {
+    fun `a damage_type file without its message_id fails the pack, not the loader`() {
         val failure = assertFailsWith<IllegalStateException> {
-            loadPack("broken", "[damage_type.silent]\nscaling = \"always\"")
+            loadFile("damage_type", "silent", "scaling = \"always\"")
         }
         assertTrue("message_id" in failure.message!!, failure.message)
-        assertTrue("broken" in failure.message!!, "the pack name has to be in the message")
+        assertTrue("damage_type/silent.toml" in failure.message!!, "the file has to be in the message")
     }
 
     @Test
-    fun `smelting sections map onto declareSmelting with defaults and furnace variants`() {
-        val (registry, summary) = loadPack(
-            "smelter",
-            """
-            [smelting.tin_ingot]
-            input = "raw_tin"
-
-            [smelting.copper_ingot]
-            input = "raw_copper"
-            furnace = "blasting"
-            experience = 0.7
-            cooking_time = 100
-            """.trimIndent(),
+    fun `smelting files map onto declareSmelting with defaults and furnace variants`() {
+        val registry = loadFiles(
+            Src("smelting", "tin_ingot", "input = \"raw_tin\""),
+            Src(
+                "smelting", "copper_ingot",
+                """
+                input = "raw_copper"
+                furnace = "blasting"
+                experience = 0.7
+                cooking_time = 100
+                """.trimIndent(),
+            ),
         )
 
         assertEquals(2, registry.smelting.size)
-        assertEquals(2, summary.smelting)
         val plain = registry.smelting.first { it.result == "tin_ingot" }
         assertEquals("raw_tin", plain.input)
         assertEquals(Furnace.SMELTING, plain.furnace)
@@ -412,33 +410,31 @@ class TomlContentLoaderTest {
     }
 
     @Test
-    fun `smelting sections require the input and reject unknown furnace types`() {
+    fun `smelting files require the input and reject unknown furnace types`() {
         assertFailsWith<IllegalStateException> {
-            loadPack("smelter", "[smelting.tin_ingot]\nfurnace = \"smelting\"\n")
+            loadFile("smelting", "tin_ingot", "furnace = \"smelting\"")
         }.let { assertTrue("missing its 'input'" in it.message!!) }
 
         assertFailsWith<IllegalStateException> {
-            loadPack("smelter", "[smelting.tin_ingot]\ninput = \"raw_tin\"\nfurnace = \"microwave\"\n")
+            loadFile("smelting", "tin_ingot", "input = \"raw_tin\"\nfurnace = \"microwave\"")
         }.let { assertTrue("unknown furnace 'microwave'" in it.message!!) }
     }
 
     @Test
-    fun `loot sections map onto declareBlockDrop`() {
-        val (registry, summary) = loadPack(
-            "looty",
-            """
-            [loot.tin_ore]
-            drop = "raw_tin"
-
-            [loot.gravel_plus]
-            drop = "minecraft:iron_nugget"
-            drop_count_min = 2
-            drop_count_max = 5
-            """.trimIndent(),
+    fun `loot files map onto declareBlockDrop`() {
+        val registry = loadFiles(
+            Src("loot", "tin_ore", "drop = \"raw_tin\""),
+            Src(
+                "loot", "gravel_plus",
+                """
+                drop = "minecraft:iron_nugget"
+                drop_count_min = 2
+                drop_count_max = 5
+                """.trimIndent(),
+            ),
         )
 
         assertEquals(2, registry.loot.size)
-        assertEquals(2, summary.loot)
         val plain = registry.loot.first { it.block == "tin_ore" }
         assertEquals("raw_tin", plain.drop)
         assertEquals(1, plain.min)
@@ -450,13 +446,10 @@ class TomlContentLoaderTest {
 
     @Test
     fun `the ore table maps onto generateAsOre`() {
-        val (registry, _) = loadPack(
-            "miners",
-            """
-            [block.tin_ore]
-            hardness = 3.0
-            ore = { vein_size = 8, per_chunk = 6, min_y = 16, max_y = 64, biomes = ["minecraft:forest", "minecraft:taiga"] }
-            """.trimIndent(),
+        val registry = loadFile(
+            "block", "tin_ore",
+            "hardness = 3.0\n" +
+                "ore = { vein_size = 8, per_chunk = 6, min_y = 16, max_y = 64, biomes = [\"minecraft:forest\", \"minecraft:taiga\"] }",
         )
 
         val ore = registry.blocks.single().second.oreDeclaration
@@ -471,28 +464,23 @@ class TomlContentLoaderTest {
     @Test
     fun `a non-table ore field fails the pack loudly`() {
         assertFailsWith<IllegalStateException> {
-            loadPack("miners", "[block.tin_ore]\nore = true\n")
+            loadFile("block", "tin_ore", "ore = true")
         }.let { assertTrue("must be an inline table" in it.message!!) }
     }
 
-    private val sampleClockTimeline = """
-        [clock.tide]
-
-        [timeline.surge]
-        clock = "tide"
-        period_ticks = 24000
-        markers = { low_tide = 0, high_tide = { ticks = 12000, in_commands = true } }
-    """.trimIndent()
-
     @Test
-    fun `clock and timeline sections map onto the declaration DSL`() {
-        val (registry, summary) = loadPack("tides", sampleClockTimeline)
+    fun `clock and timeline files map onto the declaration DSL`() {
+        val registry = loadFiles(
+            Src("clock", "tide", ""),
+            Src(
+                "timeline", "surge",
+                "clock = \"tide\"\nperiod_ticks = 24000\nmarkers = { low_tide = 0, high_tide = { ticks = 12000, in_commands = true } }",
+            ),
+        )
 
         assertEquals(listOf("tide"), registry.clocks)
-        assertEquals(1, summary.clocks)
         val (id, spec) = registry.timelines.single()
         assertEquals("surge", id)
-        assertEquals(1, summary.timelines)
         assertEquals("tide", spec.clock)
         assertEquals(24000, spec.periodTicks)
         assertEquals(listOf("low_tide" to 0, "high_tide" to 12000), spec.markers.map { it.id to it.ticks })
@@ -500,46 +488,49 @@ class TomlContentLoaderTest {
     }
 
     @Test
-    fun `a clock section with fields and a malformed marker fail the pack loudly`() {
+    fun `a clock file with fields and a malformed marker fail the pack loudly`() {
         assertFailsWith<IllegalStateException> {
-            loadPack("tides", "[clock.tide]\nperiod_ticks = 100\n")
+            loadFile("clock", "tide", "period_ticks = 100")
         }.let { assertTrue("takes no fields" in it.message!!, it.message!!) }
         assertFailsWith<IllegalStateException> {
-            loadPack("tides", "[timeline.surge]\nclock = \"tide\"\nmarkers = { dusk = \"morning\" }\n")
+            loadFile("timeline", "surge", "clock = \"tide\"\nmarkers = { dusk = \"morning\" }")
         }.let { assertTrue("tick number or a table" in it.message!!, it.message!!) }
         assertFailsWith<IllegalStateException> {
-            loadPack("tides", "[timeline.surge]\nmarkers = { dusk = 1 }\n")
+            loadFile("timeline", "surge", "markers = { dusk = 1 }")
         }.let { assertTrue("missing its 'clock'" in it.message!!, it.message!!) }
     }
 
-    private val sampleDimension = """
-        [clock.tide]
-
-        [dimension_type.deep]
-        sky_light = false
-        ceiling = true
-        min_y = 0
-        height = 128
-        logical_height = 128
-        coordinate_scale = 2.0
-        ambient_light = 0.3
-        skybox = "none"
-        fixed_time = true
-        clock = "tide"
-        timelines = ["surge"]
-
-        [dimension.deep_home]
-        type = "deep"
-        layers = [ { block = "minecraft:bedrock", height = 1 }, { block = "ruby_block", height = 3 } ]
-        biome = "minecraft:plains"
-    """.trimIndent()
-
     @Test
-    fun `dimension_type and dimension sections map onto the declaration DSL`() {
-        val (registry, summary) = loadPack("tides", sampleDimension)
+    fun `dimension_type and dimension files map onto the declaration DSL`() {
+        val registry = loadFiles(
+            Src("clock", "tide", ""),
+            Src(
+                "dimension_type", "deep",
+                """
+                sky_light = false
+                ceiling = true
+                min_y = 0
+                height = 128
+                logical_height = 128
+                coordinate_scale = 2.0
+                ambient_light = 0.3
+                skybox = "none"
+                fixed_time = true
+                clock = "tide"
+                timelines = ["surge"]
+                """.trimIndent(),
+            ),
+            Src(
+                "dimension", "deep_home",
+                """
+                type = "deep"
+                layers = [ { block = "minecraft:bedrock", height = 1 }, { block = "ruby_block", height = 3 } ]
+                biome = "minecraft:plains"
+                """.trimIndent(),
+            ),
+        )
 
         assertEquals(listOf("tide"), registry.clocks)
-        assertEquals(1, summary.dimensionTypes)
         val (typeId, type) = registry.dimensionTypes.single()
         assertEquals("deep", typeId)
         assertEquals(false, type.skyLight)
@@ -556,7 +547,6 @@ class TomlContentLoaderTest {
         assertEquals("#minecraft:infiniburn_overworld", type.infiniburn)
         assertEquals(7, type.monsterSpawnLightLevel)
 
-        assertEquals(1, summary.dimensions)
         val (dimId, dim) = registry.dimensions.single()
         assertEquals("deep_home", dimId)
         assertEquals("deep", dim.type)
@@ -569,114 +559,100 @@ class TomlContentLoaderTest {
     @Test
     fun `a dimension without a type or with a malformed layer fails the pack loudly`() {
         assertFailsWith<IllegalStateException> {
-            loadPack("tides", "[dimension.home]\ngenerator = \"flat\"\n")
+            loadFile("dimension", "home", "generator = \"flat\"")
         }.let { assertTrue("missing its 'type' string" in it.message!!, it.message!!) }
         assertFailsWith<IllegalStateException> {
-            loadPack("tides", "[dimension.home]\ntype = \"deep\"\nlayers = \"bedrock\"\n")
+            loadFile("dimension", "home", "type = \"deep\"\nlayers = \"bedrock\"")
         }.let { assertTrue("must be an array" in it.message!!, it.message!!) }
         assertFailsWith<IllegalStateException> {
-            loadPack("tides", "[dimension.home]\ntype = \"deep\"\nlayers = [ { height = 1 } ]\n")
+            loadFile("dimension", "home", "type = \"deep\"\nlayers = [ { height = 1 } ]")
         }.let { assertTrue("missing its 'block' string" in it.message!!, it.message!!) }
         assertFailsWith<IllegalStateException> {
-            loadPack("tides", "[dimension_type.deep]\nsky_light = \"bright\"\n")
+            loadFile("dimension_type", "deep", "sky_light = \"bright\"")
         }.let { assertTrue("must be true or false" in it.message!!, it.message!!) }
     }
 
+    /**
+     * The reload pass re-runs every file the load pass ran, minus the frozen kinds: OMLCore's
+     * reload filters by [TomlContentLoader.RELOADABLE_TYPES], so block and item files are re-read
+     * but not re-declared, and everything else must land identically.
+     */
     @Test
     fun `a reload re-collects every datapack declaration the load pass collected`() {
-        val registry = RecordingRegistry()
-        TomlContentLoader.load(
-            "tides",
-            "tides.toml",
-            sampleDamageType + "\n" + sampleClockTimeline + "\n" + sampleDimension + "\n" + sampleTag,
-            registry,
-        )
-        val reloaded = RecordingRegistry()
-        TomlContentLoader.loadDataDeclarations(
-            "tides", "tides.toml",
-            sampleDamageType + "\n" + sampleClockTimeline + "\n" + sampleDimension + "\n" + sampleTag,
-            reloaded,
+        val files = listOf(
+            Src("damage_type", "melt", "message_id = \"pack.melts\"\neffects = \"burning\"\nexhaustion = 0.3"),
+            Src("damage_type", "flop", "message_id = \"pack.flops\""),
+            Src("clock", "tide", ""),
+            Src("timeline", "surge", "clock = \"tide\"\nperiod_ticks = 24000\nmarkers = { low_tide = 0, high_tide = { ticks = 12000, in_commands = true } }"),
+            Src(
+                "dimension_type", "deep",
+                "sky_light = false\nceiling = true\nmin_y = 0\nheight = 128\ncoordinate_scale = 2.0\n" +
+                    "ambient_light = 0.3\nskybox = \"none\"\nfixed_time = true\nclock = \"tide\"\ntimelines = [\"surge\"]",
+            ),
+            Src(
+                "dimension", "deep_home",
+                "type = \"deep\"\nlayers = [ { block = \"minecraft:bedrock\", height = 1 }, { block = \"ruby_block\", height = 3 } ]\nbiome = \"minecraft:plains\"",
+            ),
+            Src(
+                "tag", "fire_join",
+                "registry = \"minecraft:damage_type\"\ntag = \"minecraft:is_fire\"\nvalues = [\"melt\", \"#minecraft:is_projectile\"]",
+            ),
+            Src("block", "frozen", "hardness = 3.0"),
+            Src("item", "also_frozen", "max_durability = 64"),
         )
 
-        assertEquals(registry.damageTypes.map { it.id }, reloaded.damageTypes.map { it.id })
-        assertEquals(registry.clocks, reloaded.clocks)
-        assertEquals(registry.timelines.map { it.first }, reloaded.timelines.map { it.first })
+        val loaded = RecordingRegistry()
+        for (file in files) {
+            TomlContentLoader.loadFile("tides", "tides.oml/${file.type}/${file.id}.toml", file.type, file.id, file.text, loaded)
+        }
+        val reloaded = RecordingRegistry()
+        for (file in files.filter { it.type in TomlContentLoader.RELOADABLE_TYPES }) {
+            TomlContentLoader.loadFile("tides", "tides.oml/${file.type}/${file.id}.toml", file.type, file.id, file.text, reloaded)
+        }
+
+        assertTrue(reloaded.blocks.isEmpty() && reloaded.items.isEmpty(), "the frozen kinds must not re-declare")
+        assertEquals(loaded.damageTypes.map { it.id }, reloaded.damageTypes.map { it.id })
+        assertEquals(loaded.clocks, reloaded.clocks)
+        assertEquals(loaded.timelines.map { it.first }, reloaded.timelines.map { it.first })
         assertEquals(
-            registry.timelines.single().second.markers.map { it.id to it.ticks },
+            loaded.timelines.single().second.markers.map { it.id to it.ticks },
             reloaded.timelines.single().second.markers.map { it.id to it.ticks },
         )
-        assertEquals(registry.dimensionTypes.map { it.first }, reloaded.dimensionTypes.map { it.first })
+        assertEquals(loaded.dimensionTypes.map { it.first }, reloaded.dimensionTypes.map { it.first })
         assertEquals(
-            registry.dimensionTypes.single().second.height,
+            loaded.dimensionTypes.single().second.height,
             reloaded.dimensionTypes.single().second.height,
         )
         assertEquals(
-            registry.dimensions.single().second.layers.map { it.block to it.height },
+            loaded.dimensions.single().second.layers.map { it.block to it.height },
             reloaded.dimensions.single().second.layers.map { it.block to it.height },
         )
         assertEquals(
-            registry.tags.map { it.registryId to it.tagId },
+            loaded.tags.map { it.registryId to it.tagId },
             reloaded.tags.map { it.registryId to it.tagId },
         )
         assertEquals(
-            registry.tags.first().spec.entries,
+            loaded.tags.first().spec.entries,
             reloaded.tags.first().spec.entries,
         )
     }
 
-    /**
-     * The reload pass covers only the datapack sections, so an unknown section must warn — the same
-     * typo the load pass warns about would otherwise reload into nothing with no line saying why.
-     * The frozen block / item sections are the opposite contract: skipped without a line, because
-     * the same pack file reloads as written and they cannot be re-materialized.
-     */
-    @Test
-    fun `a reload warns about unknown sections and silently skips the frozen block and item ones`() {
-        val toml = """
-            [block.frozen]
-            [item.still_frozen]
-            [crafting.frozen_result]
-            type = "shapeless"
-            ingredients = ["frozen"]
-            [mystery_section]
-            x = 1
-        """.trimIndent()
-        val lines = stderrLinesOf {
-            TomlContentLoader.loadDataDeclarations("tides", "tides.toml", toml, RecordingRegistry())
-        }
-        assertEquals(
-            1,
-            lines.count { "WARN" in it },
-            "exactly the unknown section must warn on reload, got: $lines",
-        )
-        assertTrue(
-            lines.single { "WARN" in it }.contains("[mystery_section]"),
-            "the warning must name the offending section, got: $lines",
-        )
-    }
-
-    private val sampleTag = """
-        [tag.fire_join]
-        registry = "minecraft:damage_type"
-        tag = "minecraft:is_fire"
-        values = ["melt", { id = "#minecraft:is_projectile", required = false }]
-
-        [tag.probe_group]
-        registry = "item"
-        tag = "probe_group"
-        values = ["minecraft:diamond"]
-        replace = true
-    """.trimIndent()
+    private val sampleTag = Src(
+        "tag", "fire_join",
+        "registry = \"minecraft:damage_type\"\ntag = \"minecraft:is_fire\"\nvalues = [\"melt\", { id = \"#minecraft:is_projectile\", required = false }]",
+    )
 
     /**
-     * The tag's ids have to be fields rather than section components: a TOML bare key cannot spell the `:` of
+     * The tag's ids have to be fields rather than file names: a TOML bare key cannot spell the `:` of
      * `minecraft:is_fire` or the `/` of `worldgen/biome`, and both are ordinary tag names.
      */
     @Test
-    fun `a tag section maps onto the declaration DSL`() {
-        val (registry, summary) = loadPack("tides", sampleTag)
+    fun `a tag file maps onto the declaration DSL`() {
+        val registry = loadFiles(
+            sampleTag,
+            Src("tag", "probe_group", "registry = \"item\"\ntag = \"probe_group\"\nvalues = [\"minecraft:diamond\"]\nreplace = true"),
+        )
 
-        assertEquals(2, summary.tags)
         val join = registry.tags.first()
         assertEquals("minecraft:damage_type", join.registryId)
         assertEquals("minecraft:is_fire", join.tagId)
@@ -698,21 +674,21 @@ class TomlContentLoaderTest {
     }
 
     @Test
-    fun `a malformed tag section fails the pack loudly`() {
+    fun `a malformed tag file fails the pack loudly`() {
         assertFailsWith<IllegalStateException> {
-            loadPack("tides", "[tag.join]\nregistry = \"minecraft:damage_type\"\n")
+            loadFile("tag", "join", "registry = \"minecraft:damage_type\"")
         }.let { assertTrue("missing its 'tag' string" in it.message!!, it.message!!) }
         assertFailsWith<IllegalStateException> {
-            loadPack("tides", "[tag.join]\ntag = \"is_fire\"\n")
+            loadFile("tag", "join", "tag = \"is_fire\"")
         }.let { assertTrue("missing its 'registry' string" in it.message!!, it.message!!) }
         assertFailsWith<IllegalStateException> {
-            loadPack("tides", "[tag.join]\nregistry = 3\ntag = \"is_fire\"\n")
+            loadFile("tag", "join", "registry = 3\ntag = \"is_fire\"")
         }.let { assertTrue("missing its 'registry' string" in it.message!!, it.message!!) }
         assertFailsWith<IllegalStateException> {
-            loadPack("tides", "[tag.join]\nregistry = \"damage_type\"\ntag = \"is_fire\"\nvalues = 7\n")
+            loadFile("tag", "join", "registry = \"damage_type\"\ntag = \"is_fire\"\nvalues = 7")
         }.let { assertTrue("must be an array" in it.message!!, it.message!!) }
         assertFailsWith<IllegalStateException> {
-            loadPack("tides", "[tag.join]\nregistry = \"damage_type\"\ntag = \"is_fire\"\nvalues = [ 3 ]\n")
+            loadFile("tag", "join", "registry = \"damage_type\"\ntag = \"is_fire\"\nvalues = [ 3 ]")
         }.let { assertTrue("id strings or tables" in it.message!!, it.message!!) }
     }
 }

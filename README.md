@@ -100,7 +100,7 @@ object MyRules : RuleSetProvider {
 }
 ```
 
-> mod 以 jar 形式分发。纯声明式内容可以免代码：把 `content.toml` 连同自带 `assets/` 打成 **`.oml` 归档**
+> mod 以 jar 形式分发。纯声明式内容可以免代码：把 `content/` 目录树（一文件一实体）连同自带 `assets/` 打成 **`.oml` 归档**
 > （普通 zip 改名）放进 `mods/`，归档名即命名空间。散装 `.toml` 文件不再受支持——它无法携带贴图，
 > 方块会渲染成缺失材质——loader 会对它明确报错并跳过。
 

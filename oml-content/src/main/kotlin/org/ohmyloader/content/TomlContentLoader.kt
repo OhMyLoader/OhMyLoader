@@ -7,20 +7,22 @@ import org.ohmyloader.api.content.OMLTagDeclaration
 import java.io.File
 
 /**
- * Loads a flat-TOML content pack (`content.toml` in an `.oml` archive) into the [ContentRegistry]:
- * data becomes blocks and items with no jar and no code. The archive name (minus extension) is the
- * resource namespace; keys are snake_case mirrors of the code declarations, every one optional.
- * Unknown keys are reported loudly but never reject the pack — a typo'd field would otherwise
- * silently produce vanilla defaults.
+ * Loads a content pack's per-entity TOML files (the `.oml` archive's `content/` tree) into the
+ * [ContentRegistry]: data becomes blocks and items with no jar and no code. The archive name (minus
+ * extension) is the resource namespace; inside the archive, each file declares exactly one entity —
+ * `content/<type>/<id>.toml`, the directory naming the type and the path (subdirectories included)
+ * naming the id, vanilla's path-is-id rule. Keys are snake_case mirrors of the code declarations,
+ * every one optional. Unknown keys are reported loudly but never reject the pack — a typo'd field
+ * would otherwise silently produce vanilla defaults.
  *
- * Sections: `[block.<id>]` (properties + optional `ore` table), `[item.<id>]`, `[crafting.<id>]`,
- * `[smelting.<result>]`, `[loot.<block>]`, `[damage_type.<id>]`, `[clock.<id>]` (no fields),
- * `[timeline.<id>]` (`clock` + optional `period_ticks` + `markers`), `[dimension_type.<id>]`,
- * `[dimension.<id>]`, `[tag.<label>]` (`registry` + `tag` + `values` + optional `replace`) — the tag section is
- * the one whose ids are fields, because a TOML bare key cannot spell the `:` of `minecraft:is_fire` or the `/`
- * of `worldgen/biome`. Behavior hooks and block entities are mod code, so they have no TOML form. Loading runs
- * in the loader's content-declaration window, so the data track shares the code track's freeze-point
- * materialization.
+ * Types: `block` (properties + optional inline `ore` table), `item`, `crafting`, `smelting` (the
+ * file id is the result), `loot` (the file id is the block), `damage_type`, `clock` (no fields),
+ * `timeline` (`clock` + optional `period_ticks` + `markers`), `dimension_type`, `dimension`,
+ * `tag` (`registry` + `tag` + `values` + optional `replace`) — the tag file is the one whose values
+ * carry ids, because a TOML bare key cannot spell the `:` of `minecraft:is_fire` or the `/` of
+ * `worldgen/biome`. Behavior hooks and block entities are mod code, so they have no TOML form.
+ * Loading runs in the loader's content-declaration window, so the data track shares the code
+ * track's freeze-point materialization.
  */
 object TomlContentLoader {
 
@@ -29,6 +31,18 @@ object TomlContentLoader {
     private val ID = Regex("[a-z0-9_.-]+")
     private val NAMESPACE = ID
 
+    /** The `content/` directory names, each mapping onto one declaration kind. */
+    val CONTENT_TYPES = setOf(
+        "block", "item", "crafting", "smelting", "loot",
+        "damage_type", "clock", "timeline", "dimension_type", "dimension", "tag",
+    )
+
+    /**
+     * The kinds `/reload` may re-declare: block and item registries are frozen after the freeze
+     * point, so their files are skipped on every reload pass.
+     */
+    val RELOADABLE_TYPES = CONTENT_TYPES - setOf("block", "item")
+
     private val BLOCK_KEYS = setOf("hardness", "blast_resistance", "drops_require_correct_tool", "ore")
     private val ITEM_KEYS = setOf(
         "max_durability", "attack_damage", "attack_speed", "mining_speed",
@@ -36,24 +50,8 @@ object TomlContentLoader {
         "mines_and_drops", "denies_drops", "override_speed",
     )
 
-    /** What one pack contributed, for the loader's startup log and tests. */
-    data class PackSummary(
-        val namespace: String,
-        val blocks: Int,
-        val items: Int,
-        val recipes: Int = 0,
-        val smelting: Int = 0,
-        val loot: Int = 0,
-        val damageTypes: Int = 0,
-        val clocks: Int = 0,
-        val timelines: Int = 0,
-        val dimensionTypes: Int = 0,
-        val dimensions: Int = 0,
-        val tags: Int = 0,
-    )
-
     /**
-     * The resource namespace of a pack file: `ruby_pack.toml` loads as `ruby_pack`. Fails when the
+     * The resource namespace of a pack file: `ruby_pack.oml` loads as `ruby_pack`. Fails when the
      * derived name is not a valid resource domain (e.g. spaces, uppercase leftovers).
      */
     fun namespaceOf(file: File): String {
@@ -66,112 +64,55 @@ object TomlContentLoader {
     }
 
     /**
-     * Same as [load], for packs whose declaration is not a standalone file: a `.oml` archive's
-     * `content.toml` entry. [namespace] is derived by the caller (the archive name), [source]
-     * is only used in diagnostics.
+     * Loads one per-entity declaration file into [registry]. [type] is the `content/` subdirectory
+     * name, [id] the file's path relative to it (minus `.toml`, subdirectories included). The file's
+     * root table holds the entity's fields; a file declaring more than one entity (any real TOML
+     * section) is a structural error — one file, one entity.
      */
-    fun load(namespace: String, source: String, toml: String, registry: ContentRegistry): PackSummary {
+    fun loadFile(
+        namespace: String,
+        source: String,
+        type: String,
+        id: String,
+        toml: String,
+        registry: ContentRegistry,
+    ) {
         require(NAMESPACE.matches(namespace)) {
             "$TAG $source: namespace '$namespace' is not a valid resource domain " +
                 "(must match [a-z0-9_.-]+)"
         }
+        require(type in CONTENT_TYPES) {
+            "$TAG $source: '$type' is not a content type (expected one of ${CONTENT_TYPES.sorted()})"
+        }
+
         val doc = try {
             MinimalToml.parse(toml)
         } catch (e: MinimalToml.TomlParseException) {
             throw IllegalStateException("$TAG $source: ${e.message}", e)
         }
-
-        var blocks = 0
-        var items = 0
-        var recipes = 0
-        var smelting = 0
-        var loot = 0
-        var damageTypes = 0
-        var clocks = 0
-        var timelines = 0
-        var dimensionTypes = 0
-        var dimensions = 0
-        var tags = 0
-        for ([path, fields] in doc) {
-            when {
-                path.isEmpty() -> if (fields.isNotEmpty()) {
-                    OmlLog.warn(
-                        TAG,
-                        "$source: ignoring root-level key(s) ${fields.keys} — " +
-                            "content must live under [block.<id>] or [item.<id>]",
-                    )
-                }
-
-                path.startsWith("block.") && path.count { it == '.' } == 1 -> {
-                    declareBlock(path.removePrefix("block."), fields, source, registry)
-                    blocks++
-                }
-
-                path.startsWith("item.") && path.count { it == '.' } == 1 -> {
-                    declareItem(path.removePrefix("item."), fields, source, registry)
-                    items++
-                }
-
-                path.startsWith("crafting.") && path.count { it == '.' } == 1 -> {
-                    declareCrafting(path.removePrefix("crafting."), fields, source, registry)
-                    recipes++
-                }
-
-                path.startsWith("smelting.") && path.count { it == '.' } == 1 -> {
-                    declareSmeltingSection(path.removePrefix("smelting."), fields, source, registry)
-                    smelting++
-                }
-
-                path.startsWith("loot.") && path.count { it == '.' } == 1 -> {
-                    declareLootSection(path.removePrefix("loot."), fields, source, registry)
-                    loot++
-                }
-
-                path.startsWith("damage_type.") && path.count { it == '.' } == 1 -> {
-                    declareDamageTypeSection(path.removePrefix("damage_type."), fields, source, registry)
-                    damageTypes++
-                }
-
-                path.startsWith("clock.") && path.count { it == '.' } == 1 -> {
-                    declareClockSection(path.removePrefix("clock."), fields, source, registry)
-                    clocks++
-                }
-
-                path.startsWith("timeline.") && path.count { it == '.' } == 1 -> {
-                    declareTimelineSection(path.removePrefix("timeline."), fields, source, registry)
-                    timelines++
-                }
-
-                path.startsWith("dimension_type.") && path.count { it == '.' } == 1 -> {
-                    declareDimensionTypeSection(
-                        path.removePrefix("dimension_type."), fields, source, registry,
-                    )
-                    dimensionTypes++
-                }
-
-                path.startsWith("dimension.") && path.count { it == '.' } == 1 -> {
-                    declareDimensionSection(path.removePrefix("dimension."), fields, source, registry)
-                    dimensions++
-                }
-
-                path.startsWith("tag.") && path.count { it == '.' } == 1 -> {
-                    declareTagSection(path.removePrefix("tag."), fields, source, registry)
-                    tags++
-                }
-
-                else -> OmlLog.warn(
-                    TAG,
-                    "$source: ignoring section [$path] — " +
-                        "expected [block.<id>] / [item.<id>] / [crafting.<id>] / [smelting.<id>] / " +
-                        "[loot.<block>] / [damage_type.<id>] / [clock.<id>] / [timeline.<id>] / " +
-                        "[dimension_type.<id>] / [dimension.<id>] / [tag.<label>]",
-                )
-            }
+        val fields = doc[""] ?: emptyMap()
+        val extraSections = doc.keys - ""
+        if (extraSections.isNotEmpty()) {
+            fail(
+                source,
+                "declares section(s) $extraSections — one file declares one entity; " +
+                    "nested data belongs in inline tables (ore = { … })",
+            )
         }
-        return PackSummary(
-            namespace, blocks, items, recipes, smelting, loot, damageTypes, clocks, timelines,
-            dimensionTypes, dimensions, tags,
-        )
+
+        when (type) {
+            "block" -> declareBlock(id, fields, source, registry)
+            "item" -> declareItem(id, fields, source, registry)
+            "crafting" -> declareCrafting(id, fields, source, registry)
+            "smelting" -> declareSmeltingSection(id, fields, source, registry)
+            "loot" -> declareLootSection(id, fields, source, registry)
+            "damage_type" -> declareDamageTypeSection(id, fields, source, registry)
+            "clock" -> declareClockSection(id, fields, source, registry)
+            "timeline" -> declareTimelineSection(id, fields, source, registry)
+            "dimension_type" -> declareDimensionTypeSection(id, fields, source, registry)
+            "dimension" -> declareDimensionSection(id, fields, source, registry)
+            "tag" -> declareTagSection(id, fields, source, registry)
+        }
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -465,73 +406,6 @@ object TomlContentLoader {
         }
     }
 
-    /**
-     * Reload pass: re-dispatches only the datapack declarations (recipes, loot tables, damage types, clocks,
-     * timelines, dimensions, tags) from [toml] into [registry]. Blocks and items are silently skipped — their
-     * registries are
-     * frozen, they cannot be re-materialized, and reloading must not grow the declaration queues. Everything
-     * else behaves like [load]: a malformed section throws with the reason, and an unknown section is warned
-     * about instead of being swallowed.
-     */
-    fun loadDataDeclarations(namespace: String, source: String, toml: String, registry: ContentRegistry) {
-        require(NAMESPACE.matches(namespace)) {
-            "$TAG $source: namespace '$namespace' is not a valid resource domain"
-        }
-        val doc = try {
-            MinimalToml.parse(toml)
-        } catch (e: MinimalToml.TomlParseException) {
-            throw IllegalStateException("$TAG $source: ${e.message}", e)
-        }
-        for ([path, fields] in doc) {
-            when {
-                // MinimalToml always emits the root table (""), empty unless the pack has root-level
-                // keys, and the load pass already judged those keys — it is not an unknown section.
-                path.isEmpty() -> Unit
-
-                path.startsWith("crafting.") && path.count { it == '.' } == 1 ->
-                    declareCrafting(path.removePrefix("crafting."), fields, source, registry)
-
-                path.startsWith("smelting.") && path.count { it == '.' } == 1 ->
-                    declareSmeltingSection(path.removePrefix("smelting."), fields, source, registry)
-
-                path.startsWith("loot.") && path.count { it == '.' } == 1 ->
-                    declareLootSection(path.removePrefix("loot."), fields, source, registry)
-
-                path.startsWith("damage_type.") && path.count { it == '.' } == 1 ->
-                    declareDamageTypeSection(path.removePrefix("damage_type."), fields, source, registry)
-
-                path.startsWith("clock.") && path.count { it == '.' } == 1 ->
-                    declareClockSection(path.removePrefix("clock."), fields, source, registry)
-
-                path.startsWith("timeline.") && path.count { it == '.' } == 1 ->
-                    declareTimelineSection(path.removePrefix("timeline."), fields, source, registry)
-
-                path.startsWith("dimension_type.") && path.count { it == '.' } == 1 ->
-                    declareDimensionTypeSection(
-                        path.removePrefix("dimension_type."), fields, source, registry,
-                    )
-
-                path.startsWith("dimension.") && path.count { it == '.' } == 1 ->
-                    declareDimensionSection(path.removePrefix("dimension."), fields, source, registry)
-
-                path.startsWith("tag.") && path.count { it == '.' } == 1 ->
-                    declareTagSection(path.removePrefix("tag."), fields, source, registry)
-
-                // Block and item sections stay silent: the same pack file reloads as written, and its
-                // [block.*] / [item.*] tables are skipped on every pass because those registries are frozen.
-                path.startsWith("block.") && path.count { it == '.' } == 1 -> Unit
-                path.startsWith("item.") && path.count { it == '.' } == 1 -> Unit
-
-                else -> OmlLog.warn(
-                    TAG,
-                    "$source: ignoring section [$path] — the reload pass covers only the datapack sections " +
-                        "[crafting.<id>] / [smelting.<id>] / [loot.<block>] / [damage_type.<id>] / [clock.<id>] / " +
-                        "[timeline.<id>] / [dimension_type.<id>] / [dimension.<id>] / [tag.<label>]",
-                )
-            }
-        }
-    }
-
     private val DIMENSION_TYPE_KEYS = setOf(
         "sky_light", "ceiling", "dragon_fight", "coordinate_scale", "min_y", "height", "logical_height",
         "infiniburn", "ambient_light", "monster_spawn_light_level", "monster_spawn_block_light_limit",
@@ -610,9 +484,13 @@ object TomlContentLoader {
         }
     }
 
+    /** A registry path: `/`-separated segments, each a valid resource id (the path-is-id rule). */
     private fun requireId(id: String, source: String, kind: String) {
-        require(ID.matches(id)) {
-            "$TAG $source: '$id' is not a valid $kind id (must match [a-z0-9_.-]+)"
+        for (segment in id.split('/')) {
+            require(ID.matches(segment)) {
+                "$TAG $source: '$id' is not a valid $kind id " +
+                    "(each /-separated segment must match [a-z0-9_.-]+)"
+            }
         }
     }
 

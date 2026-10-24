@@ -12,7 +12,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * The `.oml` content pack archive: `content.toml` at the root + the pack's own `assets/` and
+ * The `.oml` content pack archive: the per-entity files under `content/` + the pack's own `assets/` and
  * `data/`. Exercises the full no-code path — archive parsing, namespace derivation, duplicate
  * detection — and the two halves that must agree: the declared content and the asset index that
  * serves the archive's textures. If either half breaks alone, the symptom is a block with no
@@ -82,15 +82,11 @@ class OmlArchivePackTest {
     private fun writeArchive(
         dir: File,
         name: String,
-        contentToml: String,
-        vararg extra: Pair<String, ByteArray>,
+        vararg entries: Pair<String, ByteArray>,
     ): File {
         val archive = File(dir, "$name.oml")
         ZipOutputStream(archive.outputStream()).use { zip ->
-            zip.putNextEntry(ZipEntry("content.toml"))
-            zip.write(contentToml.toByteArray())
-            zip.closeEntry()
-            for ([path, bytes] in extra) {
+            for ([path, bytes] in entries) {
                 zip.putNextEntry(ZipEntry(path))
                 zip.write(bytes)
                 zip.closeEntry()
@@ -105,7 +101,8 @@ class OmlArchivePackTest {
         val texture = ByteArray(32) { it.toByte() }
         writeArchive(
             dir, "oml_pack",
-            "[block.ruby_ore]\nhardness = 3.0\n\n[item.ruby]\nmax_durability = 64\n",
+            "content/block/ruby_ore.toml" to "hardness = 3.0".toByteArray(),
+            "content/item/ruby.toml" to "max_durability = 64".toByteArray(),
             "assets/oml_pack/textures/block/ruby_ore.png" to texture,
             "data/oml_pack/recipes/ruby.json" to "{}".toByteArray(),
         )
@@ -134,8 +131,10 @@ class OmlArchivePackTest {
         val dir = tempDir()
         writeArchive(
             dir, "crafted_pack",
-            "[block.ruby_ore]\nhardness = 3.0\n\n[crafting.ruby_block]\ntype = \"shaped\"\n" +
-                "pattern = [\"RR\", \"RR\"]\nkey = { R = \"ruby\" }\n",
+            "content/block/ruby_ore.toml" to "hardness = 3.0".toByteArray(),
+            "content/crafting/ruby_block.toml" to (
+                "type = \"shaped\"\npattern = [\"RR\", \"RR\"]\nkey = { R = \"ruby\" }"
+                ).toByteArray(),
             "assets/crafted_pack/textures/block/ruby_ore.png" to ByteArray(8),
         )
 
@@ -149,7 +148,7 @@ class OmlArchivePackTest {
     fun `a loose toml next to an archive is refused, the archive loads`() {
         val dir = tempDir()
         File(dir, "clash.toml").writeText("[block.a]\n")
-        writeArchive(dir, "clash", "[block.b]\n")
+        writeArchive(dir, "clash", "content/block/b.toml" to "".toByteArray())
 
         OMLCore.loadContentPacks(dir, factory)
 
@@ -176,6 +175,34 @@ class OmlArchivePackTest {
         assertTrue(OMLCore.contentPackFiles().none { it.name == "empty.oml" })
     }
 
+    @Test
+    fun `the single-file content toml layout is refused with the migration path named`() {
+        val dir = tempDir()
+        writeArchive(
+            dir, "old_pack",
+            "content.toml" to "[block.ruby_ore]\nhardness = 3.0\n".toByteArray(),
+            "content/block/sapphire_ore.toml" to "hardness = 4.0".toByteArray(),
+        )
+
+        OMLCore.loadContentPacks(dir, factory)
+
+        assertTrue(factory.registry.blocks.isEmpty(), "a refused pack must not declare anything")
+        assertTrue(OMLCore.contentPackFiles().none { it.name == "old_pack.oml" })
+    }
+
+    @Test
+    fun `a subdirectory under a type directory becomes part of the id`() {
+        val dir = tempDir()
+        writeArchive(
+            dir, "deep_pack",
+            "content/block/ores/deep/ruby_ore.toml" to "hardness = 3.0".toByteArray(),
+        )
+
+        OMLCore.loadContentPacks(dir, factory)
+
+        assertEquals(listOf("ores/deep/ruby_ore"), factory.registry.blocks.map { it.first })
+    }
+
 
     @Test
     fun `reload re-reads crafting recipes from disk`() {
@@ -187,7 +214,7 @@ class OmlArchivePackTest {
         val dir = tempDir()
         writeArchive(
             dir, "hot_pack",
-            "[crafting.hot]\ntype = \"shapeless\"\ningredients = [\"minecraft:iron_ingot\"]\n",
+            "content/crafting/hot.toml" to "type = \"shapeless\"\ningredients = [\"minecraft:iron_ingot\"]".toByteArray(),
         )
 
         OMLCore.loadContentPacks(dir, registry)
@@ -197,7 +224,7 @@ class OmlArchivePackTest {
         // the pack author edits the recipe on disk, then the game runs /reload (F3+T joins in)
         writeArchive(
             dir, "hot_pack",
-            "[crafting.hot]\ntype = \"shapeless\"\ningredients = [\"minecraft:gold_ingot\"]\n",
+            "content/crafting/hot.toml" to "type = \"shapeless\"\ningredients = [\"minecraft:gold_ingot\"]".toByteArray(),
         )
         OMLCore.reloadContentPacks()
 

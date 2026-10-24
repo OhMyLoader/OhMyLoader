@@ -79,68 +79,35 @@ class ContentTrackParityTest {
             tag("minecraft:is_projectile")
         }
 
-        TomlContentLoader.load(
-            "ruby",
-            "parity-test content.toml",
-            """
-            [block.ruby_ore]
-            hardness = 3.0
-            blast_resistance = 3.0
-            drops_require_correct_tool = true
-            ore = { vein_size = 8, per_chunk = 6, min_y = 16, max_y = 64, biomes = ["minecraft:forest", "minecraft:taiga"] }
-
-            [item.ruby]
-            max_durability = 250
-            attack_damage = 5.0
-
-            [smelting.ruby]
-            input = "raw_ruby"
-            experience = 0.7
-            cooking_time = 100
-
-            [loot.ruby_ore]
-            drop = "raw_ruby"
-
-            [damage_type.melt]
-            message_id = "ruby.melts"
-            effects = "burning"
-            exhaustion = 0.3
-
-            [crafting.ruby]
-            type = "shapeless"
-            ingredients = ["raw_ruby", "raw_ruby"]
-
-            [clock.tide]
-
-            [timeline.surge]
-            clock = "tide"
-            period_ticks = 24000
-            markers = { low_tide = 0, high_tide = { ticks = 12000, in_commands = true } }
-
-            [dimension_type.deep]
-            sky_light = false
-            ceiling = true
-            min_y = 0
-            height = 128
-            coordinate_scale = 2.0
-            ambient_light = 0.3
-            skybox = "none"
-            fixed_time = true
-            clock = "tide"
-            timelines = ["surge"]
-
-            [dimension.deep_home]
-            type = "deep"
-            layers = [ { block = "minecraft:bedrock", height = 1 }, { block = "raw_ruby", height = 3 } ]
-            biome = "minecraft:plains"
-
-            [tag.fire_join]
-            registry = "minecraft:damage_type"
-            tag = "minecraft:is_fire"
-            values = ["melt", "#minecraft:is_projectile"]
-            """.trimIndent(),
-            data.forNamespace("ruby"),
+        val pack = "parity-test.oml"
+        val files = listOf(
+            "block/ruby_ore" to (
+                "hardness = 3.0\nblast_resistance = 3.0\ndrops_require_correct_tool = true\n" +
+                    "ore = { vein_size = 8, per_chunk = 6, min_y = 16, max_y = 64, biomes = [\"minecraft:forest\", \"minecraft:taiga\"] }"
+                ),
+            "item/ruby" to "max_durability = 250\nattack_damage = 5.0",
+            "smelting/ruby" to "input = \"raw_ruby\"\nexperience = 0.7\ncooking_time = 100",
+            "loot/ruby_ore" to "drop = \"raw_ruby\"",
+            "damage_type/melt" to "message_id = \"ruby.melts\"\neffects = \"burning\"\nexhaustion = 0.3",
+            "crafting/ruby" to "type = \"shapeless\"\ningredients = [\"raw_ruby\", \"raw_ruby\"]",
+            "clock/tide" to "",
+            "timeline/surge" to "clock = \"tide\"\nperiod_ticks = 24000\nmarkers = { low_tide = 0, high_tide = { ticks = 12000, in_commands = true } }",
+            "dimension_type/deep" to (
+                "sky_light = false\nceiling = true\nmin_y = 0\nheight = 128\ncoordinate_scale = 2.0\n" +
+                    "ambient_light = 0.3\nskybox = \"none\"\nfixed_time = true\nclock = \"tide\"\ntimelines = [\"surge\"]"
+                ),
+            "dimension/deep_home" to (
+                "type = \"deep\"\n" +
+                    "layers = [ { block = \"minecraft:bedrock\", height = 1 }, { block = \"raw_ruby\", height = 3 } ]\n" +
+                    "biome = \"minecraft:plains\""
+                ),
+            "tag/fire_join" to "registry = \"minecraft:damage_type\"\ntag = \"minecraft:is_fire\"\nvalues = [\"melt\", \"#minecraft:is_projectile\"]",
         )
+        for ((path, text) in files) {
+            val type = path.substringBefore('/')
+            val id = path.substringAfter('/')
+            TomlContentLoader.loadFile("ruby", "$pack/$path.toml", type, id, text, data.forNamespace("ruby"))
+        }
 
         // --- and the results must not be distinguishable ------------------------------------
         val codeBlock = code.blockSpec("ruby_ore")
