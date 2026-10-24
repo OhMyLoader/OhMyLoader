@@ -168,7 +168,7 @@ jobs:
       - run: ./gradlew -Poml_version="${GITHUB_REF_NAME#v}" publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: oml-installer
           path: dist
