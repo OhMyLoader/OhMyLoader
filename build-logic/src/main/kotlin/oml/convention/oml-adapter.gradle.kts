@@ -40,12 +40,19 @@ afterEvaluate {
     // The vanilla client jar, kept locally (gitignored): the adapter compiles against it (26.x jars
     // are unobfuscated, so names match exactly) and the shape tests read it with ASM. At run time
     // the game itself supplies these classes.
+    // The module's own run/ directory, shared by the fetch tasks as their working directory — and
+    // recreated by them at execution time: a fresh CI checkout has none, and the JavaExec
+    // working-dir check runs after the doFirst actions. Captured via layout (not file("run")) so
+    // the doFirst closures carry no Project reference — the configuration cache forbids that.
+    val runDir: File = layout.projectDirectory.dir("run").asFile
+
     val fetchClientJar = tasks.register<JavaExec>("fetchClientJar") {
         group = "ohmyloader"
         description = "Download the main Minecraft $versionId client jar into libs/ (only if missing)"
         classpath(devtools)
         mainClass.set("org.ohmyloader.devtools.AssetDownloader")
-        workingDir = file("run")
+        workingDir = runDir
+        doFirst { runDir.mkdirs() }
         jvmArgs(stdoutEnc)
         args("--clientJar", clientJar.absolutePath, versionId)
         outputs.file(clientJar)
@@ -73,7 +80,8 @@ afterEvaluate {
         description = "Download Minecraft $versionId's runtime libraries into libs/ (only if missing)"
         classpath(devtools)
         mainClass.set("org.ohmyloader.devtools.AssetDownloader")
-        workingDir = file("run")
+        workingDir = runDir
+        doFirst { runDir.mkdirs() }
         jvmArgs(stdoutEnc)
         args("--libraries", versionId, gameLibraries.absolutePath)
         outputs.dir(gameLibraries)
@@ -101,7 +109,8 @@ afterEvaluate {
                 "use -PomlInstallId to give a second instance of the same game version another id; use -PomlSide=server to install a dedicated-server instance)"
         classpath(installer)
         mainClass.set("org.ohmyloader.installer.Installer")
-        workingDir = file("run")
+        workingDir = runDir
+        doFirst { runDir.mkdirs() }
         jvmArgs(stdoutEnc)
 
         val ourProjects = listOf(
@@ -162,12 +171,6 @@ afterEvaluate {
             args(taskArgs)
         }
     }
-
-    // A fresh clone has no gitignored run/, and Gradle fails a task whose working directory does
-    // not exist. Resolved at configuration time on purpose: project.file() inside a task action
-    // would hold a Project reference, which the configuration cache refuses to serialize.
-    val runDir = file("run")
-    fetchClientJar.configure { doFirst { runDir.mkdirs() } }
 
     // HookShapeTest asserts the hook rules against the real client jar, so fetching it is part of
     // the test task graph; the tests locate the jar through this system property. SnapshotLinkageTest
