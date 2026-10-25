@@ -161,33 +161,23 @@ jobs:
           done
 
   # A tag is publishable only after the verification mod boots this tag's loader on both sides.
-  # GitHub does not allow expressions in `uses`, so the verification repo is checked out at the
-  # pin in vars.OML_TESTMOD_REF and its scripts are run directly; vars.OML_GRADLE_REF pins the
-  # plugin. The gate fails when either pin is unset: an unpinned verification is not evidence.
+  # GitHub does not allow expressions in `uses`, so the verification repo is checked out at its
+  # main and its scripts are run directly. The verification instrument is the repos' main, not a
+  # pinned SHA: the evidence JSON records the exact testmod/plugin/loader SHAs each run, so a
+  # tag's evidence always names what tested it. If determinism is ever needed (external
+  # consumers, audited releases), synchronized same-name tags across the three repos are the
+  # drop-in upgrade.
   e2e-release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
-      - name: Require pinned verification refs
-        env:
-          TESTMOD_REF: ${{ vars.OML_TESTMOD_REF }}
-          GRADLE_REF: ${{ vars.OML_GRADLE_REF }}
-        run: |
-          if [ -z "$TESTMOD_REF" ]; then
-            echo "::error::set the OML_TESTMOD_REF repository variable to the TestMod commit this release is verified against"
-            exit 1
-          fi
-          if [ -z "$GRADLE_REF" ]; then
-            echo "::error::set the OML_GRADLE_REF repository variable to the Gradle plugin commit this release is verified against"
-            exit 1
-          fi
       - name: Checkout the verification mod
         uses: actions/checkout@v7
         with:
           repository: OhMyLoader/OhMyLoaderTestMod
-          ref: ${{ vars.OML_TESTMOD_REF }}
+          ref: main
           path: OhMyLoaderTestMod
       - name: Checkout the loader under test
         uses: actions/checkout@v7
@@ -199,7 +189,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: OhMyLoader/OhMyLoaderGradle
-          ref: ${{ vars.OML_GRADLE_REF }}
+          ref: main
           path: OhMyLoaderTestMod/OhMyLoaderGradle
       - name: Download the artifacts the build job staged
         uses: actions/download-artifact@v8
