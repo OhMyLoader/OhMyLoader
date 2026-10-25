@@ -36,8 +36,15 @@ object OMLCommandBridge {
         val dispatcher = (commands as Commands).dispatcher
         for ((modId, root) in CommandDeclarations.entries) {
             try {
-                val builder = build(modId, root, emptyList())
-                dispatcher.register(builder as LiteralArgumentBuilder<CommandSourceStack>)
+                dispatcher.register(build(modId, root, emptyList()) as LiteralArgumentBuilder<CommandSourceStack>)
+                // Aliases are full trees of their own: same shape, same handler, same gates. The
+                // game's own completion offers them like any literal, and a duplicate alias name
+                // collides the same way a duplicate root does — named, not guessed.
+                for (alias in root.aliases) {
+                    dispatcher.register(
+                        build(modId, root.aliasCopy(alias), emptyList()) as LiteralArgumentBuilder<CommandSourceStack>,
+                    )
+                }
             } catch (t: Throwable) {
                 OmlLog.error("Commands", "registering /${root.name} from mod [$modId] failed", t)
             }
@@ -53,10 +60,32 @@ object OMLCommandBridge {
         val newPath = path + (node.argumentType?.let { listOf(node.name to it) } ?: emptyList())
         val builder = when (val type = node.argumentType) {
             null -> LiteralArgumentBuilder.literal(node.name)
-            else -> RequiredArgumentBuilder.argument<CommandSourceStack, Any>(
-                node.name,
-                @Suppress("UNCHECKED_CAST") argumentTypeInstance(type) as com.mojang.brigadier.arguments.ArgumentType<Any>,
-            )
+            else -> {
+                val required = RequiredArgumentBuilder.argument<CommandSourceStack, Any>(
+                    node.name,
+                    @Suppress("UNCHECKED_CAST")
+                    argumentTypeInstance(type) as com.mojang.brigadier.arguments.ArgumentType<Any>,
+                )
+                // Suggestions ride Brigadier's own provider: the game offers the strings as the
+                // player types and filters them itself, so a suggestion list never widens what the
+                // WORD parser accepts.
+                val suggestions = (type as? OMLArgumentType.WithSuggestions)?.suggestions
+                if (suggestions != null) {
+                    required.suggests { context, builder2 ->
+                        // The same source shape the executes path hands the handler — suggestions
+                        // see the invoker too (an online-player list, say).
+                        val source = OMLCommandSource(
+                            context.source.textName,
+                            context.source.player != null,
+                            emptyMap(),
+                            {}, {},
+                        ) { context.source }
+                        for (candidate in suggestions(source)) builder2.suggest(candidate)
+                        builder2.buildFuture()
+                    }
+                }
+                required
+            }
         }
         val level = node.permissionLevel
         // The game's own tiers are 0..4; a value outside that range must be refused here, not mapped
@@ -98,8 +127,9 @@ object OMLCommandBridge {
 
     private fun extract(context: CommandContext<CommandSourceStack>, name: String, type: OMLArgumentType<*>): Any =
         when (type) {
-            OMLArgumentType.WORD, OMLArgumentType.STRING, OMLArgumentType.GREEDY_STRING ->
-                context.getArgument(name, String::class.java)
+            OMLArgumentType.WORD, OMLArgumentType.STRING, OMLArgumentType.GREEDY_STRING,
+            is OMLArgumentType.WithSuggestions,
+                -> context.getArgument(name, String::class.java)
 
             OMLArgumentType.INTEGER -> context.getArgument(name, Integer::class.javaPrimitiveType)
             OMLArgumentType.FLOAT -> context.getArgument(name, java.lang.Double.TYPE)
@@ -111,6 +141,7 @@ object OMLCommandBridge {
             OMLArgumentType.WORD -> StringArgumentType.word()
             OMLArgumentType.STRING -> StringArgumentType.string()
             OMLArgumentType.GREEDY_STRING -> StringArgumentType.greedyString()
+            is OMLArgumentType.WithSuggestions -> StringArgumentType.word()
             OMLArgumentType.INTEGER -> IntegerArgumentType.integer()
             OMLArgumentType.FLOAT -> DoubleArgumentType.doubleArg()
             OMLArgumentType.BOOLEAN -> BoolArgumentType.bool()

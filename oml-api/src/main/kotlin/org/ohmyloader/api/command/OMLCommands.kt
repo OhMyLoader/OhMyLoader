@@ -11,6 +11,24 @@ sealed class OMLArgumentType<T> {
     object INTEGER : OMLArgumentType<Int>()
     object FLOAT : OMLArgumentType<Double>()
     object BOOLEAN : OMLArgumentType<Boolean>()
+
+    /**
+     * A `WORD` whose tab completion suggests [suggestions] — the ids a player can type next, e.g.
+     * the entity types or items a command accepts. Suggestions are strings the client offers as the
+     * player types; the game filters them against what is already typed.
+     */
+    class WithSuggestions(val suggestions: (source: OMLCommandSource) -> List<String>) :
+        OMLArgumentType<String>()
+}
+
+/**
+ * The base flavor an adapter materializes: a `WithSuggestions` argument is a `WORD` under the
+ * suggestions, and the bridge needs the flavor its instance lookup understands.
+ */
+fun OMLArgumentType<*>.baseType(): OMLArgumentType<*> = if (this is OMLArgumentType.WithSuggestions) {
+    OMLArgumentType.WORD
+} else {
+    this
 }
 
 /**
@@ -45,10 +63,35 @@ class OMLCommandDeclaration(
      */
     var permissionNode: String? = null
 
+    /**
+     * Alternate literal names this root also answers to (`/home` for `/kit home`). Aliases are
+     * full command trees of their own — same arguments, same handler, same gates — registered
+     * beside the primary; the game's own completion offers them like any literal.
+     */
+    var aliases: List<String> = emptyList()
+        set(value) {
+            check(value.all { it.isNotBlank() }) { "command aliases must not be blank" }
+            field = value
+        }
+
     internal var executes: ((OMLCommandSource) -> Unit)? = null
 
     /** Whether an executes handler was declared (the adapter's dispatch decision). */
     val hasExecute: Boolean get() = executes != null
+
+    /**
+     * A root-shaped copy of this root under [alias], carrying the gates, the handler and the whole
+     * child tree. Public but not mod-facing API: the version adapter registers these beside the
+     * primary for [aliases]; mods declare aliases, they never copy nodes themselves. Only a root
+     * is copyable — an alias of an inner subcommand would need the parent's path to exist.
+     */
+    fun aliasCopy(alias: String): OMLCommandDeclaration = OMLCommandDeclaration(alias, null).also {
+        check(argumentType == null) { "only a root can be aliased" }
+        it.permissionLevel = permissionLevel
+        it.permissionNode = permissionNode
+        it.executes = executes
+        it.children += children
+    }
 
     val children = mutableListOf<OMLCommandDeclaration>()
 
@@ -92,7 +135,10 @@ class OMLCommandDeclaration(
 
 /** Mod-facing command registration facade, bound to the declaring mod's id. */
 interface OMLCommandRegistry {
-    /** Declares the root literal `/<name>`; a malformed duplicate registration throws. */
+    /**
+     * Declares the root literal `/<name>` (and any [OMLCommandDeclaration.aliases] beside it); a
+     * malformed duplicate registration throws.
+     */
     fun register(name: String, configure: OMLCommandDeclaration.() -> Unit)
 }
 
