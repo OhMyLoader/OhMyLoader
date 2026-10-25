@@ -62,9 +62,10 @@ interface OMLBlockDataCarrier {
 }
 
 /**
- * One game tick of a declared block entity, server side only — the ticker is registered for the
- * server level, so client copies never see this event. [data] is persistent: whatever the handler
- * writes survives save/reload, which is what turns a ticking block into a machine.
+ * One game tick of a declared block entity, server side only — the ticker is registered for
+ * the server level, so client copies never see this event. [data] is persistent: whatever the handler
+ * writes survives save/reload, which is what turns a ticking block into a machine. [slots] reaches
+ * the machine's container (null unless one was declared) — the very stacks the interface shows.
  */
 class OMLBlockTickEvent(
     val x: Int,
@@ -72,8 +73,45 @@ class OMLBlockTickEvent(
     val z: Int,
     val data: OMLBlockData,
     levelSupplier: () -> Any,
+    slotsSupplier: () -> Any?,
 ) {
     val level: Any by lazy(levelSupplier)
+
+    /** The machine's slot store, when [OMLBlockEntityDeclaration.slots] was declared. */
+    val slots: OMLSlotStore? by lazy { slotsSupplier() as? OMLSlotStore }
+}
+
+/**
+ * The mod-facing read/write surface over one declared machine's item slots. Implementations are
+ * the game's own container behind the version-facing extensions — nothing here allocates a copy,
+ * and writes reach the same store the interface renders.
+ */
+interface OMLSlotStore {
+    /** How many slots the machine has. */
+    val size: Int
+
+    /** The stack in [index], or null when the slot is empty. */
+    fun stackAt(index: Int): OMLDataItemStack?
+
+    /**
+     * Places [stack] into [index], replacing whatever is there (the replaced stack is returned,
+     * or null when the slot was empty). Write rules follow the game: the caller is responsible for
+     * a stack that fits the slot's rules.
+     */
+    fun putStack(index: Int, stack: OMLDataItemStack?): OMLDataItemStack?
+}
+
+/**
+ * The slot layout of a declared machine: [rows] of 9 slots rendered as the game's own chest
+ * interface, titled [title].
+ */
+class OMLSlotLayout(val rows: Int, val title: String) {
+    init {
+        require(rows in 1..6) { "a slot layout has 1-6 rows of 9, got $rows" }
+    }
+
+    /** The slot count: rows × 9, the game's own chest geometry. */
+    val size: Int get() = rows * 9
 }
 
 /** Declaration body of [OMLBlockDeclaration.blockEntity]. */
@@ -81,6 +119,21 @@ class OMLBlockEntityDeclaration {
 
     // Public but not mod-facing API: the version adapter reads this to wire the server ticker.
     val tickHandlers = mutableListOf<(OMLBlockTickEvent) -> Unit>()
+
+    /**
+     * The machine's container, rendered as the game's own chest interface when opened. Slots live
+     * in the block entity (persistent like [OMLBlockData], dropped as items when the block breaks);
+     * the tick handler reaches them through [OMLBlockTickEvent.slots]. A machine has at most one
+     * layout: declaring a second time throws.
+     */
+    var slotLayout: OMLSlotLayout? = null
+        private set
+
+    /** Gives the machine [rows] × 9 item slots under [title] (the chest interface when opened). */
+    fun slots(rows: Int, title: String) {
+        check(slotLayout == null) { "slots { } can only be declared once per block entity" }
+        slotLayout = OMLSlotLayout(rows, title)
+    }
 
     /** Runs once per game tick while the block's chunk is loaded, server side only. */
     fun tick(handler: (OMLBlockTickEvent) -> Unit) {

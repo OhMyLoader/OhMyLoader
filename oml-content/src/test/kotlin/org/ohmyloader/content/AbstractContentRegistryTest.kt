@@ -259,7 +259,33 @@ class AbstractContentRegistryTest {
         assertEquals(1, ticks)
     }
 
-    private fun omlTickEvent() = org.ohmyloader.api.content.OMLBlockTickEvent(1, 2, 3, NoopBlockData) { "level" }
+    @Test
+    fun `slot layouts are declared once with a sane row count`() {
+        val registry = RecordingRegistry()
+        val facade = registry.forNamespace("mymod")
+        facade.declareBlock("machine") {
+            blockEntity {
+                slots(rows = 2, title = "Machine")
+            }
+        }
+        // a second layout is a structural error, same shape as a second blockEntity { }
+        assertFailsWith<IllegalStateException> {
+            facade.declareBlock("machine2") { blockEntity { slots(1, "a"); slots(1, "b") } }
+        }.let { assertTrue("only be declared once" in it.message!!) }
+        // the chest interface comes in six geometries; anything else is a typo
+        assertFailsWith<IllegalArgumentException> {
+            facade.declareBlock("machine3") { blockEntity { slots(7, "too many") } }
+        }.let { assertTrue("1-6 rows" in it.message!!) }
+
+        registry.materializeAll()
+        val layout = registry.blocks.single().spec.blockEntityDeclaration?.slotLayout
+            ?: fail("the slot layout must survive the trip")
+        assertEquals(2, layout.rows)
+        assertEquals(18, layout.size)
+        assertEquals("Machine", layout.title)
+    }
+
+    private fun omlTickEvent() = org.ohmyloader.api.content.OMLBlockTickEvent(1, 2, 3, NoopBlockData, { "level" }) { null }
 
     private object NoopBlockData : org.ohmyloader.api.content.OMLBlockData {
         override fun getInt(key: String, default: Int) = default

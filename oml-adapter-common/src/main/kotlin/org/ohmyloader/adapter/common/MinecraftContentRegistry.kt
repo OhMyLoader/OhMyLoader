@@ -113,7 +113,7 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
             (block as? OMLBlockEntityBlock)?.let { machineBlock ->
                 var typeRef: BlockEntityType<OMLMachineBlockEntity>? = null
                 val entityType = BlockEntityType(
-                    { pos, state -> OMLMachineBlockEntity(typeRef!!, pos, state) },
+                    { pos, state -> OMLMachineBlockEntity(typeRef!!, pos, state, blockEntitySpec!!.slotLayout) },
                     setOf(machineBlock),
                 )
                 typeRef = entityType
