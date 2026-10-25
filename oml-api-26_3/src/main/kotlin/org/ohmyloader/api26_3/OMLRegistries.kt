@@ -21,6 +21,7 @@ import net.minecraft.world.entity.EntityType
 import net.minecraft.world.entity.ai.attributes.Attribute
 import net.minecraft.world.entity.ai.attributes.AttributeModifier
 import net.minecraft.world.item.Item
+import net.minecraft.world.item.crafting.RecipeHolder
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.state.BlockState
@@ -50,6 +51,16 @@ object OMLRegistries {
     fun entityType(id: String): EntityType<*>? = BuiltInRegistries.ENTITY_TYPE.byId(id)
 
     fun particleType(id: String): ParticleType<*>? = BuiltInRegistries.PARTICLE_TYPE.byId(id)
+
+    /**
+     * A recipe holder by full id — the shape `awardRecipes`/`removeRecipes` take. Null when no
+     * server is running (the recipe table is server state) or the id names no recipe.
+     */
+    fun recipeHolder(id: String): RecipeHolder<*>? {
+        val location = location(id) ?: return null
+        val server = OMLGame.server ?: return null
+        return server.recipeManager.byKey(ResourceKey.create(Registries.RECIPE, location)).orElse(null)
+    }
 
     fun attribute(id: String): Holder<Attribute>? = BuiltInRegistries.ATTRIBUTE.holderById(id)
 

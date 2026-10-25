@@ -169,6 +169,15 @@ fun ServerLevel.setWeather(raining: Boolean, thundering: Boolean = raining, dura
     return weatherData.isRaining == raining && weatherData.isThundering == thundering
 }
 
+/**
+ * An explosion at [x], [y], [z] with [power] (creepers ~3, TNT 4, charged creepers 6), on the game's
+ * own block path — it breaks blocks, drops what it drops and hurts whatever stands there, exactly
+ * as the game's own explosions do.
+ */
+fun ServerLevel.explode(power: Float, x: Double, y: Double, z: Double) {
+    explode(null, x, y, z, power, Level.ExplosionInteraction.TNT)
+}
+
 /** The clock this dimension runs on, or null when its dimension type names none — the Nether declares none,
  * so nothing there reads or writes time. */
 val Level.clock: Holder<WorldClock>? get() = dimensionType().defaultClock().orElse(null)

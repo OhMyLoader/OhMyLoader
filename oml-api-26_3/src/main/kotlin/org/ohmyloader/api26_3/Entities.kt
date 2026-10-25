@@ -13,11 +13,14 @@ import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.entity.ai.attributes.AttributeInstance
 import net.minecraft.world.entity.ai.attributes.AttributeModifier
+import net.minecraft.server.level.ServerBossEvent
+import net.minecraft.world.BossEvent
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.ClipContext
 import net.minecraft.world.level.portal.TeleportTransition
 import net.minecraft.world.phys.HitResult
+import java.util.UUID
 import net.minecraft.world.phys.Vec3
 
 /** Registry id of this entity's type, e.g. `minecraft:cow`. */
@@ -312,4 +315,91 @@ val Player.saturation: Float
 /** Feeds the player [food] points of hunger and [saturation] to carry — the game's own `eat`. */
 fun Player.feed(food: Int, saturation: Float) {
     foodData.eat(food, saturation)
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Abilities and the recipe book — the two survival knobs a utility mod reaches for after the bars
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** Whether the game lets this player start flying; writing it syncs to the client with the game's own packet. */
+var Player.allowFlight: Boolean
+    get() = abilities.mayfly
+    set(value) {
+        abilities.mayfly = value
+        if (!value && abilities.flying) abilities.flying = false
+        onUpdateAbilities()
+    }
+
+/** Whether the player is flying right now; write false to land them, true only sticks when [allowFlight] holds. */
+var Player.isFlying: Boolean
+    get() = abilities.flying
+    set(value) {
+        abilities.flying = if (value) abilities.mayfly else false
+        onUpdateAbilities()
+    }
+
+/** Whether nothing may harm this player — the game's own flag, which its own damage checks read. */
+var Player.invulnerable: Boolean
+    get() = abilities.invulnerable
+    set(value) {
+        abilities.invulnerable = value
+        onUpdateAbilities()
+    }
+
+/**
+ * Unlocks [recipeIds] (`techmod:techmod_raw_copper`, bare ids resolve in the mod's own namespace is
+ * NOT supported here — use full ids) in this player's recipe book. Answers how many were newly
+ * unlocked; an unknown id counts as zero.
+ */
+fun Player.grantRecipes(recipeIds: List<String>): Int {
+    val holders = recipeIds.mapNotNull { OMLRegistries.recipeHolder(it) }
+    return awardRecipes(holders)
+}
+
+/** Locks [recipeIds] again; answers how many were actually removed from the book. */
+fun ServerPlayer.revokeRecipes(recipeIds: List<String>): Int {
+    val holders = recipeIds.mapNotNull { OMLRegistries.recipeHolder(it) }
+    return resetRecipes(holders)
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Boss bars — the game's own bar, addressed by name
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * One boss bar a mod shows to its players: the game's own `ServerBossEvent`, so the look, the
+ * positioning and the per-player sync are vanilla's. Create one, `players +=` who should see it,
+ * write [progress] as the fight goes, and [remove] it at the end.
+ */
+class OMLBossBar(title: String) {
+    private val event = ServerBossEvent(
+        UUID.randomUUID(), Component.literal(title), BossEvent.BossBarColor.PURPLE, BossEvent.BossBarOverlay.PROGRESS,
+    )
+
+    /** The bar's title, changeable mid-fight. */
+    var title: String
+        get() = event.name.string
+        set(value) { event.name = Component.literal(value) }
+
+    /** How much of the bar is filled: 0.0 to 1.0. */
+    var progress: Float
+        get() = event.progress
+        set(value) { event.progress = value.coerceIn(0f, 1f) }
+
+    /** Whether the bar is shown to its players at all — the game's own visibility toggle. */
+    var visible: Boolean
+        get() = event.isVisible
+        set(value) { event.isVisible = value }
+
+    /** Adds a player to the audience; the bar appears on that client through the game's own packet. */
+    fun addPlayer(player: ServerPlayer) = event.addPlayer(player)
+
+    /** Takes a player off the audience; the bar leaves that client. */
+    fun removePlayer(player: ServerPlayer) = event.removePlayer(player)
+
+    /** Takes everyone off the audience — the end-of-fight cleanup. */
+    fun removeAllPlayers() = event.removeAllPlayers()
+
+    /** The players currently seeing this bar, as the game counts them. */
+    val players: Collection<ServerPlayer> get() = event.players
 }
