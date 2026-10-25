@@ -1,3 +1,4 @@
+import org.gradle.api.tasks.bundling.AbstractArchiveTask
 import org.jetbrains.gradle.ext.Gradle
 import org.jetbrains.gradle.ext.runConfigurations
 import org.jetbrains.gradle.ext.settings
@@ -19,5 +20,14 @@ idea {
                 }
             }
         }
+    }
+}
+
+// The release gate compares rebuilt Maven artifacts with the staged ones by SHA-256. The archive
+// timestamp and entry order must therefore be inputs, not properties of the machine or the clock.
+subprojects {
+    tasks.withType<AbstractArchiveTask>().configureEach {
+        isPreserveFileTimestamps = false
+        isReproducibleFileOrder = true
     }
 }

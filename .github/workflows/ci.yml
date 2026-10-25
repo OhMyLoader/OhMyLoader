@@ -69,6 +69,29 @@ jobs:
         working-directory: oml-native
         run: zig build test
       - run: ./gradlew ${OML_VERSION:+-Poml_version=$OML_VERSION} build
+      # The verification mod consumes this exact staging directory; the release job rebuilds and
+      # compares against it before publishing. Building it once here keeps the e2e input independent
+      # of a second packaging run.
+      - name: Stage the Maven artifacts for the release-e2e gate
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+          ./gradlew -Poml_version="${OML_VERSION:?tag version missing}" \
+            -Dmaven.repo.local="$RUNNER_TEMP/loader-m2" publishToMavenLocal
+          mkdir -p "$RUNNER_TEMP/loader-staging"
+          cp -R "$RUNNER_TEMP/loader-m2/org" "$RUNNER_TEMP/loader-staging/"
+          (
+            cd "$RUNNER_TEMP/loader-staging"
+            find org/ohmyloader -type f ! -name 'maven-metadata-local.xml' -print0 \
+              | sort -z | xargs -0 sha256sum > SHA256SUMS
+            tar -czf "$RUNNER_TEMP/loader-staging.tgz" org SHA256SUMS
+          )
+      - uses: actions/upload-artifact@v7
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          name: loader-staging-maven
+          path: ${{ runner.temp }}/loader-staging.tgz
+          if-no-files-found: error
       # `build` never executes the artifact it ships. The Java 8 bootstrap, the Main-Class, the
       # embedded layer, the packaged natives and both message bundles are only proven by running the
       # jar — and this runs before the upload, so a jar that cannot install is never published.
@@ -137,6 +160,131 @@ jobs:
             echo "$suite ran against the real oml-native.dll"
           done
 
+  # A tag is publishable only after the verification mod boots this tag's loader on both sides.
+  # GitHub does not allow expressions in `uses`, so the verification repo is checked out at the
+  # pin in vars.OML_TESTMOD_REF and its scripts are run directly; vars.OML_GRADLE_REF pins the
+  # plugin. The gate fails when either pin is unset: an unpinned verification is not evidence.
+  e2e-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Require pinned verification refs
+        env:
+          TESTMOD_REF: ${{ vars.OML_TESTMOD_REF }}
+          GRADLE_REF: ${{ vars.OML_GRADLE_REF }}
+        run: |
+          if [ -z "$TESTMOD_REF" ]; then
+            echo "::error::set the OML_TESTMOD_REF repository variable to the TestMod commit this release is verified against"
+            exit 1
+          fi
+          if [ -z "$GRADLE_REF" ]; then
+            echo "::error::set the OML_GRADLE_REF repository variable to the Gradle plugin commit this release is verified against"
+            exit 1
+          fi
+      - name: Checkout the verification mod
+        uses: actions/checkout@v7
+        with:
+          repository: OhMyLoader/OhMyLoaderTestMod
+          ref: ${{ vars.OML_TESTMOD_REF }}
+          path: OhMyLoaderTestMod
+      - name: Checkout the loader under test
+        uses: actions/checkout@v7
+        with:
+          repository: OhMyLoader/OhMyLoader
+          ref: ${{ github.sha }}
+          path: OhMyLoaderTestMod/OhMyLoader
+      - name: Checkout the Gradle plugin under test
+        uses: actions/checkout@v7
+        with:
+          repository: OhMyLoader/OhMyLoaderGradle
+          ref: ${{ vars.OML_GRADLE_REF }}
+          path: OhMyLoaderTestMod/OhMyLoaderGradle
+      - name: Download the artifacts the build job staged
+        uses: actions/download-artifact@v8
+        with:
+          name: loader-staging-maven
+          path: ${{ runner.temp }}/loader-staging
+      - name: Install the tested artifacts into mavenLocal
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/loader-staging-extracted"
+          tar -xzf "$RUNNER_TEMP/loader-staging/loader-staging.tgz" \
+            -C "$RUNNER_TEMP/loader-staging-extracted"
+          cd "$RUNNER_TEMP/loader-staging-extracted"
+          sha256sum --check SHA256SUMS
+          mkdir -p "$HOME/.m2/repository"
+          cp -R org "$HOME/.m2/repository/"
+          mkdir -p "$GITHUB_WORKSPACE/OhMyLoaderTestMod/build"
+          cp SHA256SUMS "$GITHUB_WORKSPACE/OhMyLoaderTestMod/build/loader-staging-SHA256SUMS"
+      - uses: actions/setup-java@v6
+        with:
+          distribution: zulu
+          java-version: '27'
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.0
+      - uses: gradle/actions/setup-gradle@v6
+      - uses: actions/cache@v6
+        with:
+          path: ~/.gradle/caches/build-cache-*
+          key: gradle-build-cache-${{ runner.os }}-${{ hashFiles('OhMyLoaderTestMod/**/*.kt', 'OhMyLoaderTestMod/**/*.kts', 'OhMyLoaderTestMod/**/*.java', 'OhMyLoaderTestMod/gradle/libs.versions.toml', 'OhMyLoaderTestMod/gradle.properties') }}
+          restore-keys: |
+            gradle-build-cache-${{ runner.os }}-
+      - uses: actions/cache@v6
+        with:
+          path: |
+            OhMyLoaderTestMod/run/${{ vars.OML_GAME_VERSION || '26.3' }}/minecraft
+            OhMyLoaderTestMod/run/${{ vars.OML_GAME_VERSION || '26.3' }}/libraries
+            OhMyLoaderTestMod/run/${{ vars.OML_GAME_VERSION || '26.3' }}/natives
+          key: game-files-${{ vars.OML_GAME_VERSION || '26.3' }}-${{ hashFiles('OhMyLoaderTestMod/gradle.properties', 'OhMyLoaderTestMod/build.gradle.kts') }}
+      - name: Headless rendering stack
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            xvfb mesa-vulkan-drivers libgl1-mesa-dri libglx-mesa0 libopenal1
+      - name: Release gate end-to-end
+        working-directory: OhMyLoaderTestMod
+        env:
+          OML_GAME_VERSION: ${{ vars.OML_GAME_VERSION || '26.3' }}
+          OML_GATE_VERSION: ${{ github.ref_name }}
+          OML_E2E_USE_STAGED_LOADER: '1'
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          MESA_LOADER_DRIVER_OVERRIDE: llvmpipe
+          OML_E2E_TIMEOUT: '900'
+          OML_E2E_WATCHDOG: '840'
+          OML_E2E_GRACE_SECONDS: '720'
+        run: bash ./scripts/ci-e2e.sh
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: release-e2e-evidence
+          path: |
+            OhMyLoaderTestMod/build/e2e-*.log
+            OhMyLoaderTestMod/build/e2e-*.json
+            OhMyLoaderTestMod/build/loader-staging-SHA256SUMS
+            OhMyLoaderTestMod/run/client/logs/latest.log
+            OhMyLoaderTestMod/run/client/crash-reports/**
+            OhMyLoaderTestMod/run/client/hs_err_pid*.log
+            OhMyLoaderTestMod/run/client/options.txt
+            OhMyLoaderTestMod/run/server/logs/latest.log
+            OhMyLoaderTestMod/run/server/logs/oml-console.log
+            OhMyLoaderTestMod/run/server/crash-reports/**
+            OhMyLoaderTestMod/run/server/hs_err_pid*.log
+            OhMyLoaderTestMod/run/server/server.properties
+          if-no-files-found: warn
+      - name: The release gate must leave a verdict
+        if: success()
+        run: |
+          for file in \
+            OhMyLoaderTestMod/build/e2e-result-server.json \
+            OhMyLoaderTestMod/build/e2e-result-client.json \
+            OhMyLoaderTestMod/build/e2e-result-multiplayer-server.json \
+            OhMyLoaderTestMod/build/e2e-result-multiplayer-client.json; do
+            test -f "$file" || { echo "::error::missing e2e evidence: $file"; exit 1; }
+          done
+
   # Tag build: all Maven coordinates published to GitHub Packages (the interim Maven server
   # until a dedicated one exists) with the proper version via -Poml_version, and the installer
   # fat jar built by the build job above — carrying the same version, because that job received
@@ -145,10 +293,11 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     # windows-test is a prerequisite because the release publishes oml-native and ships the installer:
     # that job is the only coverage of the Windows library load and the installer's Windows branches,
-    # and a release must not go out while either is red.
-    needs: [build, windows-test]
+    # and a release must not go out while either is red. e2e-release is the only job that boots the
+    # tagged loader; without it the release evidence would contain zero game launches.
+    needs: [build, windows-test, e2e-release]
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     permissions:
       contents: write
       packages: write
@@ -165,6 +314,32 @@ jobs:
         with:
           version: 0.17.0
       - uses: gradle/actions/setup-gradle@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: loader-staging-maven
+          path: ${{ runner.temp }}/loader-staging
+      - name: Verify the staged artifact manifest
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/loader-staging-extracted"
+          tar -xzf "$RUNNER_TEMP/loader-staging/loader-staging.tgz" \
+            -C "$RUNNER_TEMP/loader-staging-extracted"
+          cd "$RUNNER_TEMP/loader-staging-extracted"
+          sha256sum --check SHA256SUMS
+      # The release must ship the bytes the e2e gate verified. Rebuild them here and compare before
+      # touching GitHub Packages; a mismatch fails the tag instead of publishing a different tree.
+      - name: Rebuild and compare against the tested bytes
+        run: |
+          set -euo pipefail
+          ./gradlew -Poml_version="${GITHUB_REF_NAME#v}" \
+            -Dmaven.repo.local="$RUNNER_TEMP/release-m2" publishToMavenLocal
+          (
+            cd "$RUNNER_TEMP/release-m2"
+            find org/ohmyloader -type f ! -name 'maven-metadata-local.xml' -print0 \
+              | sort -z | xargs -0 sha256sum > "$RUNNER_TEMP/release-SHA256SUMS"
+          )
+          diff -u "$RUNNER_TEMP/loader-staging-extracted/SHA256SUMS" \
+            "$RUNNER_TEMP/release-SHA256SUMS"
       - run: ./gradlew -Poml_version="${GITHUB_REF_NAME#v}" publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -176,7 +351,11 @@ jobs:
       # from `build`, this fails the job instead of publishing a release with nothing attached.
       - name: The installer fat jar must exist before publishing
         run: ls -l dist/oml-installer-*.jar
+      - name: Record the installer checksum
+        run: sha256sum dist/oml-installer-*.jar > dist/oml-installer.sha256
       - uses: softprops/action-gh-release@v3
         with:
-          files: dist/oml-installer-*.jar
+          files: |
+            dist/oml-installer-*.jar
+            dist/oml-installer.sha256
           fail_on_unmatched_files: true
