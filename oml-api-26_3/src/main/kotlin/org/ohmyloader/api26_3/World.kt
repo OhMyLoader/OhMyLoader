@@ -10,6 +10,8 @@ import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.Container
 import net.minecraft.world.clock.WorldClock
 import net.minecraft.world.entity.Entity
+import net.minecraft.world.entity.item.ItemEntity
+import net.minecraft.world.item.ItemStack
 import net.minecraft.world.entity.EntitySpawnReason
 import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.level.Level
@@ -55,6 +57,28 @@ fun Level.setBlockAt(pos: BlockPos, state: BlockState): Boolean {
     if (!isLoaded(pos)) return false
     setBlockAndUpdate(pos, state)
     return getBlockState(pos) == state
+}
+
+/**
+ * Breaks the block at [pos] the way the game's own player break does: with its drops, the break
+ * effects, and the block-entity cleanup — [destroyBlock]'s `dropBlock` path over the game's
+ * update flags. False for an unloaded position or a break the game refused; the surviving block
+ * id (usually air) is readable back through [blockIdAt] as the verdict.
+ */
+fun Level.destroyBlock(pos: BlockPos): Boolean {
+    if (!isLoaded(pos)) return false
+    return destroyBlock(pos, true, null, 512)
+}
+
+/**
+ * Drops [stack] into the world as a real item entity at [x], [y], [z] — the game's own
+ * `ItemEntity` plus `addFreshEntity`, so pickup, stacking and despawn are vanilla's. Returns the
+ * spawned entity, or null on a client-side level (spawns are server-authoritative).
+ */
+fun Level.dropItem(stack: ItemStack, x: Double, y: Double, z: Double): ItemEntity? {
+    if (isClientSide || stack.isEmpty) return null
+    val entity = ItemEntity(this, x, y, z, stack.copy())
+    return if (addFreshEntity(entity)) entity else null
 }
 
 /** Registry id of this state's block, e.g. `minecraft:chest`. */

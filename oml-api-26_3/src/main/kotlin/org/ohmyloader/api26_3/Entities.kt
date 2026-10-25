@@ -1,5 +1,6 @@
 package org.ohmyloader.api26_3
 
+import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.network.chat.Component
 import net.minecraft.network.protocol.game.ClientboundSystemChatPacket
@@ -14,7 +15,9 @@ import net.minecraft.world.entity.ai.attributes.AttributeInstance
 import net.minecraft.world.entity.ai.attributes.AttributeModifier
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.item.ItemStack
+import net.minecraft.world.level.ClipContext
 import net.minecraft.world.level.portal.TeleportTransition
+import net.minecraft.world.phys.HitResult
 import net.minecraft.world.phys.Vec3
 
 /** Registry id of this entity's type, e.g. `minecraft:cow`. */
@@ -255,4 +258,58 @@ fun Player.playSound(soundId: String, volume: Float = 1f, pitch: Float = 1f): Bo
     val event = OMLRegistries.soundEvent(soundId) ?: return false
     playSound(event, volume, pitch)
     return true
+}
+
+/**
+ * What this player's eyes land on within [distance] blocks: the block id and position when the ray
+ * stops against a block, or null when it reaches [distance] without hitting one. This is the
+ * game's own block clip (`BlockGetter.clip`) over the eye position and view vector, so shapes,
+ * not just full cubes, are what stops the ray.
+ */
+fun Player.raycast(distance: Double): OMLRayHit? {
+    val from = getEyePosition()
+    val to = from.add(getViewVector(1.0f).scale(distance))
+    val hit = level().clip(
+        ClipContext(from, to, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, this),
+    )
+    if (hit.type != HitResult.Type.BLOCK) return null
+    return OMLRayHit(level().getBlockState(hit.blockPos).blockId, hit.blockPos)
+}
+
+/** One [Player.raycast] answer: the block id the ray stopped against, and where. */
+class OMLRayHit(val blockId: String, val position: BlockPos)
+
+/**
+ * Gives [points] of experience (the game's own `giveExperiencePoints`, which handles level-ups);
+ * negative points take away, stopping at zero total. The level/progress views update immediately.
+ */
+fun Player.giveXp(points: Int) {
+    giveExperiencePoints(points)
+}
+
+/** The player's current experience level. */
+val Player.xpLevel: Int get() = experienceLevel
+
+/** How far into the current level the player is: 0.0 (just leveled) to (just under) 1.0. */
+val Player.xpProgress: Float get() = experienceProgress
+
+/**
+ * The player's hunger: 0–20 (the game's own scale). [setFoodLevel] clamps to the game's window;
+ * 20 with saturation is a fed player, 0 begins starvation on the game's own schedule.
+ */
+val Player.foodLevel: Int
+    get() = foodData.foodLevel
+
+/** Writes the hunger bar; the game clamps and applies its own starvation rules from the next tick. */
+fun Player.setFoodLevel(level: Int) {
+    foodData.setFoodLevel(level)
+}
+
+/** The player's saturation, 0 to the food level: what keeps the hunger bar from draining. */
+val Player.saturation: Float
+    get() = foodData.saturationLevel
+
+/** Feeds the player [food] points of hunger and [saturation] to carry — the game's own `eat`. */
+fun Player.feed(food: Int, saturation: Float) {
+    foodData.eat(food, saturation)
 }
