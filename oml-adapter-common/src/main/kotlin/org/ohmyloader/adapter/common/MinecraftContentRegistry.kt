@@ -71,6 +71,7 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
                             stepOnHandlers = decl.spec.stepOnHandlers.toList()
                             hitHandlers = decl.spec.hitHandlers.toList()
                             tickHandlers = blockEntitySpec.tickHandlers.toList()
+                            slotLayout = blockEntitySpec.slotLayout
                         }
 
                     decl.spec.stepOnHandlers.isNotEmpty() || decl.spec.hitHandlers.isNotEmpty() ->
@@ -108,15 +109,16 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
 
             // A declared block entity gets its own type, valid for exactly this block — the same
             // identifier the block registered under (different registries, so no clash). The
-            // supplier dereferences the type only when the first entity is created (a chunk load),
-            // long after this registration closes, which is what breaks the type/supplier cycle.
+            // supplier delegates to the block's own newBlockEntity, the one path the game's chunk
+            // promotion calls (LevelChunk.createBlockEntity): one wiring point for the layout, no
+            // second construction site to drift. The type is read only when the first entity is
+            // created (a chunk load), long after this registration closes, which is what breaks the
+            // type/supplier cycle.
             (block as? OMLBlockEntityBlock)?.let { machineBlock ->
-                var typeRef: BlockEntityType<OMLMachineBlockEntity>? = null
                 val entityType = BlockEntityType(
-                    { pos, state -> OMLMachineBlockEntity(typeRef!!, pos, state, blockEntitySpec!!.slotLayout) },
+                    { pos, state -> machineBlock.newBlockEntity(pos, state) },
                     setOf(machineBlock),
                 )
-                typeRef = entityType
                 machineBlock.attachEntityType(entityType)
                 registerIn(
                     "net.minecraft.core.registries.BuiltInRegistries",
