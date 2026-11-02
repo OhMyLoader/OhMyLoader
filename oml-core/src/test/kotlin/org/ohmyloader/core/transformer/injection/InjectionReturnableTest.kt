@@ -27,7 +27,7 @@ class InjectionReturnableTest {
     // ---------- end to end: define the class + really execute ----------
 
     @Test
-    fun `cancelled handler replaces the return value`() {
+    fun `canceled handler replaces the return value`() {
         val spec = returnableSpec("answer", "()I", capturesTargetArg = false, handler = "returnInt")
         val clazz = defineTarget(
             spec,
@@ -38,7 +38,7 @@ class InjectionReturnableTest {
     }
 
     @Test
-    fun `uncancelled handler leaves the original behaviour untouched`() {
+    fun `uncanceled handler leaves the original behavior untouched`() {
         val spec = returnableSpec("answer", "()I", capturesTargetArg = false, handler = "leaveAlone")
         val clazz = defineTarget(
             spec,
@@ -167,7 +167,7 @@ class InjectionReturnableTest {
     }
 
     @Test
-    fun `cancelling without setting a value yields the type's zero value`() {
+    fun `canceling without setting a value yields the type's zero value`() {
         // Cancel without setting a value: the typed accessor falls back to the zero value (not an NPE) —
         // this is exactly why the typed accessor was chosen over Object + unboxing
         val spec = returnableSpec("answer", "()I", capturesTargetArg = false, handler = "cancelOnly")

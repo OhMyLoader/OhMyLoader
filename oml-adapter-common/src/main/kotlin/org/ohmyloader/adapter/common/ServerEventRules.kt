@@ -209,7 +209,7 @@ internal fun InjectionBuilder.serverEventRules() {
     }
 
     classTarget("net/minecraft/world/entity/player/Player") {
-        // Cancelling skips the entire swing: the damage computation, knockback, crit, sound and the
+        // Canceling skips the entire swing: the damage computation, knockback, crit, sound and the
         // arm animation all sit after HEAD.
         method("attack", desc = "(Lnet/minecraft/world/entity/Entity;)V") {
             atHead {
@@ -304,7 +304,7 @@ internal fun InjectionBuilder.serverEventRules() {
 
     classTarget("net/minecraft/server/level/ServerPlayer") {
         // Server-side dispatch only: the client's player opens its own predicted menu, and a server
-        // event would count every screen twice in singleplayer. Cancelling answers OptionalInt.empty()
+        // event would count every screen twice in singleplayer. Canceling answers OptionalInt.empty()
         // — the game's own "nothing opened", so the click simply does nothing.
         method("openMenu", desc = "(Lnet/minecraft/world/MenuProvider;)Ljava/util/OptionalInt;") {
             atHead {

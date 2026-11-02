@@ -173,7 +173,7 @@ object EventBridge {
     }
 
     /**
-     * [ServerPlayerGameMode.destroyBlock head] Cancelling returns false from the break, which is the
+     * [ServerPlayerGameMode.destroyBlock head] Canceling returns false from the break, which is the
      * signal vanilla's own `destroyAndAck` uses to resend the block to the client — so the player sees
      * the block snap back without the mod sending anything.
      */
@@ -189,7 +189,7 @@ object EventBridge {
     }
 
     /**
-     * [Player.attack head] Cancelling skips the whole swing, animation and damage.
+     * [Player.attack head] Canceling skips the whole swing, animation and damage.
      *
      * The same click runs this method on the client's player *and* on the server's in singleplayer, so
      * only the server-side call is dispatched: one event per gameplay action.
@@ -203,7 +203,7 @@ object EventBridge {
     }
 
     /**
-     * [Player.interactOn head] Cancelling returns `InteractionResult.PASS`, which is what the game does
+     * [Player.interactOn head] Canceling returns `InteractionResult.PASS`, which is what the game does
      * when the entity declines the interaction — the click falls through to the block behind it.
      *
      * Server-side dispatch only, as in [onEntityAttack]: a client-side call would report a target the
@@ -227,7 +227,7 @@ object EventBridge {
     /**
      * [ServerPlayerGameMode.useItemOn head] The server-side half of a right-click on a block: the client
      * predicts its own `MultiPlayerGameMode` and sends the click, so this runs once per click on the
-     * server thread in singleplayer and on a dedicated server alike. Cancelling returns `FAIL`, the game's
+     * server thread in singleplayer and on a dedicated server alike. Canceling returns `FAIL`, the game's
      * own "the click did nothing" result — the client's prediction is rolled back by the packet the game
      * already schedules for a failed click.
      */
@@ -326,7 +326,7 @@ object EventBridge {
     }
 
     /**
-     * [LivingEntity.die head] Cancellable: cancelling stops the death routine, leaving the entity at zero
+     * [LivingEntity.die head] Cancellable: canceling stops the death routine, leaving the entity at zero
      * health — the same shape as the game's own totem path.
      */
     @JvmStatic
@@ -334,7 +334,7 @@ object EventBridge {
         EventDispatch.onLivingDied(entity, source)
 
     /**
-     * [ServerPlayer.openMenu head] Cancelling answers `OptionalInt.empty()` — the game's own "nothing
+     * [ServerPlayer.openMenu head] Canceling answers `OptionalInt.empty()` — the game's own "nothing
      * opened", so the click does nothing and no menu exists to clean up. The title comes from the
      * provider the game was about to open; a misbehaving provider degrades to an empty string rather
      * than taking the click down.

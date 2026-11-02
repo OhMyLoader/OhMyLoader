@@ -122,7 +122,7 @@ class MinecraftHookTransformer(private val idPrefix: String, private val shapes:
             }
             // GuiOpenEvent (cancellable). 26.3 renamed `setScreen` to `setScreenAndShow`, and the
             // method now also forces a frame: `Gui.setScreen(screen)` at offset 17 is followed by
-            // `renderFrame(false)`. Cancelling here therefore short-circuits both the screen swap and
+            // `renderFrame(false)`. Canceling here therefore short-circuits both the screen swap and
             // that forced frame — the hook must sit ahead of both, so HEAD is the only anchor that
             // covers the whole GUI-open path.
             method("setScreenAndShow", desc = "(Lnet/minecraft/client/gui/screens/Screen;)V") {

@@ -7,7 +7,7 @@ import kotlin.test.assertTrue
 
 /**
  * The tick queue's contract: a task runs on the thread that advances its own side, never before the
- * tick it was scheduled for, and a task that throws (or is cancelled) takes nothing else down with it.
+ * tick it was scheduled for, and a task that throws (or is canceled) takes nothing else down with it.
  * Tests drive [OMLScheduler.advance] directly, so "the next tick" is a call, not a wall-clock wait.
  */
 class OMLSchedulerTest {
@@ -26,7 +26,7 @@ class OMLSchedulerTest {
     }
 
     @Test
-    fun `a repeating task keeps its period until cancelled`() {
+    fun `a repeating task keeps its period until canceled`() {
         val fired = mutableListOf<Int>()
         var tick = 0
         val task = OMLScheduler.every(OMLSide.SERVER, intervalTicks = 3, initialDelay = 1) { fired += tick }
@@ -42,7 +42,7 @@ class OMLSchedulerTest {
             tick++
             OMLScheduler.advance(OMLSide.SERVER)
         }
-        assertEquals(4, fired.size, "a cancelled repeat stops at the next tick, not after a grace period")
+        assertEquals(4, fired.size, "a canceled repeat stops at the next tick, not after a grace period")
     }
 
     @Test

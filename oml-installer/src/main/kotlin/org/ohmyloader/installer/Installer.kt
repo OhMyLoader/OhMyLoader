@@ -268,8 +268,8 @@ object Installer {
 }
 
 /**
- * The catalogue key under which the snapshot-tracking adapter (`oml-adapter-snapshot`) is bundled.
- * The real snapshot id churns every week or two, so the catalogue pins the stable alias instead and
+ * The catalog key under which the snapshot-tracking adapter (`oml-adapter-snapshot`) is bundled.
+ * The real snapshot id churns every week or two, so the catalog pins the stable alias instead and
  * [resolveSnapshotAlias] resolves it to the manifest's latest snapshot at install time.
  */
 const val SNAPSHOT_ALIAS = "snapshot"
@@ -278,7 +278,7 @@ const val SNAPSHOT_ALIAS = "snapshot"
 const val SNAPSHOT_ADAPTER_ARTIFACT = "oml-adapter-snapshot"
 
 /**
- * Resolves the `snapshot` catalogue entry to its real version id. Everything written downstream —
+ * Resolves the `snapshot` catalog entry to its real version id. Everything written downstream —
  * the launcher version JSON's `inheritsFrom`, the game jar path, the server directory layout — must
  * carry the resolved id: launchers look vanilla versions up by exact id, and a literal "snapshot"
  * there would inherit from nothing.

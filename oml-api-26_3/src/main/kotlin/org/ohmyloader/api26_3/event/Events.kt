@@ -30,7 +30,7 @@ object Events {
     val CHAT_SENT = EventDefinition<ChatSentEvent>("chat_sent")
 
     /**
-     * Chat message received (cancellable; cancelling prevents it from being displayed). Dispatches on the
+     * Chat message received (cancellable; canceling prevents it from being displayed). Dispatches on the
      * client's game thread — the packet handlers re-dispatch there before this fires.
      */
     val CHAT_RECEIVED = EventDefinition<ChatReceivedEvent>("chat_received")

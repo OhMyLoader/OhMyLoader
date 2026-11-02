@@ -1,7 +1,7 @@
 plugins {
     id("oml.convention.kotlin-jvm")
     alias(libs.plugins.shadow)
-    // The bundled version catalogue and Prism's mmc-pack.json are handled with kotlinx.serialization.
+    // The bundled version catalog and Prism's mmc-pack.json are handled with kotlinx.serialization.
     alias(libs.plugins.kotlinPluginSerialization)
 }
 
@@ -33,11 +33,11 @@ tasks.jar { from(sourceSets.getByName("bootstrap").output) }
 // library layout.
 val embedShared = configurations.create("embedShared")
 
-// The version catalogue (oml-versions.json) and the embed wiring are BOTH generated from this
+// The version catalog (oml-versions.json) and the embed wiring are BOTH generated from this
 // map: game version -> adapter artifact id. The artifact id doubles as the project name (the thin
 // adapter modules publish under it) and as the file-name segment (`oml-adapter-<version with _>`)
 // the installer matches the user's version choice against. Adding a version = one entry here; the
-// configuration, the dependency, the packaged lib/ contents and the runtime catalogue all follow.
+// configuration, the dependency, the packaged lib/ contents and the runtime catalog all follow.
 // `snapshot` is an alias: the installer resolves it to the manifest's latest snapshot at install
 // time (AssetDownloader.resolveLatestSnapshotId) and installs under the real id.
 val bundledAdapters = mapOf(
@@ -138,7 +138,7 @@ val requiredJavaMajor = 27
 
 val generateVersionCatalog = tasks.register("generateVersionCatalog") {
     group = "ohmyloader"
-    description = "Write the version catalogue (oml-versions.json) the installer reads at runtime"
+    description = "Write the version catalog (oml-versions.json) the installer reads at runtime"
 
     // Locals of this configuration lambda, not script-level vals: the configuration cache cannot
     // serialize a Kotlin DSL script, so a task action may only close over plain values.
@@ -155,13 +155,13 @@ val generateVersionCatalog = tasks.register("generateVersionCatalog") {
     val javaMajorConst = Regex("""REQUIRED_JAVA_MAJOR\s*=\s*(\d+)""")
 
     outputs.dir(resourcesDir)
-    // the catalogue content is an input: a changed version list must re-run this task
+    // the catalog content is an input: a changed version list must re-run this task
     inputs.property("bundledVersions", versions.joinToString(","))
     inputs.property("javaMajor", javaMajor.toString())
     inputs.file(bootstrapSource)
 
     doLast {
-        // single source of truth: the catalogue value wins, the bootstrap copy must agree
+        // single source of truth: the catalog value wins, the bootstrap copy must agree
         val declared = javaMajorConst.find(bootstrapSource.readText())
             ?.groupValues?.get(1)?.toIntOrNull()
         require(declared == javaMajor) {

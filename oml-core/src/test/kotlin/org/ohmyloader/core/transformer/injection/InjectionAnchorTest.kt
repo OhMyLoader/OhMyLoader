@@ -422,7 +422,7 @@ class InjectionAnchorTest {
     }
 
     @Test
-    fun `within keeps head anchored cancelling payloads valid`() {
+    fun `within keeps head anchored canceling payloads valid`() {
         // Payload validation looks at the anchor **core** — a HEAD inside a window is still a
         // "method entry"
         val spec = spec {
@@ -570,13 +570,13 @@ class InjectionAnchorTest {
         Handlers.recorded.clear()
         clazz.getDeclaredMethod("m", String::class.java).invoke(null, "hello")
         assertEquals(listOf("hello"), Handlers.checked, "the hook fires exactly once, after the call")
-        assertEquals(listOf("hello"), Handlers.recorded, "not cancelled, the rest of the body runs")
+        assertEquals(listOf("hello"), Handlers.recorded, "not canceled, the rest of the body runs")
 
         Handlers.checked.clear()
         Handlers.recorded.clear()
         clazz.getDeclaredMethod("m", String::class.java).invoke(null, "cancel")
         assertEquals(listOf("cancel"), Handlers.checked)
-        assertTrue(Handlers.recorded.isEmpty(), "cancelled, the rest of the body is short-circuited")
+        assertTrue(Handlers.recorded.isEmpty(), "canceled, the rest of the body is short-circuited")
     }
 
     /**

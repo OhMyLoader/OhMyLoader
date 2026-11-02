@@ -23,7 +23,7 @@ fun pinStdoutToUtf8() {
 }
 
 // ---------------------------------------------------------------------------------------------------
-// Progress reporting: a real sink lets the GUI show "正在下载 (37/41)" and a percentage — an
+// Progress reporting: a real sink lets the GUI show "Downloading (37/41)" and a percentage — an
 // indeterminate bar over a 29 MB jar plus 41 libraries is indistinguishable from a hang.
 // ---------------------------------------------------------------------------------------------------
 interface ProgressSink {
@@ -283,7 +283,7 @@ class FatJarArtifactSource(
         /**
          * The fat jar this process is running from, located through `java.class.path`. A dev launch
          * puts many jars on the classpath and the first one is not necessarily this installer, so the
-         * pick prefers the jar carrying the installer's own catalogue resource; the first classpath
+         * pick prefers the jar carrying the installer's own catalog resource; the first classpath
          * jar stays the fallback (a packaged fat jar is the only jar there anyway).
          */
         fun runningJar(): File {
@@ -373,7 +373,7 @@ object VersionCatalog {
         val adapter: String = "",
     )
 
-    // The catalogue is our own artifact, but ignoreUnknownKeys keeps a future format bump from
+    // The catalog is our own artifact, but ignoreUnknownKeys keeps a future format bump from
     // breaking installs made with an older launcher build.
     private val json = Json { ignoreUnknownKeys = true }
 

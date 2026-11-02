@@ -393,7 +393,7 @@ fun launcherJvmArgs(props: RuntimeProperties): List<String> = props.asJvmArgs() 
  * - **`javaVersion`** — without it the launcher inherits the *vanilla* Java requirement, which can be
  *   older than what OML's own bytecode needs: an instant `UnsupportedClassVersionError` with nothing
  *   in the UI to explain it. HMCL and PCL2 both read this field. The `component` name is a placeholder:
- *   Mojang's runtime catalogue has no component for 26 or 27, so `majorVersion` is the authoritative
+ *   Mojang's runtime catalog has no component for 26 or 27, so `majorVersion` is the authoritative
  *   requirement and the launcher must resolve Java 27 itself.
  * - **`jar`** — points the classpath at the inherited vanilla jar explicitly. The installer also writes
  *   a manifest-only `<id>.jar` stub (launchers expect one next to the JSON), and leaving `jar` unset

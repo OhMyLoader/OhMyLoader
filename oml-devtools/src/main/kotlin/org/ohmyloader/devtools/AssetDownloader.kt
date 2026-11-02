@@ -96,7 +96,7 @@ object AssetDownloader {
      * `ProxySelector.getDefault()`, which only reads `-Dhttp(s).proxyHost` system properties, and
      * "use the OS settings" additionally needs `-Djava.net.useSystemProxies=true`. None of that is
      * reachable for a player who just double-clicked a jar — and for the mainland-China audience this
-     * is the number one cause of "下载失败".
+     * is the number one cause of a download failure.
      */
     @Volatile
     var proxyOverride: ProxySelector? = null

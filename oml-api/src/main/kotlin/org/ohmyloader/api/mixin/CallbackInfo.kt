@@ -22,7 +22,7 @@ open class CallbackInfo(val name: String, val cancellable: Boolean) {
 }
 
 /**
- * Callback handle for non-void target methods: besides cancelling, it can also **specify the target method's return value**.
+ * Callback handle for non-void target methods: besides canceling, it can also **specify the target method's return value**.
  * [setReturnValue] automatically [cancel]s (as in Mixin) — setting a value is "return right here"; calling only `cancel()` yields the
  * return type's zero value (`0` / `false` / `null`).
  * The typed accessors (`getReturnValueI` and friends) exist for the injected bytecode, which must feed the value to the target method's

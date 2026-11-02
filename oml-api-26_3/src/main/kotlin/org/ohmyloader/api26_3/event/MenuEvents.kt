@@ -6,7 +6,7 @@ import org.ohmyloader.api.event.Event
 
 /**
  * A player is about to open a menu (cancellable): a chest screen, a machine's own interface, any
- * [net.minecraft.world.MenuProvider] the game or a mod offers. Cancelling answers the game's
+ * [net.minecraft.world.MenuProvider] the game or a mod offers. Canceling answers the game's
  * "nothing opened", so the click simply does nothing.
  */
 class MenuOpenEvent(

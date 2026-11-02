@@ -345,7 +345,7 @@ class InstallerContractTest {
     // ------------------------------------------------------------------------------------------
 
     @Test
-    fun `the catalogue bundles the snapshot alias on the snapshot adapter`() {
+    fun `the catalog bundles the snapshot alias on the snapshot adapter`() {
         val entry = VersionCatalog.versions().firstOrNull { it.version == "snapshot" }
         assertNotNull(entry, "the installer must bundle the `snapshot` alias (AC-5)")
         assertEquals("oml-adapter-snapshot", entry.adapterArtifact)
@@ -373,11 +373,11 @@ class InstallerContractTest {
     }
 
     @Test
-    fun `every catalogue version's adapter ships under lib in the fat jar layout`() {
-        // The catalogue entry alone proves nothing: the fat jar must also carry the adapter jar
+    fun `every catalog version's adapter ships under lib in the fat jar layout`() {
+        // The catalog entry alone proves nothing: the fat jar must also carry the adapter jar
         // under lib/, or that version's install dies with err.fatjar.noLayer. Both halves are
         // generated from one map (bundledAdapters), so this asserts the generated halves against
-        // each other — a catalogue entry whose embed never materialized is exactly the failure a
+        // each other — a catalog entry whose embed never materialized is exactly the failure a
         // source-reading guard would miss (and did: the wiring behind this test outgrew its regex).
         val libDir = File("build/resources/main/lib")
         assertTrue(libDir.isDirectory, "this test must run from the oml-installer project directory")
@@ -385,7 +385,7 @@ class InstallerContractTest {
         for ((version, _, adapterArtifact) in VersionCatalog.versions()) {
             assertTrue(
                 shipped.any { it.startsWith("$adapterArtifact-") },
-                "lib/ lacks the adapter jar for catalogue version \"$version\" " +
+                "lib/ lacks the adapter jar for catalog version \"$version\" " +
                     "($adapterArtifact); shipped: $shipped",
             )
         }
@@ -412,16 +412,16 @@ class InstallerContractTest {
     }
 
     @Test
-    fun `runningJar picks the catalogue jar when present, else the documented first-jar fallback`() {
+    fun `runningJar picks the catalog jar when present, else the documented first-jar fallback`() {
         // A dev classpath holds many jars; the pick must be the installer fat jar when it is on the
-        // classpath (identified by its generated catalogue resource), never an arbitrary jar.
+        // classpath (identified by its generated catalog resource), never an arbitrary jar.
         val jar = runCatching { FatJarArtifactSource.runningJar() }.getOrNull() ?: return
         val firstCandidate = System.getProperty("java.class.path")?.split(File.pathSeparator)
             ?.firstOrNull { it.isNotBlank() && it.endsWith(".jar") }
         val hasCatalogue = java.util.zip.ZipFile(jar).use { it.getEntry("oml-versions.json") != null }
         assertTrue(
             hasCatalogue || (firstCandidate != null && jar.absolutePath == File(firstCandidate).absolutePath),
-            "runningJar must be the catalogue jar or the documented first-jar fallback",
+            "runningJar must be the catalog jar or the documented first-jar fallback",
         )
     }
 
@@ -637,7 +637,7 @@ class InstallerContractTest {
 
         val acknowledged =
             StandardLauncherTarget.validate(clientContext(gameDir, isolation = false, allowShared = true))
-        assertTrue(acknowledged.ok, "an explicit acknowledgement must be enough to proceed")
+        assertTrue(acknowledged.ok, "an explicit acknowledgment must be enough to proceed")
     }
 
     @Test

@@ -395,7 +395,7 @@ object OMLMixinRegistry {
                 // (0/false/null), and this is almost always a mistake
                 OmlLog.warn(
                     "Mixin",
-                    "a Mixin handler cancelled a non-void target but did not set a return value, will return the zero value " +
+                    "a Mixin handler canceled a non-void target but did not set a return value, will return the zero value " +
                         "(mod=${handler.modId}, ${handler.mixinClass}.${handler.handlerMethod} → " +
                         "${handler.targetMethod}); use ci.setReturnValue(v)",
                 )
