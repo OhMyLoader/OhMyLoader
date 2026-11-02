@@ -1,86 +1,79 @@
 # OhMyLoader (OML)
 
-一个面向 Minecraft Java Edition 26.x 的模组加载器：自研字节码注入引擎（替代 Mixin 底层）、两层 mod API
-（版本无关的声明与调度 + 直接以 26.3 原生类型表达的游戏访问层）、数据驱动的声明式内容注册，客户端与专用
-服务端双端支持。当前稳定主线为 26.3，全线运行在 Java 27 上。
+A mod loader for Minecraft Java Edition 26.x. It provides a custom bytecode injection engine, a two-layer
+mod API (version-neutral declarations and scheduling, plus a 26.3 access layer expressed in native game
+types), and declarative content registration. It supports the client and the dedicated server. The current
+stable line is 26.3; the stack runs on Java 27.
 
-## 特性
+## Features
 
-- **自研字节码注入引擎**：声明式注入 DSL + Mixin 类合并（`@Shadow` / `@Overwrite` / `@Accessor` …），
-  启动期对全部规则做存在性 / 签名 / `require` 自检，杜绝"规则静默失效"。
-- **统一 mod API**：`@Mod` 入口 + 函数式事件注册（tick（整服务端与逐世界）/ 服务端与玩家生命周期（含重生）/
-  方块与实体的破坏、右键、使用 / 伤害（数值可改写）/ 死亡 / 聊天 / GUI / 世界加载 / 区块开始运行与卸载 / HUD /
-  帧率限制 …）。
-  事件载荷直接携带游戏自己的对象（`ServerPlayer`、`BlockPos`、`BlockState`、`DamageSource`、`Screen`…），
-  mod 拿到的就是游戏正在用的那一个，没有包装层；个别句柄（命令源、网络上下文、已注册方块）保留 `platform` 逃生舱。
-- **26.3 游戏访问 API**（`org.ohmyloader.api26_3`）：`OMLGame.server` / `OMLGame.client` 就是
-  `MinecraftServer` / `Minecraft` 本身，其余能力全部是以游戏类型为实现者的扩展函数与属性——不分配包装对象，
-  也就没有跨 tick 失效的句柄。实体生成与查询（含活体专用入口）、运动向量、属性基础值与常驻修正、
-  主动造成伤害（走的正是会触发 `LIVING_HURT` 的那条路径）、点火、
-  方块状态（属性名寻址）读写、粒子（含自带参数的尘埃 / 物品 / 方块）、天气（读实时等级，写走 `/weather`
-  同一条路径）、游戏规则按 id 读写、按维度时钟（26.3 的 `world.clock`：计数 / 速率 / 暂停 / 具名时刻标记）、
-  时间线表按 id 读回（`clockDrivenBy` / `timeMarkersOf` / `markerIdsDriving`，含 `/time set` 不展示的标记）、
-  维度与维度类型读回（`dimensionTypeIds` / `dimensionTypeId` / `dimensionTypeById`，世界本身就是游戏为
-  数据包条目建起来的 `ServerLevel`）、强制加载票据（`forceLoadChunk` 走游戏的 `TicketType.FORCED`，读回同一张票据表）、
-  权限节点（按 id 寻址游戏自己的 `Permission.Atom`，`grantPermissionNode` 改的是 `ServerPlayer.permissions()`
-  的回答，命令闸门与聊天闸门都读这一处）、跨维度传送（`teleportToLevel` 走游戏的 `TeleportTransition`，返回的是
-  移动之后游戏持有的实例）、方块实体本体（`blockEntityAt`，未加载位置一律答 null）、声明式方块实体的持久数据
-  （`blockDataAt(pos)` / `server.blockDataAt(dimensionId, pos)` 取到的就是该方块 ticker 写的同一份存储；游戏按
-  每维度每位置各持有一个块实体，所以同坐标在两个维度里是两份互不相干的存储）、出生点与重生锚点（
-  `setRespawnAnchor` / `setWorldSpawn` 交回游戏自己的 `RespawnData` 并回读校验；世界出生点整个服务器只有一条
-  记录，换维度是重新指向这一条）、
-  方块存储（`containerAt` 返回游戏自己的 `Container`：槽位读写遵守方块自身的拒绝规则、可列出正在使用它的
-  玩家）、玩家所用菜单与关闭、穿戴槽（`itemIn` / `equip` / `unequip` 按槽名与 id 寻址，能否进某槽由游戏的
-  `isEquippableInSlot` 判定，被拒不改动原穿戴物）、效果、音效、传送、权限等级、区块加载判定与物品取出都在这一层。
-  `OMLScheduler`（版本无关）把非游戏线程的工作排回所属侧的 tick 队列。
-- **声明式内容注册**：`ContentRegistry` 声明方块 / 物品 / 配方 / 掉落 / 伤害类型 / 时钟与时刻标记 /
-  维度类型与维度 / 标签 / 行为钩子 / BlockEntity / 矿石世界生成；方块与物品在注册表冻结点材料化为原生内容，配方、
-  掉落、伤害类型、时钟 / 时间线、维度与标签则写成数据包 JSON 经 OML 注入的资源包走 vanilla 自己的重载路径。
-  标签文件按**标签自己的命名空间**落盘（`data/<标签 ns>/tags/<注册表路径>/<标签路径>.json`），所以加入
-  `#minecraft:is_fire` 与开一个自己的组是同一条声明路径，而多个 mod 提同一个标签时由 OML 合并成一个文件
-  （游戏每个标签只读一份文件），`replace` 相互矛盾的那一条会被点名拒绝而不是按顺序猜。
-- **注册表与标签读取**：直接读 `BuiltInRegistries` 与数据包表，`org.ohmyloader.api26_3` 的
-  `byId` / `ids` / `contains` / `membersOf` / `tagsOf` / `tagIds` 扩展按 id 寻址（未注册的 id 返回 null，不返回默认值），
-  mod 自己注册的内容与原版条目同等可查；`tagIds` 分得清"空标签"与"游戏没读到的标签"。
-- **自定义网络载荷**：`OMLNetworkProvider` 声明通道 + `OMLPacketBuffer` 自有编解码，双端按通道名路由
-  （复用 vanilla 固定的两个 payload 包 id），单人集成服务端与专用服务端共用同一份声明。
-- **mod 资产注入**：每个 mod jar 的 `assets/` 经注入的资源包对游戏完整可见（任意命名空间、任意目录）。
-- **双端支持**：客户端与专用服务端独立钩子；`oml.side` 选边。
-- **零映射**：26.x jar 未混淆，类名 / 成员名直接可读，无重映射链路。
+- **Injection engine.** A declarative injection DSL and Mixin class merging (`@Shadow`, `@Overwrite`,
+  `@Accessor`, and others). Every rule is checked at startup for target existence, signature, and `require`
+  counts; a bad rule fails the launch instead of silently doing less in game.
+- **Mod API.** `@Mod` entry points and lambda-based event registration for ticks, lifecycle, block and entity
+  interactions, damage, death, chat, GUI, world load, chunk lifecycle, HUD, and frame-rate limits. Event
+  payloads are the game's own objects (`ServerPlayer`, `BlockPos`, `BlockState`, `DamageSource`, `Screen`),
+  with no wrapper layer. Command sources, network contexts, and registered block handles expose a `platform`
+  handle where a typed surface is not yet available.
+- **26.3 access API (`org.ohmyloader.api26_3`).** `OMLGame.server` and `OMLGame.client` are
+  `MinecraftServer` and `Minecraft`. Other capabilities are extension functions and properties on game types,
+  so there are no wrapper objects or cross-tick stale handles. They cover entity spawn and query, motion,
+  attributes and modifiers, damage, ignition, block state read/write, particles, weather, game rules,
+  per-dimension clocks and timelines, dimensions and dimension types, forced chunks, permission nodes,
+  cross-dimension teleport, block entities and persistent block data, spawn and respawn anchors, containers,
+  menus, equipment, effects, sounds, teleport, permission levels, chunk load checks, and item removal.
+  `OMLScheduler` moves work from non-game threads back to the owning side's tick queue.
+- **Declarative content.** `ContentRegistry` declares blocks, items, recipes, drops, damage types, clocks and
+  markers, dimension types and dimensions, tags, behavior hooks, block entities, and ore worldgen. Blocks and
+  items materialize into native content at the registry freeze point; recipes, drops, damage types, clocks,
+  timelines, dimensions, and tags become data pack JSON in an injected resource pack. Tags use the tag's own
+  namespace (`data/<tag-ns>/tags/<registry>/<tag>.json`); OML merges multiple mods' entries into one file and
+  rejects conflicting `replace` declarations instead of choosing by load order.
+- **Registry and tag reads.** `byId`, `ids`, `contains`, `membersOf`, `tagsOf`, and `tagIds` address
+  `BuiltInRegistries` and data pack tables by id. Missing ids return null; `tagIds` distinguishes an empty tag
+  from a tag the game did not load.
+- **Custom network payloads.** `OMLNetworkProvider` declares channels and codecs with `OMLPacketBuffer`; both
+  sides route by channel name through vanilla's two payload packet ids. Singleplayer integrated servers and
+  dedicated servers share the declaration.
+- **Asset injection.** Each mod's `assets/` tree is visible to the game through the injected resource pack.
+- **Both sides.** Separate client and dedicated-server hooks; `oml.side` selects the side.
+- **No remapping.** 26.x jars are unobfuscated, so class and member names are readable and no remapping stage
+  exists.
 
-## 安装
+## Install
 
-从 [Releases](https://github.com/OhMyLoader/OhMyLoader/releases) 下载安装器，`java -jar` 启动，选择
-目标启动器（标准 / Prism / 专用服务端）、游戏版本与目录即可。游戏本体由启动器自行下载，安装器只装 OML 层。
+Download the installer from [Releases](https://github.com/OhMyLoader/OhMyLoader/releases), run `java -jar`,
+and select a launcher target (standard, Prism, or dedicated server), game version, and directory. The
+launcher downloads the game; the installer adds only the OML layer.
 
-## 写一个 mod
+## Write a mod
 
 ```kotlin
 @Mod(id = "my_mod", name = "My Mod", version = "1.0.0")
 class MyMod : OMLModInitializer {
   override fun onInitialize(context: ModContext) {
-    Events.CLIENT_TICK.register { /* 每逻辑 tick 处理 */ }
+    Events.CLIENT_TICK.register { /* per logical tick */ }
     Events.CHAT_RECEIVED.register { event ->
       if (event.message.contains("bad_word")) {
-        event.cancel() // 拦截聊天（cancellable 事件由 cancel() 取消，canceled 只读）
+        event.cancel() // cancellable events use cancel(); canceled is read-only
       }
-      // event.packet 就是收到的那条 Clientbound...Packet，不再只给 OML 预先消化过的文本
+      // event.packet is the received Clientbound...Packet, not pre-digested text
     }
     Events.BLOCK_BREAK.register { event ->
-      if (event.state.blockId == "minecraft:bedrock") event.cancel() // 玩家与坐标都是游戏对象
+      if (event.state.blockId == "minecraft:bedrock") event.cancel() // player and position are game objects
     }
   }
 }
 ```
 
-> mod 的编译类路径由官方 Gradle 插件挂好：`oml-api`、`oml-api-26_3`（按 `oml { minecraftVersion }`
-> 推导坐标）、游戏本体 jar 与该版本运行库。因此 mod 的类**不能**放在 `org.ohmyloader.` 前缀下——那一段
-> 是 parent-first，模组类会被启动器层定义，而启动器层没有游戏运行库，直接引用 `net.minecraft.*` 会以
-> `NoClassDefFoundError` 收场。加载器在扫描 `mods/` 时就会拒绝并跳过这种 jar，点名 jar 与被打进去的类；
-> `omlJar` 打包同样拒绝。
+The Gradle plugin supplies `oml-api`, `oml-api-26_3` (derived from `oml { minecraftVersion }`), the game jar,
+and the version's libraries. Mod classes must not use the `org.ohmyloader.` prefix. That prefix is
+parent-first: the launcher layer defines those classes without the game libraries, so the first
+`net.minecraft.*` reference fails with `NoClassDefFoundError`. The loader rejects and skips such a jar while
+scanning `mods/` and names the jar and packed classes; `omlJar` also rejects it.
 
-修改游戏内部未暴露的逻辑时，直接写注入规则（无需 Mixin）：规则放在一个 `@RuleSource` 标注、实现
-`RuleSetProvider` 的类里，由 loader 在启动期读取并自检。
+For game internals without an API, write an injection rule in a `@RuleSource` object that implements
+`RuleSetProvider`. The loader reads and checks it at startup.
 
 ```kotlin
 @RuleSource("my_mod")
@@ -89,7 +82,7 @@ object MyRules : RuleSetProvider {
     classTarget("net/minecraft/client/Minecraft") {
       method("runTick") {
         atHead { call("com/example/MyRules", "onGameTick", "()V") }
-        require(1) // 启动期强校验，杜绝规则静默失效
+        require(1) // startup check; a miss fails the launch
       }
       field("proxy", desc = "Ljava/net/Proxy;") {
         makePublic()
@@ -100,53 +93,76 @@ object MyRules : RuleSetProvider {
 }
 ```
 
-> mod 以 jar 形式分发。纯声明式内容可以免代码：把 `content/` 目录树（一文件一实体）连同自带 `assets/` 打成 **`.oml` 归档**
-> （普通 zip 改名）放进 `mods/`，归档名即命名空间。散装 `.toml` 文件不再受支持——它无法携带贴图，
-> 方块会渲染成缺失材质——loader 会对它明确报错并跳过。
+A mod ships as a jar. Pure declarative content can ship without code: put a `content/` tree (one file per
+entity) and its `assets/` into an `.oml` archive (a zip with the `.oml` extension) under `mods/`. The archive
+file name is the resource namespace; two archives with the same file name in different subdirectories
+conflict, and the loader refuses the later one. A loose `.toml` at the mods root is not supported because it
+cannot carry textures; the loader reports and skips it. Mod jars and `.oml` archives are discovered
+recursively under `mods/`; dot-directories are ignored.
 
-## 开发构建
+## Development build
 
-仓库拆分为三部分，互相只按 Maven 坐标消费：本仓（loader）、`OhMyLoaderGradle`（Gradle 插件）、
-`OhMyLoaderTestMod`（端到端验证模组）。开发闭环：
+The workspace separates the loader, Gradle plugin, and verification mod; they consume each other only through
+Maven coordinates.
 
 ```bash
-# 本仓改动后发布到本地 Maven 仓库：
+# After changing this repository, publish to the local Maven repository:
 ./gradlew publishToMavenLocal
-# 在 OhMyLoaderTestMod 构建并启动游戏（自动拉取游戏 jar / 运行库 / natives / 资产）：
+# In OhMyLoaderTestMod, build and launch the game
+# (the plugin fetches the game jar, libraries, natives, and assets):
 ./gradlew runClient
 ./gradlew runServer
-# 全量编译与单元测试（本仓）：
+# Compile and run unit tests in this repository:
 ./gradlew build
-# 产出安装器 fat jar（写入 dist/）：
+# Build the installer fat jar in dist/:
 ./gradlew :oml-installer:shadowJar
 ```
 
-**追快照**：testmod 的 `oml { minecraftVersion.set("snapshot") }` —— 运行期解析为版本清单里的
-`latest.snapshot`，adapter 使用 `oml-adapter-snapshot`（跟随快照迭代的工作副本），新快照发布无需改任何配置。
+**Snapshot tracking.** In the test mod, `oml { minecraftVersion.set("snapshot") }` resolves the manifest's
+`latest.snapshot` at runtime and uses `oml-adapter-snapshot`, so a new snapshot needs no configuration
+change.
 
-### 工具链
+### Toolchain
 
-JDK 27（Zulu）· Gradle 9.8.2 · Kotlin 2.5.0-Beta2（当前唯一声明 JVM 27 目标的 Kotlin 线；
-`build-logic` 因 `kotlin-dsl` 绑定 Gradle 内嵌编译器，暂以 JVM 26 目标运行，合法无害）。
+JDK 27 (Zulu), Gradle 9.8.2, and Kotlin 2.5.0-Beta2. Kotlin 2.5.0-Beta2 is currently the only line that
+declares JVM 27 as its target. `build-logic` runs on JVM 26 because `kotlin-dsl` binds to Gradle's embedded
+compiler; this is valid.
 
-### 追加说明
+### Modules
 
-- **模块结构**：`oml-core`（加载器内核：类加载 / 注入执行器 / Mixin 前端与类合并 / SPI）、
-  `oml-api`（版本无关的 mod API：事件基元、内容声明、调度、配置、网络、注入与 mixin）、
-  `oml-api-26_3`（26.3 版本面向 API：事件载荷与扩展函数直接命名游戏类型，必须由主加载器按 child-first
-  定义）、`oml-content`（版本无关的内容注册与 `.oml`/TOML 装载）、
-  `oml-launcher`（自举头）、`oml-adapter-common`（各版本共享的钩子、事件桥、内容材料化与网络桥）、
-  `oml-adapter-26_3` 与 `oml-adapter-snapshot`
-  （版本驱动层，薄）、`oml-native`（zig 构建的 C 库，Zstd 编解码）、`oml-devtools`（下载器）、
-  `oml-installer`（安装器，含 Java 8 引导 Stub）。
-- **调试开关**：`-Doml.injection.verify=fail|warn|off`（注入规则自检，默认 fail）；
-  `-Doml.diagnostics=<任意非 false 的值>`（改写耗时与规模统计，开关是布尔的，不取值）。
-- **installLauncher**：各 adapter 模块上的任务，把 OML 装进真实启动器（版本隔离必填：
-  `-PomlIsolation=true|false`，安装 id 用 `-PomlInstallId`，服务端实例加 `-PomlSide=server`）。
-- **平台**：工具链覆盖 windows / linux / osx（含 arm64 变体）；双端 E2E 门禁在 Linux 上真机验证，
-  Windows 侧尚未实测。
-- **路线图**：26.4 正式版适配（快照跟踪中）· 多版本矩阵（长期）· 分发渠道。
+- `oml-core`: loader core (class loading, injection executor, Mixin front end and class merging, SPI).
+- `oml-api`: version-neutral mod API (event primitives, content declarations, scheduling, config, network,
+  injection, and Mixin).
+- `oml-api-26_3`: 26.3-facing API; event payloads and extensions name game types directly. The main loader
+  must define it child-first.
+- `oml-content`: version-neutral content registration and `.oml`/TOML loading.
+- `oml-launcher`: bootstrap header.
+- `oml-adapter-common`: shared hooks, event bridge, content materialization, and network bridge.
+- `oml-adapter-26_3` and `oml-adapter-snapshot`: thin version drivers.
+- `oml-native`: Zig-built C library for Zstandard codecs.
+- `oml-devtools`: downloader.
+- `oml-installer`: installer, including the Java 8 bootstrap stub.
 
-## 许可证
+### Debug switches
 
-本项目依据 **AGPL-3.0** 许可证开源。
+- `-Doml.injection.verify=fail|warn|off`: injection rule self-check; default `fail`.
+- `-Doml.diagnostics=<any value except false>`: rewrite timing and size statistics; the switch is Boolean.
+
+### installLauncher
+
+Each adapter module exposes an `installLauncher` task that installs OML into a real launcher. Version
+isolation is required: `-PomlIsolation=true|false`; set the install id with `-PomlInstallId`; add
+`-PomlSide=server` for a server instance.
+
+### Platform
+
+The toolchain covers Windows, Linux, and macOS (including arm64). `runClient` and `runServer` have been
+verified on Windows; the dual-side E2E script gates run on Linux CI.
+
+### Roadmap
+
+26.4 stable adaptation (snapshot tracking), a multi-version matrix (long term), and distribution channels.
+
+## License
+
+AGPL-3.0.

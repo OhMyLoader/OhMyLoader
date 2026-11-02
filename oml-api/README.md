@@ -1,38 +1,43 @@
-# oml-api 稳定性声明与弃用策略
+# oml-api Stability and Deprecation Policy
 
-本文件是 `oml-api` 对 mod 作者的**兼容性契约**：哪些签名可以长期依赖、哪些允许随游戏版本演进、
-破坏性变更如何提前告知。版本号的唯一真源是仓库根 `gradle.properties` 的 `oml_version`（构建时
-戳进 `oml-core.properties`，运行期横幅与发布坐标都读它）。
+This file is the compatibility contract between `oml-api` and mod authors. It defines which signatures can be
+relied on, which may change with the game, and how breaking changes are announced. The version has one source:
+`oml_version` in the repository root `gradle.properties`. The build stamps it into `oml-core.properties`, and
+the runtime banner and published coordinates read it.
 
-## 三层稳定性
+## Three stability layers
 
-| 层                             | 内容                                                                                                                                                                          | 承诺                                                                                                              |
-|--------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------|
-| **契约层**                     | `@Mod` 入口、`OMLModInitializer` / `ModContext`、`Event` 基元与 `EventDefinition`、`ContentRegistry` 声明 DSL、注入 DSL（`@RuleSource` / `RuleSetProvider` / 锚点与改写原语） | 0.x 阶段：破坏性变更以 `!` 提交直接落地，不做弃用过渡，迁移方式逐条写入该提交的正文；1.0 起冻结，见下方版本号策略 |
-| **已提供、仍在沉淀**           | 命令 DSL（`command`）、配置（`config`）、网络（`network`）、按键 / HUD / 创造标签（`client`）、主线程调度器（`tick`）、`ModContext.config`                                    | 0.x 阶段允许随版本调整（调整记录进发布说明与 `docs/forensics.md`）；1.0 起升入契约层                              |
-| **版本面向（随游戏版本变动）** | `oml-api-26_3`：事件载荷与扩展函数直接命名 26.3 的类（`ServerPlayer` / `BlockPos` / `DamageSource` / `BuiltInRegistries`…）                                                   | 不承诺跨游戏版本兼容——它的兼容对象就是那一版游戏。换版本是换工件（`oml-api-<version>`），不是改调用写法           |
+| Layer | Content | Commitment |
+|---|---|---|
+| **Contract** | `@Mod` entry points, `OMLModInitializer` / `ModContext`, `Event` and `EventDefinition`, `ContentRegistry` declaration DSL, and injection DSL (`@RuleSource`, `RuleSetProvider`, anchors, rewrite primitives) | 0.x: breaking changes land directly with a `!` commit and no deprecation period; each migration step is in that commit's body. Frozen at 1.0; see the version policy below. |
+| **Provided, still settling** | Command DSL (`command`), config (`config`), network (`network`), keybinds/HUD/creative tabs (`client`), main-thread scheduler (`tick`), and `ModContext.config` | 0.x: may change between versions; record changes in release notes and `docs/forensics.md`. Moves into the contract layer at 1.0. |
+| **Version-facing** | `oml-api-26_3`: event payloads and extensions name 26.3 classes (`ServerPlayer`, `BlockPos`, `DamageSource`, `BuiltInRegistries`, and others) | No cross-game-version compatibility. Its compatibility target is that game version. A version change is a different artifact (`oml-api-<version>`), not a different call site. |
 
-判断一个签名属于哪一层：它若与游戏版本无关（声明、调度、事件基元、注入 DSL），就在本工件里，受契约
-承诺约束；它若命名了某个版本的游戏类型，就在 `oml-api-<version>` 里，跟着游戏版本走。本工件不提供游戏
-对象的包装层，也不提供 `platform` 之类的逃生舱——需要游戏类型的那一层直接就是游戏类型。
+A signature belongs to the version-neutral artifact if it does not name a game version (declarations,
+scheduling, event primitives, injection DSL); it is covered by the contract. A signature that names a game
+type belongs to `oml-api-<version>` and follows the game version. The version-neutral artifact does not wrap
+game objects and does not provide a `platform` escape hatch.
 
-## 版本号策略
+## Version policy
 
-- `0.x.y-SNAPSHOT`（当前）：主线开发版。`x` 变更代表一次允许破坏契约层的演进，破坏点逐条写入
-  发布说明；`y` 变更只携带修复与新增。
-- `1.0.0` 起：契约层冻结。破坏契约层的变更为**大版本**事件（`2.0.0`），旧签名经 `@Deprecated`
-  （附替换指引）保留到下一个大版本；弃用起在启动日志中以 WARN 提示一次。
-- "仍在沉淀"层在 1.0 之前不承诺兼容；进入 1.0 的内容会在发布说明中逐条宣布升层。
+- `0.x.y-SNAPSHOT` (current): mainline development. An `x` change is an allowed contract-layer evolution; list
+  each break in the release notes. A `y` change contains fixes and additions only.
+- From `1.0.0`: the contract layer is frozen. A contract break is a major version event (`2.0.0`). Deprecated
+  signatures remain until the next major with `@Deprecated` and a replacement; the runtime logs one WARN at
+  startup.
+- The settling layer has no compatibility promise before 1.0. Each item moved into 1.0 is announced in the
+  release notes.
 
-## 破坏性变更的执行方式
+## Breaking changes
 
-- 0.x 阶段（当前）：破坏性变更以 `!` 提交直接落地——被移除的签名不留弃用替身，迁移方式写入提交
-  正文的 Breaking 段（面向 mod 使用者用 "Breaking for mods:"，面向插件 / 内容包实现者用
-  "Breaking:"）；被移除表面的职责若随游戏版本演进（如事件载荷），移入
-  `oml-api-<game version>` 投影层而非保留在本工件。
-- 文档内：本文件的变更记录 + 发布说明逐条列出；面向 mod 作者的站点文档同步更新。
-- 1.0 起：破坏契约层的变更为大版本事件，旧签名经 `@Deprecated`（附 `ReplaceWith` 与原因）保留到
-  下一个大版本；弃用起在启动日志中以 WARN 提示一次，不加 `error` 级别的运行期拦截——mod 的运行
-  不该被弃用打断。
-- 仓库纪律：`oml-api` 的破坏性变更必须独立成提交（commit 信息里写明约束与迁移方式），
-  不与功能修改混排。
+- **0.x (current):** a breaking change lands directly with a `!` commit. Removed signatures are not kept as
+  deprecated shims. The migration goes in the commit body's Breaking section: `Breaking for mods:` for mod
+  authors and `Breaking:` for plugin and content-pack implementers. A removed surface that follows the game
+  version (for example, event payloads) moves into the `oml-api-<game version>` projection instead of staying
+  in this artifact.
+- **Documentation:** list the change in this file and in the release notes, and update the mod-author site.
+- **From 1.0:** a contract break is a major version event. Old signatures remain until the next major with
+  `@Deprecated`, `ReplaceWith`, and a reason; the runtime logs one WARN at startup. Deprecation does not add
+  an error-level runtime block; a mod must not stop running because of a deprecation.
+- **Repository discipline:** a breaking `oml-api` change is a separate commit with its constraint and
+  migration in the message. Do not mix it with feature work.
