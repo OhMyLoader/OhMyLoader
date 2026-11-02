@@ -23,6 +23,7 @@ import org.ohmyloader.core.mixin.OMLMixinRegistry
 import org.ohmyloader.core.mod.ModContainer
 import org.ohmyloader.core.mod.ModGraph
 import org.ohmyloader.core.mod.ModScanner
+import org.ohmyloader.core.mod.ModsDirectory
 import org.ohmyloader.core.network.PayloadDeclarations
 import org.ohmyloader.core.ruleset.ModRuleSets
 import org.ohmyloader.core.spi.IAdapter
@@ -306,9 +307,15 @@ object OMLCore {
     internal fun loadContentPacks(modsDir: File, contentRegistry: ContentRegistryFactory) {
         contentRegistryFactory = contentRegistry
         contentPackDir = modsDir
+        val namespaces = mutableMapOf<String, File>()
         for (pack in packFiles(modsDir)) {
             try {
                 val namespace = TomlContentLoader.namespaceOf(pack)
+                namespaces[namespace]?.let { previous ->
+                    throw IllegalStateException(
+                        "content pack namespace '$namespace' is already used by ${previous.path}; rename ${pack.path}",
+                    )
+                }
                 val sources = contentSources(pack)
                 if (sources.isEmpty()) {
                     throw IllegalStateException("the archive carries no content/ declarations")
@@ -322,6 +329,7 @@ object OMLCore {
                     )
                 }
                 flatContentNamespaces += namespace
+                namespaces[namespace] = pack
             } catch (t: Throwable) {
                 OmlLog.error("OMLCore", "Failed to load content pack ${pack.name}", t)
             }
@@ -329,12 +337,13 @@ object OMLCore {
     }
 
     private fun packFiles(modsDir: File): List<File> {
-        // Content packs ship as `mods/*.oml` archives: the declarations under `content/` plus the
-        // pack's own assets and data (`assets/<namespace>/...`, `data/<namespace>/...`), so a
-        // creator ships textures and lang files without a jar. The file name (minus extension) is
-        // the resource namespace. A loose `.toml` is not a pack form: it cannot carry assets, so
-        // its blocks render with missing textures — one found in the mods directory is reported
-        // and refused instead of loaded.
+        // Content packs ship as `.oml` archives anywhere under the mods directory (subdirectories
+        // included): the declarations under `content/` plus the pack's own assets and data
+        // (`assets/<namespace>/...`, `data/<namespace>/...`), so a creator ships textures and lang
+        // files without a jar. The file name (minus extension) is the resource namespace, so two
+        // same-named archives in different subdirectories are refused by the namespace check.
+        // A loose `.toml` is not a pack form: it cannot carry assets, so its blocks render with
+        // missing textures — one found at the mods root is reported and refused instead of loaded.
         for (stray in modsDir.listFiles { f -> f.isFile && f.name.endsWith(".toml", ignoreCase = true) }
             ?.sortedBy { it.name.lowercase() } ?: emptyList()) {
             OmlLog.warn(
@@ -343,8 +352,7 @@ object OMLCore {
                     "pack it as an .oml archive (content/ + assets/ at the root)",
             )
         }
-        return modsDir.listFiles { f -> f.isFile && f.name.endsWith(".oml", ignoreCase = true) }
-            ?.sortedBy { it.name.lowercase() } ?: emptyList()
+        return ModsDirectory.files(modsDir, ".oml", ignoreCase = true)
     }
 
     /** One per-entity declaration file inside a pack archive. */
@@ -409,9 +417,15 @@ object OMLCore {
         val dataRegistry = contentRegistry as? AbstractContentRegistry ?: return
         val modsDir = contentPackDir ?: return
         dataRegistry.clearDataDeclarations()
+        val namespaces = mutableMapOf<String, File>()
         for (pack in packFiles(modsDir)) {
             try {
                 val namespace = TomlContentLoader.namespaceOf(pack)
+                namespaces[namespace]?.let { previous ->
+                    throw IllegalStateException(
+                        "content pack namespace '$namespace' is already used by ${previous.path}; rename ${pack.path}",
+                    )
+                }
                 contentPackFiles += pack
                 val registry = contentRegistry.forNamespace(namespace, reloadable = true)
                 for (source in contentSources(pack)) {
@@ -424,6 +438,7 @@ object OMLCore {
                         )
                     }
                 }
+                namespaces[namespace] = pack
             } catch (t: Throwable) {
                 OmlLog.error("OMLCore", "Failed to reload content pack ${pack.name}", t)
             }

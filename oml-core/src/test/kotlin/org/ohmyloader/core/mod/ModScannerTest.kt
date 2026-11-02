@@ -81,6 +81,26 @@ class ModScannerTest {
     }
 
     @Test
+    fun `a jar in a subdirectory is discovered`() {
+        val modsDir = createTempDirectory("oml-mods").toFile()
+        val nested = File(modsDir, "group/deeper").apply { mkdirs() }
+        jarWith("org/example/TestMod.class").copyTo(File(nested, "nested.jar"))
+
+        val found = ModScanner.scan(modsDir)
+
+        assertEquals(listOf("testmod"), found.map { it.id })
+    }
+
+    @Test
+    fun `dot directories are not scanned`() {
+        val modsDir = createTempDirectory("oml-mods").toFile()
+        val disabled = File(modsDir, ".disabled").apply { mkdirs() }
+        jarWith("org/example/TestMod.class").copyTo(File(disabled, "off.jar"))
+
+        assertEquals(emptyList(), ModScanner.scan(modsDir).map { it.id })
+    }
+
+    @Test
     fun `non-class entries are never read as bytecode`() {
         // What a real mod jar actually carries besides classes: directory entries, `.json` data, a
         // `kotlin/…` module descriptor. Any of them reaching the class reader aborts the whole scan —

@@ -145,6 +145,37 @@ class OmlArchivePackTest {
     }
 
     @Test
+    fun `an archive in a subdirectory is loaded`() {
+        val dir = tempDir()
+        val nested = File(dir, "group").apply { mkdirs() }
+        writeArchive(
+            nested, "nested_pack",
+            "content/block/ruby_ore.toml" to "hardness = 3.0".toByteArray(),
+        )
+
+        OMLCore.loadContentPacks(dir, factory)
+
+        assertEquals(listOf("ruby_ore"), factory.registry.blocks.map { it.first })
+        assertTrue(OMLCore.contentPackFiles().any { it.name == "nested_pack.oml" })
+    }
+
+    @Test
+    fun `same-named archives in different subdirectories are refused`() {
+        // The namespace is the file name, so subdirectories make this collision reachable; the
+        // second archive must not merge its declarations into the first pack's namespace.
+        val dir = tempDir()
+        val first = File(dir, "a").apply { mkdirs() }
+        val second = File(dir, "b").apply { mkdirs() }
+        writeArchive(first, "dup_pack", "content/block/from_a.toml" to "".toByteArray())
+        writeArchive(second, "dup_pack", "content/block/from_b.toml" to "".toByteArray())
+
+        OMLCore.loadContentPacks(dir, factory)
+
+        assertEquals(listOf("from_a"), factory.registry.blocks.map { it.first })
+        assertEquals(1, OMLCore.contentPackFiles().count { it.name == "dup_pack.oml" })
+    }
+
+    @Test
     fun `a loose toml next to an archive is refused, the archive loads`() {
         val dir = tempDir()
         File(dir, "clash.toml").writeText("[block.a]\n")

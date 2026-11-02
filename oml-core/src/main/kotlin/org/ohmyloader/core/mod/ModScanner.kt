@@ -9,7 +9,8 @@ import java.util.jar.JarFile
 object ModScanner {
 
     /**
-     * Scans every jar under the mods directory for **all** entry classes annotated with @Mod.
+     * Scans every jar under the mods directory, subdirectories included, for **all** entry classes
+     * annotated with @Mod. Dot-directories are skipped by [ModsDirectory].
      *
      * A single jar may carry several mods (or one mod plus a library with an entry point), so
      * scanning continues after the first hit — returning on the first match silently dropped every
@@ -20,11 +21,8 @@ object ModScanner {
      * libraries — defines those copies, and every `net.minecraft.*` reference inside them resolves
      * there. Refusing at scan time is the only point that still has the jar name to report with.
      */
-    fun scan(modsDir: File): List<ModContainer> {
-        if (!modsDir.isDirectory) return emptyList()
-        val jars = modsDir.listFiles { f -> f.isFile && f.name.endsWith(".jar") } ?: return emptyList()
-        return jars.flatMap { scanJar(it) }
-    }
+    fun scan(modsDir: File): List<ModContainer> =
+        ModsDirectory.files(modsDir, ".jar").flatMap { scanJar(it) }
 
     private fun scanJar(jarFile: File): List<ModContainer> {
         val found = mutableListOf<ModContainer>()
