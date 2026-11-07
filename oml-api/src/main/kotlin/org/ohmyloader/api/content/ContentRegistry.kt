@@ -404,8 +404,37 @@ class OMLBlockDeclaration {
      * by the version adapter; only newly generated chunks are affected, like any datapack ore.
      */
     fun generateAsOre(configure: OMLBlockOreDeclaration.() -> Unit = {}) {
-        check(oreDeclaration == null) { "generateAsOre can only be declared once per block" }
+        check(oreDeclaration == null && treeDeclaration == null && plantDeclaration == null) {
+            "this block already declares another world generation form"
+        }
         oreDeclaration = OMLBlockOreDeclaration().apply(configure)
+    }
+
+    // Public but not mod-facing API: the version adapter reads these to generate the worldgen
+    // datapack files, like [oreDeclaration]. Mods declare through generateAsTree / generateAsPlant.
+    var treeDeclaration: OMLBlockTreeDeclaration? = null
+        private set
+    var plantDeclaration: OMLBlockPlantDeclaration? = null
+        private set
+
+    /**
+     * Declares that this block is the **trunk** of a tree that generates naturally, with
+     * [OMLBlockTreeDeclaration.leaves] naming the leaves block (declared by the same mod). A block
+     * generates as an ore, a tree or a plant — at most one of the three.
+     */
+    fun generateAsTree(configure: OMLBlockTreeDeclaration.() -> Unit) {
+        check(oreDeclaration == null && treeDeclaration == null && plantDeclaration == null) {
+            "this block already declares another world generation form"
+        }
+        treeDeclaration = OMLBlockTreeDeclaration().apply(configure)
+    }
+
+    /** Declares that this block generates naturally as a ground plant, like vanilla's flowers. */
+    fun generateAsPlant(configure: OMLBlockPlantDeclaration.() -> Unit = {}) {
+        check(oreDeclaration == null && treeDeclaration == null && plantDeclaration == null) {
+            "this block already declares another world generation form"
+        }
+        plantDeclaration = OMLBlockPlantDeclaration().apply(configure)
     }
 }
 
@@ -432,6 +461,56 @@ class OMLBlockOreDeclaration {
      * Biomes (namespaced) the ore generates in. Empty means every biome the vanilla datapack
      * ships — harmless outside the overworld, because netherrack and end stone do not match the
      * stone replaceable tag the vein targets.
+     */
+    val biomes = mutableListOf<String>()
+}
+
+/**
+ * Tree generation parameters for [OMLBlockDeclaration.generateAsTree]. The game's own straight-trunk
+ * oak shape: a column of this block topped by a blob of [leaves], trunk base planted on soil. The
+ * leaves block must be declared by the same mod (its own declaration or any other); a bare id that
+ * resolves to nothing fails the pack's datapack load with the file named, so a typo is loud.
+ */
+class OMLBlockTreeDeclaration {
+
+    /** The leaves block id, namespaced (`techmod:ruby_leaves`) — required. */
+    var leaves: String = ""
+
+    /** Trunk height below the crown (game's `base_height`). */
+    var trunkHeight: Int = 4
+
+    /** Extra trunk height rolled per tree, 0..[heightVariation] (game's `height_rand_a`). */
+    var heightVariation: Int = 2
+
+    /** Crown radius in blocks (game's blob `radius`). */
+    var foliageRadius: Int = 2
+
+    /** Crown depth below the trunk top (game's blob `height`). */
+    var foliageHeight: Int = 3
+
+    /** Trees attempted per chunk. */
+    var perChunk: Int = 1
+
+    /**
+     * Biomes (namespaced) the tree generates in. Empty means every biome the vanilla datapack
+     * ships — the game plants it wherever the ground can take a tree.
+     */
+    val biomes = mutableListOf<String>()
+}
+
+/**
+ * Plant generation parameters for [OMLBlockDeclaration.generateAsPlant]. Ground cover like
+ * vanilla's flowers: the block is attempted [perChunk] times per chunk on the surface, each
+ * attempt placing it into air a little off the patch center.
+ */
+class OMLBlockPlantDeclaration {
+
+    /** Placement attempts per chunk (vanilla `count` in the placed feature). */
+    var perChunk: Int = 16
+
+    /**
+     * Biomes (namespaced) the plant generates in. Empty means every biome the vanilla datapack
+     * ships.
      */
     val biomes = mutableListOf<String>()
 }

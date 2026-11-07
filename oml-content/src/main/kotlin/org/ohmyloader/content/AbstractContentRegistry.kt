@@ -282,15 +282,17 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
         val placedJson: String,
         /** The declared biome list (possibly empty = every biome); the adapter resolves it. */
         val biomes: List<String>,
+        /** The biome decoration step the placed id merges into (ores: 6, vegetation: 9). */
+        val step: Int,
     )
 
     /**
-     * Every ore declaration's datapack files, in declaration order. The adapter serves them under
-     * its version's worldgen paths and merges the placed ids into the target biomes' feature
-     * lists. The JSON is the version-independent datapack format (the same shape across 26.x), so
-     * it is generated at collect time; the list survives the post-materialization drain of the
-     * block queue, because blocks are frozen and their ore files must stay served for every later
-     * datapack reload.
+     * Every world-generation declaration's (ore, tree, plant) datapack files, in declaration
+     * order. The adapter serves them under its version's worldgen paths and merges the placed ids
+     * into the target biomes' feature lists at [OreGenDecl.step]. The JSON is the
+     * version-independent datapack format (the same shape across 26.x), so it is generated at
+     * collect time; the list survives the post-materialization drain of the block queue, because
+     * blocks are frozen and their worldgen files must stay served for every later datapack reload.
      */
     protected val collectedOreGen: MutableList<OreGenDecl> = mutableListOf()
 
@@ -322,6 +324,54 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
             "{\"type\":\"minecraft:height_range\",\"height\":{\"type\":\"minecraft:trapezoid\"," +
             "\"min_inclusive\":{\"absolute\":${ore.minY}},\"max_inclusive\":{\"absolute\":${ore.maxY}}}}," +
             "{\"type\":\"minecraft:biome\"}]}"
+
+    /**
+     * The game's own straight oak, pointed at the mod's blocks: the 26.3 tree codec is flat (no
+     * `config` wrapper) and takes compact state providers (`id` + optional `properties`), so a
+     * plain declared block needs the id alone. `below_trunk_provider` names the game's built-in
+     * soil provider file, which replaces the block under the trunk with dirt — the same fact the
+     * vanilla oak JSON states.
+     */
+    private fun treeFeatureJson(namespace: String, blockId: String, tree: OMLBlockTreeDeclaration): String =
+        "{\"type\":\"minecraft:tree\",\"below_trunk_provider\":\"minecraft:soil_beneath_tree\"," +
+            "\"decorators\":[]," +
+            "\"foliage_placer\":{\"type\":\"minecraft:blob_foliage_placer\",\"radius\":${tree.foliageRadius}," +
+            "\"offset\":0,\"height\":${tree.foliageHeight}}," +
+            "\"foliage_provider\":{\"id\":\"${tree.leaves}\"}," +
+            "\"ignore_vines\":true," +
+            "\"minimum_size\":{\"type\":\"minecraft:two_layers_feature_size\"}," +
+            "\"trunk_placer\":{\"type\":\"minecraft:straight_trunk_placer\",\"base_height\":${tree.trunkHeight}," +
+            "\"height_rand_a\":${tree.heightVariation},\"height_rand_b\":0}," +
+            "\"trunk_provider\":{\"id\":\"$namespace:$blockId\"}}"
+
+    /** Mirror of the vanilla tree placed feature: the decoration pass implies the rest. */
+    private fun treePlacedJson(namespace: String, key: String, blockId: String): String =
+        "{\"feature\":\"$namespace:$key\",\"placement\":[" +
+            "{\"type\":\"minecraft:block_predicate_filter\",\"predicate\":{" +
+            "\"type\":\"minecraft:would_survive\",\"state\":\"$namespace:$blockId\"}}]}"
+
+    /**
+     * 26.3 dropped the `random_patch` feature: a ground plant is a plain `simple_block`, and the
+     * patch spread lives in the placed feature — the exact shape of the vanilla flower placed
+     * files (count, offset around the surface position, air filter).
+     */
+    private fun plantFeatureJson(namespace: String, blockId: String): String =
+        "{\"type\":\"minecraft:simple_block\",\"to_place\":{\"id\":\"$namespace:$blockId\"}}"
+
+    private fun plantPlacedJson(namespace: String, key: String, plant: OMLBlockPlantDeclaration): String =
+        "{\"feature\":\"$namespace:$key\",\"placement\":[" +
+            "{\"type\":\"minecraft:count\",\"count\":${plant.perChunk}}," +
+            "{\"type\":\"minecraft:offset\",\"x\":{\"type\":\"minecraft:trapezoid\",\"min\":-6,\"max\":6,\"plateau\":0}," +
+            "\"y\":{\"type\":\"minecraft:trapezoid\",\"min\":-2,\"max\":2,\"plateau\":0}," +
+            "\"z\":{\"type\":\"minecraft:trapezoid\",\"min\":-6,\"max\":6,\"plateau\":0}}," +
+            "{\"type\":\"minecraft:block_predicate_filter\",\"predicate\":{" +
+            "\"type\":\"minecraft:matching_block_tag\",\"tag\":\"minecraft:air\"}}]}"
+
+    private companion object {
+        /** Biome decoration steps (26.x `Decoration` order): ores, then vegetation. */
+        const val ORE_STEP = 6
+        const val VEGETATION_STEP = 9
+    }
 
     /** Mod-facing facade: fixes the namespace binding, then lets the mod declare content. */
     final override fun forNamespace(namespace: String): ContentRegistry =
@@ -986,7 +1036,29 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
             collectedOreGen += OreGenDecl(
                 namespace, key2, oreFeatureJson(namespace, id, ore),
                 orePlacedJson(namespace, key2, ore),
-                ore.biomes.toList(),
+                ore.biomes.toList(), ORE_STEP,
+            )
+        }
+        val tree = spec.treeDeclaration
+        if (tree != null) {
+            if (tree.leaves.isBlank()) {
+                OmlLog.error("Content", "block '$key' declares generateAsTree but names no leaves; skipped")
+            } else {
+                val key2 = "tree_$id"
+                collectedOreGen += OreGenDecl(
+                    namespace, key2, treeFeatureJson(namespace, id, tree),
+                    treePlacedJson(namespace, key2, id),
+                    tree.biomes.toList(), VEGETATION_STEP,
+                )
+            }
+        }
+        val plant = spec.plantDeclaration
+        if (plant != null) {
+            val key2 = "plant_$id"
+            collectedOreGen += OreGenDecl(
+                namespace, key2, plantFeatureJson(namespace, id),
+                plantPlacedJson(namespace, key2, plant),
+                plant.biomes.toList(), VEGETATION_STEP,
             )
         }
         return OMLBlock(key) { materialized[key]?.platform ?: error("block $key has not been materialized") }

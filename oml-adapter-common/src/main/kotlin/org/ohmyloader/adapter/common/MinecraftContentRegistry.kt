@@ -22,6 +22,9 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
     /** The feature step every underground ore lives in (vanilla `Decoration.UNDERGROUND_ORES`). */
     private const val UNDERGROUND_ORES_STEP = 6
 
+    /** The feature step trees and plants live in (vanilla `Decoration.VEGETAL_DECORATION`). */
+    private const val VEGETATION_STEP = 9
+
     /** Invoked by EventBridge at the registry freeze point: translate every declaration into Block + BlockItem + Item. */
     override fun doMaterialize() {
         val creativeItems = mutableListOf<ItemLike>()
@@ -178,31 +181,32 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
 
     /**
      * Reads the baseline biome JSON from the game jar's embedded datapack (the injected pack is
-     * not on the classpath, so this is always the pre-merge original) and appends the ore placed
-     * ids to the underground-ores step. Biome files are whole-file overrides in the datapack
-     * format — there is no additive mechanism — so the merged full file is what the pack serves.
+     * not on the classpath, so this is always the pre-merge original) and appends each declared
+     * placed id to its own decoration step — ores to the underground-ores step, trees and plants
+     * to the vegetation step. Biome files are whole-file overrides in the datapack format — there
+     * is no additive mechanism — so the merged full file is what the pack serves.
      */
     private fun mergeBiome(biome: String): String? {
-        val placedIds = oreGenDecls.filter { ore ->
+        val byStep = oreGenDecls.filter { ore ->
             val targets = if (ore.biomes.isEmpty()) vanillaBiomeIds() else ore.biomes.map(::qualifyBiome)
             biome in targets
-        }.map { "${it.namespace}:${it.key}" }
-        if (placedIds.isEmpty()) return null
+        }.groupBy { it.step }.mapValues { (_, decls) -> decls.map { "${it.namespace}:${it.key}" } }
+        if (byStep.isEmpty()) return null
         val original = OMLCore.gameClassLoader().getResource("data/minecraft/worldgen/biome/$biome.json")
         if (original == null) {
-            OmlLog.warn("Content", "ore targets biome [$biome] but no biome json exists for it; skipped")
+            OmlLog.warn("Content", "worldgen targets biome [$biome] but no biome json exists for it; skipped")
             return null
         }
         val root = com.google.gson.JsonParser.parseString(
             original.openStream().use { it.readBytes().toString(Charsets.UTF_8) },
         ).asJsonObject
         val features = root.getAsJsonArray("features")
-        if (features == null || features.size() <= UNDERGROUND_ORES_STEP) {
-            OmlLog.warn("Content", "biome [$biome] has no underground-ores feature step; ore merge skipped")
+        val widestStep = byStep.keys.max()
+        if (features == null || features.size() <= widestStep) {
+            OmlLog.warn("Content", "biome [$biome] has no feature step $widestStep; worldgen merge skipped")
             return null
         }
-        val step = features.get(UNDERGROUND_ORES_STEP).asJsonArray
-        placedIds.forEach { step.add(com.google.gson.JsonPrimitive(it)) }
+        byStep.forEach { [step, ids] -> ids.forEach { features.get(step).asJsonArray.add(com.google.gson.JsonPrimitive(it)) } }
         return root.toString()
     }
 

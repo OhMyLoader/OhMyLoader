@@ -238,6 +238,78 @@ class AbstractContentRegistryTest {
     }
 
     @Test
+    fun `tree declarations produce the vanilla-shaped datapack files in the vegetation step`() {
+        val registry = RecordingRegistry()
+        val facade = registry.forNamespace("mymod")
+
+        facade.declareBlock("ruby_log") {
+            generateAsTree {
+                leaves = "mymod:ruby_leaves"
+                trunkHeight = 5
+                heightVariation = 1
+                foliageRadius = 3
+                foliageHeight = 2
+                perChunk = 2
+                biomes += "minecraft:forest"
+            }
+        }
+
+        val decl = registry.oreGenDecls.single()
+        assertEquals("tree_ruby_log", decl.key)
+        assertEquals(9, decl.step, "a tree merges into the vegetation step, not the ore step")
+        assertTrue("\"type\":\"minecraft:tree\"" in decl.featureJson)
+        assertTrue("\"trunk_provider\":{\"id\":\"mymod:ruby_log\"}" in decl.featureJson)
+        assertTrue("\"foliage_provider\":{\"id\":\"mymod:ruby_leaves\"}" in decl.featureJson)
+        assertTrue("\"base_height\":5" in decl.featureJson && "\"radius\":3" in decl.featureJson)
+        assertTrue("soil_beneath_tree" in decl.featureJson)
+        assertTrue("\"feature\":\"mymod:tree_ruby_log\"" in decl.placedJson)
+        assertTrue("would_survive" in decl.placedJson)
+        assertEquals(listOf("tree_ruby_log"), registry.oreGenKeysFor("mymod"))
+    }
+
+    @Test
+    fun `a tree declaration without leaves is refused instead of written as a broken file`() {
+        val registry = RecordingRegistry()
+        val facade = registry.forNamespace("mymod")
+
+        facade.declareBlock("bare_log") { generateAsTree { } }
+
+        assertEquals(0, registry.oreGenDecls.size, "no datapack file may be served for the broken tree")
+    }
+
+    @Test
+    fun `plant declarations produce the vanilla-shaped datapack files in the vegetation step`() {
+        val registry = RecordingRegistry()
+        val facade = registry.forNamespace("mymod")
+
+        facade.declareBlock("ruby_bloom") {
+            generateAsPlant { perChunk = 24 }
+        }
+
+        val decl = registry.oreGenDecls.single()
+        assertEquals("plant_ruby_bloom", decl.key)
+        assertEquals(9, decl.step)
+        assertTrue("\"type\":\"minecraft:simple_block\"" in decl.featureJson)
+        assertTrue("\"to_place\":{\"id\":\"mymod:ruby_bloom\"}" in decl.featureJson)
+        assertTrue("\"feature\":\"mymod:plant_ruby_bloom\"" in decl.placedJson)
+        assertTrue("\"count\":24" in decl.placedJson)
+        assertTrue("\"tag\":\"minecraft:air\"" in decl.placedJson)
+    }
+
+    @Test
+    fun `a block cannot declare two world generation forms`() {
+        val registry = RecordingRegistry()
+        val facade = registry.forNamespace("mymod")
+
+        assertFailsWith<IllegalStateException> {
+            facade.declareBlock("both") {
+                generateAsPlant { }
+                generateAsOre { }
+            }
+        }.let { assertTrue("another world generation form" in it.message!!) }
+    }
+
+    @Test
     fun `block entity declaration rides to materialization with its tick handler`() {
         val registry = RecordingRegistry()
         val facade = registry.forNamespace("mymod")
