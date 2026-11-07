@@ -310,12 +310,7 @@ object OMLCore {
         val namespaces = mutableMapOf<String, File>()
         for (pack in packFiles(modsDir)) {
             try {
-                val namespace = TomlContentLoader.namespaceOf(pack)
-                namespaces[namespace]?.let { previous ->
-                    throw IllegalStateException(
-                        "content pack namespace '$namespace' is already used by ${previous.path}; rename ${pack.path}",
-                    )
-                }
+                val namespace = packNamespace(namespaces, pack)
                 val sources = contentSources(pack)
                 if (sources.isEmpty()) {
                     throw IllegalStateException("the archive carries no content/ declarations")
@@ -334,6 +329,22 @@ object OMLCore {
                 OmlLog.error("OMLCore", "Failed to load content pack ${pack.name}", t)
             }
         }
+    }
+
+    /**
+     * A content pack's namespace is its file name, so two same-named archives in different
+     * subdirectories would merge their declarations into one resource namespace — the second is
+     * refused with both paths instead. Registering into [namespaces] happens after the pack
+     * loads, so a failed pack does not claim the name.
+     */
+    private fun packNamespace(namespaces: MutableMap<String, File>, pack: File): String {
+        val namespace = TomlContentLoader.namespaceOf(pack)
+        namespaces[namespace]?.let { previous ->
+            throw IllegalStateException(
+                "content pack namespace '$namespace' is already used by ${previous.path}; rename ${pack.path}",
+            )
+        }
+        return namespace
     }
 
     private fun packFiles(modsDir: File): List<File> {
@@ -420,12 +431,7 @@ object OMLCore {
         val namespaces = mutableMapOf<String, File>()
         for (pack in packFiles(modsDir)) {
             try {
-                val namespace = TomlContentLoader.namespaceOf(pack)
-                namespaces[namespace]?.let { previous ->
-                    throw IllegalStateException(
-                        "content pack namespace '$namespace' is already used by ${previous.path}; rename ${pack.path}",
-                    )
-                }
+                val namespace = packNamespace(namespaces, pack)
                 contentPackFiles += pack
                 val registry = contentRegistry.forNamespace(namespace, reloadable = true)
                 for (source in contentSources(pack)) {
