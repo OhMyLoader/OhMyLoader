@@ -1,4 +1,4 @@
-package org.ohmyloader.api.mixin
+package org.ohmyloader.api.hook
 
 /**
  * The argument list of one target invocation — for injections that rewrite all arguments in place.

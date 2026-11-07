@@ -25,7 +25,7 @@ import net.minecraft.world.level.chunk.LevelChunk
 import net.minecraft.world.phys.BlockHitResult
 import java.util.OptionalInt
 import org.ohmyloader.api.OmlLog
-import org.ohmyloader.api.mixin.CallbackInfoReturnable
+import org.ohmyloader.api.hook.HookValue
 import org.ohmyloader.api26_3.EventDispatch
 import org.ohmyloader.core.OMLCore
 import org.ohmyloader.core.adapter.Refl
@@ -192,7 +192,7 @@ object EventBridge {
         game: ServerPlayerGameMode,
         pos: BlockPos,
         @Suppress("UNUSED_PARAMETER") id: Int,
-        cir: CallbackInfoReturnable<Boolean>,
+        cir: HookValue<Boolean>,
     ) {
         val player = ownerOf(game) ?: return
         if (EventDispatch.onBlockBreak(player, pos, player.level().getBlockState(pos))) cir.setReturnValue(false)
@@ -225,7 +225,7 @@ object EventBridge {
         target: Entity,
         hand: InteractionHand,
         @Suppress("UNUSED_PARAMETER") id: Int,
-        cir: CallbackInfoReturnable<InteractionResult>,
+        cir: HookValue<InteractionResult>,
     ) {
         val serverPlayer = player as? ServerPlayer ?: return
         if (serverPlayer.level().isClientSide) return
@@ -249,7 +249,7 @@ object EventBridge {
         hand: InteractionHand,
         hit: BlockHitResult,
         @Suppress("UNUSED_PARAMETER") id: Int,
-        cir: CallbackInfoReturnable<InteractionResult>,
+        cir: HookValue<InteractionResult>,
     ) {
         val canceled = EventDispatch.onBlockUsed(
             player, hit, player.level().getBlockState(hit.blockPos), stack, hand,
@@ -265,7 +265,7 @@ object EventBridge {
         stack: ItemStack,
         hand: InteractionHand,
         @Suppress("UNUSED_PARAMETER") id: Int,
-        cir: CallbackInfoReturnable<InteractionResult>,
+        cir: HookValue<InteractionResult>,
     ) {
         val canceled = EventDispatch.onItemUsed(player, stack, hand)
         if (canceled) cir.setReturnValue(InteractionResult.FAIL)
@@ -297,7 +297,7 @@ object EventBridge {
         source: DamageSource,
         amount: Float,
         @Suppress("UNUSED_PARAMETER") id: Int,
-        cir: CallbackInfoReturnable<Boolean>,
+        cir: HookValue<Boolean>,
     ) {
         val event = EventDispatch.onLivingHurt(entity, amount, source)
         if (event.canceled) {
@@ -336,7 +336,7 @@ object EventBridge {
     }
 
     /**
-     * [LivingEntity.die head] Cancellable: canceling stops the death routine, leaving the entity at zero
+     * [LivingEntity.die head] Cancelable: canceling stops the death routine, leaving the entity at zero
      * health — the same shape as the game's own totem path.
      */
     @JvmStatic
@@ -354,7 +354,7 @@ object EventBridge {
         player: ServerPlayer,
         provider: MenuProvider,
         @Suppress("UNUSED_PARAMETER") id: Int,
-        cir: CallbackInfoReturnable<OptionalInt>,
+        cir: HookValue<OptionalInt>,
     ) {
         val title = runCatching { provider.displayName.string }.getOrDefault("")
         if (EventDispatch.onMenuOpen(player, title)) cir.setReturnValue(OptionalInt.empty())

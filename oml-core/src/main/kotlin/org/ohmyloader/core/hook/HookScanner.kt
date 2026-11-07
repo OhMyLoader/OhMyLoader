@@ -1,4 +1,4 @@
-package org.ohmyloader.core.mixin
+package org.ohmyloader.core.hook
 
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.Opcodes
@@ -8,10 +8,10 @@ import org.objectweb.asm.tree.ClassNode
 import org.objectweb.asm.tree.MethodNode
 import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.inject.*
-import org.ohmyloader.api.mixin.LocalCapture
-import org.ohmyloader.core.mixin.MixinScanner.parseRedirect
-import org.ohmyloader.core.mixin.MixinScanner.policyProblem
-import org.ohmyloader.core.mixin.MixinScanner.refineVarAnchor
+import org.ohmyloader.api.hook.LocalCapture
+import org.ohmyloader.core.hook.HookScanner.parseRedirect
+import org.ohmyloader.core.hook.HookScanner.policyProblem
+import org.ohmyloader.core.hook.HookScanner.refineVarAnchor
 import org.ohmyloader.core.mod.ModContainer
 import org.ohmyloader.core.transformer.IClassTransformer
 import org.ohmyloader.core.transformer.injection.AnchorResolver
@@ -31,7 +31,7 @@ import java.util.jar.JarFile
  * obfuscated). `Shift.BY` offsets, dynamic `@Mixin(targets = "…#…")`, `@Pseudo` and refmap are unsupported
  * (`BY` makes the injection point drift as target code changes). See [AtParser] / [ClassMerger].
  */
-object MixinScanner {
+object HookScanner {
 
     /**
      * A fully-compiled injection rule: both the anchor and payload are already engine objects
@@ -84,13 +84,13 @@ object MixinScanner {
          */
         extraRules: RuleSet = RuleSet.EMPTY,
         /** Sources those rule sets declare to be merged into target classes, following the same path as annotation mixin merges (merge first, then inject). */
-        extraMerges: List<ClassMerger.MixinClass> = emptyList(),
+        extraMerges: List<ClassMerger.HookClass> = emptyList(),
         /** Problems in the discovery/retrieval phase of those rule sets, folded into the same self-check report. */
         extraProblems: List<String> = emptyList(),
     ): IClassTransformer? {
         val rules = mutableListOf<Rule>()
         val problems = mutableListOf<String>()
-        val merges = mutableListOf<ClassMerger.MixinClass>()
+        val merges = mutableListOf<ClassMerger.HookClass>()
         // A jar with several @Mod entry points yields one container per entry, all sharing the same
         // physical file: scanning it once per entry would register every mixin class twice, and the
         // second merge would collide with its own first (@Overwrite ledger / synthesized accessors).
@@ -111,7 +111,7 @@ object MixinScanner {
 
         // Bridge classes are generated only after all rules are registered: the generator has to emit
         // method signatures based on the handler's shape
-        if (rules.isNotEmpty()) OMLMixinRegistry.ensureBridgeGenerated()
+        if (rules.isNotEmpty()) HookRegistry.ensureBridgeGenerated()
 
         val spec = injection {
             for (rule in rules) {
@@ -138,7 +138,7 @@ object MixinScanner {
                     problems.joinToString("\n") { "  $it" },
             )
         }
-        return MixinTransformer(
+        return HookTransformer(
             id = "mixin",
             merges = merges,
             // InjectingTransformer is an abstract base class (subclasses only declare rules and an id); this is
@@ -157,31 +157,32 @@ object MixinScanner {
          * It is a **list**, not a single value: a single jar can contain multiple merge mixins (e.g. one
          * `@Overwrite` and one `@Shadow`); keeping only one would make the other disappear silently.
          */
-        val merges: List<ClassMerger.MixinClass> = emptyList(),
+        val merges: List<ClassMerger.HookClass> = emptyList(),
     )
 
     // ---------- annotation descriptors ----------
 
-    private const val MIXIN_DESC = "Lorg/ohmyloader/api/mixin/Mixin;"
-    private const val INJECT_DESC = "Lorg/ohmyloader/api/mixin/Inject;"
-    private const val REDIRECT_DESC = "Lorg/ohmyloader/api/mixin/Redirect;"
-    private const val MODIFY_ARG_DESC = "Lorg/ohmyloader/api/mixin/ModifyArg;"
-    private const val MODIFY_ARGS_DESC = "Lorg/ohmyloader/api/mixin/ModifyArgs;"
-    private const val MODIFY_CONSTANT_DESC = "Lorg/ohmyloader/api/mixin/ModifyConstant;"
-    private const val MODIFY_VARIABLE_DESC = "Lorg/ohmyloader/api/mixin/ModifyVariable;"
-    private const val MODIFY_RETURN_VALUE_DESC = "Lorg/ohmyloader/api/mixin/ModifyReturnValue;"
-    private const val MODIFY_EXPRESSION_VALUE_DESC = "Lorg/ohmyloader/api/mixin/ModifyExpressionValue;"
-    private const val SHADOW_DESC = "Lorg/ohmyloader/api/mixin/Shadow;"
-    private const val UNIQUE_DESC = "Lorg/ohmyloader/api/mixin/Unique;"
-    private const val OVERWRITE_DESC = "Lorg/ohmyloader/api/mixin/Overwrite;"
+    private const val HOOKED_DESC = "Lorg/ohmyloader/api/hook/Hooked;"
+    private const val MERGED_DESC = "Lorg/ohmyloader/api/hook/Merged;"
+    private const val INJECT_DESC = "Lorg/ohmyloader/api/hook/Inject;"
+    private const val REDIRECT_DESC = "Lorg/ohmyloader/api/hook/Redirect;"
+    private const val MODIFY_ARG_DESC = "Lorg/ohmyloader/api/hook/ModifyArg;"
+    private const val MODIFY_ARGS_DESC = "Lorg/ohmyloader/api/hook/ModifyArgs;"
+    private const val MODIFY_CONSTANT_DESC = "Lorg/ohmyloader/api/hook/ModifyConstant;"
+    private const val MODIFY_VARIABLE_DESC = "Lorg/ohmyloader/api/hook/ModifyVariable;"
+    private const val MODIFY_RETURN_VALUE_DESC = "Lorg/ohmyloader/api/hook/ModifyReturnValue;"
+    private const val MODIFY_EXPRESSION_VALUE_DESC = "Lorg/ohmyloader/api/hook/ModifyExpressionValue;"
+    private const val BORROWED_DESC = "Lorg/ohmyloader/api/hook/Borrowed;"
+    private const val EXTRA_DESC = "Lorg/ohmyloader/api/hook/Extra;"
+    private const val REPLACE_DESC = "Lorg/ohmyloader/api/hook/Replace;"
 
-    /** Declaring any of these ⇒ this mixin goes through the **class-merge** model (see mergeCandidates). */
-    private val MERGE_MEMBER_ANNOTATIONS = setOf(SHADOW_DESC, UNIQUE_DESC, OVERWRITE_DESC)
+    /** The merge-family members: only a [Model.MERGE] carrier may declare them. */
+    private val MERGE_MEMBER_ANNOTATIONS = setOf(BORROWED_DESC, EXTRA_DESC, REPLACE_DESC)
 
-    /** accessor/invoker: only valid on the abstract methods of an **interface** mixin (synthesis path). */
+    /** accessor/invoker: only valid on the abstract methods of an **interface** carrier (synthesis path). */
     private val MERGE_ACCESSOR_ANNOTATIONS = setOf(
-        "Lorg/ohmyloader/api/mixin/Accessor;",
-        "Lorg/ohmyloader/api/mixin/Invoker;",
+        "Lorg/ohmyloader/api/hook/FieldAccess;",
+        "Lorg/ohmyloader/api/hook/MethodAccess;",
     )
 
     /** Injection annotations this front-end recognizes → their names (for diagnostics). */
@@ -199,13 +200,16 @@ object MixinScanner {
     /** Tail kind of the handler parameter list (`@Inject` uses the first two; the other annotations have no callback handle). */
     private enum class Tail { CALLBACK_INFO, RETURNABLE, NONE }
 
+    /** The dispatch model, declared by the carrier annotation ( / ) — never inferred. */
+    private enum class Model { HOOK, MERGE }
+
     // ---------- scanning ----------
 
     private fun scanMod(mod: ModContainer): ScanResult {
         if (!mod.file.isFile) return ScanResult(emptyList(), emptyList())
         val rules = mutableListOf<Rule>()
         val problems = mutableListOf<String>()
-        val merges = mutableListOf<ClassMerger.MixinClass>()
+        val merges = mutableListOf<ClassMerger.HookClass>()
         JarFile(mod.file).use { zip ->
             val entries = zip.entries()
             while (entries.hasMoreElements()) {
@@ -238,10 +242,17 @@ object MixinScanner {
         return ScanResult(rules, problems, merges)
     }
 
-    /** Parse the `@Mixin` declaration on a single class and the injection annotations on its methods; returns an empty table for non-mixin classes. */
+    /** Parse the `@Hooked` / `@Merged` declaration on a single class and the injection annotations on its methods; returns an empty table for non-carrier classes. */
     internal fun parseMixinClass(node: ClassNode, modId: String): ScanResult {
-        val target = node.visibleAnnotations
-            ?.find { it.desc == MIXIN_DESC }
+        val hooked = node.visibleAnnotations?.find { it.desc == HOOKED_DESC }
+        val merged = node.visibleAnnotations?.find { it.desc == MERGED_DESC }
+        if (hooked != null && merged != null) {
+            return ScanResult(
+                emptyList(),
+                listOf("[$modId] ${node.name} declares both @Hooked and @Merged — the dispatch models are mutually exclusive; pick one"),
+            )
+        }
+        val target = (hooked ?: merged)
             ?.let { annotationValue(it, "target") as? String }
             ?: return ScanResult(emptyList(), emptyList())
         val targetInternal = target.replace('.', '/')
@@ -253,10 +264,24 @@ object MixinScanner {
         val slices = node.visibleAnnotations.orEmpty()
             .filter { it.desc.endsWith("/Slice;") }.associateBy { (annotationValue(it, "id") as? String).orEmpty() }
 
-        // Does this mixin use the **merge model**? If so, its **instance** `@Inject` handlers ride into
-        // the target class via class merge, and the injection point becomes a direct INVOKEVIRTUAL call
-        // (`this` = the target instance) -- see parseInject.
-        val mergeInto = if (isMergeAnnotated(node)) targetInternal else null
+        // The dispatch model is **declared by the carrier annotation**, never inferred from the class's
+        // members: `@Merged` rides instance handlers into the target class via member merge (the
+        // injection point becomes a direct INVOKEVIRTUAL call, `this` = the target instance — see
+        // parseInject), while `@Hooked` bridge-dispatches everything and never pretends `this` is the
+        // target. Mixing the models is a startup-stage problem, so the two shapes cannot drift apart.
+        val model = if (merged != null) Model.MERGE else Model.HOOK
+        val mergeInto = if (model == Model.MERGE) targetInternal else null
+
+        // @Hooked is a pure injection carrier: merge-family members belong to @Merged.
+        if (model == Model.HOOK) {
+            node.fields.forEach { field ->
+                if (field.visibleAnnotations.orEmpty().any { it.desc in MERGE_MEMBER_ANNOTATIONS }) {
+                    problems += "[$modId] ${node.name}.${field.name} —— @Borrowed/@Extra/@Replace merge into the target class" +
+                        " and require @Merged; a @Hooked carrier declares none"
+                }
+            }
+        }
+
         val handlers = mutableSetOf<String>()
 
         for (method in node.methods) {
@@ -275,7 +300,14 @@ object MixinScanner {
             }
         }
 
-        val merge = mergeCandidates(node, targetInternal, mixinClass, modId, handlers, problems)
+        val merge = if (model == Model.MERGE) {
+            mergeCandidates(node, targetInternal, mixinClass, modId, handlers, problems)
+        } else {
+            // A @Hooked carrier merges nothing; the merge phase is not run for it at all. (Accessor
+            // synthesis is also a @Merged shape — @FieldAccess/@MethodAccess declare members that must
+            // land in the target class.)
+            null
+        }
         return ScanResult(rules, problems, listOfNotNull(merge))
     }
 
@@ -299,7 +331,7 @@ object MixinScanner {
         modId: String,
         handlerMethods: Set<String>,
         problems: MutableList<String>,
-    ): ClassMerger.MixinClass? {
+    ): ClassMerger.HookClass? {
         // Interface mixin: `@Accessor`/`@Invoker` are declared on the interface's abstract methods, and the
         // engine synthesizes method bodies in the target class from the signatures. An interface should
         // contain nothing else
@@ -326,7 +358,7 @@ object MixinScanner {
             if (node.fields.isNotEmpty()) {
                 problems += "[$modId] $mixinClass —— an interface mixin cannot declare fields (accessor/invoker are only signature declarations)"
             }
-            return ClassMerger.MixinClass(modId, mixinClass, targetInternal, node)
+            return ClassMerger.HookClass(modId, mixinClass, targetInternal, node)
         }
 
         if (!isMergeAnnotated(node)) return null
@@ -345,7 +377,7 @@ object MixinScanner {
         // The instance-injection-handler checks are done in parseInjection (there the annotation name is
         // available, so the message is more precise and not double-reported) --
         // `handlerMethods` is the set of "directly callable handlers" registered there.
-        return ClassMerger.MixinClass(modId, mixinClass, targetInternal, node, handlerMethods)
+        return ClassMerger.HookClass(modId, mixinClass, targetInternal, node, handlerMethods)
     }
 
     /** Parse one injection annotation → one rule, or several problems. */
@@ -806,10 +838,26 @@ object MixinScanner {
         rules: MutableList<Rule>,
         problems: MutableList<String>,
     ) {
-        val [tail, captureTypes] = handlerShape(method.desc)
+        // The typed self parameter: a bridge-dispatched (@Hooked) handler may declare the target
+        // instance as its first parameter, typed as the target class — the engine passes it at the
+        // injection point and the declared type is checked at startup. The merge model never strips
+        // anything: its `this` already is the target instance.
+        val selfType = if (mergeInto == null) {
+            Type.getArgumentTypes(method.desc).firstOrNull()
+                ?.takeIf { it.descriptor == "L$targetInternal;" }?.descriptor
+        } else {
+            null
+        }
+        val handlerDesc = if (selfType != null) {
+            val params = Type.getArgumentTypes(method.desc).drop(1)
+            "(${params.joinToString("") { it.descriptor }}${Type.getReturnType(method.desc).descriptor})"
+        } else {
+            method.desc
+        }
+        val [tail, captureTypes] = handlerShape(handlerDesc)
         if (tail == Tail.NONE) {
-            problems += "[$modId] $where —— @Inject handler's last parameter must be CallbackInfo or " +
-                "CallbackInfoReturnable (consistent with Mixin: the handler must be able to take the callback handle), currently ${method.desc}"
+            problems += "[$modId] $where —— @Inject handler's last parameter must be HookContext or " +
+                "HookValue (consistent with Mixin: the handler must be able to take the callback handle), currently ${method.desc}"
             return
         }
         val returnType = Type.getReturnType(method.desc)
@@ -830,15 +878,15 @@ object MixinScanner {
         }
         val captures = capturesOf(captureTypes, locals, where, modId)
 
-        val cancellable = (annotationValue(annotation, "cancellable") as? Boolean) ?: false
+        val cancelable = (annotationValue(annotation, "cancelable") as? Boolean) ?: false
         val targetIsVoid = methodDesc == null || Type.getReturnType(methodDesc) == Type.VOID_TYPE
         val entryAnchor = anchor.core is InjectionPoint.Head || anchor.core is InjectionPoint.ConstructorHead
 
-        // The short-circuit paths split into two branches: a void target uses CallbackInfo (CheckCall); a
-        // non-void target uses CallbackInfoReturnable (CancellableReturn; setReturnValue both cancels and
+        // The short-circuit paths split into two branches: a void target uses HookContext (CheckCall); a
+        // non-void target uses HookValue (CancelableReturn; setReturnValue both cancels and
         // supplies the value).
         var returnsValue = false
-        if (cancellable) {
+        if (cancelable) {
             when {
                 !entryAnchor -> OmlLog.warn(
                     "Mixin",
@@ -854,7 +902,7 @@ object MixinScanner {
 
                 tail == Tail.RETURNABLE && targetIsVoid -> OmlLog.warn(
                     "Mixin",
-                    "target ${methodNames.first()}$methodDesc returns void, the handler should use CallbackInfo instead," +
+                    "target ${methodNames.first()}$methodDesc returns void, the handler should use HookContext instead," +
                         " degraded to notify (mod=$modId)",
                 )
 
@@ -863,13 +911,13 @@ object MixinScanner {
                 !targetIsVoid -> OmlLog.warn(
                     "Mixin",
                     "target ${methodNames.first()}$methodDesc returns non-void, the short-circuiting handler should use " +
-                        "CallbackInfoReturnable to supply the return value, degraded to notify (mod=$modId)",
+                        "HookValue to supply the return value, degraded to notify (mod=$modId)",
                 )
             }
         } else if (tail == Tail.RETURNABLE) {
             OmlLog.warn(
                 "Mixin",
-                "the handler takes CallbackInfoReturnable but did not declare cancellable = true:" +
+                "the handler takes HookValue but did not declare cancelable = true:" +
                     " only registers as notify (setReturnValue will not take effect): ${methodNames.first()} (mod=$modId)",
             )
         }
@@ -883,8 +931,8 @@ object MixinScanner {
         if (mergeInto != null && !method.isDeclaredStatic()) {
             handlers += "${method.name}${method.desc}"
             val variant = when {
-                cancellable && entryAnchor && returnsValue -> HandlerVariant.RETURNABLE
-                cancellable && entryAnchor && targetIsVoid -> HandlerVariant.CANCELLABLE
+                cancelable && entryAnchor && returnsValue -> HandlerVariant.RETURNABLE
+                cancelable && entryAnchor && targetIsVoid -> HandlerVariant.CANCELABLE
                 else -> HandlerVariant.NOTIFY
             }
             val handleDesc = if (variant == HandlerVariant.RETURNABLE) CALLBACK_RETURNABLE_DESC
@@ -901,29 +949,32 @@ object MixinScanner {
             return
         }
 
-        val id = OMLMixinRegistry.register(
+        val id = HookRegistry.register(
             modId = modId,
             mixinClass = mixinClass,
             handlerMethod = method.name,
             targetMethod = methodNames.first(),
-            cancellable = cancellable && entryAnchor && !returnsValue && targetIsVoid,
-            captureTypes = captureTypes,
+            cancelable = cancelable && entryAnchor && !returnsValue && targetIsVoid,
+            captureTypes = listOfNotNull(selfType) + captureTypes,
             handlerParamCount = captureTypes.size + 1,
             returnsValue = returnsValue,
         )
-        val kind = OMLMixinRegistry.bridgeKind(id) ?: OMLMixinRegistry.BridgeKind.NOTIFY
-        val bridgeName = OMLMixinRegistry.bridgeMethodName(id, kind)
-        val bridgeDesc = OMLMixinRegistry.bridgeDesc(id, kind)
-        val args = captures.map { DslValue.Local(type = it.type, ordinal = it.ordinal, strict = it.strict) } +
+        val kind = HookRegistry.bridgeKind(id) ?: HookRegistry.BridgeKind.NOTIFY
+        val bridgeName = HookRegistry.bridgeMethodName(id, kind)
+        val bridgeDesc = HookRegistry.bridgeDesc(id, kind)
+        // The typed self (when declared) is pushed as the target instance; a static target abandons
+        // the whole injection at emission (emitValue's This guard) and `require` turns it startup-red.
+        val args = (selfType?.let { listOf(DslValue.This) } ?: emptyList()) +
+            captures.map { DslValue.Local(type = it.type, ordinal = it.ordinal, strict = it.strict) } +
             DslValue.IntVal(id)
         val payload = when (kind) {
-            OMLMixinRegistry.BridgeKind.CANCELLABLE ->
-                Payload.CheckCall(OMLMixinRegistry.BRIDGE_CLASS, bridgeName, bridgeDesc, args)
+            HookRegistry.BridgeKind.CANCELABLE ->
+                Payload.CheckCall(HookRegistry.BRIDGE_CLASS, bridgeName, bridgeDesc, args)
 
-            OMLMixinRegistry.BridgeKind.RETURNABLE ->
-                Payload.CancellableReturn(OMLMixinRegistry.BRIDGE_CLASS, bridgeName, bridgeDesc, args)
+            HookRegistry.BridgeKind.RETURNABLE ->
+                Payload.CancelableReturn(HookRegistry.BRIDGE_CLASS, bridgeName, bridgeDesc, args)
 
-            else -> Payload.StaticCall(OMLMixinRegistry.BRIDGE_CLASS, bridgeName, bridgeDesc, args)
+            else -> Payload.StaticCall(HookRegistry.BRIDGE_CLASS, bridgeName, bridgeDesc, args)
         }
         rules += Rule(targetInternal, methodNames, methodDesc, anchor, payload, policy, captures, "Inject")
     }
@@ -968,21 +1019,21 @@ object MixinScanner {
                 " or (receiver${callArgs.joinToString("")})$callRet, actual ${method.desc}"
             return
         }
-        val id = OMLMixinRegistry.register(
+        val id = HookRegistry.register(
             modId = modId,
             mixinClass = mixinClass,
             handlerMethod = method.name,
             targetMethod = methodNames.first(),
-            cancellable = false,
+            cancelable = false,
             captureTypes = handlerParams,
             handlerParamCount = handlerParams.size,
             returnType = handlerRet,
             mirror = true,
         )
-        val bridgeName = OMLMixinRegistry.bridgeMethodName(id, OMLMixinRegistry.BridgeKind.MIRROR)
+        val bridgeName = HookRegistry.bridgeMethodName(id, HookRegistry.BridgeKind.MIRROR)
         rules += Rule(
             targetInternal, methodNames, methodDesc, anchor,
-            Payload.Redirect(OMLMixinRegistry.BRIDGE_CLASS, bridgeName), policy, emptyList(), "Redirect",
+            Payload.Redirect(HookRegistry.BRIDGE_CLASS, bridgeName), policy, emptyList(), "Redirect",
         )
     }
 
@@ -1020,7 +1071,7 @@ object MixinScanner {
         rules += Rule(
             targetInternal, methodNames, methodDesc, anchor,
             Payload.ModifyArg(
-                owner = OMLMixinRegistry.BRIDGE_CLASS,
+                owner = HookRegistry.BRIDGE_CLASS,
                 method = bridgeName,
                 desc = bridgeDesc,
                 index = index,
@@ -1059,7 +1110,7 @@ object MixinScanner {
         rules += Rule(
             targetInternal, methodNames, methodDesc, anchor,
             Payload.ModifyArgs(
-                owner = OMLMixinRegistry.BRIDGE_CLASS,
+                owner = HookRegistry.BRIDGE_CLASS,
                 method = bridgeName,
                 desc = bridgeDesc,
                 extras = listOf(DslValue.IntVal(id)),
@@ -1105,7 +1156,7 @@ object MixinScanner {
         rules += Rule(
             targetInternal, methodNames, methodDesc, anchor,
             Payload.ModifyConstant(
-                owner = OMLMixinRegistry.BRIDGE_CLASS,
+                owner = HookRegistry.BRIDGE_CLASS,
                 method = bridgeName,
                 desc = bridgeDesc,
                 extras = listOf(DslValue.IntVal(id)),
@@ -1204,25 +1255,25 @@ object MixinScanner {
         }
         val captures = capturesOf(captureTypes, locals, where, modId)
 
-        val id = OMLMixinRegistry.register(
+        val id = HookRegistry.register(
             modId = modId,
             mixinClass = mixinClass,
             handlerMethod = method.name,
             targetMethod = methodNames.first(),
-            cancellable = false,
+            cancelable = false,
             // The bridge's param list is exactly "the engine's push order": value first, then captures, then id
             captureTypes = listOf(valueType) + captureTypes,
             handlerParamCount = params.size,
             returnType = valueType,
         )
-        val kind = OMLMixinRegistry.BridgeKind.MODIFY
-        val bridgeName = OMLMixinRegistry.bridgeMethodName(id, kind)
-        val bridgeDesc = OMLMixinRegistry.bridgeDesc(id, kind)
+        val kind = HookRegistry.BridgeKind.MODIFY
+        val bridgeName = HookRegistry.bridgeMethodName(id, kind)
+        val bridgeDesc = HookRegistry.bridgeDesc(id, kind)
 
         rules += Rule(
             targetInternal, methodNames, methodDesc, anchor,
             Payload.ModifyVariable(
-                owner = OMLMixinRegistry.BRIDGE_CLASS,
+                owner = HookRegistry.BRIDGE_CLASS,
                 method = bridgeName,
                 desc = bridgeDesc,
                 extras = captures.map { DslValue.Local(type = it.type, ordinal = it.ordinal, strict = it.strict) } +
@@ -1281,7 +1332,7 @@ object MixinScanner {
         rules += Rule(
             targetInternal, methodNames, methodDesc, anchor,
             Payload.TransformReturn(
-                owner = OMLMixinRegistry.BRIDGE_CLASS,
+                owner = HookRegistry.BRIDGE_CLASS,
                 method = bridgeName,
                 desc = bridgeDesc,
                 extras = listOf(DslValue.IntVal(id)),
@@ -1324,7 +1375,7 @@ object MixinScanner {
         rules += Rule(
             targetInternal, methodNames, methodDesc, anchor,
             Payload.ModifyExpressionValue(
-                owner = OMLMixinRegistry.BRIDGE_CLASS,
+                owner = HookRegistry.BRIDGE_CLASS,
                 method = bridgeName,
                 desc = bridgeDesc,
                 extras = listOf(DslValue.IntVal(id)),
@@ -1342,18 +1393,18 @@ object MixinScanner {
         type: String,
         returnVoid: Boolean = false,
     ): Triple<Int, String, String> {
-        val id = OMLMixinRegistry.register(
+        val id = HookRegistry.register(
             modId = modId,
             mixinClass = mixinClass,
             handlerMethod = handlerMethod,
             targetMethod = targetMethod,
-            cancellable = false,
+            cancelable = false,
             captureTypes = listOf(type),
             handlerParamCount = 1,
             returnType = if (returnVoid) "V" else type,
         )
-        val kind = OMLMixinRegistry.BridgeKind.MODIFY
-        return Triple(id, OMLMixinRegistry.bridgeMethodName(id, kind), OMLMixinRegistry.bridgeDesc(id, kind))
+        val kind = HookRegistry.BridgeKind.MODIFY
+        return Triple(id, HookRegistry.bridgeMethodName(id, kind), HookRegistry.bridgeDesc(id, kind))
     }
 
     // ---------- handler parameter list ----------

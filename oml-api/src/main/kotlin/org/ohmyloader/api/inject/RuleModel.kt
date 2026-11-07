@@ -4,7 +4,7 @@ import org.objectweb.asm.tree.InsnList
 import org.objectweb.asm.tree.MethodNode
 
 /**
- * The injection rule model: **anchor** (where to insert) + **payload** (what to insert) + **value** (where arguments come from). These types are the **single representation** of a rule — the annotation front-end (`org.ohmyloader.api.mixin`) only translates rules into these objects, so the field semantics are the engine's contract; changing them changes the rule language.
+ * The injection rule model: **anchor** (where to insert) + **payload** (what to insert) + **value** (where arguments come from). These types are the **single representation** of a rule — the annotation front-end (`org.ohmyloader.api.hook`) only translates rules into these objects, so the field semantics are the engine's contract; changing them changes the rule language.
  * The namespace holds **the target version's readable names** (26.x jars ship class and member names unobfuscated), not obfuscated ones; all descriptors are JVM descriptor strings. The only ASM touchpoint is [Payload.Raw] (an escape hatch; whoever uses it is already writing ASM).
  * Boundary: this package is data plus "questions the data answers itself" (e.g. [InjectionPoint.isMethodHead]); anchor resolution, validation, and bytecode emission need the target class and live in the loader. No name mapping happens here — rule names are the target version's names.
  */
@@ -61,7 +61,7 @@ sealed class InjectionPoint {
      * Whether this is a "method entry" anchor ([Head], or [ConstructorHead] for
      * constructors).
      *
-     * Short-circuiting payloads (`CheckCall` / `CancellableReturn`) may land here:
+     * Short-circuiting payloads (`CheckCall` / `CancelableReturn`) may land here:
      * both must decide "whether to run / what to return" before the method body
      * executes. Note that **only [ConstructorHead] may be used inside
      * constructors** — returning early before `super()` is illegal.
@@ -341,7 +341,7 @@ sealed class Payload {
     ) : Payload()
 
     /**
-     * Cancellable check (rewrite-level): a method-entry anchor ([InjectionPoint.isMethodHead]) or an
+     * Cancelable check (rewrite-level): a method-entry anchor ([InjectionPoint.isMethodHead]) or an
      * after-call anchor ([InjectionPoint.isAfterCallAnchor]); the target method must be void. Calls a
      * static handler shaped `(...args)Z`; returning true short-circuits the rest of the method body
      * with an immediate `RETURN`. At method entry the continuation frame is the method's own entry
@@ -356,16 +356,16 @@ sealed class Payload {
     ) : Payload()
 
     /**
-     * A cancellable check **carrying a return value**: HEAD anchor only, and the target method
+     * A cancelable check **carrying a return value**: HEAD anchor only, and the target method
      * must be **non-void**. Calls a static handler shaped `(...args)Z`; on cancel, the engine
-     * returns the value from a `CallbackInfoReturnable` handle it created itself — the engine must
+     * returns the value from a `HookValue` handle it created itself — the engine must
      * read back `canceled` and the return value in the same bytecode segment, so the handle lives
      * in a local slot at the injection point (a void target uses [CheckCall]'s plain `RETURN`).
      * [bridgeArgs] are **all arguments the engine pushes onto the stack** (captures + handler id),
      * matching [desc]'s parameters one-to-one; the trailing handle parameter of [desc] is not part
      * of [bridgeArgs] — the engine `ALOAD`s it last.
      */
-    data class CancellableReturn(
+    data class CancelableReturn(
         val owner: String,
         val method: String,
         val desc: String,
@@ -392,7 +392,7 @@ sealed class Payload {
     /**
      * **Fetches all arguments at once and rewrites them** (aligned with Mixin `@ModifyArgs`). The
      * anchor must be a method call; the engine boxes the arguments into an `Object[]` wrapped in
-     * [org.ohmyloader.api.mixin.Args] and hands it to the handler, then unboxes each item per the
+     * [org.ohmyloader.api.hook.Args] and hands it to the handler, then unboxes each item per the
      * **call-site declared type** and pushes it back. This path necessarily boxes — use
      * [ModifyArg] on hot paths. Handler shape `(Args, extras…)V`.
      */
@@ -456,10 +456,10 @@ sealed class Payload {
      * **Directly calls a handler "merged into the target class"** (true Mixin `this` semantics): the handler is carried in via
      * **class merge**, so `this` is the target instance (`@Shadow` fields genuinely readable) and the injection point is a plain
      * `INVOKEVIRTUAL` — no registry, bridge, or reflection. A static target method is rejected: there is no `this` to pass.
-     * Entry-type variants ([variant]): `NOTIFY` takes `(captures…)CallbackInfo` and reads nothing back; `CANCELLABLE` reads the cancel
-     * flag and `RETURN`s short (void target); `RETURNABLE` takes a `CallbackInfoReturnable` and short-circuits with the handle's zero/set
+     * Entry-type variants ([variant]): `NOTIFY` takes `(captures…)HookContext` and reads nothing back; `CANCELABLE` reads the cancel
+     * flag and `RETURN`s short (void target); `RETURNABLE` takes a `HookValue` and short-circuits with the handle's zero/set
      * value — [desc] still returns `V`: the value comes **from the handle**, not the handler's return. The **engine** creates the handle,
-     * since the same bytecode must read it back after the call (as in [CancellableReturn]); value-rewriting kinds ([kind]) want no handle —
+     * since the same bytecode must read it back after the call (as in [CancelableReturn]); value-rewriting kinds ([kind]) want no handle —
      * the handler's return value is the conclusion.
      */
     data class HandlerCall(
@@ -499,13 +499,13 @@ sealed class Payload {
 
 /** The three **entry-type** variants of [Payload.HandlerCall] (see its documentation). */
 enum class HandlerVariant {
-    /** Notify only: the handler takes a `CallbackInfo` and nothing is read back. */
+    /** Notify only: the handler takes a `HookContext` and nothing is read back. */
     NOTIFY,
 
-    /** Cancellable (void target): reads back `CallbackInfo.canceled`; if true, short-circuits. */
-    CANCELLABLE,
+    /** Cancelable (void target): reads back `HookContext.canceled`; if true, short-circuits. */
+    CANCELABLE,
 
-    /** Cancellable + specifiable return value (non-void target): the handle becomes a `CallbackInfoReturnable`. */
+    /** Cancelable + specifiable return value (non-void target): the handle becomes a `HookValue`. */
     RETURNABLE,
 }
 
@@ -518,7 +518,7 @@ enum class HandlerVariant {
  * swapping `INVOKESTATIC bridge` for `INVOKEVIRTUAL target class` (`this` = target instance).
  */
 enum class HandlerKind {
-    /** `@Inject`: the handler's tail takes a `CallbackInfo` / `CallbackInfoReturnable`. */
+    /** `@Inject`: the handler's tail takes a `HookContext` / `HookValue`. */
     INJECT,
 
     /** `@Redirect`: replaces the whole call with the handler's call (in instance form the receiver is a parameter too). */

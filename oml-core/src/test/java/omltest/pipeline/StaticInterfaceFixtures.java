@@ -1,9 +1,9 @@
 package omltest.pipeline;
 
-import org.ohmyloader.api.mixin.At;
-import org.ohmyloader.api.mixin.CallbackInfoReturnable;
-import org.ohmyloader.api.mixin.Inject;
-import org.ohmyloader.api.mixin.Mixin;
+import org.ohmyloader.api.hook.At;
+import org.ohmyloader.api.hook.HookValue;
+import org.ohmyloader.api.hook.Inject;
+import org.ohmyloader.api.hook.Hooked;
 
 /**
  * Real compiled fixtures for the static-handler path: the target is an **interface** whose static
@@ -20,11 +20,11 @@ public class StaticInterfaceFixtures {
         }
     }
 
-    @Mixin(target = "omltest.pipeline.StaticInterfaceFixtures$StaticFactoryTarget")
+    @Hooked(target = "omltest.pipeline.StaticInterfaceFixtures$StaticFactoryTarget")
     public static class StaticHandlerMixin {
 
-        @Inject(method = "create", desc = "()Ljava/lang/String;", at = @At(value = At.HEAD), cancellable = true, require = 1)
-        public static void onCreate(CallbackInfoReturnable<String> cir) {
+        @Inject(method = "create", desc = "()Ljava/lang/String;", at = @At(value = At.HEAD), cancelable = true, require = 1)
+        public static void onCreate(HookValue<String> cir) {
             StaticInterfaceRecorder.hits.incrementAndGet();
             cir.setReturnValue("bridged");
         }

@@ -33,7 +33,7 @@ class NetworkPayloadTransformer(private val idPrefix: String) : InjectingTransfo
         classTarget("net/minecraft/client/multiplayer/ClientPacketListener") {
             method("handleCustomPayload", desc = "(L$payload;)V") {
                 atHead {
-                    cancellableCall(
+                    cancelableCall(
                         bridge, "onClientPayload",
                         "(Lnet/minecraft/client/multiplayer/ClientPacketListener;L$payload;)Z",
                         args = listOf(DslValue.This, DslValue.Arg(0)),
@@ -47,7 +47,7 @@ class NetworkPayloadTransformer(private val idPrefix: String) : InjectingTransfo
                 desc = "(Lnet/minecraft/network/protocol/common/ServerboundCustomPayloadPacket;)V",
             ) {
                 atHead {
-                    cancellableCall(
+                    cancelableCall(
                         bridge, "onServerPayload",
                         "(Lnet/minecraft/server/network/ServerGamePacketListenerImpl;" +
                             "Lnet/minecraft/network/protocol/common/ServerboundCustomPayloadPacket;)Z",

@@ -401,10 +401,10 @@ class InjectionDslTest {
     }
 
 
-    // ---- cancellable check (CheckCall) ----
+    // ---- cancelable check (CheckCall) ----
 
     @Test
-    fun `cancellableCall short-circuits void method with entry frame`() {
+    fun `cancelableCall short-circuits void method with entry frame`() {
         val cls = classNode(
             "a/B",
             methodNode("m", "(I)V") {
@@ -415,7 +415,7 @@ class InjectionDslTest {
             classTarget("a/B") {
                 method("m", desc = "(I)V") {
                     atHead {
-                        cancellableCall("x/Y", "check", "(I)Z", args = listOf(DslValue.Arg(0)))
+                        cancelableCall("x/Y", "check", "(I)Z", args = listOf(DslValue.Arg(0)))
                     }
                 }
             }
@@ -440,7 +440,7 @@ class InjectionDslTest {
     }
 
     @Test
-    fun `cancellableCall on non-void target is rejected`() {
+    fun `cancelableCall on non-void target is rejected`() {
         val cls = classNode(
             "a/B",
             methodNode("m", "()I") {
@@ -451,7 +451,7 @@ class InjectionDslTest {
         val spec = spec {
             classTarget("a/B") {
                 method("m", desc = "()I") {
-                    atHead { cancellableCall("x/Y", "check", "()Z") }
+                    atHead { cancelableCall("x/Y", "check", "()Z") }
                 }
             }
         }

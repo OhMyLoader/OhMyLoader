@@ -7,7 +7,7 @@ import org.objectweb.asm.tree.*
 import org.ohmyloader.api.inject.ClassTargetBuilder
 import org.ohmyloader.api.inject.HandlerKind
 import org.ohmyloader.api.inject.InjectionError
-import org.ohmyloader.core.mixin.ClassMerger
+import org.ohmyloader.core.hook.ClassMerger
 import org.ohmyloader.core.transformer.TransformContext
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -446,7 +446,7 @@ class ProducedValueTest {
     private fun mergedTarget(): ClassNode {
         val target = targetClass()
         val result = ClassMerger.merge(
-            ClassMerger.MixinClass(
+            ClassMerger.HookClass(
                 modId = "testmod",
                 className = MIXIN.replace('/', '.'),
                 targetInternal = OWNER,

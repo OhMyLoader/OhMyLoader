@@ -10,14 +10,14 @@ package org.ohmyloader.api.event
  */
 abstract class Event {
     /** Whether this event can be canceled. */
-    open val cancellable: Boolean get() = false
+    open val cancelable: Boolean get() = false
 
     var canceled: Boolean = false
         private set
 
-    /** Cancels the event (only valid when [cancellable] is true). Handlers registered later observe the canceled state. */
+    /** Cancels the event (only valid when [cancelable] is true). Handlers registered later observe the canceled state. */
     fun cancel() {
-        check(cancellable) { "${this::class.simpleName} does not support cancellation" }
+        check(cancelable) { "${this::class.simpleName} does not support cancellation" }
         canceled = true
     }
 }

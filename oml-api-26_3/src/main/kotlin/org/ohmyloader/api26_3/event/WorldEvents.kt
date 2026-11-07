@@ -37,7 +37,7 @@ class ChunkStartedTickingEvent(val level: ServerLevel, val chunk: LevelChunk) : 
 class ChunkUnloadedEvent(val level: ServerLevel, val chunk: LevelChunk) : Event()
 
 /**
- * A player is about to destroy a block (cancellable). Covers the creative instant break and the
+ * A player is about to destroy a block (cancelable). Covers the creative instant break and the
  * survival break that finished. [state] is the block together with its property values, as the level
  * holds it. Canceling makes the game resync the client's prediction, so the block visibly snaps back
  * — no packet work is left to the mod.
@@ -47,16 +47,16 @@ class BlockBreakEvent(
     val position: BlockPos,
     val state: BlockState,
 ) : Event() {
-    override val cancellable = true
+    override val cancelable = true
 }
 
-/** A player's attack on an entity landed (cancellable; canceling skips the whole swing). */
+/** A player's attack on an entity landed (cancelable; canceling skips the whole swing). */
 class EntityAttackEvent(val player: ServerPlayer, val target: Entity) : Event() {
-    override val cancellable = true
+    override val cancelable = true
 }
 
 /**
- * A player right-clicked an entity with an item or an empty hand (cancellable). Canceling lets
+ * A player right-clicked an entity with an item or an empty hand (cancelable). Canceling lets
  * vanilla continue as though the entity were not there, so the click falls through to the block
  * behind it.
  */
@@ -65,11 +65,11 @@ class EntityInteractEvent(
     val target: Entity,
     val hand: InteractionHand,
 ) : Event() {
-    override val cancellable = true
+    override val cancelable = true
 }
 
 /**
- * A player right-clicked a block with an item or an empty hand (cancellable). [hit] carries the
+ * A player right-clicked a block with an item or an empty hand (cancelable). [hit] carries the
  * position and the face that was struck, [state] the block as the server holds it, [stack] what was
  * in [hand] — an empty hand is `ItemStack.EMPTY`. Canceling fails the click outright, so neither the
  * block's use nor the held item's use runs.
@@ -81,11 +81,11 @@ class BlockUsedEvent(
     val stack: ItemStack,
     val hand: InteractionHand,
 ) : Event() {
-    override val cancellable = true
+    override val cancelable = true
 }
 
 /**
- * A player used the held item without hitting a block or an entity (cancellable) — the click that
+ * A player used the held item without hitting a block or an entity (cancelable) — the click that
  * starts eating, draws a bow or places into open air. [stack] is `ItemStack.EMPTY` for an empty hand;
  * canceling fails the click outright.
  */
@@ -94,11 +94,11 @@ class ItemUsedEvent(
     val stack: ItemStack,
     val hand: InteractionHand,
 ) : Event() {
-    override val cancellable = true
+    override val cancelable = true
 }
 
 /**
- * Damage is about to be applied to a living entity (cancellable). [amount] starts as what the source
+ * Damage is about to be applied to a living entity (cancelable). [amount] starts as what the source
  * computed and a handler may write a new value: the game applies the written number, and the
  * arithmetic that follows in the same call (shield reduction, damage cooldown) runs on it too.
  * Canceling wins over a rewrite — no damage is applied at all. [source] is the game's own, so the
@@ -110,7 +110,7 @@ class LivingHurtEvent(
     var amount: Float,
     val source: DamageSource,
 ) : Event() {
-    override val cancellable = true
+    override val cancelable = true
 }
 
 /**
@@ -122,5 +122,5 @@ class LivingDiedEvent(
     val entity: LivingEntity,
     val source: DamageSource,
 ) : Event() {
-    override val cancellable = true
+    override val cancelable = true
 }

@@ -1,11 +1,11 @@
-package org.ohmyloader.core.mixin
+package org.ohmyloader.core.hook
 
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.*
 import org.ohmyloader.api.inject.*
-import org.ohmyloader.api.mixin.CallbackInfo
+import org.ohmyloader.api.hook.HookContext
 import java.lang.reflect.InvocationTargetException
 import kotlin.test.*
 
@@ -19,7 +19,7 @@ import kotlin.test.*
  * Real weaving behavior is covered by the engine's tests (the `Injection*Test` ones); the bridge's
  * reflective dispatch lives in the second half of this file.
  */
-class MixinScannerTest {
+class HookScannerTest {
 
     // ---------- @At → anchor ----------
 
@@ -115,11 +115,11 @@ class MixinScannerTest {
     @Test
     fun `unknown at value is rejected with a problem`() {
         assertNull(parse("JUMP"))
-        val parsed = MixinScanner.parseMixinClass(
+        val parsed = HookScanner.parseMixinClass(
             injectClass(
                 handler(
                     "h",
-                    "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V",
+                    "(Lorg/ohmyloader/api/hook/HookContext;)V",
                     at = "JUMP",
                 ),
             ),
@@ -133,9 +133,9 @@ class MixinScannerTest {
     fun `legacy dotted target is rejected with a problem`() {
         // `net.minecraft.Foo.bar(I)V` (no L…; wrapper) produces a target that can never match — reported
         // instead of silently emitting a dead anchor
-        val node = injectClass(handler("h", "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V"))
+        val node = injectClass(handler("h", "(Lorg/ohmyloader/api/hook/HookContext;)V"))
         node.methods[0].visibleAnnotations[0].put("at", atNode("INVOKE", target = "net.minecraft.Foo.bar(I)V"))
-        val parsed = MixinScanner.parseMixinClass(node, "m")
+        val parsed = HookScanner.parseMixinClass(node, "m")
 
         assertTrue(parsed.rules.isEmpty())
         val problem = parsed.problems.single()
@@ -147,8 +147,8 @@ class MixinScannerTest {
 
     @Test
     fun `plain inject compiles to a notify rule`() {
-        val parsed = MixinScanner.parseMixinClass(
-            injectClass(handler("h", "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V")), "m",
+        val parsed = HookScanner.parseMixinClass(
+            injectClass(handler("h", "(Lorg/ohmyloader/api/hook/HookContext;)V")), "m",
         )
 
         assertEquals(1, parsed.rules.size)
@@ -162,8 +162,8 @@ class MixinScannerTest {
 
     @Test
     fun `no hit policy means soft fail like Mixin`() {
-        val parsed = MixinScanner.parseMixinClass(
-            injectClass(handler("h", "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V")), "m",
+        val parsed = HookScanner.parseMixinClass(
+            injectClass(handler("h", "(Lorg/ohmyloader/api/hook/HookContext;)V")), "m",
         )
         // No declared policy ⇒ require/allow/expect all empty, treated as optional on a miss (Mixin's
         // default behavior)
@@ -173,9 +173,9 @@ class MixinScannerTest {
 
     @Test
     fun `hit policy fields are carried over`() {
-        val parsed = MixinScanner.parseMixinClass(
+        val parsed = HookScanner.parseMixinClass(
             injectClass(
-                handler("h", "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V", require = 1, expect = 2, allow = 3),
+                handler("h", "(Lorg/ohmyloader/api/hook/HookContext;)V", require = 1, expect = 2, allow = 3),
             ),
             "m",
         )
@@ -187,16 +187,16 @@ class MixinScannerTest {
 
     @Test
     fun `negative hit policy is reported`() {
-        val parsed = MixinScanner.parseMixinClass(
-            injectClass(handler("h", "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V", require = -5)), "m",
+        val parsed = HookScanner.parseMixinClass(
+            injectClass(handler("h", "(Lorg/ohmyloader/api/hook/HookContext;)V", require = -5)), "m",
         )
         assertTrue(parsed.problems.single().contains("require=-5"), parsed.problems.toString())
     }
 
     @Test
     fun `captures without declaring locals are rejected like Mixin`() {
-        val parsed = MixinScanner.parseMixinClass(
-            injectClass(handler("h", "(ILorg/ohmyloader/api/mixin/CallbackInfo;)V")), "m",
+        val parsed = HookScanner.parseMixinClass(
+            injectClass(handler("h", "(ILorg/ohmyloader/api/hook/HookContext;)V")), "m",
         )
 
         assertTrue(parsed.rules.isEmpty())
@@ -207,10 +207,10 @@ class MixinScannerTest {
 
     @Test
     fun `capture failhard binds by type and marks strict`() {
-        val parsed = MixinScanner.parseMixinClass(
+        val parsed = HookScanner.parseMixinClass(
             injectClass(
                 handler(
-                    "h", "(Ljava/lang/String;ILjava/lang/String;Lorg/ohmyloader/api/mixin/CallbackInfo;)V",
+                    "h", "(Ljava/lang/String;ILjava/lang/String;Lorg/ohmyloader/api/hook/HookContext;)V",
                     locals = "CAPTURE_FAILHARD",
                 ),
             ),
@@ -231,10 +231,10 @@ class MixinScannerTest {
 
     @Test
     fun `capture failsoft binds without strict`() {
-        val parsed = MixinScanner.parseMixinClass(
+        val parsed = HookScanner.parseMixinClass(
             injectClass(
                 handler(
-                    "h", "(ZLorg/ohmyloader/api/mixin/CallbackInfo;)V",
+                    "h", "(ZLorg/ohmyloader/api/hook/HookContext;)V",
                     locals = "CAPTURE_FAILSOFT",
                 ),
             ),
@@ -248,35 +248,35 @@ class MixinScannerTest {
 
     @Test
     fun `locals declared without any capture param is reported`() {
-        val parsed = MixinScanner.parseMixinClass(
-            injectClass(handler("h", "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V", locals = "CAPTURE_FAILHARD")), "m",
+        val parsed = HookScanner.parseMixinClass(
+            injectClass(handler("h", "(Lorg/ohmyloader/api/hook/HookContext;)V", locals = "CAPTURE_FAILHARD")), "m",
         )
         assertTrue(parsed.problems.single().contains("no capture parameters"), parsed.problems.toString())
     }
 
     @Test
     fun `handler tail must be a callback handle`() {
-        val parsed = MixinScanner.parseMixinClass(injectClass(handler("h", "()V")), "m")
+        val parsed = HookScanner.parseMixinClass(injectClass(handler("h", "()V")), "m")
 
         assertTrue(parsed.rules.isEmpty())
         val problem = parsed.problems.single()
-        assertTrue(problem.contains("CallbackInfo"), problem)
-        assertTrue(problem.contains("CallbackInfoReturnable"), problem)
+        assertTrue(problem.contains("HookContext"), problem)
+        assertTrue(problem.contains("HookValue"), problem)
     }
 
     @Test
     fun `non void handler is reported`() {
-        val parsed = MixinScanner.parseMixinClass(
-            injectClass(handler("h", "(Lorg/ohmyloader/api/mixin/CallbackInfo;)I")), "m",
+        val parsed = HookScanner.parseMixinClass(
+            injectClass(handler("h", "(Lorg/ohmyloader/api/hook/HookContext;)I")), "m",
         )
         assertTrue(parsed.problems.single().contains("must return void"), parsed.problems.toString())
     }
 
     @Test
-    fun `cancellable on a non entry anchor degrades to notify`() {
-        val parsed = MixinScanner.parseMixinClass(
+    fun `cancelable on a non entry anchor degrades to notify`() {
+        val parsed = HookScanner.parseMixinClass(
             injectClass(
-                handler("h", "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V", cancellable = true, at = "RETURN"),
+                handler("h", "(Lorg/ohmyloader/api/hook/HookContext;)V", cancelable = true, at = "RETURN"),
             ),
             "m",
         )
@@ -285,10 +285,11 @@ class MixinScannerTest {
     }
 
     @Test
-    fun `cancellable entry anchor uses the cancellable payload`() {
-        val parsed = MixinScanner.parseMixinClass(
+    fun `cancelable entry anchor uses the cancelable payload`() {
+        val parsed = HookScanner.parseMixinClass(
             injectClass(
-                handler("h", "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V", cancellable = true),
+                handler("h", "(Lorg/ohmyloader/api/hook/HookContext;)V", cancelable = true),
+                hooked = true,
             ),
             "m",
         )
@@ -297,13 +298,13 @@ class MixinScannerTest {
 
     @Test
     fun `missing method name is reported`() {
-        val node = injectClass(handler("h", "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V"))
+        val node = injectClass(handler("h", "(Lorg/ohmyloader/api/hook/HookContext;)V"))
         // Erase the method value
         (node.methods[0].visibleAnnotations[0].values as MutableList<Any?>).let {
             it.clear()
             it.addAll(listOf("at", atNode("HEAD")))
         }
-        val parsed = MixinScanner.parseMixinClass(node, "m")
+        val parsed = HookScanner.parseMixinClass(node, "m")
         assertTrue(parsed.problems.single().contains("must specify a target method name"), parsed.problems.toString())
     }
 
@@ -311,7 +312,7 @@ class MixinScannerTest {
 
     @Test
     fun `redirect on a static call mirrors the descriptor`() {
-        val parsed = MixinScanner.parseMixinClass(
+        val parsed = HookScanner.parseMixinClass(
             redirectClass("(ILjava/lang/String;)V", "INVOKE", "Lnet/minecraft/Foo;bar(ILjava/lang/String;)V"),
             "m",
         )
@@ -325,7 +326,7 @@ class MixinScannerTest {
 
     @Test
     fun `redirect on an instance call takes the receiver as first param`() {
-        val parsed = MixinScanner.parseMixinClass(
+        val parsed = HookScanner.parseMixinClass(
             redirectClass(
                 "(Lnet/minecraft/Foo;I)V", "INVOKE", "Lnet/minecraft/Foo;bar(I)V",
             ),
@@ -336,7 +337,7 @@ class MixinScannerTest {
 
     @Test
     fun `redirect handler shape mismatch is reported`() {
-        val parsed = MixinScanner.parseMixinClass(
+        val parsed = HookScanner.parseMixinClass(
             redirectClass("(I)V", "INVOKE", "Lnet/minecraft/Foo;bar(ILjava/lang/String;)V"), "m",
         )
         assertTrue(parsed.rules.isEmpty())
@@ -345,7 +346,7 @@ class MixinScannerTest {
 
     @Test
     fun `redirect without a full target is reported`() {
-        val parsed = MixinScanner.parseMixinClass(
+        val parsed = HookScanner.parseMixinClass(
             redirectClass("()V", "INVOKE", "bar"), "m",
         )
         assertTrue(parsed.problems.single().contains("must write a full target"), parsed.problems.toString())
@@ -355,7 +356,7 @@ class MixinScannerTest {
 
     @Test
     fun `modify arg compiles to the modify payload with an explicit index`() {
-        val parsed = MixinScanner.parseMixinClass(
+        val parsed = HookScanner.parseMixinClass(
             modifyClass("ModifyArg", "(I)I", at = atNode("INVOKE", target = "Lnet/minecraft/Foo;bar(I)V"), index = 1),
             "m",
         )
@@ -372,7 +373,7 @@ class MixinScannerTest {
 
     @Test
     fun `modify arg handler shape mismatch is reported`() {
-        val parsed = MixinScanner.parseMixinClass(
+        val parsed = HookScanner.parseMixinClass(
             modifyClass("ModifyArg", "(II)I", at = atNode("INVOKE", target = "Lnet/minecraft/Foo;bar(I)V")), "m",
         )
         assertTrue(parsed.problems.single().contains("must be shaped (T)T"), parsed.problems.toString())
@@ -380,9 +381,9 @@ class MixinScannerTest {
 
     @Test
     fun `modify args requires the Args parameter`() {
-        val ok = MixinScanner.parseMixinClass(
+        val ok = HookScanner.parseMixinClass(
             modifyClass(
-                "ModifyArgs", "(Lorg/ohmyloader/api/mixin/Args;)V",
+                "ModifyArgs", "(Lorg/ohmyloader/api/hook/Args;)V",
                 at = atNode("INVOKE", target = "Lnet/minecraft/Foo;bar(I)V"),
             ),
             "m",
@@ -390,7 +391,7 @@ class MixinScannerTest {
         assertEquals(emptyList(), ok.problems)
         assertIs<Payload.ModifyArgs>(ok.rules.single().payload)
 
-        val bad = MixinScanner.parseMixinClass(
+        val bad = HookScanner.parseMixinClass(
             modifyClass("ModifyArgs", "(I)V", at = atNode("INVOKE", target = "Lnet/minecraft/Foo;bar(I)V")), "m",
         )
         assertTrue(bad.problems.single().contains("Args"), bad.problems.toString())
@@ -399,7 +400,7 @@ class MixinScannerTest {
     @Test
     fun `modify constant reads the Constant annotation and anchors after it`() {
         val node = modifyConstantClass("(I)I", intValue = 42)
-        val parsed = MixinScanner.parseMixinClass(node, "m")
+        val parsed = HookScanner.parseMixinClass(node, "m")
 
         assertEquals(emptyList(), parsed.problems)
         // A constant can only be changed "after it is read" ⇒ after = true
@@ -411,8 +412,8 @@ class MixinScannerTest {
 
     @Test
     fun `modify variable merges the at anchor with its own discriminators`() {
-        val parsed = MixinScanner.parseMixinClass(
-            modifyVariableClass("(I)I", at = "STORE", index = 4, atOrdinal = 1),
+        val parsed = HookScanner.parseMixinClass(
+            asHooked(modifyVariableClass("(I)I", at = "STORE", index = 4, atOrdinal = 1)),
             "m",
         )
 
@@ -434,7 +435,7 @@ class MixinScannerTest {
 
     @Test
     fun `modify variable maps ordinal to localOrdinal and passes argsOnly through`() {
-        val parsed = MixinScanner.parseMixinClass(
+        val parsed = HookScanner.parseMixinClass(
             modifyVariableClass(
                 "(Ljava/lang/String;)Ljava/lang/String;",
                 at = "LOAD",
@@ -453,7 +454,7 @@ class MixinScannerTest {
 
     @Test
     fun `modify variable rejects an anchor that is neither store nor load`() {
-        val parsed = MixinScanner.parseMixinClass(modifyVariableClass("(I)I", at = "HEAD"), "m")
+        val parsed = HookScanner.parseMixinClass(modifyVariableClass("(I)I", at = "HEAD"), "m")
 
         assertTrue(parsed.problems.single().contains("must be STORE"), parsed.problems.toString())
         assertEquals(emptyList(), parsed.rules)
@@ -461,7 +462,7 @@ class MixinScannerTest {
 
     @Test
     fun `modify variable rejects a handler that cannot return the value`() {
-        val parsed = MixinScanner.parseMixinClass(modifyVariableClass("(I)V", at = "STORE", index = 1), "m")
+        val parsed = HookScanner.parseMixinClass(modifyVariableClass("(I)V", at = "STORE", index = 1), "m")
 
         assertTrue(
             parsed.problems.single().contains("must be shaped (T[, captures…])T"),
@@ -471,7 +472,7 @@ class MixinScannerTest {
 
     @Test
     fun `modify variable reports the unsupported name field`() {
-        val parsed = MixinScanner.parseMixinClass(
+        val parsed = HookScanner.parseMixinClass(
             modifyVariableClass("(I)I", at = "STORE", index = 1, names = listOf("localVar")),
             "m",
         )
@@ -484,14 +485,14 @@ class MixinScannerTest {
 
     @Test
     fun `modify variable captures must declare a locals mode`() {
-        val without = MixinScanner.parseMixinClass(
+        val without = HookScanner.parseMixinClass(
             modifyVariableClass("(ILjava/lang/String;)I", at = "STORE", index = 1),
             "m",
         )
         assertTrue(without.problems.single().contains("NO_CAPTURE"), without.problems.toString())
         assertEquals(emptyList(), without.rules)
 
-        val with = MixinScanner.parseMixinClass(
+        val with = HookScanner.parseMixinClass(
             modifyVariableClass("(ILjava/lang/String;)I", at = "STORE", index = 1, locals = "CAPTURE_FAILSOFT"),
             "m",
         )
@@ -517,8 +518,8 @@ class MixinScannerTest {
         return annotated(name, desc, AnnotationNode(Opcodes.ASM9, annotationDesc).apply { values = pairs })
     }
 
-    private val modifyReturnValue = "Lorg/ohmyloader/api/mixin/ModifyReturnValue;"
-    private val modifyExpressionValue = "Lorg/ohmyloader/api/mixin/ModifyExpressionValue;"
+    private val modifyReturnValue = "Lorg/ohmyloader/api/hook/ModifyReturnValue;"
+    private val modifyExpressionValue = "Lorg/ohmyloader/api/hook/ModifyExpressionValue;"
 
     @Test
     fun `modify return value defaults to the RETURN anchor`() {
@@ -527,7 +528,7 @@ class MixinScannerTest {
             methods.add(valueHandler("onReturn", "(I)I", modifyReturnValue, "getFramerateLimit"))
         }
 
-        val parsed = MixinScanner.parseMixinClass(node, "m")
+        val parsed = HookScanner.parseMixinClass(node, "m")
 
         assertEquals(emptyList(), parsed.problems, parsed.problems.toString())
         val rule = parsed.rules.single()
@@ -554,7 +555,7 @@ class MixinScannerTest {
             )
         }
 
-        val parsed = MixinScanner.parseMixinClass(node, "m")
+        val parsed = HookScanner.parseMixinClass(node, "m")
 
         assertEquals(emptyList(), parsed.problems, parsed.problems.toString())
         val rule = parsed.rules.single()
@@ -575,7 +576,7 @@ class MixinScannerTest {
             methods.add(valueHandler("onReturn", "(I)V", modifyReturnValue, "runTick"))
         }
 
-        val parsed = MixinScanner.parseMixinClass(node, "m")
+        val parsed = HookScanner.parseMixinClass(node, "m")
 
         assertTrue(parsed.problems.any { it.contains("@ModifyReturnValue") }, parsed.problems.toString())
     }
@@ -588,7 +589,7 @@ class MixinScannerTest {
             )
         }
 
-        val parsed = MixinScanner.parseMixinClass(node, "m")
+        val parsed = HookScanner.parseMixinClass(node, "m")
 
         assertTrue(parsed.problems.any { it.contains("@ModifyExpressionValue") }, parsed.problems.toString())
     }
@@ -601,7 +602,7 @@ class MixinScannerTest {
             valueHandler("onReturn", "(I)I", modifyReturnValue, "getFramerateLimit"),
         )
 
-        val parsed = MixinScanner.parseMixinClass(node, "m")
+        val parsed = HookScanner.parseMixinClass(node, "m")
 
         assertEquals(emptyList(), parsed.problems, parsed.problems.toString())
         assertIs<Payload.TransformReturn>(parsed.rules.single().payload)
@@ -616,7 +617,7 @@ class MixinScannerTest {
             ),
         )
 
-        val parsed = MixinScanner.parseMixinClass(node, "m")
+        val parsed = HookScanner.parseMixinClass(node, "m")
 
         assertEquals(emptyList(), parsed.problems, parsed.problems.toString())
         val rule = parsed.rules.single()
@@ -628,7 +629,7 @@ class MixinScannerTest {
 
     @Test
     fun `mixin with merge annotations is a merge candidate`() {
-        val parsed = MixinScanner.parseMixinClass(mergeMixin(), "m")
+        val parsed = HookScanner.parseMixinClass(mergeMixin(), "m")
 
         assertEquals(emptyList(), parsed.problems)
         val merge = parsed.merges.single()
@@ -640,9 +641,9 @@ class MixinScannerTest {
     fun `injection only mixin is not merged`() {
         // A mixin with only injected handlers **should not** be merged — that would copy the handler
         // methods into the game class too, pure noise, and would quietly change existing behavior.
-        // The criterion lives on the annotations (@Shadow/@Overwrite/@Unique)
-        val parsed = MixinScanner.parseMixinClass(
-            injectClass(handler("onTick", "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V")),
+        // The criterion lives on the annotations (@Borrowed/@Replace/@Extra)
+        val parsed = HookScanner.parseMixinClass(
+            injectClass(handler("onTick", "(Lorg/ohmyloader/api/hook/HookContext;)V")),
             "m",
         )
 
@@ -652,13 +653,13 @@ class MixinScannerTest {
 
     @Test
     fun `merge candidate keeps producing its injection rules`() {
-        // Merging and injection can coexist: @Overwrite replaces a method body, and a program handler
+        // Merging and injection can coexist: @Replace replaces a method body, and a program handler
         // still injects into other methods as usual
         val node = mergeMixin().apply {
-            methods.add(handler("onTick", "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V"))
+            methods.add(handler("onTick", "(Lorg/ohmyloader/api/hook/HookContext;)V"))
         }
 
-        val parsed = MixinScanner.parseMixinClass(node, "m")
+        val parsed = HookScanner.parseMixinClass(node, "m")
 
         assertEquals(1, parsed.merges.size)
         assertEquals(1, parsed.rules.size, parsed.problems.toString())
@@ -668,18 +669,18 @@ class MixinScannerTest {
     fun `instance inject handler in a merge candidate is called directly on the target`() {
         // A **instance** @Inject handler in a merge candidate moves into the target class with the class
         // merge, and the injection point is changed to a direct call (this = the target instance, so
-        // @Shadow fields really are readable). Two pieces of evidence: the handler is registered into
+        // @Borrowed fields really are readable). Two pieces of evidence: the handler is registered into
         // handlerMethods (the merge gives it name-keeping + promotion), and the rule payload is
         // HandlerCall (not a bridge).
         val node = mergeMixin().apply {
-            methods.add(handler("onTick", "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V"))
+            methods.add(handler("onTick", "(Lorg/ohmyloader/api/hook/HookContext;)V"))
         }
 
-        val parsed = MixinScanner.parseMixinClass(node, "m")
+        val parsed = HookScanner.parseMixinClass(node, "m")
 
         assertEquals(emptyList(), parsed.problems, parsed.problems.toString())
         assertEquals(
-            setOf("onTick(Lorg/ohmyloader/api/mixin/CallbackInfo;)V"),
+            setOf("onTick(Lorg/ohmyloader/api/hook/HookContext;)V"),
             parsed.merges.single().handlerMethods,
         )
         val payload = parsed.rules.single().payload
@@ -688,7 +689,7 @@ class MixinScannerTest {
         assertEquals("onTick", payload.method)
         // The descriptor must be **whole valid**: the handle sits inside the parens. A descriptor
         // spliced outside them (`()L…;）V`) must not pass — owner/method checks alone cannot see it.
-        assertEquals("(Lorg/ohmyloader/api/mixin/CallbackInfo;)V", payload.desc)
+        assertEquals("(Lorg/ohmyloader/api/hook/HookContext;)V", payload.desc)
         assertEquals(HandlerVariant.NOTIFY, payload.variant)
     }
 
@@ -698,17 +699,17 @@ class MixinScannerTest {
         // are pushed on the stack
         val node = mergeMixin().apply {
             methods.add(
-                handler("onTick", "(ILorg/ohmyloader/api/mixin/CallbackInfo;)V", locals = "CAPTURE_FAILHARD"),
+                handler("onTick", "(ILorg/ohmyloader/api/hook/HookContext;)V", locals = "CAPTURE_FAILHARD"),
             )
         }
 
-        val parsed = MixinScanner.parseMixinClass(node, "m")
+        val parsed = HookScanner.parseMixinClass(node, "m")
 
         assertEquals(emptyList(), parsed.problems, parsed.problems.toString())
         val payload = parsed.rules.single().payload
         assertIs<Payload.HandlerCall>(payload)
         assertEquals("net/minecraft/client/Minecraft", payload.owner)
-        assertEquals("(ILorg/ohmyloader/api/mixin/CallbackInfo;)V", payload.desc)
+        assertEquals("(ILorg/ohmyloader/api/hook/HookContext;)V", payload.desc)
     }
 
     @Test
@@ -716,13 +717,13 @@ class MixinScannerTest {
         // Value kinds like @ModifyArg now also have a "direct call" path — the handler moves into the
         // target class with the merge, and the injection point calls it directly with INVOKEVIRTUAL
         // (this = the target instance), instead of going through a static bridge reflectively to a
-        // mixin instance (that path reads @Shadow fields as null by necessity). The only shape change
+        // mixin instance (that path reads @Borrowed fields as null by necessity). The only shape change
         // is that **the first parameter becomes the receiver**.
         val node = mergeMixin().apply {
             methods.add(
                 handler("onArg", "(Lnet/minecraft/client/Minecraft;I)I").apply {
                     visibleAnnotations = listOf(
-                        AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/mixin/ModifyArg;").apply {
+                        AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyArg;").apply {
                             values = mutableListOf<Any?>(
                                 "method", "runTick", "at",
                                 atNode("INVOKE", target = "Lnet/minecraft/client/Minecraft;runTick()V"),
@@ -733,7 +734,7 @@ class MixinScannerTest {
             )
         }
 
-        val parsed = MixinScanner.parseMixinClass(node, "m")
+        val parsed = HookScanner.parseMixinClass(node, "m")
 
         assertEquals(emptyList(), parsed.problems, parsed.problems.toString())
         val payload = parsed.rules.single().payload
@@ -757,7 +758,7 @@ class MixinScannerTest {
                 annotated(
                     "onCall",
                     "(I)V",
-                    AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/mixin/Redirect;").apply {
+                    AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Redirect;").apply {
                         values = mutableListOf<Any?>(
                             "method", "runTick", "at",
                             atNode(
@@ -771,7 +772,7 @@ class MixinScannerTest {
             )
         }
 
-        val parsed = MixinScanner.parseMixinClass(node, "m")
+        val parsed = HookScanner.parseMixinClass(node, "m")
 
         val problem = parsed.problems.single()
         assertTrue(problem.contains("static call"), problem)
@@ -782,11 +783,11 @@ class MixinScannerTest {
 
     @Test
     fun `slice becomes a search window on the anchor`() {
-        val node = injectClass(handler("h", "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V", at = "RETURN"))
+        val node = injectClass(handler("h", "(Lorg/ohmyloader/api/hook/HookContext;)V", at = "RETURN"))
         (node.methods[0].visibleAnnotations[0].values as MutableList<Any?>).addAll(
             listOf("slice", sliceNode("HEAD", "INVOKE", "Lnet/minecraft/Foo;end()V")),
         )
-        val parsed = MixinScanner.parseMixinClass(node, "m")
+        val parsed = HookScanner.parseMixinClass(node, "m")
 
         val anchor = parsed.rules.single().anchor
         assertIs<InjectionPoint.Sliced>(anchor)
@@ -797,9 +798,9 @@ class MixinScannerTest {
 
     @Test
     fun `slice referencing an unknown id is reported`() {
-        val node = injectClass(handler("h", "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V"))
+        val node = injectClass(handler("h", "(Lorg/ohmyloader/api/hook/HookContext;)V"))
         node.methods[0].visibleAnnotations[0].put("at", atNode("HEAD", sliceRef = "missing"))
-        val parsed = MixinScanner.parseMixinClass(node, "m")
+        val parsed = HookScanner.parseMixinClass(node, "m")
         assertTrue(parsed.problems.any { it.contains("found no matching @Slice") }, parsed.problems.toString())
     }
 
@@ -807,9 +808,9 @@ class MixinScannerTest {
     fun `a written but unrecognizable slice boundary is reported`() {
         // Dropping a boundary silently would widen the search window to the whole method — reported
         // like any other unrecognizable @At instead, so the self-check fails startup
-        val node = injectClass(handler("h", "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V", at = "RETURN"))
+        val node = injectClass(handler("h", "(Lorg/ohmyloader/api/hook/HookContext;)V", at = "RETURN"))
         node.methods[0].visibleAnnotations[0].put("slice", sliceNode("JUMP", "BOGUS"))
-        val parsed = MixinScanner.parseMixinClass(node, "m")
+        val parsed = HookScanner.parseMixinClass(node, "m")
 
         assertTrue(
             parsed.problems.any { it.contains("@Slice(from") && it.contains("JUMP") },
@@ -826,14 +827,14 @@ class MixinScannerTest {
         // instructions), every handler would be killed — the front-end would produce zero rules, and
         // the empty rules would cause problems to be swallowed by a `return null`, finally appearing
         // as "the game seems fine but all injections are gone".
-        val node = injectClass(handler("h", "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V"))
+        val node = injectClass(handler("h", "(Lorg/ohmyloader/api/hook/HookContext;)V"))
         val writer = ClassWriter(ClassWriter.COMPUTE_MAXS)
         node.accept(writer)
 
         val read = ClassNode(Opcodes.ASM9)
         ClassReader(writer.toByteArray()).accept(read, ClassReader.SKIP_DEBUG or ClassReader.SKIP_FRAMES)
 
-        val parsed = MixinScanner.parseMixinClass(read, "m")
+        val parsed = HookScanner.parseMixinClass(read, "m")
         assertEquals(1, parsed.rules.size, parsed.problems.toString())
         assertEquals(emptyList(), parsed.problems)
     }
@@ -841,20 +842,20 @@ class MixinScannerTest {
     @Test
     fun `an MR-JAR versioned copy is not scanned as a mixin`() {
         // A mixin class placed only under META-INF/versions/: scanning it would register the same mixin
-        // a second time (duplicate @Overwrite ledger entries / double member synthesis). MR-JAR
+        // a second time (duplicate @Replace ledger entries / double member synthesis). MR-JAR
         // versioning is the class loader's business, not the scanner's.
         val jar = java.io.File.createTempFile("oml-mixin-mrjar-", ".jar")
         jar.deleteOnExit()
         java.util.jar.JarOutputStream(jar.outputStream()).use { out ->
             val writer = ClassWriter(ClassWriter.COMPUTE_MAXS)
-            injectClass(handler("h", "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V")).accept(writer)
+            injectClass(handler("h", "(Lorg/ohmyloader/api/hook/HookContext;)V")).accept(writer)
             out.putNextEntry(java.util.jar.JarEntry("META-INF/versions/17/org/ohmyloader/testmod/TestMixin.class"))
             out.write(writer.toByteArray())
             out.closeEntry()
         }
         val mod = org.ohmyloader.core.mod.ModContainer("m", "M", "1.0", "x.Y", jar)
 
-        assertNull(MixinScanner.createTransformer(listOf(mod)))
+        assertNull(HookScanner.createTransformer(listOf(mod)))
     }
 
     // ---------- Bridge: dispatch & exception isolation ----------
@@ -862,70 +863,70 @@ class MixinScannerTest {
     @Test
     fun `bridge desc reflects captures and kind`() {
         newBridge()
-        val plain = OMLMixinRegistry.register("testmod", "x", "h", "m", cancellable = false)
+        val plain = HookRegistry.register("testmod", "x", "h", "m", cancelable = false)
         installBridge()
-        assertEquals("(I)V", OMLMixinRegistry.bridgeDesc(plain, false))
-        assertEquals("(I)Z", OMLMixinRegistry.bridgeDesc(plain, true))
+        assertEquals("(I)V", HookRegistry.bridgeDesc(plain, false))
+        assertEquals("(I)Z", HookRegistry.bridgeDesc(plain, true))
     }
 
     @Test
     fun `registry dispatch invokes handler with callback info`() {
         newBridge()
         RecordingMixin.calls.clear()
-        val id = OMLMixinRegistry.register(
+        val id = HookRegistry.register(
             modId = "testmod",
             mixinClass = RecordingMixin::class.java.name,
             handlerMethod = "handler",
             targetMethod = "someMethod",
-            cancellable = false,
+            cancelable = false,
         )
         installBridge()
 
-        invokeBridge(id, cancellable = false)
+        invokeBridge(id, cancelable = false)
 
         assertEquals(1, RecordingMixin.calls.size)
         assertEquals("someMethod", RecordingMixin.calls[0].name)
     }
 
     @Test
-    fun `cancellable dispatch propagates cancel flag`() {
+    fun `cancelable dispatch propagates cancel flag`() {
         newBridge()
         val mixin = CancellingMixin()
-        val id = OMLMixinRegistry.register(
-            "testmod", mixin.javaClass.name, "handler", "someMethod", cancellable = true,
+        val id = HookRegistry.register(
+            "testmod", mixin.javaClass.name, "handler", "someMethod", cancelable = true,
         )
         installBridge()
 
-        assertEquals(true, invokeBridge(id, cancellable = true))
+        assertEquals(true, invokeBridge(id, cancelable = true))
     }
 
     @Test
     fun `handler exception is isolated for notify`() {
         newBridge()
-        val id = OMLMixinRegistry.register(
-            "testmod", ThrowingMixin::class.java.name, "handler", "someMethod", cancellable = false,
+        val id = HookRegistry.register(
+            "testmod", ThrowingMixin::class.java.name, "handler", "someMethod", cancelable = false,
         )
         installBridge()
 
-        invokeBridge(id, cancellable = false) // must not throw
+        invokeBridge(id, cancelable = false) // must not throw
     }
 
     @Test
     fun `captures are forwarded to the handler in declaration order`() {
         newBridge()
         CapturingMixin.calls.clear()
-        val id = OMLMixinRegistry.register(
+        val id = HookRegistry.register(
             modId = "testmod",
             mixinClass = CapturingMixin::class.java.name,
             handlerMethod = "handler",
             targetMethod = "someMethod",
-            cancellable = false,
+            cancelable = false,
             captureTypes = listOf("I", "Ljava/lang/String;"),
             handlerParamCount = 3,
         )
         installBridge()
 
-        invokeBridge(id, cancellable = false, 42, "hello")
+        invokeBridge(id, cancelable = false, 42, "hello")
 
         assertEquals(listOf<Pair<Any?, Any?>>(42 to "hello"), CapturingMixin.calls)
     }
@@ -934,13 +935,13 @@ class MixinScannerTest {
     fun `primitive captures survive boxing`() {
         newBridge()
         PrimitiveCapturingMixin.calls.clear()
-        val id = OMLMixinRegistry.register(
+        val id = HookRegistry.register(
             "testmod", PrimitiveCapturingMixin::class.java.name, "handler", "someMethod", false,
             captureTypes = listOf("J", "Z"), handlerParamCount = 3,
         )
         installBridge()
 
-        invokeBridge(id, cancellable = false, 9000000000000L, true)
+        invokeBridge(id, cancelable = false, 9000000000000L, true)
 
         assertEquals(listOf<Pair<Any?, Any?>>(9000000000000L to true), PrimitiveCapturingMixin.calls)
     }
@@ -949,27 +950,27 @@ class MixinScannerTest {
     fun `mirror bridge returns the handler value without unwrapping`() {
         // @Redirect's bridge: the descriptor equals the replaced call (here (I)I), with no id parameter
         newBridge()
-        val id = OMLMixinRegistry.register(
+        val id = HookRegistry.register(
             "testmod", MirrorMixin::class.java.name, "handler", "someMethod", false,
             captureTypes = listOf("I"), handlerParamCount = 1, returnType = "I", mirror = true,
         )
         installBridge()
 
-        assertEquals("(I)I", OMLMixinRegistry.bridgeDesc(id, OMLMixinRegistry.BridgeKind.MIRROR))
-        assertEquals("redirect$$id", OMLMixinRegistry.bridgeMethodName(id, OMLMixinRegistry.BridgeKind.MIRROR))
+        assertEquals("(I)I", HookRegistry.bridgeDesc(id, HookRegistry.BridgeKind.MIRROR))
+        assertEquals("redirect$$id", HookRegistry.bridgeMethodName(id, HookRegistry.BridgeKind.MIRROR))
         assertEquals(15, invokeBridgeMethod("redirect$$id", intArrayOf(5)))
     }
 
     @Test
     fun `modify bridge returns the handler value as a primitive`() {
         newBridge()
-        val id = OMLMixinRegistry.register(
+        val id = HookRegistry.register(
             "testmod", MirrorMixin::class.java.name, "bump", "someMethod", false,
             captureTypes = listOf("I"), handlerParamCount = 1, returnType = "I",
         )
         installBridge()
 
-        assertEquals("(II)I", OMLMixinRegistry.bridgeDesc(id, OMLMixinRegistry.BridgeKind.MODIFY))
+        assertEquals("(II)I", HookRegistry.bridgeDesc(id, HookRegistry.BridgeKind.MODIFY))
         assertEquals(6, invokeBridgeMethod("injectValue$$id", intArrayOf(5), id))
     }
 
@@ -978,7 +979,7 @@ class MixinScannerTest {
         // A value-kind handler "replaces real behavior": swallowing the exception = that call silently
         // never happened
         newBridge()
-        val id = OMLMixinRegistry.register(
+        val id = HookRegistry.register(
             "testmod", ThrowingMixin::class.java.name, "boom", "someMethod", false,
             captureTypes = listOf("I"), handlerParamCount = 1, returnType = "I",
         )
@@ -997,7 +998,7 @@ class MixinScannerTest {
         // a long capture: the wanted descriptor is (J)I, no candidate matches. Binding "the first one" in
         // an undefined order would silently invoke a method the rule did not declare — refuse instead.
         newBridge()
-        val id = OMLMixinRegistry.register(
+        val id = HookRegistry.register(
             "testmod", MirrorMixin::class.java.name, "handler", "someMethod", false,
             captureTypes = listOf("J"), handlerParamCount = 1, returnType = "I", mirror = true,
         )
@@ -1050,26 +1051,41 @@ class MixinScannerTest {
         if (args.isNotEmpty()) pairs.addAll(listOf("args", args))
         if (ordinal >= 0) pairs.addAll(listOf("ordinal", ordinal))
         if (opcode >= 0) pairs.addAll(listOf("opcode", opcode))
-        if (shift.isNotEmpty()) pairs.addAll(listOf("shift", listOf($$"Lorg/ohmyloader/api/mixin/At$Shift;", shift)))
+        if (shift.isNotEmpty()) pairs.addAll(listOf("shift", listOf($$"Lorg/ohmyloader/api/hook/At$Shift;", shift)))
         if (sliceRef.isNotEmpty()) pairs.addAll(listOf("slice", sliceRef))
-        return AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/mixin/At;").apply { values = pairs }
+        return AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/At;").apply { values = pairs }
     }
 
     private fun sliceNode(from: String, to: String, toTarget: String = "", id: String = ""): AnnotationNode {
         val pairs = mutableListOf<Any?>("from", atNode(from), "to", atNode(to, target = toTarget))
         if (id.isNotEmpty()) pairs.addAll(listOf("id", id))
-        return AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/mixin/Slice;").apply { values = pairs }
+        return AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Slice;").apply { values = pairs }
     }
 
     /** A `@Mixin(target)` class holding one method annotated with `@Inject`. */
-    private fun injectClass(method: MethodNode): ClassNode = mixinClass(method)
+    private fun injectClass(method: MethodNode, hooked: Boolean = false): ClassNode =
+        if (hooked) asHooked(mixinClass(method)) else mixinClass(method)
+
+    private fun asHooked(node: ClassNode): ClassNode = withModel(node, "Lorg/ohmyloader/api/hook/Hooked;")
+
+    private fun asMerged(node: ClassNode): ClassNode = withModel(node, "Lorg/ohmyloader/api/hook/Merged;")
+
+    private fun withModel(node: ClassNode, desc: String): ClassNode {
+        val target = node.visibleAnnotations.first().values[1]
+        node.visibleAnnotations = listOf(
+            org.objectweb.asm.tree.AnnotationNode(Opcodes.ASM9, desc).apply {
+                values = listOf("target", target)
+            },
+        )
+        return node
+    }
 
     private fun mixinClass(vararg methods: MethodNode): ClassNode = ClassNode(Opcodes.ASM9).apply {
         name = "org/ohmyloader/testmod/TestMixin"
         superName = "java/lang/Object"
         version = Opcodes.V1_8
         visibleAnnotations = listOf(
-            AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/mixin/Mixin;").apply {
+            AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Hooked;").apply {
                 values = listOf("target", "net.minecraft.client.Minecraft")
             },
         )
@@ -1082,7 +1098,7 @@ class MixinScannerTest {
         injectMethod: String = "runTick",
         targetDesc: String = "(Z)V",
         at: String = "HEAD",
-        cancellable: Boolean = false,
+        cancelable: Boolean = false,
         locals: String? = null,
         // Int.MIN_VALUE = "this field is not written" (so the test can pass negatives to verify the checks)
         require: Int = Int.MIN_VALUE,
@@ -1093,13 +1109,13 @@ class MixinScannerTest {
             "method", injectMethod,
             "desc", targetDesc,
             "at", atNode(at),
-            "cancellable", cancellable,
+            "cancelable", cancelable,
         )
-        if (locals != null) pairs.addAll(listOf("locals", listOf("Lorg/ohmyloader/api/mixin/LocalCapture;", locals)))
+        if (locals != null) pairs.addAll(listOf("locals", listOf("Lorg/ohmyloader/api/hook/LocalCapture;", locals)))
         if (require != Int.MIN_VALUE) pairs.addAll(listOf("require", require))
         if (expect != Int.MIN_VALUE) pairs.addAll(listOf("expect", expect))
         if (allow != Int.MIN_VALUE) pairs.addAll(listOf("allow", allow))
-        val annotation = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/mixin/Inject;").apply { values = pairs }
+        val annotation = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Inject;").apply { values = pairs }
         return annotated(name, desc, annotation)
     }
 
@@ -1108,7 +1124,7 @@ class MixinScannerTest {
             annotated(
                 "redirect",
                 handlerDesc,
-                AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/mixin/Redirect;").apply {
+                AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Redirect;").apply {
                     values = mutableListOf<Any?>("method", "runTick", "at", atNode(at, target = target))
                 },
             ),
@@ -1123,15 +1139,15 @@ class MixinScannerTest {
         val pairs = mutableListOf<Any?>("method", "runTick", "at", at)
         if (index >= 0) pairs.addAll(listOf("index", index))
         val annotation =
-            AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/mixin/$annotationName;").apply { values = pairs }
+            AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/$annotationName;").apply { values = pairs }
         return mixinClass(annotated("modify", handlerDesc, annotation))
     }
 
     private fun modifyConstantClass(handlerDesc: String, intValue: Int): ClassNode {
-        val constant = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/mixin/Constant;").apply {
+        val constant = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Constant;").apply {
             values = mutableListOf<Any?>("intValue", intValue)
         }
-        val annotation = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/mixin/ModifyConstant;").apply {
+        val annotation = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyConstant;").apply {
             values = mutableListOf<Any?>("method", "runTick", "constant", constant)
         }
         return mixinClass(annotated("modify", handlerDesc, annotation))
@@ -1158,28 +1174,28 @@ class MixinScannerTest {
         // Arrays in annotations: ASM reads them from a class file as a List, so hand-rolling must also use
         // a List to match the real path
         if (names.isNotEmpty()) pairs.addAll(listOf("name", names))
-        if (locals != null) pairs.addAll(listOf("locals", listOf("Lorg/ohmyloader/api/mixin/LocalCapture;", locals)))
+        if (locals != null) pairs.addAll(listOf("locals", listOf("Lorg/ohmyloader/api/hook/LocalCapture;", locals)))
         val annotation =
-            AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/mixin/ModifyVariable;").apply { values = pairs }
+            AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyVariable;").apply { values = pairs }
         return mixinClass(annotated("modify", handlerDesc, annotation))
     }
 
-    /** A mixin on the **class-merge** model: `@Overwrite`s one method + `@Shadow`s one field. */
-    private fun mergeMixin(): ClassNode = mixinClass(
+    /** A mixin on the **class-merge** model: `@Replace`s one method + `@Borrowed`s one field. */
+    private fun mergeMixin(): ClassNode = asMerged(mixinClass(
         MethodNode(Opcodes.ACC_PUBLIC, "value", "()I", null, null).apply {
             instructions.add(InsnNode(Opcodes.ICONST_1))
             instructions.add(InsnNode(Opcodes.IRETURN))
             maxStack = 1
             maxLocals = 1
-            visibleAnnotations = listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/mixin/Overwrite;"))
+            visibleAnnotations = listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Replace;"))
         },
     ).apply {
         fields.add(
             FieldNode(Opcodes.ACC_PRIVATE, "player", "Ljava/lang/Object;", null, null).apply {
-                visibleAnnotations = listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/mixin/Shadow;"))
+                visibleAnnotations = listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Borrowed;"))
             },
         )
-    }
+    })
 
     private fun annotated(name: String, desc: String, annotation: AnnotationNode): MethodNode =
         MethodNode(Opcodes.ACC_PUBLIC, name, desc, null, null).apply {
@@ -1191,19 +1207,19 @@ class MixinScannerTest {
 
     // ---------- Bridge scaffolding ----------
 
-    private fun newBridge() = OMLMixinRegistry.resetForTests()
+    private fun newBridge() = HookRegistry.resetForTests()
 
     private fun installBridge() {
-        OMLMixinRegistry.installClassLoader(MixinScannerTest::class.java.classLoader)
-        OMLMixinRegistry.ensureBridgeGenerated()
+        HookRegistry.installClassLoader(HookScannerTest::class.java.classLoader)
+        HookRegistry.ensureBridgeGenerated()
     }
 
     /** Look up the generated bridge method by id and call it (simulating the injected bytecode's INVOKESTATIC). */
-    private fun invokeBridge(id: Int, cancellable: Boolean, vararg captures: Any?): Any? =
-        invokeBridgeMethod(OMLMixinRegistry.bridgeMethodName(id, cancellable), captures, id)
+    private fun invokeBridge(id: Int, cancelable: Boolean, vararg captures: Any?): Any? =
+        invokeBridgeMethod(HookRegistry.bridgeMethodName(id, cancelable), captures, id)
 
     private fun invokeBridgeMethod(name: String, captures: Array<out Any?>, id: Int = -1): Any? {
-        val bridge = OMLMixinRegistry.bridgeClass ?: error("the bridge class has not been generated yet")
+        val bridge = HookRegistry.bridgeClass ?: error("the bridge class has not been generated yet")
         val method = bridge.declaredMethods.first { it.name == name }
         return method.invoke(null, *captures, *if (id >= 0) arrayOf<Any?>(id) else emptyArray())
     }
@@ -1213,22 +1229,22 @@ class MixinScannerTest {
 
     class RecordingMixin {
         companion object {
-            val calls = mutableListOf<CallbackInfo>()
+            val calls = mutableListOf<HookContext>()
         }
 
-        fun handler(ci: CallbackInfo) {
+        fun handler(ci: HookContext) {
             calls += ci
         }
     }
 
     class CancellingMixin {
-        fun handler(ci: CallbackInfo) {
+        fun handler(ci: HookContext) {
             ci.cancel()
         }
     }
 
     class ThrowingMixin {
-        fun handler(ci: CallbackInfo) {
+        fun handler(ci: HookContext) {
             throw IllegalStateException("boom")
         }
 
@@ -1241,7 +1257,7 @@ class MixinScannerTest {
         }
 
         @Suppress("UNUSED_PARAMETER")
-        fun handler(a: Int, b: String, ci: CallbackInfo) {
+        fun handler(a: Int, b: String, ci: HookContext) {
             calls += a to b
         }
     }
@@ -1253,7 +1269,7 @@ class MixinScannerTest {
         }
 
         @Suppress("UNUSED_PARAMETER")
-        fun handler(a: Long, b: Boolean, ci: CallbackInfo) {
+        fun handler(a: Long, b: Boolean, ci: HookContext) {
             calls += a to b
         }
     }

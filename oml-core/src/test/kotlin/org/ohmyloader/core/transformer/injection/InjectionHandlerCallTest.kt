@@ -6,7 +6,7 @@ import org.objectweb.asm.tree.*
 import org.ohmyloader.api.inject.HandlerVariant
 import org.ohmyloader.api.inject.InjectionError
 import org.ohmyloader.api.inject.Payload
-import org.ohmyloader.core.mixin.ClassMerger
+import org.ohmyloader.core.hook.ClassMerger
 import org.ohmyloader.core.transformer.TransformContext
 import kotlin.test.*
 
@@ -16,7 +16,7 @@ import kotlin.test.*
  * target instance's field**. That holds only when the "merge + inject" chains are both correctly wired,
  * and failure is silent (reads null / 0, no exception), so every case must **really define the class and
  * really call it**, asserting on "what the handler actually read". One case per path: notifier (reads a
- * `@Shadow` field) / cancellable (short-circuits the method body) / returner (replaces the return
+ * `@Shadow` field) / cancelable (short-circuits the method body) / returner (replaces the return
  * value); under the merge model `this` is the target instance and the injection point a single
  * `INVOKEVIRTUAL`.
  */
@@ -25,8 +25,8 @@ class InjectionHandlerCallTest {
     private val owner = "omltest/HookTarget"
     private val mixinName = "omltest/HookMixin"
 
-    private val callbackInfo = "Lorg/ohmyloader/api/mixin/CallbackInfo;"
-    private val callbackReturnable = "Lorg/ohmyloader/api/mixin/CallbackInfoReturnable;"
+    private val callbackInfo = "Lorg/ohmyloader/api/hook/HookContext;"
+    private val callbackReturnable = "Lorg/ohmyloader/api/hook/HookValue;"
 
     // ---------- Notifier: the handler reads this.<@Shadow field> ----------
 
@@ -87,11 +87,11 @@ class InjectionHandlerCallTest {
         assertTrue(result.problems.single().contains("cannot be auto-renamed"), result.problems.toString())
     }
 
-    // ---------- Cancellable: short-circuits the method body ----------
+    // ---------- Cancelable: short-circuits the method body ----------
 
     @Test
-    fun `cancellable handler short circuits the target body`() {
-        val clazz = build(cancellableSpec())
+    fun `cancelable handler short circuits the target body`() {
+        val clazz = build(cancelableSpec())
 
         HandlerRecorder.recorded.clear()
         clazz.getDeclaredConstructor().newInstance().let { instance ->
@@ -103,8 +103,8 @@ class InjectionHandlerCallTest {
     }
 
     @Test
-    fun `cancellable handler that does not cancel lets the body run`() {
-        val clazz = build(cancellableSpec(cancel = false))
+    fun `cancelable handler that does not cancel lets the body run`() {
+        val clazz = build(cancelableSpec(cancel = false))
 
         HandlerRecorder.recorded.clear()
         clazz.getDeclaredConstructor().newInstance().let { instance ->
@@ -178,13 +178,13 @@ class InjectionHandlerCallTest {
         }
     }
 
-    private fun cancellableSpec(cancel: Boolean = true): InjectionSpec = specOf {
+    private fun cancelableSpec(cancel: Boolean = true): InjectionSpec = specOf {
         classTarget(owner) {
             method("bump", desc = "()V") {
                 atHead {
                     handlerCall(
                         owner, if (cancel) "onBumpCancel" else "onBumpPass",
-                        "($callbackInfo)V", variant = HandlerVariant.CANCELLABLE,
+                        "($callbackInfo)V", variant = HandlerVariant.CANCELABLE,
                     )
                 }
             }
@@ -265,9 +265,9 @@ class InjectionHandlerCallTest {
      *
      * Registering makes the merge do two things (without which the injection point would be
      * `NoSuchMethodError`/`VerifyError`): keep the name and promote the access flag to public — see
-     * [ClassMerger.MixinClass.handlerMethods].
+     * [ClassMerger.HookClass.handlerMethods].
      */
-    private fun mixinCandidate(): ClassMerger.MixinClass = ClassMerger.MixinClass(
+    private fun mixinCandidate(): ClassMerger.HookClass = ClassMerger.HookClass(
         modId = "testmod",
         className = mixinName.replace('/', '.'),
         targetInternal = owner,
@@ -296,7 +296,7 @@ class InjectionHandlerCallTest {
         // @Shadow field: only declares "the target class has it", not merged in
         fields.add(
             FieldNode(Opcodes.ACC_PRIVATE, "tag", "Ljava/lang/String;", null, null).apply {
-                visibleAnnotations = listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/mixin/Shadow;"))
+                visibleAnnotations = listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Borrowed;"))
             },
         )
         // Notifier: reads this.tag (through the @Shadow field) and records it — proving the handler's
@@ -309,7 +309,7 @@ class InjectionHandlerCallTest {
                 add(InsnNode(Opcodes.RETURN))
             },
         )
-        // Cancellable: ci.cancel()
+        // Cancelable: ci.cancel()
         methods.add(
             instance("onBumpCancel", "($callbackInfo)V", Opcodes.ACC_PRIVATE) {
                 add(VarInsnNode(Opcodes.ALOAD, 1))
@@ -317,7 +317,7 @@ class InjectionHandlerCallTest {
                 add(InsnNode(Opcodes.RETURN))
             },
         )
-        // Cancellable but does not cancel: does nothing
+        // Cancelable but does not cancel: does nothing
         methods.add(
             instance("onBumpPass", "($callbackInfo)V", Opcodes.ACC_PRIVATE) { add(InsnNode(Opcodes.RETURN)) },
         )
@@ -363,8 +363,8 @@ class InjectionHandlerCallTest {
 
     private companion object {
         const val RECORDER = "org/ohmyloader/core/transformer/injection/HandlerRecorder"
-        const val CALLBACK_INFO = "org/ohmyloader/api/mixin/CallbackInfo"
-        const val CALLBACK_RETURNABLE = "org/ohmyloader/api/mixin/CallbackInfoReturnable"
+        const val CALLBACK_INFO = "org/ohmyloader/api/hook/HookContext"
+        const val CALLBACK_RETURNABLE = "org/ohmyloader/api/hook/HookValue"
     }
 }
 

@@ -9,7 +9,7 @@ import org.ohmyloader.api.inject.MergeSource
 import org.ohmyloader.api.inject.Payload
 import org.ohmyloader.api.inject.RuleSet
 import org.ohmyloader.api.inject.RuleSetProvider
-import org.ohmyloader.core.mixin.ClassMerger
+import org.ohmyloader.core.hook.ClassMerger
 import org.ohmyloader.core.mod.ModContainer
 import java.io.File
 import java.util.jar.JarFile
@@ -55,7 +55,7 @@ internal object ModRuleSets {
     class Loaded(
         val rules: RuleSet,
         /** Sources declared by the rule set to be merged into target classes, prepared as bytecode (see [MergeSource]). */
-        val merges: List<ClassMerger.MixinClass>,
+        val merges: List<ClassMerger.HookClass>,
         val sources: List<String>,
         val problems: List<String>,
     )
@@ -83,7 +83,7 @@ internal object ModRuleSets {
         }
 
         val sources = mutableListOf<String>()
-        val merges = mutableListOf<ClassMerger.MixinClass>()
+        val merges = mutableListOf<ClassMerger.HookClass>()
         var rules = RuleSet.EMPTY
         for (item in found) {
             val label = item.internalName + (item.id?.let { "($it)" } ?: "")
@@ -245,7 +245,7 @@ internal object ModRuleSets {
     // ------------------------------------------------------------- Merge sources
 
     /**
-     * Reads the merge sources declared in the rule set into [ClassMerger.MixinClass].
+     * Reads the merge sources declared in the rule set into [ClassMerger.HookClass].
      *
      * **Bytecode only, classes are not loaded**: a source class is exactly the kind of class
      * that necessarily references game classes (it moves into a game class), so loading it
@@ -256,9 +256,9 @@ internal object ModRuleSets {
         item: Found,
         rules: RuleSet,
         problems: MutableList<String>,
-    ): List<ClassMerger.MixinClass> {
+    ): List<ClassMerger.HookClass> {
         if (rules.merges.isEmpty()) return emptyList()
-        val out = mutableListOf<ClassMerger.MixinClass>()
+        val out = mutableListOf<ClassMerger.HookClass>()
         JarFile(item.modFile).use { zip ->
             for (source in rules.merges) {
                 val entry = zip.getEntry("${source.sourceInternal}.class")
@@ -271,7 +271,7 @@ internal object ModRuleSets {
                 zip.getInputStream(entry).use { stream ->
                     ClassReader(stream).accept(node, ClassReader.SKIP_DEBUG or ClassReader.EXPAND_FRAMES)
                 }
-                out += ClassMerger.MixinClass(
+                out += ClassMerger.HookClass(
                     modId = item.modId,
                     className = source.sourceInternal,
                     targetInternal = source.targetInternal,

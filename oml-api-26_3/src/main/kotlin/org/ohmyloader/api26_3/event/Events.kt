@@ -21,16 +21,16 @@ object Events {
     val FRAME_RATE_LIMIT = EventDefinition<FrameRateLimitEvent>("frame_rate_limit")
 
     /**
-     * GUI open (cancellable): right before a GUI is shown;
+     * GUI open (cancelable): right before a GUI is shown;
      * [GuiOpenEvent.screen] being null means the current GUI is being closed.
      */
     val GUI_OPEN = EventDefinition<GuiOpenEvent>("gui_open")
 
-    /** Player sending a chat message (cancellable). */
+    /** Player sending a chat message (cancelable). */
     val CHAT_SENT = EventDefinition<ChatSentEvent>("chat_sent")
 
     /**
-     * Chat message received (cancellable; canceling prevents it from being displayed). Dispatches on the
+     * Chat message received (cancelable; canceling prevents it from being displayed). Dispatches on the
      * client's game thread — the packet handlers re-dispatch there before this fires.
      */
     val CHAT_RECEIVED = EventDefinition<ChatReceivedEvent>("chat_received")
@@ -70,30 +70,30 @@ object Events {
     /** A chunk is leaving one server level, while it is still readable. */
     val CHUNK_UNLOADED = EventDefinition<ChunkUnloadedEvent>("chunk_unloaded")
 
-    /** A player is about to destroy a block (cancellable). */
+    /** A player is about to destroy a block (cancelable). */
     val BLOCK_BREAK = EventDefinition<BlockBreakEvent>("block_break")
 
-    /** A player's attack landed on an entity (cancellable). */
+    /** A player's attack landed on an entity (cancelable). */
     val ENTITY_ATTACK = EventDefinition<EntityAttackEvent>("entity_attack")
 
-    /** A player right-clicked an entity (cancellable). */
+    /** A player right-clicked an entity (cancelable). */
     val ENTITY_INTERACT = EventDefinition<EntityInteractEvent>("entity_interact")
 
-    /** A player right-clicked a block with an item or an empty hand (cancellable). */
+    /** A player right-clicked a block with an item or an empty hand (cancelable). */
     val BLOCK_USED = EventDefinition<BlockUsedEvent>("block_used")
 
-    /** A player used the held item on nothing (cancellable). */
+    /** A player used the held item on nothing (cancelable). */
     val ITEM_USED = EventDefinition<ItemUsedEvent>("item_used")
 
-    /** Damage is about to be applied to a living entity (cancellable, [LivingHurtEvent.amount] is writable). */
+    /** Damage is about to be applied to a living entity (cancelable, [LivingHurtEvent.amount] is writable). */
     val LIVING_HURT = EventDefinition<LivingHurtEvent>("living_hurt")
 
-    /** A player is about to open a menu (cancellable). */
+    /** A player is about to open a menu (cancelable). */
     val MENU_OPEN = EventDefinition<MenuOpenEvent>("menu_open")
 
     /** A player closed a menu (opening another one closes the first). */
     val MENU_CLOSED = EventDefinition<MenuClosedEvent>("menu_closed")
 
-    /** A living entity's death routine is starting (cancellable). */
+    /** A living entity's death routine is starting (cancelable). */
     val LIVING_DIED = EventDefinition<LivingDiedEvent>("living_died")
 }

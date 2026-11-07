@@ -1,4 +1,4 @@
-package org.ohmyloader.core.mixin
+package org.ohmyloader.core.hook
 
 import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.inject.InjectionError
@@ -21,9 +21,9 @@ import java.util.concurrent.CopyOnWriteArrayList
  * instructions...) are handed to the startup self-check together with injection-era problems, and
  * the default is to `fail`.
  */
-internal class MixinTransformer(
+internal class HookTransformer(
     override val id: String,
-    private val merges: List<ClassMerger.MixinClass>,
+    private val merges: List<ClassMerger.HookClass>,
     private val injection: InjectingTransformer?,
     private val verifyExtras: List<String>,
 ) : IClassTransformer, IVerifiableTransformer {

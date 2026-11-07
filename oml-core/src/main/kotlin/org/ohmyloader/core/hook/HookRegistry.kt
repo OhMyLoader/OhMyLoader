@@ -1,11 +1,11 @@
-package org.ohmyloader.core.mixin
+package org.ohmyloader.core.hook
 
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.ohmyloader.api.OmlLog
-import org.ohmyloader.api.mixin.CallbackInfo
-import org.ohmyloader.api.mixin.CallbackInfoReturnable
+import org.ohmyloader.api.hook.HookContext
+import org.ohmyloader.api.hook.HookValue
 import org.ohmyloader.core.transformer.injection.Boxing
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
@@ -21,31 +21,31 @@ import java.util.concurrent.atomic.AtomicInteger
  * decidable at compile time (captures depend on each handler's parameter table); a flat `vararg Object[]`
  * would box primitives in the game's main loop (`runTick` runs every frame), while the concrete-descriptor
  * bridge keeps the injection point a clean `INVOKESTATIC` aligned with `DslValue.Local` — zero boxing.
- * Generated **once at startup** (self-check phase), one method per handler (cancellable return `Z`, else `V`).
+ * Generated **once at startup** (self-check phase), one method per handler (cancelable return `Z`, else `V`).
  */
-object OMLMixinRegistry {
+object HookRegistry {
 
-    internal const val BRIDGE_CLASS = "org/ohmyloader/core/mixin/GeneratedMixinBridge"
+    internal const val BRIDGE_CLASS = "org/ohmyloader/core/hook/GeneratedHookBridge"
 
     /**
      * The bridge kind — decides the generated bridge method name, descriptor, and which entry point is called.
      *
      * - [NOTIFY]: announce only, `(captures…, I)V`
-     * - [CANCELLABLE]: short-circuit a void target, `(captures…, I)Z`
-     * - [RETURNABLE]: short-circuit a non-void target with a value, `(captures…, I, CallbackInfoReturnable)V`
+     * - [CANCELABLE]: short-circuit a void target, `(captures…, I)Z`
+     * - [RETURNABLE]: short-circuit a non-void target with a value, `(captures…, I, HookValue)V`
      * - [MODIFY]: use the handler's return value as the result, `(captures…, I)<R>` (`R` = modified argument/constant type)
      * - [MIRROR]: the whole call is replaced by this static method, `(captures…)<R>` — no id parameter (id is
      *   encoded in the method name) and the descriptor **must equal the replaced call's descriptor** (`@Redirect`;
      *   on an instance call the receiver is the first capture)
      */
-    enum class BridgeKind { NOTIFY, CANCELLABLE, RETURNABLE, MODIFY, MIRROR }
+    enum class BridgeKind { NOTIFY, CANCELABLE, RETURNABLE, MODIFY, MIRROR }
 
     /**
      * @param captureTypes JVM descriptors of the captured parameters, order == handler parameter order == push
      *   order. Slot numbers are not here — they belong to the injection point (resolved/validated there by
      *   data-flow analysis); the registry only needs the bridge method's parameter shape.
      * @param handlerParamCount the handler's parameter count (including implicit captures; picks the exact overload)
-     * @param returnsValue whether the handler takes a `CallbackInfoReturnable` (non-void target short-circuiting
+     * @param returnsValue whether the handler takes a `HookValue` (non-void target short-circuiting
      *   with a value)
      * @param returnType the handler's (and the bridge method's) return-type descriptor; `MODIFY`/`MIRROR` pass
      *   through the result with it
@@ -56,7 +56,7 @@ object OMLMixinRegistry {
         val mixinClass: String,
         val handlerMethod: String,
         val targetMethod: String,
-        val cancellable: Boolean,
+        val cancelable: Boolean,
         val captureTypes: List<String> = emptyList(),
         val handlerParamCount: Int = 1,
         val returnsValue: Boolean = false,
@@ -98,7 +98,7 @@ object OMLMixinRegistry {
         mixinClass: String,
         handlerMethod: String,
         targetMethod: String,
-        cancellable: Boolean,
+        cancelable: Boolean,
         captureTypes: List<String> = emptyList(),
         handlerParamCount: Int = captureTypes.size + 1,
         returnsValue: Boolean = false,
@@ -107,7 +107,7 @@ object OMLMixinRegistry {
     ): Int {
         val id = nextId.incrementAndGet()
         handlers[id] = Handler(
-            id, modId, mixinClass, handlerMethod, targetMethod, cancellable,
+            id, modId, mixinClass, handlerMethod, targetMethod, cancelable,
             captureTypes, handlerParamCount, returnsValue, returnType, mirror,
         )
         return id
@@ -119,20 +119,20 @@ object OMLMixinRegistry {
     /** Which kind of bridge this handler uses (derived from the flags set at registration). */
     private fun kindOf(handler: Handler): BridgeKind = when {
         handler.returnsValue -> BridgeKind.RETURNABLE
-        handler.cancellable -> BridgeKind.CANCELLABLE
+        handler.cancelable -> BridgeKind.CANCELABLE
         handler.mirror -> BridgeKind.MIRROR
         handler.returnType != "V" -> BridgeKind.MODIFY
         else -> BridgeKind.NOTIFY
     }
 
-    /** Bridge method name: `inject$<id>` / `injectCancellable$<id>` / … ([BridgeKind.MIRROR] uses `redirect$<id>`). */
-    fun bridgeMethodName(id: Int, cancellable: Boolean): String =
-        bridgeMethodName(id, if (cancellable) BridgeKind.CANCELLABLE else BridgeKind.NOTIFY)
+    /** Bridge method name: `inject$<id>` / `injectCancelable$<id>` / … ([BridgeKind.MIRROR] uses `redirect$<id>`). */
+    fun bridgeMethodName(id: Int, cancelable: Boolean): String =
+        bridgeMethodName(id, if (cancelable) BridgeKind.CANCELABLE else BridgeKind.NOTIFY)
 
     /** Bridge method name by kind ([BridgeKind.RETURNABLE] etc. can only use this overload). */
     fun bridgeMethodName(id: Int, kind: BridgeKind): String = when (kind) {
         BridgeKind.NOTIFY -> "inject$$id"
-        BridgeKind.CANCELLABLE -> "injectCancellable$$id"
+        BridgeKind.CANCELABLE -> "injectCancelable$$id"
         BridgeKind.RETURNABLE -> "injectReturn$$id"
         BridgeKind.MODIFY -> "injectValue$$id"
         BridgeKind.MIRROR -> "redirect$$id"
@@ -140,15 +140,15 @@ object OMLMixinRegistry {
 
     /**
      * The bridge method's JVM descriptor. Convention: `(captures…, id[, callback handle])` -- the captured
-     * arguments come first with id right after, and [BridgeKind.RETURNABLE] appends a `CallbackInfoReturnable`
+     * arguments come first with id right after, and [BridgeKind.RETURNABLE] appends a `HookValue`
      * at the end (created by the engine); [BridgeKind.MIRROR] is the only kind **without an id parameter** (its
      * descriptor must exactly equal the replaced call, so id can only be encoded in the method name).
      *
      * This is the **only** interface convention between the injection bytecode and the reflective call; both the
      * front end's `INVOKESTATIC` construction and the generator must agree with it here.
      */
-    fun bridgeDesc(id: Int, cancellable: Boolean): String =
-        bridgeDesc(id, if (cancellable) BridgeKind.CANCELLABLE else BridgeKind.NOTIFY)
+    fun bridgeDesc(id: Int, cancelable: Boolean): String =
+        bridgeDesc(id, if (cancelable) BridgeKind.CANCELABLE else BridgeKind.NOTIFY)
 
     /** Bridge descriptor by kind. */
     fun bridgeDesc(id: Int, kind: BridgeKind): String {
@@ -157,7 +157,7 @@ object OMLMixinRegistry {
         val ret = handler?.returnType ?: "V"
         return when (kind) {
             BridgeKind.NOTIFY -> "(${types}I)V"
-            BridgeKind.CANCELLABLE -> "(${types}I)Z"
+            BridgeKind.CANCELABLE -> "(${types}I)Z"
             BridgeKind.RETURNABLE -> "(${types}I$CALLBACK_RETURNABLE_DESC)V"
             BridgeKind.MODIFY -> "(${types}I)$ret"
             BridgeKind.MIRROR -> "($types)$ret"
@@ -169,7 +169,7 @@ object OMLMixinRegistry {
 
     /**
      * Generate the bridge class (idempotent). **Must be called before any injection bytecode runs** — called
-     * once by [org.ohmyloader.core.MixinScanner.createTransformer] after scanning **all** mods and registering
+     * once by [org.ohmyloader.core.HookScanner.createTransformer] after scanning **all** mods and registering
      * **all** handlers. A handler registered after this call has no bridge method, so generation can only
      * happen at the point where everything is registered. The result is a class of static methods whose
      * bodies are "pack captures → look up → reflectively invoke"; it is generated rather than hard-coded
@@ -299,7 +299,7 @@ object OMLMixinRegistry {
                 mv.visitInsn(Opcodes.RETURN)
             }
 
-            BridgeKind.CANCELLABLE -> {
+            BridgeKind.CANCELABLE -> {
                 mv.visitLdcInsn(true)
                 mv.visitMethodInsn(
                     Opcodes.INVOKESTATIC, REGISTRY,
@@ -366,12 +366,12 @@ object OMLMixinRegistry {
      * @param captures the captured locals (boxed), in the same order as the handler's parameters
      */
     @JvmStatic
-    fun dispatch(captures: Array<Any?>, id: Int, cancellable: Boolean): Boolean {
+    fun dispatch(captures: Array<Any?>, id: Int, cancelable: Boolean): Boolean {
         val handler = handlers[id] ?: return false
         var canceled = false
         try {
             val call = resolvedCall(handler)
-            val ci = CallbackInfo(handler.targetMethod, cancellable)
+            val ci = HookContext(handler.targetMethod, cancelable)
             call.method.invoke(call.receiver, *(captures + ci))
             canceled = ci.canceled
         } catch (t: Throwable) {
@@ -389,7 +389,7 @@ object OMLMixinRegistry {
      * @param callback the callback handle created by the injection point on the target method
      */
     @JvmStatic
-    fun dispatchReturnable(captures: Array<Any?>, id: Int, callback: CallbackInfoReturnable<*>) {
+    fun dispatchReturnable(captures: Array<Any?>, id: Int, callback: HookValue<*>) {
         val handler = handlers[id] ?: return
         try {
             val call = resolvedCall(handler)
@@ -456,14 +456,14 @@ object OMLMixinRegistry {
 
     private fun handlerDescription(handler: Handler): String = when {
         handler.returnsValue -> "${handler.mixinClass}.${handler.handlerMethod} (expected ${handler.handlerParamCount} parameter(s)," +
-            " i.e. ${handler.handlerParamCount - 1} capture(s) + CallbackInfoReturnable)"
+            " i.e. ${handler.handlerParamCount - 1} capture(s) + HookValue)"
 
         handler.mirror || handler.returnType != "V" ->
             "${handler.mixinClass}.${handler.handlerMethod} (expected shaped (captures…)${handler.returnType}," +
                 " the return type must match the position being rewritten)"
 
         else -> "${handler.mixinClass}.${handler.handlerMethod} (expected ${handler.handlerParamCount} parameter(s)," +
-            " i.e. ${handler.handlerParamCount - 1} capture(s) + CallbackInfo)"
+            " i.e. ${handler.handlerParamCount - 1} capture(s) + HookContext)"
     }
 
     private fun reportHandlerFailure(handler: Handler, t: Throwable) {
@@ -488,7 +488,7 @@ object OMLMixinRegistry {
      */
     private fun resolveHandlerMethod(clazz: Class<*>, handler: Handler): Method {
         val wanted = when (kindOf(handler)) {
-            BridgeKind.NOTIFY, BridgeKind.CANCELLABLE ->
+            BridgeKind.NOTIFY, BridgeKind.CANCELABLE ->
                 "(${handler.captureTypes.joinToString("")}$CALLBACK_INFO_DESC)V"
 
             BridgeKind.RETURNABLE ->
@@ -526,5 +526,5 @@ object OMLMixinRegistry {
         ctor.newInstance()
     }
 
-    private const val REGISTRY = "org/ohmyloader/core/mixin/OMLMixinRegistry"
+    private const val REGISTRY = "org/ohmyloader/core/hook/HookRegistry"
 }

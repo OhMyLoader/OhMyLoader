@@ -1,22 +1,22 @@
-package org.ohmyloader.api.mixin
+package org.ohmyloader.api.hook
 
 /**
  * Callback handle for an injection handler. When OML's Mixin front-end weaves
  * the handler invocation into the target class, it passes this object in via a
  * runtime bridge.
  *
- * [open] so that [CallbackInfoReturnable] for non-void targets can extend it —
+ * [open] so that [HookValue] for non-void targets can extend it —
  * the two share identical "cancellation" semantics; the latter merely adds a
  * return value.
  */
-open class CallbackInfo(val name: String, val cancellable: Boolean) {
+open class HookContext(val name: String, val cancelable: Boolean) {
 
     var canceled: Boolean = false
         private set
 
-    /** Cancels the target method (only effective when [cancellable] and the injection point supports short-circuiting). */
+    /** Cancels the target method (only effective when [cancelable] and the injection point supports short-circuiting). */
     fun cancel() {
-        check(cancellable) { "CallbackInfo($name) is not cancellable" }
+        check(cancelable) { "HookContext($name) is not cancelable" }
         canceled = true
     }
 }
@@ -30,7 +30,7 @@ open class CallbackInfo(val name: String, val cancellable: Boolean) {
  * at every injection point (unboxing would NPE on primitives); with typed accessors one `INVOKEVIRTUAL` suffices and "no value set"
  * degrades to a zero value inside the accessor.
  */
-class CallbackInfoReturnable<T>(name: String, cancellable: Boolean) : CallbackInfo(name, cancellable) {
+class HookValue<T>(name: String, cancelable: Boolean) : HookContext(name, cancelable) {
 
     private var value: T? = null
 
@@ -44,7 +44,7 @@ class CallbackInfoReturnable<T>(name: String, cancellable: Boolean) : CallbackIn
         value = returnValue
     }
 
-    // ---- typed accessors: let the engine avoid generating unbox conversions (aligned with Mixin's CallbackInfoReturnable) ----
+    // ---- typed accessors: let the engine avoid generating unbox conversions (aligned with Mixin's HookValue) ----
     // When unset, they degrade to zero values rather than throwing NPE, so the injection point's bytecode needs no null branch.
 
     @Suppress("UNCHECKED_CAST")
@@ -72,5 +72,5 @@ class CallbackInfoReturnable<T>(name: String, cancellable: Boolean) : CallbackIn
     fun getReturnValueD(): Double = if (value == null) 0.0 else value as Double
 
     override fun toString(): String =
-        "CallbackInfoReturnable[name=$name, cancellable=$cancellable, canceled=$canceled, value=$value]"
+        "HookValue[name=$name, cancelable=$cancelable, canceled=$canceled, value=$value]"
 }

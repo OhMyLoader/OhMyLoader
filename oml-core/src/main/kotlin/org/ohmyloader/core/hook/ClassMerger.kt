@@ -1,4 +1,4 @@
-package org.ohmyloader.core.mixin
+package org.ohmyloader.core.hook
 
 import org.objectweb.asm.Handle
 import org.objectweb.asm.Opcodes
@@ -8,13 +8,13 @@ import org.objectweb.asm.tree.analysis.Analyzer
 import org.objectweb.asm.tree.analysis.BasicInterpreter
 import org.objectweb.asm.tree.analysis.BasicValue
 import org.objectweb.asm.tree.analysis.Frame
-import org.ohmyloader.core.mixin.ClassMerger.inspectConstructor
-import org.ohmyloader.core.mixin.ClassMerger.isMergeableCtorInsn
-import org.ohmyloader.core.mixin.ClassMerger.rebuildClinitFrames
+import org.ohmyloader.core.hook.ClassMerger.inspectConstructor
+import org.ohmyloader.core.hook.ClassMerger.isMergeableCtorInsn
+import org.ohmyloader.core.hook.ClassMerger.rebuildClinitFrames
 
 /**
  * **Class-merge engine**: merges the mixin class's fields/methods into the target class so the merged code
- * lives there: `this` is the target instance, the target's `private` members are directly visible, `@Overwrite`
+ * lives there: `this` is the target instance, the target's `private` members are directly visible, `@Replace`
  * replaces a whole target method body. Constraints that make or break the merge:
  * 1. Self-references must be re-pointed — a moved-in `GETFIELD/INVOKEVIRTUAL <mixin>.…` still naming the mixin
  *    class is a runtime `NoSuchFieldError` / `NoSuchMethodError`.
@@ -26,8 +26,8 @@ import org.ohmyloader.core.mixin.ClassMerger.rebuildClinitFrames
  */
 internal object ClassMerger {
 
-    /** A mixin pending merge (produced by [MixinScanner] during the scan phase). */
-    internal class MixinClass(
+    /** A mixin pending merge (produced by [HookScanner] during the scan phase). */
+    internal class HookClass(
         val modId: String,
         val className: String,
         val targetInternal: String,
@@ -51,16 +51,16 @@ internal object ClassMerger {
         val fields: Int,
         /** Number of new methods merged into the target class (excluding the segment spliced into `<clinit>`). */
         val methods: Int,
-        /** Number of methods replaced by `@Overwrite`. */
+        /** Number of methods replaced by `@Replace`. */
         val overwrites: Int,
-        /** Number of members whose `@Shadow` check passed (fields + methods). */
+        /** Number of members whose `@Borrowed` check passed (fields + methods). */
         val shadows: Int,
         /** Number of members auto-renamed for sharing a name and descriptor with the target. */
         val renamed: Int,
         val problems: List<String>,
-        /** Number of `@Accessor` synthesized for an interface mixin. */
+        /** Number of `@FieldAccess` synthesized for an interface mixin. */
         val accessors: Int = 0,
-        /** Number of `@Invoker` synthesized for an interface mixin. */
+        /** Number of `@MethodAccess` synthesized for an interface mixin. */
         val invokers: Int = 0,
         /** Number of target constructors that received the mixin constructor body. */
         val constructors: Int = 0,
@@ -70,30 +70,30 @@ internal object ClassMerger {
                 accessors > 0 || invokers > 0 || constructors > 0
     }
 
-    private const val SHADOW_DESC = "Lorg/ohmyloader/api/mixin/Shadow;"
-    private const val OVERWRITE_DESC = "Lorg/ohmyloader/api/mixin/Overwrite;"
-    private const val ACCESSOR_DESC = "Lorg/ohmyloader/api/mixin/Accessor;"
-    private const val INVOKER_DESC = "Lorg/ohmyloader/api/mixin/Invoker;"
+    private const val BORROWED_DESC = "Lorg/ohmyloader/api/hook/Borrowed;"
+    private const val OVERWRITE_DESC = "Lorg/ohmyloader/api/hook/Replace;"
+    private const val ACCESSOR_DESC = "Lorg/ohmyloader/api/hook/FieldAccess;"
+    private const val INVOKER_DESC = "Lorg/ohmyloader/api/hook/MethodAccess;"
 
     /** The injection-family annotations: their methods never merge — they are rule carriers. */
     private val INJECTION_FAMILY_DESCS = setOf(
-        "Lorg/ohmyloader/api/mixin/Inject;",
-        "Lorg/ohmyloader/api/mixin/Redirect;",
-        "Lorg/ohmyloader/api/mixin/ModifyArg;",
-        "Lorg/ohmyloader/api/mixin/ModifyArgs;",
-        "Lorg/ohmyloader/api/mixin/ModifyConstant;",
-        "Lorg/ohmyloader/api/mixin/ModifyVariable;",
-        "Lorg/ohmyloader/api/mixin/ModifyReturnValue;",
-        "Lorg/ohmyloader/api/mixin/ModifyExpressionValue;",
+        "Lorg/ohmyloader/api/hook/Inject;",
+        "Lorg/ohmyloader/api/hook/Redirect;",
+        "Lorg/ohmyloader/api/hook/ModifyArg;",
+        "Lorg/ohmyloader/api/hook/ModifyArgs;",
+        "Lorg/ohmyloader/api/hook/ModifyConstant;",
+        "Lorg/ohmyloader/api/hook/ModifyVariable;",
+        "Lorg/ohmyloader/api/hook/ModifyReturnValue;",
+        "Lorg/ohmyloader/api/hook/ModifyExpressionValue;",
     )
 
-    /** `@Overwrite` ledger key: **must include the target class** -- otherwise two mixins overwriting the same-named method in different classes would yield a false conflict. */
+    /** `@Replace` ledger key: **must include the target class** -- otherwise two mixins overwriting the same-named method in different classes would yield a false conflict. */
     private fun overwriteKey(target: String, name: String, desc: String): String = "$target.$name$desc"
 
     /**
      * Merge [mixin] into [target].
      *
-     * @param overwritten the cross-mixin "who already @Overwrite'd this method" ledger (key = `name+desc`) --
+     * @param overwritten the cross-mixin "who already @Replace'd this method" ledger (key = `name+desc`) --
      *   two mixins fighting over the same target method must report a conflict, never silently pick one
      */
     /**
@@ -119,7 +119,7 @@ internal object ClassMerger {
         return null
     }
 
-    fun merge(mixin: MixinClass, target: ClassNode, overwritten: MutableMap<String, String>): Result {
+    fun merge(mixin: HookClass, target: ClassNode, overwritten: MutableMap<String, String>): Result {
         val problems = mutableListOf<String>()
         val where = "[${mixin.modId}] ${mixin.className} → ${target.name}"
         val self = mixin.node.name
@@ -174,13 +174,13 @@ internal object ClassMerger {
 
         val mergedFields = mutableListOf<FieldNode>()
         for (field in mixin.node.fields) {
-            val shadow = field.visibleAnnotations?.find { it.desc == SHADOW_DESC }
+            val shadow = field.visibleAnnotations?.find { it.desc == BORROWED_DESC }
             if (shadow != null) {
                 val hit = resolveShadow(field.name, shadow, field.desc, target.fields.map { it.name to it.desc })
                 if (hit == null) {
-                    problems += "$where —— the @Shadow field could not find a member with the same name and descriptor in the target class:" +
+                    problems += "$where —— the @Borrowed field could not find a member with the same name and descriptor in the target class:" +
                         "${field.name} ${field.desc}${shadowHint(shadow)}" +
-                        " (@Shadow declares that the target class already has its member; writing one that does not exist in the target is surely a mistake)"
+                        " (@Borrowed declares that the target class already has its member; writing one that does not exist in the target is surely a mistake)"
                     continue
                 }
                 shadows++
@@ -211,23 +211,23 @@ internal object ClassMerger {
         for (method in mixin.node.methods) {
             when {
                 method.name == "<init>" -> {
-                    val shadow = method.visibleAnnotations?.find { it.desc == SHADOW_DESC }
+                    val shadow = method.visibleAnnotations?.find { it.desc == BORROWED_DESC }
                     when {
                         method.visibleAnnotations?.any { it.desc == OVERWRITE_DESC } == true ->
-                            problems += "$where —— constructor does not support @Overwrite: ${method.name}${method.desc}" +
+                            problems += "$where —— constructor does not support @Replace: ${method.name}${method.desc}" +
                                 " (wholesale replacement would replace the target's delegate call too)." +
                                 " To add code to the constructor," +
                                 " write it in the mixin constructor instead (code after the delegate call gets merged in)"
 
                         shadow != null -> {
-                            // `@Shadow <init>` = a declaration that "the target class already has this
+                            // `@Borrowed <init>` = a declaration that "the target class already has this
                             // constructor"; it is not merged in itself
                             val hit = resolveShadow(
                                 method.name, shadow, method.desc,
                                 target.methods.map { it.name to it.desc },
                             )
                             if (hit == null) {
-                                problems += "$where —— the @Shadow constructor could not find a member with the same descriptor in the target class:" +
+                                problems += "$where —— the @Borrowed constructor could not find a member with the same descriptor in the target class:" +
                                     "${method.name}${method.desc}"
                             } else {
                                 shadows++
@@ -242,18 +242,18 @@ internal object ClassMerger {
 
                 method.visibleAnnotations?.any { it.desc == OVERWRITE_DESC } == true -> {
                     if (method.instructions.size() == 0) {
-                        problems += "$where —— @Overwrite ${method.name}${method.desc} has no method body"
+                        problems += "$where ——  @Replace ${method.name}${method.desc} has no method body"
                         continue
                     }
                     if (target.methods.none { it.name == method.name && it.desc == method.desc }) {
-                        problems += "$where —— @Overwrite ${method.name}${method.desc} has no corresponding method in the target class" +
+                        problems += "$where ——  @Replace ${method.name}${method.desc} has no corresponding method in the target class" +
                             " (the descriptor must match the target method exactly)"
                         continue
                     }
                     val key = overwriteKey(target.name, method.name, method.desc)
                     val owner = overwritten[key]
                     if (owner != null) {
-                        problems += "$where —— @Overwrite conflict: ${method.name}${method.desc} was already overwritten by $owner" +
+                        problems += "$where —— @Replace conflict: ${method.name}${method.desc} was already overwritten by $owner" +
                             " (two mixins fighting over the same method cannot silently pick one)"
                         continue
                     }
@@ -261,11 +261,11 @@ internal object ClassMerger {
                     overwrites++
                 }
 
-                method.visibleAnnotations?.any { it.desc == SHADOW_DESC } == true -> {
-                    val shadow = method.visibleAnnotations.first { it.desc == SHADOW_DESC }
+                method.visibleAnnotations?.any { it.desc == BORROWED_DESC } == true -> {
+                    val shadow = method.visibleAnnotations.first { it.desc == BORROWED_DESC }
                     val hit = resolveShadow(method.name, shadow, method.desc, target.methods.map { it.name to it.desc })
                     if (hit == null) {
-                        problems += "$where —— the @Shadow method could not find a member with the same name and descriptor in the target class:" +
+                        problems += "$where —— the @Borrowed method could not find a member with the same name and descriptor in the target class:" +
                             "${method.name}${method.desc}${shadowHint(shadow)}"
                         continue
                     }
@@ -274,8 +274,8 @@ internal object ClassMerger {
                 }
 
                 method.instructions.size() == 0 -> problems +=
-                    "$where —— method ${method.name}${method.desc} has no method body and no @Shadow:" +
-                        " merging has nothing to merge in; if it already exists in the target class, mark it @Shadow"
+                    "$where —— method ${method.name}${method.desc} has no method body and no @Borrowed:" +
+                        " merging has nothing to merge in; if it already exists in the target class, mark it @Borrowed"
 
                 else -> {
                     val pinned = "${method.name}${method.desc}" in mixin.handlerMethods
@@ -345,7 +345,7 @@ internal object ClassMerger {
         mixin.node.methods.firstOrNull { it.name == "<clinit>" && it.desc == "()V" }
             ?.let { appendClinit(target, it, where, problems) }
 
-        // ---------- Pass 5: `@Overwrite` replaces method bodies ----------
+        // ---------- Pass 5: `@Replace` replaces method bodies ----------
         for (method in mixin.node.methods) {
             if (method.visibleAnnotations?.any { it.desc == OVERWRITE_DESC } != true) continue
             val targetMethod = target.methods.firstOrNull { it.name == method.name && it.desc == method.desc }
@@ -376,20 +376,20 @@ internal object ClassMerger {
         )
     }
 
-    // ---------- interface mixin: `@Accessor` / `@Invoker` synthesis ----------
+    // ---------- interface mixin: `@FieldAccess` / `@MethodAccess` synthesis ----------
 
     /**
      * Merging an interface mixin = synthesizing method bodies in the target class from the abstract
      * methods' signatures. OML supports only the interface form: an interface method naturally has no
-     * body, so synthesis maps one-to-one onto validating the declaration (`@Accessor` getter reads the
-     * target field, setter writes it, `@Invoker` invokes the target method — all zero reflection, placed
+     * body, so synthesis maps one-to-one onto validating the declaration (`@FieldAccess` getter reads the
+     * target field, setter writes it, `@MethodAccess` invokes the target method — all zero reflection, placed
      * as straight-line code in the target class).
      *
      * Instance members only: an interface's abstract method cannot express a synthesized static body
      * (a Java interface static method must have a body), so a static target member reports a problem.
      */
     private fun mergeAccessors(
-        mixin: MixinClass,
+        mixin: HookClass,
         target: ClassNode,
         where: String,
         problems: MutableList<String>,
@@ -411,7 +411,7 @@ internal object ClassMerger {
             val whereM = "$where —— ${method.name}${method.desc}"
 
             if (accessor == null && invoker == null) {
-                problems += "$whereM —— an interface mixin's methods must carry @Accessor or @Invoker" +
+                problems += "$whereM —— an interface mixin's methods must carry @FieldAccess or @MethodAccess" +
                     " (not declaring one would synthesize nothing and stuff an unaccounted-for method into the target class)"
                 continue
             }
@@ -440,7 +440,7 @@ internal object ClassMerger {
                 // The target class already has a method with this signature ⇒ the accessor is redundant
                 // (usually the field name was written as a method name)
                 if (targetMethods.any { it.first == method.name && it.second == method.desc }) {
-                    problems += "$whereM —— the target class already has a method with this signature, this @Accessor is redundant"
+                    problems += "$whereM —— the target class already has a method with this signature, this @FieldAccess is redundant"
                     continue
                 }
                 val fieldName = inferMemberName(
@@ -451,7 +451,7 @@ internal object ClassMerger {
                     it.name == fieldName && it.desc == (if (argTypes.isEmpty()) retType else argTypes[0]).descriptor
                 }
                 if (targetField == null) {
-                    problems += "$whereM —— the @Accessor could not find the field" +
+                    problems += "$whereM —— the @FieldAccess could not find the field" +
                         " $fieldName : ${(if (argTypes.isEmpty()) retType else argTypes[0]).descriptor}" +
                         " (when value is left empty the field name is inferred from the get/is/set prefix)"
                     continue
@@ -467,7 +467,7 @@ internal object ClassMerger {
                     else -> null
                 }
                 if (shape == null) {
-                    problems += "$whereM —— an @Accessor can only be shaped as a getter (0 args returning the field type) or" +
+                    problems += "$whereM —— an @FieldAccess can only be shaped as a getter (0 args returning the field type) or" +
                         " a setter (1 arg returning void)"
                     continue
                 }
@@ -494,10 +494,10 @@ internal object ClassMerger {
                 continue
             }
 
-            // ---------- @Invoker ----------
+            // ---------- @MethodAccess ----------
             val invokerAnn = invoker ?: continue // "both empty" was already continued above
             if (targetMethods.any { it.first == method.name && it.second == method.desc }) {
-                problems += "$whereM —— the target class already has a method with this signature, this @Invoker is redundant"
+                problems += "$whereM —— the target class already has a method with this signature, this @MethodAccess is redundant"
                 continue
             }
             val targetName = inferMemberName(method.name, invokerAnn, prefixes = listOf("call", "invoke"))
@@ -507,7 +507,7 @@ internal object ClassMerger {
                     Type.getReturnType(it.desc) == retType
             }
             if (targetMethod == null) {
-                problems += "$whereM —— the @Invoker could not find the method $targetName" +
+                problems += "$whereM —— the @MethodAccess could not find the method $targetName" +
                     " (args ${argTypes.joinToString("") { it.descriptor }} returns ${retType.descriptor};" +
                     " the parameter and return types must match the target method exactly)"
                 continue
@@ -638,7 +638,7 @@ internal object ClassMerger {
      * Validate the mixin constructor, cut out the merge segment (everything after the `super()` delegate call,
      * before the trailing `RETURN`), and return the delegate call's index (`-1` = cannot be merged). It must
      * land in the **target's** constructor: a `final` instance field can only be assigned in the declaring
-     * class's `<init>` — a hard JVM rule no reflection can bypass — so `@Shadow` final-field and `@Unique`
+     * class's `<init>` — a hard JVM rule no reflection can bypass — so `@Borrowed` final-field and `@Extra`
      * instance-field initializers must physically live there.
      * Restrictions (each reported as a problem, never silently dropped — see [isMergeableCtorInsn]): no jumps
      * or `switch`, no local writes, reads only slot 0 (`this` is the only slot meaning the same on both sides),
@@ -740,7 +740,7 @@ internal object ClassMerger {
      * The landing point of the merge segment: the position where the target class's own field initializers have
      * all run. A target constructor's layout is "delegate call → own field initializers → constructor body"
      * with no mechanically distinguishable marker between them. The segment often writes the target's own
-     * fields (`@Shadow` final fields do), so inserting right after the delegate call would let the target's own
+     * fields (`@Borrowed` final fields do), so inserting right after the delegate call would let the target's own
      * initializer overwrite them — hence: after the last `PUTFIELD` writing a target instance field. That
      * `PUTFIELD` may sit in a conditional branch, though; the criterion is that no jump before the candidate
      * point crosses over it, otherwise fall back to right after the delegate call (conservative position, but
@@ -851,7 +851,7 @@ internal object ClassMerger {
         val tail = existing.instructions.toArray().lastOrNull { it.opcode == Opcodes.RETURN }
         if (tail == null) {
             problems += "$where —— could not find a RETURN in the target class's <clinit>, so the mixin's static initialization cannot be spliced in" +
-                " (if it cannot be spliced in, @Unique static field initializers would be lost; better to report an error than to stay silent)"
+                " (if it cannot be spliced in, @Extra static field initializers would be lost; better to report an error than to stay silent)"
             return
         }
         val segment = mixinClinit.instructions.toArray()
@@ -931,7 +931,7 @@ internal object ClassMerger {
     // ---------- utility helpers ----------
 
     /**
-     * Name resolution for `@Shadow`: first the own name, then the explicit `value` / `aliases` written in the
+     * Name resolution for `@Borrowed`: first the own name, then the explicit `value` / `aliases` written in the
      * annotation.
      *
      * @param desc the expected descriptor -- **must match exactly** (a wrong type means it was written

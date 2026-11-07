@@ -1,4 +1,4 @@
-package org.ohmyloader.core.mixin
+package org.ohmyloader.core.hook
 
 import omltest.pipeline.PipelineMixin
 import omltest.pipeline.PipelineRecorder
@@ -23,12 +23,12 @@ import kotlin.test.assertTrue
 
 /**
  * The one test that walks the whole real pipeline — annotation mixin compiled into a jar, scanned by
- * `MixinScanner`, merged and injected by `MixinTransformer`, defined through a class loader, called —
+ * `HookScanner`, merged and injected by `HookTransformer`, defined through a class loader, called —
  * because every step is testable in isolation and none of them proves the steps are *wired together*:
  * a scanner that produces rules the transformer never sees, or a merge whose handler the injection
  * cannot resolve, passes every per-step test and does nothing at runtime.
  */
-class MixinPipelineTest {
+class HookPipelineTest {
 
     // ---------- the real pipeline: jar → scanner → transformer → defineClass → call ----------
 
@@ -41,7 +41,7 @@ class MixinPipelineTest {
             entryClass = "omltest.pipeline.PipelineMixin", file = jar,
         )
 
-        val transformer = MixinScanner.createTransformer(listOf(mod))
+        val transformer = HookScanner.createTransformer(listOf(mod))
         assertNotNull(transformer, "the scanner must produce a transformer for an annotated mixin")
         assertTrue(transformer.appliesTo("omltest/pipeline/PipelineTarget"))
 
@@ -75,9 +75,9 @@ class MixinPipelineTest {
         )
 
         // The bridge is generated into a loader that hosts the engine; in a test the cleanest wiring
-        // is MixinScannerTest's: install the test classloader and call the bridge directly.
-        OMLMixinRegistry.installClassLoader(javaClass.classLoader)
-        val transformer = MixinScanner.createTransformer(listOf(mod))
+        // is HookScannerTest's: install the test classloader and call the bridge directly.
+        HookRegistry.installClassLoader(javaClass.classLoader)
+        val transformer = HookScanner.createTransformer(listOf(mod))
         assertNotNull(transformer, "the scanner must produce a transformer for the carrier mixin")
         assertTrue(transformer.appliesTo("omltest/pipeline/StaticInterfaceFixtures\$StaticFactoryTarget"))
 
@@ -88,14 +88,14 @@ class MixinPipelineTest {
         // generated bridge (the static path never goes through a merged handler).
         val create = node.methods.first { it.name == "create" }
         val calls = create.instructions.toArray().filterIsInstance<org.objectweb.asm.tree.MethodInsnNode>()
-            .filter { it.owner == OMLMixinRegistry.BRIDGE_CLASS && it.opcode == Opcodes.INVOKESTATIC }
+            .filter { it.owner == HookRegistry.BRIDGE_CLASS && it.opcode == Opcodes.INVOKESTATIC }
         assertEquals(1, calls.size, "the factory must open with exactly one bridge call: ${calls.map { it.name }}")
 
         // And the bridge dispatches the static handler with a null receiver, short-circuiting the value.
         // The handler id is encoded in the bridge method's name (the only place the engine can put it).
-        val bridge = OMLMixinRegistry.bridgeClass!!.declaredMethods.first { it.name.startsWith("injectReturn") }
+        val bridge = HookRegistry.bridgeClass!!.declaredMethods.first { it.name.startsWith("injectReturn") }
         val handlerId = bridge.name.substringAfterLast('$').toInt()
-        val cir = org.ohmyloader.api.mixin.CallbackInfoReturnable<String>("create", true)
+        val cir = org.ohmyloader.api.hook.HookValue<String>("create", true)
         bridge.invoke(null, handlerId, cir)
         assertEquals("bridged", cir.returnValue, "the static handler's value must reach the handle")
         assertEquals(1, recorderHits.get(), "exactly one dispatch per call")
@@ -107,14 +107,14 @@ class MixinPipelineTest {
     fun `distinct targets merge correctly when transformed in parallel`() {
         val count = 16
         val merges = (0 until count).map { index ->
-            ClassMerger.MixinClass(
+            ClassMerger.HookClass(
                 modId = "pipeline_mod",
                 className = "omltest/pipeline/GenMixin$index",
                 targetInternal = "omltest/pipeline/GenTarget$index",
                 node = genMixin("omltest/pipeline/GenMixin$index", "omltest/pipeline/GenTarget$index"),
             )
         }
-        val transformer = MixinScanner.createTransformer(
+        val transformer = HookScanner.createTransformer(
             mods = emptyList(),
             extraMerges = merges,
         ) ?: error("the scanner must produce a transformer for merge-only candidates")
@@ -224,29 +224,29 @@ class MixinPipelineTest {
     private fun genMixin(name: String, targetInternal: String): ClassNode = ClassNode(Opcodes.ASM9).apply {
         visit(
             Opcodes.V17, Opcodes.ACC_PUBLIC, name, null, "java/lang/Object",
-            arrayOf("Lorg/ohmyloader/api/mixin/Mixin;"),
+            arrayOf("Lorg/ohmyloader/api/hook/Merged;"),
         )
-        visitAnnotation("Lorg/ohmyloader/api/mixin/Mixin;", true).apply {
+        visitAnnotation("Lorg/ohmyloader/api/hook/Merged;", true).apply {
             visit("target", targetInternal.replace('/', '.'))
             visitEnd()
         }
         visitField(
             Opcodes.ACC_PRIVATE, "merged", "Z", null, null,
         ).apply {
-            visitAnnotation("Lorg/ohmyloader/api/mixin/Unique;", true).visitEnd()
+            visitAnnotation("Lorg/ohmyloader/api/hook/Extra;", true).visitEnd()
             visitEnd()
         }
         visitMethod(
-            Opcodes.ACC_PUBLIC, "onTag", "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V", null, null,
+            Opcodes.ACC_PUBLIC, "onTag", "(Lorg/ohmyloader/api/hook/HookContext;)V", null, null,
         ).apply {
-            visitAnnotation("Lorg/ohmyloader/api/mixin/Inject;", true).apply {
-                visitEnum("at", "Lorg/ohmyloader/api/mixin/At;", "HEAD")
+            visitAnnotation("Lorg/ohmyloader/api/hook/Inject;", true).apply {
+                visitEnum("at", "Lorg/ohmyloader/api/hook/At;", "HEAD")
                 visit("method", "tag")
                 visitEnd()
             }
             visitCode()
             visitFieldInsn(
-                Opcodes.GETSTATIC, "org/ohmyloader/core/mixin/GenRecorder", "hits", "Ljava/util/concurrent/atomic/AtomicInteger;",
+                Opcodes.GETSTATIC, "org/ohmyloader/core/hook/GenRecorder", "hits", "Ljava/util/concurrent/atomic/AtomicInteger;",
             )
             visitMethodInsn(
                 Opcodes.INVOKEVIRTUAL, "java/util/concurrent/atomic/AtomicInteger", "incrementAndGet", "()I", false,

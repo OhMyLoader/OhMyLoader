@@ -1,4 +1,4 @@
-package org.ohmyloader.api.mixin
+package org.ohmyloader.api.hook
 
 /*
  * **Class-merge** annotations: `@Shadow` / `@Unique` / `@Overwrite` (plus `@Accessor`/`@Invoker`
@@ -22,7 +22,7 @@ package org.ohmyloader.api.mixin
  */
 @Target(AnnotationTarget.FIELD, AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
-annotation class Shadow(
+annotation class Borrowed(
     val aliases: Array<String> = [],
     val value: String = "",
 )
@@ -35,7 +35,7 @@ annotation class Shadow(
  */
 @Target(AnnotationTarget.FIELD, AnnotationTarget.FUNCTION, AnnotationTarget.CLASS)
 @Retention(AnnotationRetention.RUNTIME)
-annotation class Unique
+annotation class Extra
 
 /**
  * **Replaces** the target method's entire body (aligned with Mixin's `@Overwrite`). The handler
@@ -48,7 +48,7 @@ annotation class Unique
  */
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
-annotation class Overwrite
+annotation class Replace
 
 /**
  * **Synthesizes** an accessor for a field in the target class (aligned with Mixin's `@Accessor`). Only usable on an **interface mixin's**
@@ -60,7 +60,7 @@ annotation class Overwrite
  */
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
-annotation class Accessor(val value: String = "")
+annotation class FieldAccess(val value: String = "")
 
 /**
  * **Synthesizes** a forwarder to a target method (aligned with Mixin's `@Invoker`); likewise only
@@ -72,4 +72,4 @@ annotation class Accessor(val value: String = "")
  */
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
-annotation class Invoker(val value: String = "")
+annotation class MethodAccess(val value: String = "")

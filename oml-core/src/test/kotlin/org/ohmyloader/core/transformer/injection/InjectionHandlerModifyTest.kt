@@ -7,7 +7,7 @@ import org.ohmyloader.api.inject.HandlerKind
 import org.ohmyloader.api.inject.HandlerVariant
 import org.ohmyloader.api.inject.InjectionError
 import org.ohmyloader.api.inject.MethodRuleBuilder
-import org.ohmyloader.core.mixin.ClassMerger
+import org.ohmyloader.core.hook.ClassMerger
 import org.ohmyloader.core.transformer.TransformContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -280,7 +280,7 @@ class InjectionHandlerModifyTest {
 
     @Test
     fun `an entry inject and a ModifyConstant on one method use different slots`() {
-        // The entry short-circuit (`@Inject` cancellable) needs a temp slot for the callback handle,
+        // The entry short-circuit (`@Inject` cancelable) needs a temp slot for the callback handle,
         // and a value kind (`@ModifyConstant`) also needs one to hold "the constant already on the
         // stack". When both hang on the same method, they **must get different slots** — this is exactly
         // the combination that blew up in the real game.
@@ -295,8 +295,8 @@ class InjectionHandlerModifyTest {
             }
             atHead {
                 handlerCall(
-                    OWNER, "onCall2", "(Lorg/ohmyloader/api/mixin/CallbackInfo;)V",
-                    variant = HandlerVariant.CANCELLABLE,
+                    OWNER, "onCall2", "(Lorg/ohmyloader/api/hook/HookContext;)V",
+                    variant = HandlerVariant.CANCELABLE,
                 )
             }
         }.transform(TransformContext(OWNER, target))
@@ -643,7 +643,7 @@ class InjectionHandlerModifyTest {
      * rewrite at merge time turns it into `GETFIELD ModifyTarget.tag`, so "the handler really runs on
      * the target instance" shows up in the string it reads back (`"orig"`).
      */
-    private fun mixinCandidate(signaturesOnly: Boolean = false): ClassMerger.MixinClass = ClassMerger.MixinClass(
+    private fun mixinCandidate(signaturesOnly: Boolean = false): ClassMerger.HookClass = ClassMerger.HookClass(
         modId = "testmod",
         className = MIXIN.replace('/', '.'),
         targetInternal = OWNER,
@@ -658,7 +658,7 @@ class InjectionHandlerModifyTest {
         superName = "java/lang/Object"
         fields.add(
             FieldNode(Opcodes.ACC_PRIVATE, "tag", "Ljava/lang/String;", null, null).apply {
-                visibleAnnotations = listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/mixin/Shadow;"))
+                visibleAnnotations = listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Borrowed;"))
             },
         )
 

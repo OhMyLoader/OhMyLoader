@@ -273,7 +273,7 @@ class MethodRuleBuilder @PublishedApi internal constructor(
      * Attaches an "anchor + payload" pair directly (**used by the annotation
      * front-end**, bypassing the DSL sugar below).
      *
-     * The front-end (`MixinScanner`) already **compiles** annotations into anchor
+     * The front-end (`HookScanner`) already **compiles** annotations into anchor
      * and payload objects, so there is no need to come back through `atHead { … }`
      * sweetener — and combinations like `within`/`slice` are ready-made objects in
      * the front-end, so attaching directly is more straightforward and does not
@@ -549,26 +549,26 @@ class PayloadBuilder @PublishedApi internal constructor(
     }
 
     /**
-     * Cancellable check: on a HEAD + void target method, calls a static handler
+     * Cancelable check: on a HEAD + void target method, calls a static handler
      * returning boolean; true short-circuits the whole method body. The engine
      * synthesizes an entry stack frame for the branch target.
      */
-    fun cancellableCall(owner: String, method: String, desc: String, args: List<DslValue> = emptyList()) {
+    fun cancelableCall(owner: String, method: String, desc: String, args: List<DslValue> = emptyList()) {
         payload = Payload.CheckCall(owner, method, desc, args)
     }
 
     /**
-     * A cancellable check **carrying a return value**: HEAD + non-void target
+     * A cancelable check **carrying a return value**: HEAD + non-void target
      * method.
      *
-     * The engine creates a `CallbackInfoReturnable`, calls the handler, and when
+     * The engine creates a `HookValue`, calls the handler, and when
      * the handler cancels, returns directly using the value it set. [desc] is the
-     * bridge method's descriptor, shaped `(captures…, id, L…CallbackInfoReturnable;)V`;
+     * bridge method's descriptor, shaped `(captures…, id, L…HookValue;)V`;
      * [bridgeArgs] is the part **the engine pushes onto the stack** (captured
      * arguments + id), and the trailing handle is pushed by the engine itself.
      */
-    fun cancellableReturn(owner: String, method: String, desc: String, bridgeArgs: List<DslValue> = emptyList()) {
-        payload = Payload.CancellableReturn(owner, method, desc, bridgeArgs)
+    fun cancelableReturn(owner: String, method: String, desc: String, bridgeArgs: List<DslValue> = emptyList()) {
+        payload = Payload.CancelableReturn(owner, method, desc, bridgeArgs)
     }
 
     /**

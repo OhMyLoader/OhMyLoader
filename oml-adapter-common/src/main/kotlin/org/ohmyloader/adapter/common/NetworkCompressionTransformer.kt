@@ -31,10 +31,10 @@ class NetworkCompressionTransformer(private val idPrefix: String) : InjectingTra
                 desc = "(Lnet/minecraft/network/protocol/login/ServerboundCustomQueryAnswerPacket;)V",
             ) {
                 atHead {
-                    // Cancellable by necessity: 26.3's vanilla body disconnects on ANY answer
+                    // Cancelable by necessity: 26.3's vanilla body disconnects on ANY answer
                     // (javap: the method is a single `disconnect(UNEXPECTED_QUERY)`), so both the
                     // OML answer and a vanilla client's empty fallback answer must cancel it.
-                    cancellableCall(
+                    cancelableCall(
                         bridge, "onServerQueryAnswer",
                         "(Lnet/minecraft/server/network/ServerLoginPacketListenerImpl;" +
                             "Lnet/minecraft/network/protocol/login/ServerboundCustomQueryAnswerPacket;)Z",
@@ -66,7 +66,7 @@ class NetworkCompressionTransformer(private val idPrefix: String) : InjectingTra
                 desc = "(Lnet/minecraft/network/protocol/login/ClientboundCustomQueryPacket;)V",
             ) {
                 atHead {
-                    cancellableCall(
+                    cancelableCall(
                         bridge, "onClientQuery",
                         "(Lnet/minecraft/client/multiplayer/ClientHandshakePacketListenerImpl;" +
                             "Lnet/minecraft/network/protocol/login/ClientboundCustomQueryPacket;)Z",
@@ -78,7 +78,7 @@ class NetworkCompressionTransformer(private val idPrefix: String) : InjectingTra
         classTarget("net/minecraft/network/Connection") {
             method("setupCompression", desc = "(IZ)V") {
                 atHead {
-                    cancellableCall(
+                    cancelableCall(
                         bridge, "onCompressionConfigured",
                         "(Lnet/minecraft/network/Connection;IZ)Z",
                         args = listOf(DslValue.This, DslValue.Arg(0), DslValue.Arg(1)),

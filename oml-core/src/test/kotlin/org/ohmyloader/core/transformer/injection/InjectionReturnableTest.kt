@@ -6,13 +6,13 @@ import org.objectweb.asm.Type
 import org.objectweb.asm.tree.*
 import org.ohmyloader.api.inject.DslValue
 import org.ohmyloader.api.inject.InjectionError
-import org.ohmyloader.api.mixin.CallbackInfoReturnable
-import org.ohmyloader.core.mixin.OMLMixinRegistry
+import org.ohmyloader.api.hook.HookValue
+import org.ohmyloader.core.hook.HookRegistry
 import org.ohmyloader.core.transformer.TransformContext
 import kotlin.test.*
 
 /**
- * Value-bearing short-circuit for non-void targets (`CancellableReturn` + `CallbackInfoReturnable`).
+ * Value-bearing short-circuit for non-void targets (`CancelableReturn` + `HookValue`).
  *
  * These cases assert more than "the instructions were inserted" — they **actually define the class
  * and execute it** — because this area most often fails with **invalid stack frames**
@@ -182,7 +182,7 @@ class InjectionReturnableTest {
     // ---------- rule-level validation ----------
 
     @Test
-    fun `cancellableReturn on a void target is rejected without injecting`() {
+    fun `cancelableReturn on a void target is rejected without injecting`() {
         val spec = returnableSpec("answer", "()I", capturesTargetArg = false, handler = "returnInt")
         val node = targetClass(methodNode("noop", "()V") { insn(Opcodes.RETURN) })
 
@@ -191,7 +191,7 @@ class InjectionReturnableTest {
     }
 
     @Test
-    fun `cancellableReturn bridge desc must end with the returnable handle`() {
+    fun `cancelableReturn bridge desc must end with the returnable handle`() {
         val method = methodNode("answer", "()I") { insn(Opcodes.ICONST_1, Opcodes.IRETURN) }
         val node = targetClass(method)
         val spec = specOf {
@@ -199,25 +199,25 @@ class InjectionReturnableTest {
                 method("answer", desc = "()I") {
                     atHead {
                         // Missing handle: the descriptor ends with (I)V — provably invalid, must fail hard
-                        cancellableReturn(ReturnHandlers.OWNER, "returnInt", "(I)V", listOf(DslValue.IntVal(1)))
+                        cancelableReturn(ReturnHandlers.OWNER, "returnInt", "(I)V", listOf(DslValue.IntVal(1)))
                     }
                 }
             }
         }
 
         val error = assertFailsWith<InjectionError> { spec.transform(TransformContext(owner, node)) }
-        assertTrue(error.message!!.contains("CallbackInfoReturnable"), error.message)
+        assertTrue(error.message!!.contains("HookValue"), error.message)
     }
 
     @Test
-    fun `verify reports a non head anchored cancellableReturn`() {
+    fun `verify reports a non head anchored cancelableReturn`() {
         val spec = specOf {
             classTarget(owner) {
                 method("answer", desc = "()I") {
                     atTail {
-                        cancellableReturn(
+                        cancelableReturn(
                             ReturnHandlers.OWNER, "returnInt",
-                            "(ILorg/ohmyloader/api/mixin/CallbackInfoReturnable;)V",
+                            "(ILorg/ohmyloader/api/hook/HookValue;)V",
                             listOf(DslValue.IntVal(1)),
                         )
                     }
@@ -227,7 +227,7 @@ class InjectionReturnableTest {
 
         val problems = spec.verify()
         assertTrue(
-            problems.any { it.contains("CancellableReturn only supports method-entry anchors") },
+            problems.any { it.contains("CancelableReturn only supports method-entry anchors") },
             problems.toString(),
         )
     }
@@ -238,53 +238,53 @@ class InjectionReturnableTest {
             classTarget(owner) {
                 method("answer", desc = "()I") {
                     atHead {
-                        cancellableReturn(ReturnHandlers.OWNER, "returnInt", "(I)V", listOf(DslValue.IntVal(1)))
+                        cancelableReturn(ReturnHandlers.OWNER, "returnInt", "(I)V", listOf(DslValue.IntVal(1)))
                     }
                 }
             }
         }
 
         val problems = spec.verify()
-        assertTrue(problems.any { it.contains("CallbackInfoReturnable") }, problems.toString())
+        assertTrue(problems.any { it.contains("HookValue") }, problems.toString())
     }
 
     // ---------- bridge contract (registry side) ----------
 
     @Test
     fun `returnable bridge gets the handle in its descriptor`() {
-        OMLMixinRegistry.resetForTests()
-        val id = OMLMixinRegistry.register(
-            "testmod", ReturnHandlers::class.java.name, "returnInt", "answer", cancellable = true,
+        HookRegistry.resetForTests()
+        val id = HookRegistry.register(
+            "testmod", ReturnHandlers::class.java.name, "returnInt", "answer", cancelable = true,
             returnsValue = true, handlerParamCount = 1,
         )
 
-        val kind = OMLMixinRegistry.bridgeKind(id)
-        assertEquals(OMLMixinRegistry.BridgeKind.RETURNABLE, kind)
+        val kind = HookRegistry.bridgeKind(id)
+        assertEquals(HookRegistry.BridgeKind.RETURNABLE, kind)
         assertEquals(
-            "(ILorg/ohmyloader/api/mixin/CallbackInfoReturnable;)V",
-            OMLMixinRegistry.bridgeDesc(id, OMLMixinRegistry.BridgeKind.RETURNABLE),
+            "(ILorg/ohmyloader/api/hook/HookValue;)V",
+            HookRegistry.bridgeDesc(id, HookRegistry.BridgeKind.RETURNABLE),
         )
         assertEquals(
             "injectReturn$$id",
-            OMLMixinRegistry.bridgeMethodName(id, OMLMixinRegistry.BridgeKind.RETURNABLE),
+            HookRegistry.bridgeMethodName(id, HookRegistry.BridgeKind.RETURNABLE),
         )
     }
 
     @Test
-    fun `returnsValue wins over cancellable when deciding the bridge kind`() {
-        OMLMixinRegistry.resetForTests()
-        val id = OMLMixinRegistry.register(
+    fun `returnsValue wins over cancelable when deciding the bridge kind`() {
+        HookRegistry.resetForTests()
+        val id = HookRegistry.register(
             "testmod", ReturnHandlers::class.java.name, "returnInt", "answer",
-            cancellable = true, returnsValue = true, handlerParamCount = 1,
+            cancelable = true, returnsValue = true, handlerParamCount = 1,
         )
-        assertEquals(OMLMixinRegistry.BridgeKind.RETURNABLE, OMLMixinRegistry.bridgeKind(id))
+        assertEquals(HookRegistry.BridgeKind.RETURNABLE, HookRegistry.bridgeKind(id))
     }
 
     // ---------- scaffolding ----------
 
     /**
      * Runs the whole chain through the real registry + generated bridge class (no stubbing):
-     * register handler → generate bridge class → build a `CancellableReturn` rule.
+     * register handler → generate bridge class → build a `CancelableReturn` rule.
      *
      * @param targetName target method name (the rule's selector uses it)
      * @param targetDesc target method descriptor (determines the return type and capture slots)
@@ -296,23 +296,23 @@ class InjectionReturnableTest {
         capturesTargetArg: Boolean,
         handler: String,
     ): InjectionSpec {
-        OMLMixinRegistry.resetForTests()
-        OMLMixinRegistry.installClassLoader(InjectionReturnableTest::class.java.classLoader)
-        val id = OMLMixinRegistry.register(
+        HookRegistry.resetForTests()
+        HookRegistry.installClassLoader(InjectionReturnableTest::class.java.classLoader)
+        val id = HookRegistry.register(
             modId = "testmod",
             mixinClass = ReturnHandlers::class.java.name,
             handlerMethod = handler,
             targetMethod = targetName,
-            cancellable = true,
+            cancelable = true,
             captureTypes = if (capturesTargetArg) listOf("I") else emptyList(),
             handlerParamCount = if (capturesTargetArg) 2 else 1,
             returnsValue = true,
         )
-        OMLMixinRegistry.ensureBridgeGenerated()
+        HookRegistry.ensureBridgeGenerated()
 
-        val kind = OMLMixinRegistry.BridgeKind.RETURNABLE
-        val bridgeDesc = OMLMixinRegistry.bridgeDesc(id, kind)
-        val bridgeMethod = OMLMixinRegistry.bridgeMethodName(id, kind)
+        val kind = HookRegistry.BridgeKind.RETURNABLE
+        val bridgeDesc = HookRegistry.bridgeDesc(id, kind)
+        val bridgeMethod = HookRegistry.bridgeMethodName(id, kind)
         val args = if (capturesTargetArg) {
             listOf(DslValue.Arg(0), DslValue.IntVal(id))
         } else {
@@ -322,7 +322,7 @@ class InjectionReturnableTest {
             classTarget(owner) {
                 method(targetName, desc = targetDesc) {
                     atHead {
-                        cancellableReturn(OMLMixinRegistry.BRIDGE_CLASS, bridgeMethod, bridgeDesc, args)
+                        cancelableReturn(HookRegistry.BRIDGE_CLASS, bridgeMethod, bridgeDesc, args)
                     }
                 }
             }
@@ -370,7 +370,7 @@ class InjectionReturnableTest {
         // The target class must be able to see the generated bridge class — so the loader's parent is set
         // to the loader that owns the bridge class. This also proves the bridge class was really
         // defined into some loader and is resolvable.
-        val parent = OMLMixinRegistry.bridgeClass?.classLoader
+        val parent = HookRegistry.bridgeClass?.classLoader
             ?: InjectionReturnableTest::class.java.classLoader
         return object : ClassLoader(parent) {
             fun define(): Class<*> = defineClass(owner.replace('/', '.'), bytes, 0, bytes.size)
@@ -404,43 +404,43 @@ object ReturnHandlers {
     const val OWNER: String = "org/ohmyloader/core/transformer/injection/ReturnHandlers"
 
     @JvmStatic
-    fun returnInt(ci: CallbackInfoReturnable<Any?>) {
+    fun returnInt(ci: HookValue<Any?>) {
         ci.setReturnValue(99)
     }
 
     @JvmStatic
-    fun returnLong(ci: CallbackInfoReturnable<Any?>) {
+    fun returnLong(ci: HookValue<Any?>) {
         ci.setReturnValue(9_000_000_000L)
     }
 
     @JvmStatic
-    fun returnDouble(ci: CallbackInfoReturnable<Any?>) {
+    fun returnDouble(ci: HookValue<Any?>) {
         ci.setReturnValue(1.5)
     }
 
     @JvmStatic
-    fun returnString(ci: CallbackInfoReturnable<Any?>) {
+    fun returnString(ci: HookValue<Any?>) {
         ci.setReturnValue("hooked")
     }
 
     @JvmStatic
-    fun returnTrue(ci: CallbackInfoReturnable<Any?>) {
+    fun returnTrue(ci: HookValue<Any?>) {
         ci.setReturnValue(true)
     }
 
     @JvmStatic
-    fun leaveAlone(ci: CallbackInfoReturnable<Any?>) {
+    fun leaveAlone(ci: HookValue<Any?>) {
         // No cancel -> the original method body runs as usual
     }
 
     @JvmStatic
-    fun cancelOnly(ci: CallbackInfoReturnable<Any?>) {
+    fun cancelOnly(ci: HookValue<Any?>) {
         ci.cancel()
     }
 
     /** Handler with capture (the target's 0th argument). */
     @JvmStatic
-    fun timesTen(value: Int, ci: CallbackInfoReturnable<Any?>) {
+    fun timesTen(value: Int, ci: HookValue<Any?>) {
         ci.setReturnValue(value * 10)
     }
 }

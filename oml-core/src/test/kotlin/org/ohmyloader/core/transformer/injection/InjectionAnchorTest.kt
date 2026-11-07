@@ -429,7 +429,7 @@ class InjectionAnchorTest {
             classTarget(owner) {
                 method("m", desc = "()V") {
                     within(to = Anchor.call(name = "end")) {
-                        atHead { cancellableCall("x/Y", "check", "()Z") }
+                        atHead { cancelableCall("x/Y", "check", "()Z") }
                     }
                 }
             }
@@ -535,12 +535,12 @@ class InjectionAnchorTest {
      * the short-circuit still covering the code after it.
      */
     @Test
-    fun `checkCall after a void call lands there and stays cancellable`() {
+    fun `checkCall after a void call lands there and stays cancelable`() {
         val spec = spec {
             classTarget(owner) {
                 method("m", desc = "(Ljava/lang/String;)V") {
                     afterCall(owner = Handlers.OWNER, name = "sink") {
-                        cancellableCall(
+                        cancelableCall(
                             Handlers.OWNER, "onChat", "(Ljava/lang/String;)Z",
                             args = listOf(DslValue.Arg(0)),
                         )
@@ -590,7 +590,7 @@ class InjectionAnchorTest {
             classTarget(owner) {
                 method("m", desc = "()V") {
                     afterCall(owner = Handlers.OWNER, name = "sink0") {
-                        cancellableCall(Handlers.OWNER, "onChatNoArgs", "()Z")
+                        cancelableCall(Handlers.OWNER, "onChatNoArgs", "()Z")
                     }
                 }
             }

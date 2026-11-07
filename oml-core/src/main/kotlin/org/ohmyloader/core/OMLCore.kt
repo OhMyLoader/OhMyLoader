@@ -18,8 +18,8 @@ import org.ohmyloader.core.OMLCore.installLogFile
 import org.ohmyloader.core.classloader.OMLClassLoader
 import org.ohmyloader.core.client.KeyBindingDeclarations
 import org.ohmyloader.core.command.CommandDeclarations
-import org.ohmyloader.core.mixin.MixinScanner
-import org.ohmyloader.core.mixin.OMLMixinRegistry
+import org.ohmyloader.core.hook.HookScanner
+import org.ohmyloader.core.hook.HookRegistry
 import org.ohmyloader.core.mod.ModContainer
 import org.ohmyloader.core.mod.ModGraph
 import org.ohmyloader.core.mod.ModScanner
@@ -257,9 +257,9 @@ object OMLCore {
             registered += transformer
         }
 
-        OMLMixinRegistry.installClassLoader(omlLoader)
+        HookRegistry.installClassLoader(omlLoader)
         val modRules = ModRuleSets.load(mods, omlLoader)
-        val mixinTransformer = MixinScanner.createTransformer(
+        val mixinTransformer = HookScanner.createTransformer(
             mods, modRules.rules, modRules.merges, modRules.problems,
         )
         if (mixinTransformer != null) {

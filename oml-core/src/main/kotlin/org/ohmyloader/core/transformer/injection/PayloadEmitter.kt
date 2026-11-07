@@ -5,8 +5,8 @@ import org.objectweb.asm.Type
 import org.objectweb.asm.tree.*
 import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.inject.*
-import org.ohmyloader.core.mixin.*
-import org.ohmyloader.core.transformer.injection.PayloadEmitter.emitCancellableReturn
+import org.ohmyloader.core.hook.*
+import org.ohmyloader.core.transformer.injection.PayloadEmitter.emitCancelableReturn
 import org.ohmyloader.core.transformer.injection.PayloadEmitter.emitValue
 
 
@@ -64,7 +64,7 @@ internal object PayloadEmitter {
         }
 
         is Payload.Redirect -> error("Redirect substitutes the instruction directly in the engine and does not go through emit")
-        is Payload.CancellableReturn -> emitCancellableReturn(payload, method, owner, locals)
+        is Payload.CancelableReturn -> emitCancelableReturn(payload, method, owner, locals)
 
         // Value-modifying instance handlers: **no handle** — the handler's return value IS the conclusion.
         // They go through the same emission logic as the same-named external static payloads, except the call
@@ -210,10 +210,10 @@ internal object PayloadEmitter {
     /**
      * Directly calls the "handler merged into the target class": `this` is the target instance.
      *
-     * Nearly the same skeleton as [emitCancellableReturn], with two differences:
+     * Nearly the same skeleton as [emitCancelableReturn], with two differences:
      * 1. Push **`ALOAD 0` (the target instance)** first, then the capture arguments; the call is `INVOKEVIRTUAL`
      *    (not a static bridge);
-     * 2. The handle `CallbackInfo` / `CallbackInfoReturnable` is created by the engine and passed in.
+     * 2. The handle `HookContext` / `HookValue` is created by the engine and passed in.
      *
      * Static target methods are rejected: the whole point of [HandlerCall] is handing `this` to the handler.
      */
@@ -232,16 +232,16 @@ internal object PayloadEmitter {
         val ret = Type.getReturnType(method.desc)
         when (payload.variant) {
             HandlerVariant.NOTIFY -> Unit
-            HandlerVariant.CANCELLABLE -> if (ret != Type.VOID_TYPE) {
+            HandlerVariant.CANCELABLE -> if (ret != Type.VOID_TYPE) {
                 throw InjectionError(
-                    "[injection] the CANCELLABLE form is only for void targets (for non-void use RETURNABLE): " +
+                    "[injection] the CANCELABLE form is only for void targets (for non-void use RETURNABLE): " +
                         "${method.name}${method.desc} returns ${ret.className}",
                 )
             }
 
             HandlerVariant.RETURNABLE -> if (ret == Type.VOID_TYPE) {
                 throw InjectionError(
-                    "[injection] the RETURNABLE form requires a non-void target (for a void target use CANCELLABLE): " +
+                    "[injection] the RETURNABLE form requires a non-void target (for a void target use CANCELABLE): " +
                         "${method.name}${method.desc}",
                 )
             }
@@ -258,10 +258,10 @@ internal object PayloadEmitter {
         validateArgTypes(payload.desc, payload.captures, 0, method, owner, locals, "HandlerCall", tailSkip = 1)
 
         // The handle **must be created for all three variants**: the handler's parameter list always ends with it
-        // (a notify-style `CallbackInfo` is mandatory too). Whether to "read it back" is the only differentiator —
+        // (a notify-style `HookContext` is mandatory too). Whether to "read it back" is the only differentiator —
         // only cancelable/returnable variants need to read back the cancel flag.
         val readsBack = payload.variant != HandlerVariant.NOTIFY
-        val cancellableHandle = payload.variant != HandlerVariant.NOTIFY
+        val cancelableHandle = payload.variant != HandlerVariant.NOTIFY
         val internal = if (payload.variant == HandlerVariant.RETURNABLE) CALLBACK_RETURNABLE else CALLBACK_INFO
         val slot = allocLocalSlot(method)
         method.maxLocals = maxOf(method.maxLocals, slot + 1)
@@ -270,7 +270,7 @@ internal object PayloadEmitter {
         list.add(TypeInsnNode(Opcodes.NEW, internal))
         list.add(InsnNode(Opcodes.DUP))
         list.add(LdcInsnNode(method.name))
-        list.add(InsnNode(if (cancellableHandle) Opcodes.ICONST_1 else Opcodes.ICONST_0))
+        list.add(InsnNode(if (cancelableHandle) Opcodes.ICONST_1 else Opcodes.ICONST_0))
         list.add(MethodInsnNode(Opcodes.INVOKESPECIAL, internal, "<init>", "(Ljava/lang/String;Z)V", false))
         list.add(VarInsnNode(Opcodes.ASTORE, slot))
 
@@ -286,7 +286,7 @@ internal object PayloadEmitter {
         list.add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, internal, "getCanceled", "()Z", false))
         list.add(JumpInsnNode(Opcodes.IFEQ, cont))
 
-        if (payload.variant == HandlerVariant.CANCELLABLE) {
+        if (payload.variant == HandlerVariant.CANCELABLE) {
             list.add(InsnNode(Opcodes.RETURN))
             list.add(cont)
             list.add(entryFrame(owner, method, extraLocals = mapOf(slot to CALLBACK_INFO)))
@@ -303,44 +303,44 @@ internal object PayloadEmitter {
     }
 
     /**
-     * The full return-value short-circuit sequence: create the `CallbackInfoReturnable` handle into a local
+     * The full return-value short-circuit sequence: create the `HookValue` handle into a local
      * slot, call the handler through the `INVOKESTATIC` bridge as `(captures…, id, cir)`, and if `canceled`
      * return `cir.getReturnValueX()` (typed accessor: no unboxing, no null branch); otherwise continue with
      * the original method body. The handle, together with `id`, is pushed by the engine (per
-     * [Payload.CancellableReturn]'s [desc]), because the engine must read back `canceled` and the return
+     * [Payload.CancelableReturn]'s [desc]), because the engine must read back `canceled` and the return
      * value after the call.
      */
-    private fun emitCancellableReturn(
-        payload: Payload.CancellableReturn,
+    private fun emitCancelableReturn(
+        payload: Payload.CancelableReturn,
         method: MethodNode,
         owner: String,
         locals: AnchorLocals?,
     ): InsnList? {
         val ret = Type.getReturnType(method.desc)
         if (ret == Type.VOID_TYPE) {
-            OmlLog.error("Injection", "CancellableReturn requires a non-void target: ${method.name}${method.desc}")
+            OmlLog.error("Injection", "CancelableReturn requires a non-void target: ${method.name}${method.desc}")
             return null
         }
         if (!payload.desc.endsWith(CALLBACK_RETURNABLE_TAIL)) {
             throw InjectionError(
-                "[injection] the bridge descriptor of CancellableReturn must end with ${CALLBACK_RETURNABLE_DESC})V" +
+                "[injection] the bridge descriptor of CancelableReturn must end with ${CALLBACK_RETURNABLE_DESC})V" +
                     " (captured arguments, id, and callback handle pushed in order): ${method.name}${method.desc} uses ${payload.desc}",
             )
         }
         // bridgeArgs are all the args the engine pushes (captures + id); the descriptor has one extra trailing handle,
         // which the engine pushes itself via ALOAD and doesn't take part in this type comparison — so skip the last 1.
-        validateArgTypes(payload.desc, payload.bridgeArgs, 0, method, owner, locals, "CancellableReturn", tailSkip = 1)
+        validateArgTypes(payload.desc, payload.bridgeArgs, 0, method, owner, locals, "CancelableReturn", tailSkip = 1)
 
         val slot = allocLocalSlot(method)
         // Make maxLocals cover the new slot (COMPUTE_MAXS recomputes it on write-back, but this avoids depending on it)
         method.maxLocals = maxOf(method.maxLocals, slot + 1)
         val list = InsnList()
 
-        // var cir = new CallbackInfoReturnable("<target method name>", true)
+        // var cir = new HookValue("<target method name>", true)
         list.add(TypeInsnNode(Opcodes.NEW, CALLBACK_RETURNABLE))
         list.add(InsnNode(Opcodes.DUP))
         list.add(LdcInsnNode(method.name))
-        list.add(InsnNode(Opcodes.ICONST_1)) // cancellable: only cancelable injection points walk this path
+        list.add(InsnNode(Opcodes.ICONST_1)) // cancelable: only cancelable injection points walk this path
         list.add(MethodInsnNode(Opcodes.INVOKESPECIAL, CALLBACK_RETURNABLE, "<init>", "(Ljava/lang/String;Z)V", false))
         list.add(VarInsnNode(Opcodes.ASTORE, slot))
 
@@ -407,7 +407,7 @@ internal object PayloadEmitter {
      *   `TransformReturn`'s first param is the return value already on the stack; only from the 2nd param on does
      *   [args] correspond)
      * @param tailSkip number of params at the **end** of the descriptor that this push doesn't cover (e.g.
-     *   `CancellableReturn`'s trailing handler id and callback handle are pushed separately by the engine)
+     *   `CancelableReturn`'s trailing handler id and callback handle are pushed separately by the engine)
      * **Only throws when provably illegal**: a count mismatch or a primitive/reference mix is always illegal;
      * whether one reference is a supertype of another needs the class hierarchy, and this runs inside
      * `findClass`, so loading other classes is unsuitable (re-entry). That case is left to the JVM verifier,

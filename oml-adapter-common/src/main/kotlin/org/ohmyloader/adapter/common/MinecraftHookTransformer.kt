@@ -120,14 +120,14 @@ class MinecraftHookTransformer(private val idPrefix: String, private val shapes:
                     )
                 }
             }
-            // GuiOpenEvent (cancellable). 26.3 renamed `setScreen` to `setScreenAndShow`, and the
+            // GuiOpenEvent (cancelable). 26.3 renamed `setScreen` to `setScreenAndShow`, and the
             // method now also forces a frame: `Gui.setScreen(screen)` at offset 17 is followed by
             // `renderFrame(false)`. Canceling here therefore short-circuits both the screen swap and
             // that forced frame — the hook must sit ahead of both, so HEAD is the only anchor that
             // covers the whole GUI-open path.
             method("setScreenAndShow", desc = "(Lnet/minecraft/client/gui/screens/Screen;)V") {
                 atHead {
-                    cancellableCall(
+                    cancelableCall(
                         "org/ohmyloader/adapter/common/EventBridge", "onGuiOpen",
                         "(Lnet/minecraft/client/gui/screens/Screen;)Z",
                         args = listOf(DslValue.Arg(0)),
@@ -266,16 +266,16 @@ class MinecraftHookTransformer(private val idPrefix: String, private val shapes:
             }
         }
         classTarget("net/minecraft/client/multiplayer/ClientPacketListener") {
-            // ChatSentEvent (cancellable): sendChat head, message = Arg(1)
+            // ChatSentEvent (cancelable): sendChat head, message = Arg(1)
             method("sendChat", desc = "(Ljava/lang/String;)V") {
                 atHead {
-                    cancellableCall(
+                    cancelableCall(
                         "org/ohmyloader/adapter/common/EventBridge", "onChatSent", "(Ljava/lang/String;)Z",
                         args = listOf(DslValue.Arg(0)),
                     )
                 }
             }
-            // ChatReceivedEvent (cancellable): the three inbound chat packet handlers, packet = Arg(0).
+            // ChatReceivedEvent (cancelable): the three inbound chat packet handlers, packet = Arg(0).
             // Each handler re-dispatches itself: PacketUtils.ensureRunningOnSameThread is its first call
             // and on the netty thread re-schedules the packet and throws (caught by the network loop),
             // so the anchor sits AFTER that call — a HEAD hook would fire once per message on the netty
@@ -286,7 +286,7 @@ class MinecraftHookTransformer(private val idPrefix: String, private val shapes:
                     name = "ensureRunningOnSameThread",
                     opcode = org.objectweb.asm.Opcodes.INVOKESTATIC,
                 ) {
-                    cancellableCall(
+                    cancelableCall(
                         "org/ohmyloader/adapter/common/EventBridge", "onChatReceived",
                         "(Lnet/minecraft/network/protocol/Packet;)Z",
                         args = listOf(DslValue.Arg(0)),
@@ -299,7 +299,7 @@ class MinecraftHookTransformer(private val idPrefix: String, private val shapes:
                     name = "ensureRunningOnSameThread",
                     opcode = org.objectweb.asm.Opcodes.INVOKESTATIC,
                 ) {
-                    cancellableCall(
+                    cancelableCall(
                         "org/ohmyloader/adapter/common/EventBridge", "onChatReceived",
                         "(Lnet/minecraft/network/protocol/Packet;)Z",
                         args = listOf(DslValue.Arg(0)),
@@ -315,7 +315,7 @@ class MinecraftHookTransformer(private val idPrefix: String, private val shapes:
                     name = "ensureRunningOnSameThread",
                     opcode = org.objectweb.asm.Opcodes.INVOKESTATIC,
                 ) {
-                    cancellableCall(
+                    cancelableCall(
                         "org/ohmyloader/adapter/common/EventBridge", "onChatReceived",
                         "(Lnet/minecraft/network/protocol/Packet;)Z",
                         args = listOf(DslValue.Arg(0)),

@@ -94,7 +94,7 @@ object OmlZstdNetwork {
     }
 
     /**
-     * Head of `ServerLoginPacketListenerImpl.handleCustomQueryPacket` (**cancellable**): recognize
+     * Head of `ServerLoginPacketListenerImpl.handleCustomQueryPacket` (**cancelable**): recognize
      * the OML answer. 26.3's vanilla body is *unconditionally* `disconnect(UNEXPECTED_QUERY)` —
      * verified with `javap`, any answer to any login query gets kicked — so this hook MUST cancel
      * the body for every answer to our own query id: a `SERVER_MARKER` payload means OML peer
@@ -142,7 +142,7 @@ object OmlZstdNetwork {
     }
 
     /**
-     * Head of `ClientHandshakePacketListenerImpl.handleCustomQuery` (cancellable): answer our
+     * Head of `ClientHandshakePacketListenerImpl.handleCustomQuery` (cancelable): answer our
      * query with the `OMLZ` marker and short-circuit vanilla, which would otherwise also emit an
      * empty answer for the unknown channel — two answers to one query would corrupt the stream.
      */
@@ -164,7 +164,7 @@ object OmlZstdNetwork {
     }
 
     /**
-     * Head of `Connection.setupCompression` (cancellable): when OML's handlers are already in the
+     * Head of `Connection.setupCompression` (cancelable): when OML's handlers are already in the
      * pipeline, vanilla's "instanceof CompressionEncoder" check would fall through to its add
      * branch and hit a duplicate pipeline name — reconfigure ours and skip the body instead.
      */

@@ -1,17 +1,54 @@
-package org.ohmyloader.api.mixin
+package org.ohmyloader.api.hook
 
 /**
- * Declares an OML Mixin: methods carrying [Inject] / [Redirect] / `@Modify*` annotations are compiled into injection rules and woven in when the target class loads; [target] is the mapped fully qualified name.
- * Two models, decided by whether a merge annotation ([Shadow]/[Unique]/[Overwrite]/`@Accessor`/`@Invoker`) is declared: **injection** (default) calls a bridge method at the injection point, handler in the mixin class — `this` is the mixin instance, target members need reflection.
- * **Class merge** merges the members into the target class and the injection point calls the handler directly (`this` = target instance, `@Shadow` members visible, no bridging or reflection).
- * Handlers never declare the receiver (it is `this`): [Inject] `(captures…, CallbackInfo)` (or `CallbackInfoReturnable` when cancellable/returning a value); Modify* `(value[, captures…])T`; [ModifyArgs] `(Args[, captures…])V`.
- * [Redirect] alone takes the replaced call's receiver as first parameter — the handler's `this` is the target instance, the replaced call's receiver is another object.
- * Hit counts are declared per annotation (Java annotations have no field inheritance) but share one semantics: `require` = minimum (fewer throws), `allow` = maximum (more throws), `expect` = warns; -1 = undeclared, where a no-hit only warns.
- * A wrong rule silently does one thing less instead of crashing — so write `require = 1` on must-hit rules.
+ * Declares a **hook carrier**: methods carrying [Inject] / [Redirect] / `@Modify*` annotations are
+ * compiled into injection rules and woven in when the target class loads; [target] is the mapped
+ * fully qualified name. Every handler is dispatched through the engine's generated bridge —
+ * `this` inside the handler is the carrier instance, **never** the target object.
+ *
+ * Need the target instance? Declare it as the handler's **first parameter, typed as the target
+ * class** — the bridge passes it at the injection point and the shape is checked at startup:
+ *
+ * ```kotlin
+ * @Hooked(target = "net.minecraft.world.item.ItemStack")
+ * class ItemStackHooks {
+ *     @Inject(method = "getTooltipLines", desc = "…", at = At(At.RETURN))
+ *     fun onTooltip(self: ItemStack, lines: List<Component>, ci: HookContext) { … }
+ * }
+ * ```
+ *
+ * Merge-family annotations ([Borrowed]/[Extra]/[Replace]/[FieldAccess]/[MethodAccess]) belong to
+ * [Merged] and are rejected here. A handler whose first parameter is the target type is also a
+ * startup error on **static** targets and interface targets — there is no instance to pass.
+ * Handlers never declare the receiver implicitly: [Inject] `(self?, captures…, HookContext)` (or
+ * `HookValue` when cancelable/returning a value); Modify* `(self?, value[, captures…])T`;
+ * [ModifyArgs] `(self?, Args)V`.
+ * Hit counts are declared per annotation (Java annotations have no field inheritance) but share
+ * one semantics: `require` = minimum (fewer throws), `allow` = maximum (more throws), `expect` =
+ * warns; -1 = undeclared, where a no-hit only warns. A wrong rule silently does one thing less
+ * instead of crashing — so write `require = 1` on must-hit rules.
  */
 @Target(AnnotationTarget.CLASS)
 @Retention(AnnotationRetention.RUNTIME)
-annotation class Mixin(val target: String)
+annotation class Hooked(val target: String)
+
+/**
+ * Declares a **merge carrier**: the class's members merge into the target class when it loads —
+ * [Borrowed] members reference the target's own, [Extra] members are new, [Replace] swaps a body,
+ * [FieldAccess]/[MethodAccess] (on interface carriers) synthesize access to private members — and
+ * **instance** handlers are invoked directly at the injection point (`this` = the target instance,
+ * borrowed members directly readable, no bridging or reflection).
+ *
+ * This is the model whose `this` is the game object; it exists for the cases that need it —
+ * reading the target's own members from a handler, replacing a body. Everything else belongs to
+ * [Hooked], whose `this` never pretends to be the target.
+ * [target] is the mapped fully qualified name. An interface target cannot take merged members —
+ * the scanner rejects the carrier, naming them. Static handlers on a [Merged] carrier dispatch
+ * through the bridge (same as [Hooked]).
+ */
+@Target(AnnotationTarget.CLASS)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class Merged(val target: String)
 
 /**
  * The injection location (aligned with Mixin's `@At`). Constants: [HEAD] first instruction; [CTOR_HEAD] after a constructor's `super()`/`this()` (equals [HEAD] elsewhere); [RETURN] every return; [TAIL] the last return; [INVOKE] / [INVOKE_ASSIGN] before / after a matched call; [FIELD] a field access; [NEW] a `new`; [CONSTANT] a constant load ([args] writes the value); [STORE] / [LOAD] after a local write / before a local read.
@@ -93,7 +130,7 @@ annotation class Constant(
 
 /**
  * Local variable capture modes (aligned with Mixin's `LocalCapture`):
- * - [NO_CAPTURE] (default): capture nothing — the handler parameter list can **only** be `(CallbackInfo)` / `(CallbackInfoReturnable)`;
+ * - [NO_CAPTURE] (default): capture nothing — the handler parameter list can **only** be `(HookContext)` / `(HookValue)`;
  *   more parameters are an explicit startup-stage problem (same as Mixin).
  * - [CAPTURE_FAILSOFT]: parameters bind by **type order in the local variable table at the injection point**; unresolved skips the
  *   injection and prints the reason. - [CAPTURE_FAILHARD]: same, but unresolved is a hard failure ([InjectionError]).
@@ -109,13 +146,13 @@ enum class LocalCapture {
 }
 
 /**
- * Inserts a callback at the specified location (aligned with Mixin's `@Inject`). Handler shape `([captures…,] CallbackInfo)` —
- * `CallbackInfo` (void target) or `CallbackInfoReturnable<T>` (non-void, `setReturnValue(v)` cancels and specifies the return value);
+ * Inserts a callback at the specified location (aligned with Mixin's `@Inject`). Handler shape `([captures…,] HookContext)` —
+ * `HookContext` (void target) or `HookValue<T>` (non-void, `setReturnValue(v)` cancels and specifies the return value);
  * [methods] is the **union** of target method names.
  * [desc] empty matches **any overload**; when left empty, the [locals] capture is resolved at the injection point by data-flow analysis
  * over types — the static rule "i-th capture = i-th target parameter" needs the descriptor to compute slots.
- * [cancellable] really short-circuits only at the method-entry anchors (HEAD / CTOR_HEAD): a void target with `CallbackInfo`, non-void with
- * `CallbackInfoReturnable<T>`; other positions degrade to a notification.
+ * [cancelable] really short-circuits only at the method-entry anchors (HEAD / CTOR_HEAD): a void target with `HookContext`, non-void with
+ * `HookValue<T>`; other positions degrade to a notification.
  */
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
@@ -124,7 +161,7 @@ annotation class Inject(
     val method: String = "",
     val methods: Array<String> = [],
     val desc: String = "",
-    val cancellable: Boolean = false,
+    val cancelable: Boolean = false,
     val locals: LocalCapture = LocalCapture.NO_CAPTURE,
     val slice: Slice = Slice(),
     val require: Int = -1,

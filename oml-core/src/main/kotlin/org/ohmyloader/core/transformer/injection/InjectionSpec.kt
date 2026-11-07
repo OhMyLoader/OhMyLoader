@@ -17,7 +17,7 @@ import org.ohmyloader.core.transformer.TransformContext
 internal fun Payload.dslValues(): List<DslValue> = when (this) {
     is Payload.StaticCall -> args
     is Payload.CheckCall -> args
-    is Payload.CancellableReturn -> bridgeArgs
+    is Payload.CancelableReturn -> bridgeArgs
     is Payload.TransformReturn -> extras
     is Payload.ModifyArg -> extras
     is Payload.ModifyArgs -> extras
@@ -302,11 +302,11 @@ class InjectionSpec internal constructor(
                         inserted++
                     }
 
-                    is Payload.CancellableReturn -> {
+                    is Payload.CancelableReturn -> {
                         if (!point.isMethodHead()) {
                             OmlLog.error(
                                 "Injection",
-                                "CancellableReturn only supports method-entry anchors (HEAD / CTOR_HEAD), " +
+                                "CancelableReturn only supports method-entry anchors (HEAD / CTOR_HEAD), " +
                                     "currently ${AnchorResolver.describe(point)}: ${method.name}",
                             )
                             continue
@@ -314,7 +314,7 @@ class InjectionSpec internal constructor(
                         if (org.objectweb.asm.Type.getReturnType(method.desc) == org.objectweb.asm.Type.VOID_TYPE) {
                             OmlLog.error(
                                 "Injection",
-                                "CancellableReturn requires a non-void target (for a void target use CheckCall): " +
+                                "CancelableReturn requires a non-void target (for a void target use CheckCall): " +
                                     "${method.name}${method.desc}",
                             )
                             continue

@@ -1,4 +1,4 @@
-package org.ohmyloader.core.mixin
+package org.ohmyloader.core.hook
 
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
@@ -14,7 +14,7 @@ import org.ohmyloader.api.inject.InjectionPoint
  * (matched by owner) or `(args)V` (matched by ctor descriptor). Mixin's legacy dotted form
  * `owner.name(args)ret` is **not** supported — package-name dots make it ambiguous, and guessing wrong is
  * costlier than erroring; use the `L…;` form for an owner. `args` (named arguments, for CONSTANT, e.g.
- * `args = ["intValue=42"]`) shares the field names of [org.ohmyloader.api.mixin.Constant].
+ * `args = ["intValue=42"]`) shares the field names of [org.ohmyloader.api.hook.Constant].
  */
 internal object AtParser {
 

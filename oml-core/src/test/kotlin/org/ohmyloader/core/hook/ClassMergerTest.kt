@@ -1,4 +1,4 @@
-package org.ohmyloader.core.mixin
+package org.ohmyloader.core.hook
 
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Handle
@@ -9,7 +9,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * The class-merging engine (`@Shadow` / `@Unique` / `@Overwrite`).
+ * The class-merging engine (`@Borrowed` / `@Extra` / `@Replace`).
  *
  * Its failure modes almost all **surface only at "class definition" or "first call"** time: a self-reference
  * whose owner is not rewritten ⇒ runtime `NoSuchFieldError`/`NoSuchMethodError`; stack frames not rewritten
@@ -23,8 +23,8 @@ class ClassMergerTest {
     private val mixinName = "omltest/MergeMixin"
 
     private companion object {
-        const val ACCESSOR = "Lorg/ohmyloader/api/mixin/Accessor;"
-        const val INVOKER = "Lorg/ohmyloader/api/mixin/Invoker;"
+        const val ACCESSOR = "Lorg/ohmyloader/api/hook/FieldAccess;"
+        const val INVOKER = "Lorg/ohmyloader/api/hook/MethodAccess;"
     }
 
     // ---------- @Shadow ----------
@@ -46,7 +46,7 @@ class ClassMergerTest {
 
         val [_, result] = mergeInto(target(), bad)
 
-        assertTrue(result.problems.single().contains("@Shadow field could not find"), result.problems.toString())
+        assertTrue(result.problems.single().contains("@Borrowed field could not find"), result.problems.toString())
         assertTrue(result.problems.single().contains("nope"), result.problems.toString())
     }
 
@@ -123,7 +123,7 @@ class ClassMergerTest {
         val second = ClassMerger.merge(mixinOf(richMixin(), "b"), target(), ledger)
 
         assertEquals(emptyList(), first.problems)
-        assertTrue(second.problems.single().contains("@Overwrite conflict"), second.problems.toString())
+        assertTrue(second.problems.single().contains("@Replace conflict"), second.problems.toString())
     }
 
     @Test
@@ -443,13 +443,13 @@ class ClassMergerTest {
         // A wholesale replacement would also replace the target's delegation call — surely not desired
         val bad = plainMixin().apply {
             methods.first { it.name == "<init>" }.visibleAnnotations =
-                listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/mixin/Overwrite;"))
+                listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Replace;"))
         }
 
         val [_, result] = mergeInto(ctorCarrier(), bad)
 
         assertTrue(
-            result.problems.single().contains("constructor does not support @Overwrite"),
+            result.problems.single().contains("constructor does not support @Replace"),
             result.problems.toString(),
         )
     }
@@ -459,14 +459,14 @@ class ClassMergerTest {
         val bad = plainMixin().apply {
             methods.first { it.name == "<init>" }.apply {
                 desc = "(I)V"
-                visibleAnnotations = listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/mixin/Shadow;"))
+                visibleAnnotations = listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Borrowed;"))
             }
         }
 
         val [_, result] = mergeInto(ctorCarrier(), bad)
 
         assertTrue(
-            result.problems.single().contains("@Shadow constructor could not find"),
+            result.problems.single().contains("@Borrowed constructor could not find"),
             result.problems.toString(),
         )
     }
@@ -476,7 +476,7 @@ class ClassMergerTest {
         val ok = plainMixin().apply {
             methods.first { it.name == "<init>" }.apply {
                 desc = "(I)V"
-                visibleAnnotations = listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/mixin/Shadow;"))
+                visibleAnnotations = listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Borrowed;"))
             }
         }
 
@@ -484,7 +484,7 @@ class ClassMergerTest {
 
         assertEquals(emptyList(), result.problems, result.problems.toString())
         assertEquals(1, result.shadows)
-        assertEquals(0, result.constructors, "@Shadow constructor is only a declaration and is not merged in itself")
+        assertEquals(0, result.constructors, "@Borrowed constructor is only a declaration and is not merged in itself")
 
         val clazz = define(merged)
         assertEquals(
@@ -502,7 +502,7 @@ class ClassMergerTest {
 
         val [_, result] = mergeInto(target(), bad)
 
-        assertTrue(result.problems.single().contains("has no method body and no @Shadow"), result.problems.toString())
+        assertTrue(result.problems.single().contains("has no method body and no @Borrowed"), result.problems.toString())
     }
 
     // ---------- Scaffolding ----------
@@ -624,7 +624,7 @@ class ClassMergerTest {
     fun `interface method without accessor annotation is reported`() {
         val [_, result] = mergeInto(target(), accessorMixin(abstractMethod("rogue", "()V", "")))
 
-        assertTrue(result.problems.single().contains("must carry @Accessor"), result.problems.toString())
+        assertTrue(result.problems.single().contains("must carry @FieldAccess"), result.problems.toString())
     }
 
     /** `interface Accessors { … }` — the methods are supplied by the case itself (all abstract). */
@@ -723,7 +723,7 @@ class ClassMergerTest {
     }
 
     private fun mixinOf(node: ClassNode, modId: String) =
-        ClassMerger.MixinClass(modId, node.name.replace('/', '.'), targetName, node)
+        ClassMerger.HookClass(modId, node.name.replace('/', '.'), targetName, node)
 
     private fun define(node: ClassNode): Class<*> {
         val writer = ClassWriter(ClassWriter.COMPUTE_MAXS)
@@ -882,12 +882,12 @@ class ClassMergerTest {
     private fun shadowAnnotation(aliases: List<String>): AnnotationNode {
         val pairs = mutableListOf<Any?>()
         if (aliases.isNotEmpty()) pairs.addAll(listOf("aliases", aliases))
-        return AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/mixin/Shadow;").apply { values = pairs }
+        return AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Borrowed;").apply { values = pairs }
     }
 
     private fun overwriteMethod(name: String, desc: String, build: InsnList.() -> Unit): MethodNode =
         instanceMethod(name, desc, build = build).apply {
-            visibleAnnotations = listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/mixin/Overwrite;"))
+            visibleAnnotations = listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Replace;"))
         }
 
     private fun instanceMethod(

@@ -6,8 +6,8 @@ import org.ohmyloader.api.inject.InjectionBuilder
 /** The bridge every handler below lives on: injected bytecode targets it by fixed owner+name+desc. */
 private const val BRIDGE = "org/ohmyloader/adapter/common/EventBridge"
 
-/** The `CallbackInfoReturnable` parameter type, the tail of every `cancellableReturn` bridge descriptor. */
-private const val CIR = "Lorg/ohmyloader/api/mixin/CallbackInfoReturnable;"
+/** The `HookValue` parameter type, the tail of every `cancelableReturn` bridge descriptor. */
+private const val CIR = "Lorg/ohmyloader/api/hook/HookValue;"
 
 /**
  * Server-thread lifecycle and interaction rules, declared **once** and added to both injection
@@ -171,7 +171,7 @@ internal fun InjectionBuilder.serverEventRules() {
         // snaps the block into place again without the mod sending anything.
         method("destroyBlock", desc = "(Lnet/minecraft/core/BlockPos;)Z") {
             atHead {
-                cancellableReturn(
+                cancelableReturn(
                     BRIDGE, "onBlockBreak",
                     "(Lnet/minecraft/server/level/ServerPlayerGameMode;Lnet/minecraft/core/BlockPos;I$CIR)V",
                     bridgeArgs = listOf(DslValue.This, DslValue.Arg(0), DslValue.IntVal(0)),
@@ -188,7 +188,7 @@ internal fun InjectionBuilder.serverEventRules() {
                 "Lnet/minecraft/world/phys/BlockHitResult;)Lnet/minecraft/world/InteractionResult;",
         ) {
             atHead {
-                cancellableReturn(
+                cancelableReturn(
                     BRIDGE, "onBlockUsed",
                     "(Lnet/minecraft/server/level/ServerPlayerGameMode;Lnet/minecraft/server/level/ServerPlayer;" +
                         "Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/InteractionHand;" +
@@ -208,7 +208,7 @@ internal fun InjectionBuilder.serverEventRules() {
                 "Lnet/minecraft/world/InteractionResult;",
         ) {
             atHead {
-                cancellableReturn(
+                cancelableReturn(
                     BRIDGE, "onItemUsed",
                     "(Lnet/minecraft/server/level/ServerPlayerGameMode;Lnet/minecraft/server/level/ServerPlayer;" +
                         "Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/InteractionHand;I$CIR)V",
@@ -226,7 +226,7 @@ internal fun InjectionBuilder.serverEventRules() {
         // arm animation all sit after HEAD.
         method("attack", desc = "(Lnet/minecraft/world/entity/Entity;)V") {
             atHead {
-                cancellableCall(
+                cancelableCall(
                     BRIDGE, "onEntityAttack",
                     "(Lnet/minecraft/world/entity/player/Player;Lnet/minecraft/world/entity/Entity;)Z",
                     args = listOf(DslValue.This, DslValue.Arg(0)),
@@ -241,7 +241,7 @@ internal fun InjectionBuilder.serverEventRules() {
             desc = "(Lnet/minecraft/world/entity/Entity;Lnet/minecraft/world/InteractionHand;Lnet/minecraft/world/phys/Vec3;)Lnet/minecraft/world/InteractionResult;",
         ) {
             atHead {
-                cancellableReturn(
+                cancelableReturn(
                     BRIDGE, "onEntityInteract",
                     "(Lnet/minecraft/world/entity/player/Player;Lnet/minecraft/world/entity/Entity;Lnet/minecraft/world/InteractionHand;I$CIR)V",
                     bridgeArgs = listOf(DslValue.This, DslValue.Arg(0), DslValue.Arg(1), DslValue.IntVal(0)),
@@ -282,7 +282,7 @@ internal fun InjectionBuilder.serverEventRules() {
             desc = "(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/damagesource/DamageSource;F)Z",
         ) {
             atHead {
-                cancellableReturn(
+                cancelableReturn(
                     BRIDGE, "onLivingHurt",
                     "(Lnet/minecraft/world/entity/LivingEntity;Lnet/minecraft/world/damagesource/DamageSource;FI$CIR)V",
                     bridgeArgs = listOf(DslValue.This, DslValue.Arg(1), DslValue.Arg(2), DslValue.IntVal(0)),
@@ -305,7 +305,7 @@ internal fun InjectionBuilder.serverEventRules() {
         }
         method("die", desc = "(Lnet/minecraft/world/damagesource/DamageSource;)V") {
             atHead {
-                cancellableCall(
+                cancelableCall(
                     BRIDGE, "onLivingDied",
                     "(Lnet/minecraft/world/entity/LivingEntity;Lnet/minecraft/world/damagesource/DamageSource;)Z",
                     args = listOf(DslValue.This, DslValue.Arg(0)),
@@ -321,7 +321,7 @@ internal fun InjectionBuilder.serverEventRules() {
         // — the game's own "nothing opened", so the click simply does nothing.
         method("openMenu", desc = "(Lnet/minecraft/world/MenuProvider;)Ljava/util/OptionalInt;") {
             atHead {
-                cancellableReturn(
+                cancelableReturn(
                     BRIDGE, "onMenuOpen",
                     "(Lnet/minecraft/server/level/ServerPlayer;Lnet/minecraft/world/MenuProvider;I$CIR)V",
                     bridgeArgs = listOf(DslValue.This, DslValue.Arg(0), DslValue.IntVal(0)),

@@ -286,7 +286,7 @@ class InjectionVerificationTest {
     fun `verify reports tail anchored checkCall`() {
         val spec = spec {
             classTarget("a/B") {
-                method("m", desc = "()V") { atTail { cancellableCall("x/Y", "check", "()Z") } }
+                method("m", desc = "()V") { atTail { cancelableCall("x/Y", "check", "()Z") } }
             }
         }
 
