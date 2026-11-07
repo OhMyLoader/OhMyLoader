@@ -49,6 +49,9 @@ object Events {
     /** Server shutting down. */
     val SERVER_STOPPING = EventDefinition<ServerStoppingEvent>("server_stopping")
 
+    /** A server datapack reload has been applied; the fresh tags, recipes and world data are live. */
+    val DATAPACKS_RELOADED = EventDefinition<DatapacksReloadedEvent>("datapacks_reloaded")
+
     /** A player finished entering the world. */
     val PLAYER_JOINED = EventDefinition<PlayerJoinedEvent>("player_joined")
 

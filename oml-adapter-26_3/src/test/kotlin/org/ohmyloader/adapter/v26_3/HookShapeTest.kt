@@ -217,6 +217,22 @@ class HookShapeTest {
     }
 
     @Test
+    fun `PlayerList reloadResources is still the no-argument apply point of a datapack reload`() {
+        JarFile(clientJar).use { jar ->
+            val list = assertNotNull(classNode(jar, "net/minecraft/server/players/PlayerList"))
+            val reload = list.methods.firstOrNull { it.name == "reloadResources" }
+            assertNotNull(reload, "PlayerList.reloadResources is gone — DATAPACKS_RELOADED has no target")
+            // The method IS the semantic: its body runs the player resync of the apply step, so the
+            // TAIL dispatch lands where tags and recipes are final. A reshaped method moves that
+            // point, and the event KDoc's promises with it.
+            assertEquals(
+                "()V", reload.desc,
+                "PlayerList.reloadResources changed shape — the DATAPACKS_RELOADED anchor no longer names the apply step",
+            )
+        }
+    }
+
+    @Test
     fun `hurtServer is still declared on LivingEntity, so damage fires once`() {
         JarFile(clientJar).use { jar ->
             val living = assertNotNull(classNode(jar, "net/minecraft/world/entity/LivingEntity"))

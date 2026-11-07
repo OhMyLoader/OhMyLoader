@@ -149,6 +149,19 @@ internal fun InjectionBuilder.serverEventRules() {
             }
             require(1)
         }
+        // TAIL: `reloadResources` is called exactly once, at the apply step of a server datapack
+        // reload (/reload, a pack-selection change) — after the new resources are assigned and the
+        // recipes are finalized, before the datapack function library is swapped. HEAD would race the
+        // same pass: the resync this method performs is part of what "applied" means.
+        method("reloadResources", desc = "()V") {
+            atTail {
+                call(
+                    BRIDGE, "onDatapacksReloaded", "(Lnet/minecraft/server/players/PlayerList;)V",
+                    args = listOf(DslValue.This),
+                )
+            }
+            require(1)
+        }
     }
 
     classTarget("net/minecraft/server/level/ServerPlayerGameMode") {

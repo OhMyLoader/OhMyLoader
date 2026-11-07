@@ -85,6 +85,10 @@ object EventDispatch {
     }
 
     @JvmStatic
+    fun onDatapacksReloaded(server: MinecraftServer) =
+        Events.DATAPACKS_RELOADED.fire(DatapacksReloadedEvent(server))
+
+    @JvmStatic
     fun onPlayerJoined(player: ServerPlayer) = Events.PLAYER_JOINED.fire(PlayerJoinedEvent(player))
 
     @JvmStatic

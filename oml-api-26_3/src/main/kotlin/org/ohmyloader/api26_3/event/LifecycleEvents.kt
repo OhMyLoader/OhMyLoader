@@ -16,6 +16,16 @@ class ServerStartedEvent(val server: MinecraftServer) : Event()
  */
 class ServerStoppingEvent(val server: MinecraftServer) : Event()
 
+/**
+ * A server datapack reload (`/reload`, a pack-selection change) has been applied: the new
+ * resources are assigned, tags and recipes are finalized, and online players were resynced —
+ * everything a handler re-reads (tags, recipes, world data, scheduled re-reads) is the fresh
+ * state. Fired on the server thread, once per applied reload; a reload that fails to build
+ * (`invalid pack`, a broken JSON) changes nothing and fires nothing. The datapack function
+ * library is swapped immediately after this event, so a handler must not dispatch functions yet.
+ */
+class DatapacksReloadedEvent(val server: MinecraftServer) : Event()
+
 /** A player has finished entering the world and is fully on the server. */
 class PlayerJoinedEvent(val player: ServerPlayer) : Event()
 

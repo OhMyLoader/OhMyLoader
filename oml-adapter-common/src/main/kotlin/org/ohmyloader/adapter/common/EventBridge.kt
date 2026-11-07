@@ -10,6 +10,7 @@ import net.minecraft.server.MinecraftServer
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.server.level.ServerPlayerGameMode
+import net.minecraft.server.players.PlayerList
 import net.minecraft.world.InteractionHand
 import net.minecraft.world.InteractionResult
 import net.minecraft.world.MenuProvider
@@ -117,6 +118,15 @@ object EventBridge {
     /** [MinecraftServer.stopServer head] */
     @JvmStatic
     fun onServerStopping(server: MinecraftServer) = EventDispatch.onServerStopping(server)
+
+    /**
+     * [PlayerList.reloadResources tail] The only caller of this method is the apply step of a server
+     * datapack reload, on the server thread; the game reads the server off the player list, which is
+     * the only context the hook has. The dispatch runs after the resync pass — recipes and tags are
+     * already final (see [DatapacksReloadedEvent]).
+     */
+    @JvmStatic
+    fun onDatapacksReloaded(players: PlayerList) = EventDispatch.onDatapacksReloaded(players.server)
 
     /**
      * [ServerLevel.tick head] / [ClientLevel.tick head] One dispatch per level that ticks, carrying that
