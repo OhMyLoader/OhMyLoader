@@ -311,19 +311,6 @@ object HookScanner {
         return ScanResult(rules, problems, listOfNotNull(merge))
     }
 
-    /**
-     * Whether this mixin uses the **merge model**: it is true when any of `@Shadow` / `@Unique` / `@Overwrite`
-     * is declared.
-     *
-     * The criterion lives on the annotations, not on guesses like "how many members the target class
-     * has": guessing would also merge mixins that only write injection handlers, copying their handler
-     * methods into the target class. The annotation criterion also lets authors see at a glance which
-     * path their mixin takes.
-     */
-    private fun isMergeAnnotated(node: ClassNode): Boolean =
-        node.fields.any { it.visibleAnnotations.orEmpty().any { a -> a.desc in MERGE_MEMBER_ANNOTATIONS } } ||
-            node.methods.any { it.visibleAnnotations.orEmpty().any { a -> a.desc in MERGE_MEMBER_ANNOTATIONS } }
-
     private fun mergeCandidates(
         node: ClassNode,
         targetInternal: String,
@@ -361,7 +348,10 @@ object HookScanner {
             return ClassMerger.HookClass(modId, mixinClass, targetInternal, node)
         }
 
-        if (!isMergeAnnotated(node)) return null
+        // The model is declared by the carrier annotation — mergeCandidates is only called for
+        // @Merged classes (and @Hooked interfaces, for the accessor synthesis), so no member-based
+        // inference happens here. A @Merged class without merge-family members is still a carrier:
+        // its instance handlers ride the merge.
 
         // Writing `@Accessor`/`@Invoker` in a class mixin: they only make sense for interface mixins
         // (synthesis needs "abstract methods", while a class mixin's methods either have a body or are
