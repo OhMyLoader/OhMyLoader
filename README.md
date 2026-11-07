@@ -96,8 +96,7 @@ object MyRules : RuleSetProvider {
 A mod ships as a jar. Pure declarative content can ship without code: put a `content/` tree (one file per
 entity) and its `assets/` into an `.oml` archive (a zip with the `.oml` extension) under `mods/`. The archive
 file name is the resource namespace; two archives with the same file name in different subdirectories
-conflict, and the loader refuses the later one. A loose `.toml` at the mods root is not supported because it
-cannot carry textures; the loader reports and skips it. Mod jars and `.oml` archives are discovered
+conflict, and the loader refuses the later one. Mod jars and `.oml` archives are discovered
 recursively under `mods/`; dot-directories are ignored.
 
 ## Development build

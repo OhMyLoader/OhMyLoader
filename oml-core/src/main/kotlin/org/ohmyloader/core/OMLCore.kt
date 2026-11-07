@@ -353,16 +353,6 @@ object OMLCore {
         // (`assets/<namespace>/...`, `data/<namespace>/...`), so a creator ships textures and lang
         // files without a jar. The file name (minus extension) is the resource namespace, so two
         // same-named archives in different subdirectories are refused by the namespace check.
-        // A loose `.toml` is not a pack form: it cannot carry assets, so its blocks render with
-        // missing textures — one found at the mods root is reported and refused instead of loaded.
-        for (stray in modsDir.listFiles { f -> f.isFile && f.name.endsWith(".toml", ignoreCase = true) }
-            ?.sortedBy { it.name.lowercase() } ?: emptyList()) {
-            OmlLog.warn(
-                "OMLCore",
-                "${stray.name}: loose .toml content packs are no longer supported — " +
-                    "pack it as an .oml archive (content/ + assets/ at the root)",
-            )
-        }
         return ModsDirectory.files(modsDir, ".oml", ignoreCase = true)
     }
 
@@ -560,7 +550,7 @@ object OMLCore {
     private val flatContentNamespaces = linkedSetOf<String>()
 
     /**
-     * The `.oml` content pack archives: unlike loose `.toml` packs they carry their own assets and
+     * The `.oml` content pack archives: they carry their own assets and
      * data, so the asset index must scan them exactly like mod jars.
      *
      * Thread contract: [loadContentPacks] writes it at startup and [reloadContentPacks] (a vanilla

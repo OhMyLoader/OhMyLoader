@@ -176,21 +176,6 @@ class OmlArchivePackTest {
     }
 
     @Test
-    fun `a loose toml next to an archive is refused, the archive loads`() {
-        val dir = tempDir()
-        File(dir, "clash.toml").writeText("[block.a]\n")
-        writeArchive(dir, "clash", "content/block/b.toml" to "".toByteArray())
-
-        OMLCore.loadContentPacks(dir, factory)
-
-        assertEquals(listOf("b"), factory.registry.blocks.map { it.first })
-        assertTrue(
-            OMLCore.contentPackFiles().any { it.name == "clash.oml" },
-            "the archive must join the asset index",
-        )
-    }
-
-    @Test
     fun `an archive without a content declaration is skipped with a report`() {
         val dir = tempDir()
         val archive = File(dir, "empty.oml")
