@@ -123,7 +123,12 @@ internal object ClassMerger {
         if (mixin.node.access and Opcodes.ACC_INTERFACE != 0) {
             // Interface mixin: the mixin is an interface, so it has no fields/method bodies to merge in;
             // its abstract methods are only **signature declarations**, and the engine synthesizes concrete
-            // method bodies in the target class from them
+            // method bodies in the target class from them. The interface itself is declared on the target,
+            // which is what makes a cast to the mixin type land on the game's own instances (an accessor
+            // without the interface would be a method nobody can reach through a typed receiver).
+            if (target.interfaces.none { it == mixin.node.name }) {
+                target.interfaces.add(mixin.node.name)
+            }
             return mergeAccessors(mixin, target, where, problems)
         }
 

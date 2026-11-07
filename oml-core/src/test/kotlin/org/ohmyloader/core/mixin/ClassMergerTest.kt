@@ -527,6 +527,32 @@ class ClassMergerTest {
     }
 
     @Test
+    fun `the accessor mixin's interface is declared on the target class`() {
+        // Without the interface on the target, a mod's `(game instance as AccessorMixin)` cast throws
+        // ClassCastException even though the synthesized methods exist — the AppleSkinOML port found
+        // exactly that on its first in-world tick.
+        val [merged, result] = mergeInto(
+            target(),
+            accessorMixin(abstractMethod("readPayload", "()Ljava/lang/String;", ACCESSOR, "payload")),
+        )
+
+        assertEquals(emptyList(), result.problems, result.problems.toString())
+        val mixinInterface = mixinName + "Accessors"
+        assertTrue(
+            merged.interfaces.contains(mixinInterface),
+            "the target must implement the mixin interface, got ${merged.interfaces}",
+        )
+
+        // And the cast is real: the defined class answers the mixin interface.
+        val clazz = define(merged)
+        val instance = clazz.getDeclaredConstructor().newInstance()
+        assertTrue(
+            clazz.classLoader.loadClass(mixinInterface.replace('/', '.')).isInstance(instance),
+            "the game instance must be an instance of the accessor interface",
+        )
+    }
+
+    @Test
     fun `accessor setter writes the private field`() {
         val [merged, result] = mergeInto(
             target(),
@@ -704,7 +730,24 @@ class ClassMergerTest {
         node.accept(writer)
         val bytes = writer.toByteArray()
         return object : ClassLoader(ClassMergerTest::class.java.classLoader) {
-            fun define(): Class<*> = defineClass(targetName.replace('/', '.'), bytes, 0, bytes.size)
+            fun define(): Class<*> {
+                // An accessor-merged target now carries the mixin interface, so the JVM must be able
+                // to resolve the `implements` clause when the target is defined. A matching (empty)
+                // interface declaration is enough: the tests reach the synthesized methods through
+                // the target class, never through an interface dispatch.
+                node.interfaces.filter { it.endsWith("Accessors") }.forEach { name ->
+                    val iface = ClassWriter(0)
+                    iface.visit(
+                        Opcodes.V17,
+                        Opcodes.ACC_PUBLIC or Opcodes.ACC_INTERFACE or Opcodes.ACC_ABSTRACT,
+                        name, null, "java/lang/Object", null,
+                    )
+                    iface.visitEnd()
+                    val interfaceBytes = iface.toByteArray()
+                    defineClass(name.replace('/', '.'), interfaceBytes, 0, interfaceBytes.size)
+                }
+                return defineClass(targetName.replace('/', '.'), bytes, 0, bytes.size)
+            }
         }.define()
     }
 
