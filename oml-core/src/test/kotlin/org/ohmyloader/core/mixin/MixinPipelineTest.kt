@@ -58,6 +58,49 @@ class MixinPipelineTest {
         assertEquals(1, PipelineRecorder.hits.get(), "the handler must have run exactly once per call")
     }
 
+    @Test
+    fun `a static handler rides the bridge onto an interface target`() {
+        // The fixture is a Java source (Kotlin's companion @JvmStatic delegates do not carry the
+        // annotations the scanner reads), referenced by reflection so the Kotlin test compilation
+        // does not depend on the Java one.
+        val recorder = javaClass.classLoader.loadClass("omltest.pipeline.StaticInterfaceFixtures\$StaticInterfaceRecorder")
+        val recorderHits = recorder.getField("hits").get(null) as java.util.concurrent.atomic.AtomicInteger
+        recorderHits.set(0)
+        val targetClass = javaClass.classLoader.loadClass("omltest.pipeline.StaticInterfaceFixtures\$StaticFactoryTarget")
+        val mixinClass = javaClass.classLoader.loadClass("omltest.pipeline.StaticInterfaceFixtures\$StaticHandlerMixin")
+        val jar = jarOf(targetClass, mixinClass)
+        val mod = ModContainer(
+            id = "pipeline_mod", name = "Pipeline Mod", version = "0.1.0",
+            entryClass = "omltest.pipeline.StaticInterfaceFixtures", file = jar,
+        )
+
+        // The bridge is generated into a loader that hosts the engine; in a test the cleanest wiring
+        // is MixinScannerTest's: install the test classloader and call the bridge directly.
+        OMLMixinRegistry.installClassLoader(javaClass.classLoader)
+        val transformer = MixinScanner.createTransformer(listOf(mod))
+        assertNotNull(transformer, "the scanner must produce a transformer for the carrier mixin")
+        assertTrue(transformer.appliesTo("omltest/pipeline/StaticInterfaceFixtures\$StaticFactoryTarget"))
+
+        val node = classNodeOf(targetClass)
+        assertTrue(transformer.transform(TransformContext("omltest/pipeline/StaticInterfaceFixtures\$StaticFactoryTarget", node)))
+
+        // The emitted wiring: the interface's static factory now opens with INVOKESTATIC into the
+        // generated bridge (the static path never goes through a merged handler).
+        val create = node.methods.first { it.name == "create" }
+        val calls = create.instructions.toArray().filterIsInstance<org.objectweb.asm.tree.MethodInsnNode>()
+            .filter { it.owner == OMLMixinRegistry.BRIDGE_CLASS && it.opcode == Opcodes.INVOKESTATIC }
+        assertEquals(1, calls.size, "the factory must open with exactly one bridge call: ${calls.map { it.name }}")
+
+        // And the bridge dispatches the static handler with a null receiver, short-circuiting the value.
+        // The handler id is encoded in the bridge method's name (the only place the engine can put it).
+        val bridge = OMLMixinRegistry.bridgeClass!!.declaredMethods.first { it.name.startsWith("injectReturn") }
+        val handlerId = bridge.name.substringAfterLast('$').toInt()
+        val cir = org.ohmyloader.api.mixin.CallbackInfoReturnable<String>("create", true)
+        bridge.invoke(null, handlerId, cir)
+        assertEquals("bridged", cir.returnValue, "the static handler's value must reach the handle")
+        assertEquals(1, recorderHits.get(), "exactly one dispatch per call")
+    }
+
     // ---------- the concurrency shape: one transformer, many distinct targets, parallel ----------
 
     @Test
@@ -126,6 +169,12 @@ class MixinPipelineTest {
         }
         return jar
     }
+
+    private fun classNodeOf(clazz: Class<*>): ClassNode =
+        ClassNode(Opcodes.ASM9).also { node ->
+            ClassReader(clazz.classLoader.getResourceAsStream(clazz.name.replace('.', '/') + ".class")!!
+                .readBytes()).accept(node, ClassReader.EXPAND_FRAMES)
+        }
 
     private inline fun <reified T> classNode(): ClassNode =
         ClassNode(Opcodes.ASM9).also { node ->

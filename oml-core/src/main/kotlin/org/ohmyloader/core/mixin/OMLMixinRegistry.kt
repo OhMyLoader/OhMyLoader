@@ -80,6 +80,11 @@ object OMLMixinRegistry {
      * pay a `getMethods` clone per invocation. Cleared in [resetForTests] (ids restart from 1).
      */
     private val resolvedMethods = ConcurrentHashMap<Int, Method>()
+
+    /** The resolved handler call: a static method's receiver is null (invoked with null). */
+    private class ResolvedCall(val receiver: Any?, val method: Method)
+
+    private val resolvedCalls = ConcurrentHashMap<Int, ResolvedCall>()
     private var loader: ClassLoader? = null
     private var bridgeLoaded = false
 
@@ -213,6 +218,7 @@ object OMLMixinRegistry {
             nextId.set(0)
             handlers.clear()
             resolvedMethods.clear()
+            resolvedCalls.clear()
             mixinInstances.clear()
             bridgeClass = null
             bridgeLoaded = false
@@ -364,10 +370,9 @@ object OMLMixinRegistry {
         val handler = handlers[id] ?: return false
         var canceled = false
         try {
-            val instance = mixinInstance(handler.mixinClass)
-            val method = handlerMethod(handler, instance.javaClass)
+            val call = resolvedCall(handler)
             val ci = CallbackInfo(handler.targetMethod, cancellable)
-            method.invoke(instance, *(captures + ci))
+            call.method.invoke(call.receiver, *(captures + ci))
             canceled = ci.canceled
         } catch (t: Throwable) {
             reportHandlerFailure(handler, t)
@@ -387,9 +392,8 @@ object OMLMixinRegistry {
     fun dispatchReturnable(captures: Array<Any?>, id: Int, callback: CallbackInfoReturnable<*>) {
         val handler = handlers[id] ?: return
         try {
-            val instance = mixinInstance(handler.mixinClass)
-            val method = handlerMethod(handler, instance.javaClass)
-            method.invoke(instance, *(captures + callback))
+            val call = resolvedCall(handler)
+            call.method.invoke(call.receiver, *(captures + callback))
             if (callback.canceled && callback.returnValue == null) {
                 // Canceled without setting a value: the engine will use the zero value for the return type
                 // (0/false/null), and this is almost always a mistake
@@ -417,14 +421,31 @@ object OMLMixinRegistry {
     @JvmStatic
     fun dispatchValue(captures: Array<Any?>, id: Int): Any? {
         val handler = handlers[id] ?: return null
-        val instance = mixinInstance(handler.mixinClass)
-        val method = handlerMethod(handler, instance.javaClass)
+        val call = resolvedCall(handler)
         return try {
-            method.invoke(instance, *captures)
+            call.method.invoke(call.receiver, *captures)
         } catch (e: InvocationTargetException) {
             throw e.targetException
         }
     }
+
+    /**
+     * Resolve (and cache) the handler call for [handler]: the method plus its receiver — **null for a
+     * static handler**, which the bridge dispatches without instantiating the mixin class. Unresolvable
+     * handlers are **not** cached: they throw on every dispatch, matching the pre-cache failure behavior.
+     */
+    private fun resolvedCall(handler: Handler): ResolvedCall =
+        resolvedCalls[handler.id] ?: run {
+            val cl = loader ?: throw IllegalStateException("the Mixin class loader is not ready yet")
+            val clazz = Class.forName(handler.mixinClass, true, cl)
+            val method = handlerMethod(handler, clazz)
+            val receiver = if ((method.modifiers and java.lang.reflect.Modifier.STATIC) != 0) {
+                null
+            } else {
+                mixinInstance(handler.mixinClass)
+            }
+            ResolvedCall(receiver, method).also { resolvedCalls[handler.id] = it }
+        }
 
     /**
      * Resolve (and cache) the handler method for [handler] on [clazz]. Unresolvable handlers are **not**

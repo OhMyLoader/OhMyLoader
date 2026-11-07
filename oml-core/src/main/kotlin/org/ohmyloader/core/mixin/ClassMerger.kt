@@ -75,6 +75,18 @@ internal object ClassMerger {
     private const val ACCESSOR_DESC = "Lorg/ohmyloader/api/mixin/Accessor;"
     private const val INVOKER_DESC = "Lorg/ohmyloader/api/mixin/Invoker;"
 
+    /** The injection-family annotations: their methods never merge — they are rule carriers. */
+    private val INJECTION_FAMILY_DESCS = setOf(
+        "Lorg/ohmyloader/api/mixin/Inject;",
+        "Lorg/ohmyloader/api/mixin/Redirect;",
+        "Lorg/ohmyloader/api/mixin/ModifyArg;",
+        "Lorg/ohmyloader/api/mixin/ModifyArgs;",
+        "Lorg/ohmyloader/api/mixin/ModifyConstant;",
+        "Lorg/ohmyloader/api/mixin/ModifyVariable;",
+        "Lorg/ohmyloader/api/mixin/ModifyReturnValue;",
+        "Lorg/ohmyloader/api/mixin/ModifyExpressionValue;",
+    )
+
     /** `@Overwrite` ledger key: **must include the target class** -- otherwise two mixins overwriting the same-named method in different classes would yield a false conflict. */
     private fun overwriteKey(target: String, name: String, desc: String): String = "$target.$name$desc"
 
@@ -117,7 +129,28 @@ internal object ClassMerger {
             return Result(0, 0, 0, 0, 0, problems)
         }
         if (target.access and Opcodes.ACC_INTERFACE != 0) {
-            problems += "$where —— the target ${target.name} is an interface: merging fields/methods into an interface is not supported"
+            // An interface target cannot take merged members (no fields, no instance state, no
+            // constructors). An **injection-only carrier** mixin — every method static and carrying an
+            // injection-family annotation, no fields — has nothing to merge: its handlers are dispatched
+            // through the generated bridge (INVOKESTATIC, no receiver), so the merge pass has nothing to
+            // do and the injection pass runs as on any class. Anything else keeps the rejection, naming
+            // the members that could not land (AppleSkinOML's tooltip hooks are the carrier use case:
+            // the interface's static factories are anchor methods only the interface declares).
+            val offenders = buildList {
+                mixin.node.fields.forEach { add("field ${it.name} ${it.desc}") }
+                mixin.node.methods.forEach { method ->
+                    val isCarrier = java.lang.reflect.Modifier.isStatic(
+                        (method.access and Opcodes.ACC_STATIC),
+                    ) && method.visibleAnnotations.orEmpty().any { it.desc in INJECTION_FAMILY_DESCS }
+                    if (!isCarrier) add("method ${method.name}${method.desc}")
+                }
+            }
+            if (offenders.isNotEmpty()) {
+                problems += "$where —— the target ${target.name} is an interface: merging members into an" +
+                    " interface is not supported, only an injection-only carrier mixin applies" +
+                    " (every method static and @Inject/@Redirect/…-annotated); offenders: ${offenders.joinToString()}"
+                return Result(0, 0, 0, 0, 0, problems)
+            }
             return Result(0, 0, 0, 0, 0, problems)
         }
         if (mixin.node.access and Opcodes.ACC_INTERFACE != 0) {
