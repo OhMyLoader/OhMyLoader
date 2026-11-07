@@ -300,12 +300,12 @@ object HookScanner {
             }
         }
 
-        val merge = if (model == Model.MERGE) {
+        // The merge phase runs for @Merged carriers (member merge) and for @Hooked **interface**
+        // carriers that declare static @FieldAccess/@MethodAccess members: the synthesis is a member
+        // landing in the target class, which is merge machinery even though the carrier is @Hooked.
+        val merge = if (model == Model.MERGE || (node.access and Opcodes.ACC_INTERFACE) != 0) {
             mergeCandidates(node, targetInternal, mixinClass, modId, handlers, problems)
         } else {
-            // A @Hooked carrier merges nothing; the merge phase is not run for it at all. (Accessor
-            // synthesis is also a @Merged shape — @FieldAccess/@MethodAccess declare members that must
-            // land in the target class.)
             null
         }
         return ScanResult(rules, problems, listOfNotNull(merge))

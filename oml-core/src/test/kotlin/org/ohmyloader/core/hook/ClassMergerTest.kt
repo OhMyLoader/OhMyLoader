@@ -621,6 +621,72 @@ class ClassMergerTest {
     }
 
     @Test
+    fun `static field accessors synthesize public static members and the carrier delegates`() {
+        val target = ClassNode(Opcodes.ASM9).apply {
+            version = Opcodes.V17
+            access = Opcodes.ACC_PUBLIC
+            name = targetName
+            superName = "java/lang/Object"
+            fields.add(FieldNode(Opcodes.ACC_PRIVATE or Opcodes.ACC_STATIC, "counter", "I", null, null))
+            methods.add(
+                MethodNode(Opcodes.ACC_STATIC, "<clinit>", "()V", null, null).apply {
+                    instructions.add(IntInsnNode(Opcodes.BIPUSH, 5))
+                    instructions.add(FieldInsnNode(Opcodes.PUTSTATIC, targetName, "counter", "I"))
+                    instructions.add(InsnNode(Opcodes.RETURN))
+                    maxStack = 1
+                    maxLocals = 0
+                },
+            )
+        }
+        val carrier = accessorMixin(
+            staticAccessor("getCounter", "()I", ACCESSOR),
+            staticAccessor("setCounter", "(I)V", ACCESSOR),
+        )
+        val [merged, result] = mergeInto(target, carrier)
+
+        assertEquals(emptyList(), result.problems, result.problems.toString())
+        assertEquals(2, result.accessors)
+        // the synthesis reads/writes the private static field directly, as public static members,
+        // under the oml$-prefixed name (the target owns a private member of the declared name)
+        val get = merged.methods.single { it.name == "oml\$getCounter" }
+        assertEquals(
+            Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC or Opcodes.ACC_SYNTHETIC,
+            get.access and (Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC or Opcodes.ACC_SYNTHETIC),
+        )
+        assertTrue(
+            get.instructions.toArray().any {
+                it is FieldInsnNode && it.opcode == Opcodes.GETSTATIC && it.name == "counter"
+            },
+        )
+
+        // the real proof: define the target, and the synthesized pair reads/writes the field
+        val clazz = define(merged)
+        assertEquals(5, invokeStatic(clazz, "oml\$getCounter"))
+        clazz.getDeclaredMethod("oml\$setCounter", Int::class.javaPrimitiveType).invoke(null, 7)
+        assertEquals(7, invokeStatic(clazz, "oml\$getCounter"))
+
+        // the carrier rewrite points its dummy bodies at the synthesized members
+        val hookClass = ClassMerger.HookClass("testmod", mixinName + "Accessors", targetName, carrier)
+        assertTrue(ClassMerger.rewriteStaticDelegates(hookClass, carrier))
+        val call = carrier.methods.single { it.name == "getCounter" }.instructions.toArray()
+            .filterIsInstance<MethodInsnNode>().single()
+        assertEquals(targetName, call.owner)
+        assertEquals(Opcodes.INVOKESTATIC, call.opcode)
+    }
+
+    @Test
+    fun `static invoker synthesizes a bridge to the private static method`() {
+        val target = targetWithSecretStatic()
+        val carrier = accessorMixin(staticAccessor("callSecret", "(I)I", INVOKER, "secret"))
+        val [merged, result] = mergeInto(target, carrier)
+
+        assertEquals(emptyList(), result.problems, result.problems.toString())
+        assertEquals(1, result.invokers)
+        val clazz = define(merged)
+        assertEquals(6, invokeStatic(clazz, "oml\$callSecret", 5))
+    }
+
+    @Test
     fun `interface method without accessor annotation is reported`() {
         val [_, result] = mergeInto(target(), accessorMixin(abstractMethod("rogue", "()V", "")))
 
@@ -635,6 +701,21 @@ class ClassMergerTest {
         superName = "java/lang/Object"
         this.methods.addAll(methods)
     }
+
+    /** A **static** accessor declaration with a dummy body — the JVM-valid shape for interface static accessors. */
+    private fun staticAccessor(name: String, desc: String, annotation: String, value: String = ""): MethodNode =
+        MethodNode(Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, name, desc, null, null).apply {
+            instructions.add(InsnNode(Opcodes.RETURN))
+            maxStack = 0
+            maxLocals = 0
+            if (annotation.isNotEmpty()) {
+                visibleAnnotations = listOf(
+                    AnnotationNode(Opcodes.ASM9, annotation).also {
+                        if (value.isNotEmpty()) it.values = mutableListOf<Any?>("value", value)
+                    },
+                )
+            }
+        }
 
     private fun abstractMethod(name: String, desc: String, annotation: String, value: String = ""): MethodNode =
         MethodNode(Opcodes.ACC_PUBLIC or Opcodes.ACC_ABSTRACT, name, desc, null, null).apply {
@@ -655,6 +736,20 @@ class ClassMergerTest {
                 add(InsnNode(Opcodes.ICONST_1))
                 add(InsnNode(Opcodes.IADD))
                 add(InsnNode(Opcodes.IRETURN))
+            },
+        )
+    }
+
+    /** `private static int secret(int)` returning n + 1, for the **static** @MethodAccess path. */
+    private fun targetWithSecretStatic(): ClassNode = target().apply {
+        methods.add(
+            MethodNode(Opcodes.ACC_PRIVATE or Opcodes.ACC_STATIC, "secret", "(I)I", null, null).apply {
+                instructions.add(VarInsnNode(Opcodes.ILOAD, 0))
+                instructions.add(InsnNode(Opcodes.ICONST_1))
+                instructions.add(InsnNode(Opcodes.IADD))
+                instructions.add(InsnNode(Opcodes.IRETURN))
+                maxStack = 2
+                maxLocals = 1
             },
         )
     }
@@ -753,6 +848,9 @@ class ClassMergerTest {
 
     private fun invoke(clazz: Class<*>, instance: Any, name: String): Any? =
         clazz.methods.first { it.name == name }.invoke(instance)
+
+    private fun invokeStatic(clazz: Class<*>, name: String, vararg args: Any): Any? =
+        clazz.methods.first { it.name == name }.invoke(null, *args)
 
     private fun staticInt(clazz: Class<*>, name: String): Int =
         clazz.getDeclaredField(name).also { it.isAccessible = true }.getInt(null)

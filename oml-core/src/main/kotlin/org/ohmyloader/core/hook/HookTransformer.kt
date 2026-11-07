@@ -5,6 +5,7 @@ import org.ohmyloader.api.inject.InjectionError
 import org.ohmyloader.core.diagnostics.Diagnostics
 import org.ohmyloader.core.transformer.IClassTransformer
 import org.ohmyloader.core.transformer.IVerifiableTransformer
+import org.objectweb.asm.Opcodes
 import org.ohmyloader.core.transformer.TransformContext
 import org.ohmyloader.core.transformer.injection.InjectingTransformer
 import java.util.concurrent.ConcurrentHashMap
@@ -30,6 +31,16 @@ internal class HookTransformer(
 
     private val mergeTargets: Set<String> = merges.mapTo(mutableSetOf()) { it.targetInternal }
 
+    /** Carrier classes holding static accessor declarations: their bodies are rewritten at load. */
+    private val carrierNames: Set<String> = merges
+        .filter { c ->
+            c.node.methods.any { m ->
+                (m.access and Opcodes.ACC_STATIC) != 0 &&
+                    m.visibleAnnotations.orEmpty().any { a -> a.desc == ClassMerger.ACCESSOR_DESC || a.desc == ClassMerger.INVOKER_DESC }
+            }
+        }
+        .mapTo(mutableSetOf()) { it.className.replace('.', '/') }
+
     /** All merge problems that have occurred (including each mixin's static problems) -- collected for the startup self-check. */
     private val problems = CopyOnWriteArrayList<String>()
 
@@ -37,10 +48,26 @@ internal class HookTransformer(
     private val overwritten = ConcurrentHashMap<String, String>()
 
     override fun appliesTo(internalName: String): Boolean =
-        internalName in mergeTargets || injection?.appliesTo(internalName) == true
+        internalName in mergeTargets || internalName in carrierNames || injection?.appliesTo(internalName) == true
 
     override fun transform(context: TransformContext): Boolean {
         var changed = false
+
+        // 0) Carrier rewrite: a carrier class whose static @FieldAccess / @MethodAccess declarations
+        //    were synthesized into the target gets its method bodies replaced with delegations to
+        //    those public static members (a static accessor has no receiver to cast, and the mod
+        //    compiled against the member while it was still private).
+        val carriers = merges.filter { it.className.replace('.', '/') == context.internalName }
+        for (carrier in carriers) {
+            if (ClassMerger.rewriteStaticDelegates(carrier, context.node)) {
+                changed = true
+                OmlLog.info(
+                    "Hook",
+                    "carrier delegation: ${context.internalName} → ${carrier.targetInternal}" +
+                        " (static accessors rewritten to the synthesized members)",
+                )
+            }
+        }
 
         // 1) Merge: may add members to the target class or replace method bodies
         val here = merges.filter { it.targetInternal == context.internalName }

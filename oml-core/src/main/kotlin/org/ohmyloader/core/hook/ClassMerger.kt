@@ -72,8 +72,8 @@ internal object ClassMerger {
 
     private const val BORROWED_DESC = "Lorg/ohmyloader/api/hook/Borrowed;"
     private const val OVERWRITE_DESC = "Lorg/ohmyloader/api/hook/Replace;"
-    private const val ACCESSOR_DESC = "Lorg/ohmyloader/api/hook/FieldAccess;"
-    private const val INVOKER_DESC = "Lorg/ohmyloader/api/hook/MethodAccess;"
+    public const val ACCESSOR_DESC = "Lorg/ohmyloader/api/hook/FieldAccess;"
+    public const val INVOKER_DESC = "Lorg/ohmyloader/api/hook/MethodAccess;"
 
     /** The injection-family annotations: their methods never merge — they are rule carriers. */
     private val INJECTION_FAMILY_DESCS = setOf(
@@ -419,16 +419,14 @@ internal object ClassMerger {
                 problems += "$whereM —— a constructor/static initializer cannot be an accessor/invoker"
                 continue
             }
-            if (method.access and Opcodes.ACC_STATIC != 0) {
-                problems += "$whereM —— an interface's static method must have a body and cannot be an abstract declaration (use an instance method instead)"
+            val isStatic = (method.access and Opcodes.ACC_STATIC) != 0
+            if (isStatic && method.instructions.size() == 0) {
+                problems += "$whereM —— a static accessor must declare a body (the JVM forbids `static abstract`" +
+                    " on interface methods); the engine replaces the body with a delegation at carrier load"
                 continue
             }
-            if (method.access and Opcodes.ACC_ABSTRACT == 0) {
+            if (!isStatic && method.instructions.size() != 0) {
                 problems += "$whereM —— a default method with a body in an interface is not supported"
-                continue
-            }
-            if (method.instructions.size() != 0 && method.access and Opcodes.ACC_ABSTRACT == 0) {
-                problems += "$whereM —— the method body will not be merged (an interface mixin only declares signatures)"
                 continue
             }
 
@@ -439,7 +437,7 @@ internal object ClassMerger {
             if (accessor != null) {
                 // The target class already has a method with this signature ⇒ the accessor is redundant
                 // (usually the field name was written as a method name)
-                if (targetMethods.any { it.first == method.name && it.second == method.desc }) {
+                if (!isStatic && targetMethods.any { it.first == method.name && it.second == method.desc }) {
                     problems += "$whereM —— the target class already has a method with this signature, this @FieldAccess is redundant"
                     continue
                 }
@@ -456,9 +454,12 @@ internal object ClassMerger {
                         " (when value is left empty the field name is inferred from the get/is/set prefix)"
                     continue
                 }
-                if (targetField.access and Opcodes.ACC_STATIC != 0) {
-                    problems += "$whereM —— target field $fieldName is a static field, accessor only supports instance fields" +
-                        " (an interface's abstract method cannot express a synthesized static body)"
+                val targetIsStatic = (targetField.access and Opcodes.ACC_STATIC) != 0
+                if (targetIsStatic != isStatic) {
+                    problems += "$whereM —— target field $fieldName is " +
+                        (if (targetIsStatic) "static" else "an instance field") +
+                        ", but the accessor is declared " + (if (isStatic) "static" else "an instance method") +
+                        " — the two sides must agree"
                     continue
                 }
                 val shape = when {
@@ -469,6 +470,33 @@ internal object ClassMerger {
                 if (shape == null) {
                     problems += "$whereM —— an @FieldAccess can only be shaped as a getter (0 args returning the field type) or" +
                         " a setter (1 arg returning void)"
+                    continue
+                }
+                if (isStatic) {
+                    // The synthesized body is a public static method on the target class; the carrier's
+                    // own body is replaced with a delegation when the carrier class loads (see
+                    // HookTransformer) — a static accessor has no receiver to cast, so delegation is
+                    // the only way the carrier can reach the synthesized member. The name is the
+                    // accessor's prefixed with oml$: the target frequently owns a **private** method of
+                    // the same signature (that is why the accessor exists), and same-signature methods
+                    // cannot coexist.
+                    val access = Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC or Opcodes.ACC_SYNTHETIC
+                    val synthName = "oml$" + method.name
+                    val body = if (shape == "getter") {
+                        buildMethod(access, synthName, method.desc, 0, retType.size) {
+                            add(FieldInsnNode(Opcodes.GETSTATIC, target.name, targetField.name, targetField.desc))
+                            add(InsnNode(retType.getOpcode(Opcodes.IRETURN)))
+                        }
+                    } else {
+                        val t = argTypes[0]
+                        buildMethod(access, synthName, method.desc, t.size, t.size) {
+                            add(VarInsnNode(t.getOpcode(Opcodes.ILOAD), 0))
+                            add(FieldInsnNode(Opcodes.PUTSTATIC, target.name, targetField.name, targetField.desc))
+                            add(InsnNode(Opcodes.RETURN))
+                        }
+                    }
+                    target.methods.add(body)
+                    accessors++
                     continue
                 }
                 // The synthesized body is a **concrete** method: the ACC_ABSTRACT brought by the interface declaration
@@ -496,7 +524,11 @@ internal object ClassMerger {
 
             // ---------- @MethodAccess ----------
             val invokerAnn = invoker ?: continue // "both empty" was already continued above
-            if (targetMethods.any { it.first == method.name && it.second == method.desc }) {
+            // The redundant check is instance-only: a **static** accessor synthesizes under the
+            // oml$-prefixed name (the target frequently owns a private method of the declared
+            // signature — that is exactly what the accessor exists to reach), so a same-signature
+            // target member never conflicts.
+            if (!isStatic && targetMethods.any { it.first == method.name && it.second == method.desc }) {
                 problems += "$whereM —— the target class already has a method with this signature, this @MethodAccess is redundant"
                 continue
             }
@@ -512,9 +544,33 @@ internal object ClassMerger {
                     " the parameter and return types must match the target method exactly)"
                 continue
             }
-            if (targetMethod.access and Opcodes.ACC_STATIC != 0) {
-                problems += "$whereM —— target method $targetName is a static method, invoker only supports instance methods" +
-                    " (an interface's abstract method cannot express a synthesized static body)"
+            if (((targetMethod.access and Opcodes.ACC_STATIC) != 0) != isStatic) {
+                problems += "$whereM —— target method $targetName is " +
+                    (if ((targetMethod.access and Opcodes.ACC_STATIC) != 0) "static" else "an instance method") +
+                    ", but the accessor is declared " + (if (isStatic) "static" else "an instance method") +
+                    " — the two sides must agree"
+                continue
+            }
+            if (isStatic) {
+                // Same delegation shape as the static field accessor above: the public static
+                // synthesis lands in the target class and can reach the private member; the carrier's
+                // body is replaced with an INVOKESTATIC at carrier load.
+                val access = Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC or Opcodes.ACC_SYNTHETIC
+                val synthName = "oml$" + method.name
+                val body = buildMethod(
+                    access, synthName, method.desc,
+                    argTypes.sumOf { it.size }, argTypes.sumOf { it.size } + retType.size,
+                ) {
+                    var slot = 0
+                    for (t in argTypes) {
+                        add(VarInsnNode(t.getOpcode(Opcodes.ILOAD), slot))
+                        slot += t.size
+                    }
+                    add(MethodInsnNode(Opcodes.INVOKESTATIC, target.name, targetMethod.name, targetMethod.desc, false))
+                    add(InsnNode(retType.getOpcode(Opcodes.IRETURN)))
+                }
+                target.methods.add(body)
+                invokers++
                 continue
             }
             val concrete = (method.access and Opcodes.ACC_ABSTRACT.inv()) or Opcodes.ACC_SYNTHETIC
@@ -539,6 +595,42 @@ internal object ClassMerger {
         }
 
         return Result(0, 0, 0, 0, 0, problems, accessors, invokers)
+    }
+
+    /**
+     * Rewrites the **static** `@FieldAccess` / `@MethodAccess` declarations of a carrier class into
+     * delegations to the public static members synthesized into the target class. Runs when the
+     * carrier itself loads (a static accessor has no receiver, so delegation is the only way its
+     * body — which the mod compiled against the member while it was still private — can reach the
+     * synthesis). Returns whether anything changed.
+     */
+    fun rewriteStaticDelegates(carrier: HookClass, node: ClassNode): Boolean {
+        var changed = false
+        for (method in node.methods) {
+            if ((method.access and Opcodes.ACC_STATIC) == 0) continue
+            val annotations = method.visibleAnnotations.orEmpty()
+            if (annotations.none { it.desc == ACCESSOR_DESC || it.desc == INVOKER_DESC }) continue
+
+            val argTypes = Type.getArgumentTypes(method.desc)
+            val ret = Type.getReturnType(method.desc)
+            method.instructions.clear()
+            // Push the declared parameters (a static method's locals start at slot 0), call the
+            // synthesized delegate, return its value. Straight-line: the stale frames of the dummy
+            // body must go, and a frameless straight-line body is valid at class version 50+.
+            var slot = 0
+            for (t in argTypes) {
+                method.instructions.add(VarInsnNode(t.getOpcode(Opcodes.ILOAD), slot))
+                slot += t.size
+            }
+            method.instructions.add(
+                MethodInsnNode(Opcodes.INVOKESTATIC, carrier.targetInternal, "oml$" + method.name, method.desc, false),
+            )
+            method.instructions.add(InsnNode(ret.getOpcode(Opcodes.IRETURN)))
+            method.maxStack = argTypes.sumOf { it.size }.coerceAtLeast(1)
+            method.maxLocals = slot
+            changed = true
+        }
+        return changed
     }
 
     /** Nothing is self-referenced inside the interface, but the interface name must not linger in the synthesized body either -- this just collects the declared method into a MethodNode. */
