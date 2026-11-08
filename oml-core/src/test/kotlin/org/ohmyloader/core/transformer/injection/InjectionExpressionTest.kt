@@ -121,6 +121,46 @@ class InjectionExpressionTest {
     }
 
     @Test
+    fun `modifyExpressionValue rewrites a complex comparison`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("dcmp", desc = "(D)I") {
+                        atExpression("? > 5.0") {
+                            modifyExpressionValue(ExpressionHandlers.OWNER, "negate", "(Z)Z")
+                        }
+                    }
+                }
+            },
+            doubleCompareTarget(),
+        )
+
+        assertEquals(100, invoke(clazz, "dcmp", 1.0), "1.0 > 5.0 is false, flipped to true")
+        assertEquals(0, invoke(clazz, "dcmp", 9.0), "9.0 > 5.0 is true, flipped to false")
+    }
+
+    @Test
+    fun `modifyExpressionValue rewrites a string concatenation`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("greet", desc = "(Ljava/lang/String;)Ljava/lang/String;") {
+                        atExpression("'Hi ' + ?") {
+                            modifyExpressionValue(
+                                ExpressionHandlers.OWNER, "suffix",
+                                "(Ljava/lang/String;)Ljava/lang/String;",
+                            )
+                        }
+                    }
+                }
+            },
+            concatTarget(),
+        )
+
+        assertEquals("Hi Bob!", invoke(clazz, "greet", "Bob"))
+    }
+
+    @Test
     fun `an undeclared identifier fails the transform`() {
         val spec = specOf {
             classTarget(owner) {
@@ -190,6 +230,51 @@ class InjectionExpressionTest {
         },
     )
 
+    /** `static int dcmp(double x) { if (x > 5.0) return 100; return 0; }` */
+    private fun doubleCompareTarget(): ClassNode = classNode(
+        methodNode("dcmp", "(D)I") {
+            val otherwise = LabelNode()
+            add(VarInsnNode(Opcodes.DLOAD, 0))
+            add(org.objectweb.asm.tree.LdcInsnNode(5.0))
+            add(InsnNode(Opcodes.DCMPL))
+            add(JumpInsnNode(Opcodes.IFLE, otherwise))
+            add(IntInsnNode(Opcodes.BIPUSH, 100))
+            add(InsnNode(Opcodes.IRETURN))
+            add(otherwise)
+            add(
+                org.objectweb.asm.tree.FrameNode(
+                    Opcodes.F_NEW, 1, arrayOf<Any>(Opcodes.DOUBLE), 0, emptyArray<Any>(),
+                ),
+            )
+            add(InsnNode(Opcodes.ICONST_0))
+            add(InsnNode(Opcodes.IRETURN))
+        },
+    )
+
+    /** `static String greet(String name) { return "Hi " + name; }` */
+    private fun concatTarget(): ClassNode = classNode(
+        methodNode("greet", "(Ljava/lang/String;)Ljava/lang/String;") {
+            add(VarInsnNode(Opcodes.ALOAD, 0))
+            add(
+                org.objectweb.asm.tree.InvokeDynamicInsnNode(
+                    "makeConcatWithConstants",
+                    "(Ljava/lang/String;)Ljava/lang/String;",
+                    org.objectweb.asm.Handle(
+                        Opcodes.H_INVOKESTATIC,
+                        "java/lang/invoke/StringConcatFactory",
+                        "makeConcatWithConstants",
+                        "(Ljava/lang/invoke/MethodHandles\$Lookup;Ljava/lang/String;" +
+                            "Ljava/lang/invoke/MethodType;Ljava/lang/String;" +
+                            "[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;",
+                        false,
+                    ),
+                    "Hi \u0001",
+                ),
+            )
+            add(InsnNode(Opcodes.ARETURN))
+        },
+    )
+
     /** `static int cmp(int x) { if (x > 5) return 100; return 0; }` */
     private fun compareTarget(): ClassNode = classNode(
         methodNode("cmp", "(I)I") {
@@ -236,8 +321,8 @@ class InjectionExpressionTest {
         }.define()
     }
 
-    private fun invoke(clazz: Class<*>, name: String, vararg args: Any?): Int =
-        (clazz.methods.first { it.name == name }.invoke(null, *args) as Number).toInt()
+    private fun invoke(clazz: Class<*>, name: String, vararg args: Any?): Any? =
+        clazz.methods.first { it.name == name }.invoke(null, *args)
 
     object ExpressionHandlers {
         val OWNER: String = ExpressionHandlers::class.java.name.replace('.', '/')
@@ -253,5 +338,8 @@ class InjectionExpressionTest {
 
         @JvmStatic
         fun negate(value: Boolean): Boolean = !value
+
+        @JvmStatic
+        fun suffix(value: String): String = "$value!"
     }
 }

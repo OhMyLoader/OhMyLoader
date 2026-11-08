@@ -100,8 +100,8 @@ internal object ProducedValue {
         is InjectionPoint.Call -> point.after
         is InjectionPoint.FieldAccess -> point.after
         is InjectionPoint.Constant -> point.after
-        // The expression anchor injects relative to the captured instruction; `after` is "the value exists"
-        is InjectionPoint.Expression -> point.after
+        // The expression anchor's captured instruction produces the value; the block lands after it
+        is InjectionPoint.Expression -> true
         else -> false
     }
 

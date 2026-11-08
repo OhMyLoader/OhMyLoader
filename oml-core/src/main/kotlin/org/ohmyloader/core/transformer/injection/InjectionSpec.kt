@@ -4,7 +4,9 @@ import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.*
 import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.inject.*
+import org.ohmyloader.core.expression.flow.ExpressionTarget
 import org.ohmyloader.core.expression.utils.ComparisonInfo
+import org.ohmyloader.core.expression.utils.ComplexComparisonInfo
 import org.ohmyloader.core.expression.utils.ExpressionDecorations
 import org.ohmyloader.core.hook.LOCAL_REF
 import org.ohmyloader.core.hook.LOCAL_REF_DESC
@@ -230,6 +232,20 @@ class InjectionSpec internal constructor(
         decorations: Map<AbstractInsnNode, Map<String, Any?>>,
         anchor: AbstractInsnNode,
     ): ComparisonInfo? = decorations[anchor]?.get(ExpressionDecorations.COMPARISON_INFO) as? ComparisonInfo
+
+    /**
+     * The jump whose branch the comparison feeds: the matched instruction itself for a plain jump, or the
+     * `IFxx` after an `lcmp`/`fcmp`/`dcmp` for a complex comparison.
+     */
+    private fun resolveComparisonJump(
+        comparison: ComparisonInfo,
+        anchor: AbstractInsnNode,
+        method: MethodNode,
+    ): JumpInsnNode? = if (comparison is ComplexComparisonInfo) {
+        comparison.getJumpInsn(ExpressionTarget(method))
+    } else {
+        anchor as? JumpInsnNode
+    }
 
     private fun org.ohmyloader.api.inject.MethodRule.isWholeMethodWrap(): Boolean =
         points.any { (_, payload) ->
@@ -709,12 +725,13 @@ class InjectionSpec internal constructor(
                                 // A comparison match carries a ComparisonInfo: its boolean value does not exist
                                 // yet and is materialized around the jump before the handler runs
                                 val comparison = comparisonDecoration(expressionDecorations, anchor)
-                                if (comparison != null && anchor is JumpInsnNode) {
+                                val comparisonJump = comparison?.let { resolveComparisonJump(it, anchor, method) }
+                                if (comparison != null && comparisonJump != null) {
                                     val list = PayloadEmitter.emitModifiedComparison(
                                         payload.owner, payload.method, payload.desc, payload.captures,
-                                        instance = true, comparison, method, owner, anchor, locals, frames,
+                                        instance = true, comparison, method, owner, comparisonJump, locals, frames,
                                     ) ?: continue
-                                    if (!insertBlock(method, anchor, list, after = true, frames, knownShares)) continue
+                                    if (!insertBlock(method, comparisonJump, list, after = true, frames, knownShares)) continue
                                     inserted++
                                     continue
                                 }
@@ -725,7 +742,8 @@ class InjectionSpec internal constructor(
                                 val list = PayloadEmitter.emitInPlaceHandler(
                                     payload, "@ModifyExpressionValue", value, method, owner, locals,
                                 ) ?: continue
-                                if (!insertBlock(method, anchor, list, point.after, frames, knownShares)) continue
+                                val after = point.after || point.core is InjectionPoint.Expression
+                                if (!insertBlock(method, anchor, list, after, frames, knownShares)) continue
                                 inserted++
                             }
 
@@ -928,12 +946,13 @@ class InjectionSpec internal constructor(
                     is Payload.ModifyExpressionValue -> {
                         // A comparison match: materialize the boolean, let the handler rewrite it, then branch
                         val comparison = comparisonDecoration(expressionDecorations, anchor)
-                        if (comparison != null && anchor is JumpInsnNode) {
+                        val comparisonJump = comparison?.let { resolveComparisonJump(it, anchor, method) }
+                        if (comparison != null && comparisonJump != null) {
                             val list = PayloadEmitter.emitModifiedComparison(
                                 payload.owner, payload.method, payload.desc, payload.extras,
-                                instance = false, comparison, method, owner, anchor, locals, frames,
+                                instance = false, comparison, method, owner, comparisonJump, locals, frames,
                             ) ?: continue
-                            if (!insertBlock(method, anchor, list, after = true, frames, knownShares)) continue
+                            if (!insertBlock(method, comparisonJump, list, after = true, frames, knownShares)) continue
                             inserted++
                             continue
                         }
@@ -942,7 +961,8 @@ class InjectionSpec internal constructor(
                             "ModifyExpressionValue", payload.owner, payload.method, payload.desc, payload.extras,
                             instance = false, value = value, method = method, owner = owner, locals = locals,
                         ) ?: continue
-                        if (!insertBlock(method, anchor, list, point.after, frames, knownShares)) continue
+                        val after = point.after || point.core is InjectionPoint.Expression
+                        if (!insertBlock(method, anchor, list, after, frames, knownShares)) continue
                         inserted++
                     }
 

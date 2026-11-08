@@ -1129,14 +1129,8 @@ internal object PayloadEmitter {
         locals: AnchorLocals?,
         frames: MethodFrames,
     ): InsnList? {
-        if (comparison is ComplexComparisonInfo) {
-            OmlLog.error(
-                "Injection",
-                "injection skipped: @ModifyExpressionValue on a complex comparison (lcmp/fcmp/dcmp) is not " +
-                    "supported yet: ${method.name}${method.desc}",
-            )
-            return null
-        }
+        // A complex comparison's cmp instruction stays in place; the caller resolved the jump it feeds, and the
+        // boolean materialization happens after that jump.
         val handlerArgs = Type.getArgumentTypes(handlerDesc)
         val handlerRet = Type.getReturnType(handlerDesc)
         if (handlerRet != Type.BOOLEAN_TYPE || handlerArgs.firstOrNull() != Type.BOOLEAN_TYPE) {

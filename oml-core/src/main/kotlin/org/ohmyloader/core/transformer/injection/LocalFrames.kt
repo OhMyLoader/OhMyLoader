@@ -273,7 +273,21 @@ internal class MethodFrames(private val owner: String, private val method: Metho
         val frames = table ?: return null
         val target = firstExecutableFrom(if (after) node.next else node) ?: return null
         val frame = frames.getOrNull(method.instructions.indexOf(target)) ?: return null
-        return Array(frame.locals) { slot -> encodeLocal(frame.getLocal(slot)) }
+        // A long/double occupies **one entry** in a FrameNode array (it covers two slots); the slot it pads
+        // with TOP must not be emitted, or the frame claims more locals than max_locals.
+        val locals = ArrayList<Any>(frame.locals)
+        var slot = 0
+        while (slot < frame.locals) {
+            val encoded = encodeLocal(frame.getLocal(slot))
+            locals += encoded
+            slot += if (encoded == Opcodes.LONG || encoded == Opcodes.DOUBLE) 2 else 1
+        }
+        // Slots past the last live local are unused: a frame must not declare them, or it requires more
+        // locals than the method has
+        while (locals.isNotEmpty() && locals.last() == Opcodes.TOP) {
+            locals.removeAt(locals.size - 1)
+        }
+        return locals.toTypedArray()
     }
 
     /**

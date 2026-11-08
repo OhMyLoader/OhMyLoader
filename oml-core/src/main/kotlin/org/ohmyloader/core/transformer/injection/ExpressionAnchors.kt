@@ -9,6 +9,7 @@ import org.ohmyloader.core.expression.ast.expressions.Expression
 import org.ohmyloader.core.expression.flow.ComplexDataException
 import org.ohmyloader.core.expression.flow.FlowInterpreter
 import org.ohmyloader.core.expression.flow.FlowValue
+import org.ohmyloader.core.expression.flow.expansion.InsnExpander
 import org.ohmyloader.core.expression.point.ExpressionContext
 import org.ohmyloader.core.expression.pool.IdentifierPool
 import org.ohmyloader.core.expression.pool.MemberDefinition
@@ -64,7 +65,11 @@ internal object ExpressionAnchors {
         val decorations = HashMap<AbstractInsnNode, MutableMap<String, Any?>>()
         val sink = object : Expression.OutputSink {
             override fun capture(node: FlowValue, expr: Expression, ctx: ExpressionContext) {
-                if (!node.isComplex) captured += node.insn
+                if (!node.isComplex) {
+                    // A compound instruction (iinc, string concat, …) is represented by the real instruction
+                    // in the method, not by the synthetic node the matcher sees
+                    captured += InsnExpander.getRepresentative(node)
+                }
             }
 
             override fun decorate(insn: AbstractInsnNode, key: String, value: Any?) {
