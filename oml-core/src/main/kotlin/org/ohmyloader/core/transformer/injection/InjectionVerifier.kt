@@ -466,6 +466,17 @@ internal object InjectionVerifier {
                         }
                     }
 
+                    HandlerKind.WRAP_METHOD -> {
+                        if (payload.variant != HandlerVariant.NOTIFY) {
+                            problems += "$where — a WrapMethod handler must not call back the handle (variant should be NOTIFY): ${payload.desc}"
+                        }
+                        val last = runCatching { Type.getArgumentTypes(payload.desc).lastOrNull() }.getOrNull()
+                        if (last?.descriptor != OPERATION_DESC) {
+                            problems += "$where — the handler of @WrapMethod must take $OPERATION_DESC as its " +
+                                "last parameter: ${payload.desc}"
+                        }
+                    }
+
                     HandlerKind.REDIRECT -> {
                         if (payload.variant != HandlerVariant.NOTIFY) {
                             problems += "$where — a value-modifying handler must not call back the handle (variant should be NOTIFY): ${payload.desc}"
@@ -711,6 +722,17 @@ internal object InjectionVerifier {
                         "parameter (Operation<R>): ${payload.desc}"
                 }
                 problems += checkHandler(where, "WrapOperation", payload.owner, payload.method, payload.desc, loader)
+            }
+
+            is Payload.WrapMethod -> {
+                val desc = runCatching { Type.getMethodType(payload.desc) }.getOrNull()
+                if (desc == null) {
+                    problems += "$where — the handler descriptor of WrapMethod cannot be parsed: ${payload.desc}"
+                } else if (desc.argumentTypes.lastOrNull()?.descriptor != OPERATION_DESC) {
+                    problems += "$where — the handler of WrapMethod must take $OPERATION_DESC as its last " +
+                        "parameter (Operation<R>): ${payload.desc}"
+                }
+                problems += checkHandler(where, "WrapMethod", payload.owner, payload.method, payload.desc, loader)
             }
 
             is Payload.ModifyVariable -> {

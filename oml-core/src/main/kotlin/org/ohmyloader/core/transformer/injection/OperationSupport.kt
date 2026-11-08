@@ -69,7 +69,7 @@ internal object OperationSupport {
         prefix: List<AbstractInsnNode> = emptyList(),
     ) {
         val boxedReturn = boxed(returnType)
-        val bridgeName = uniqueName(classNode)
+        val bridgeName = uniqueName(classNode, "oml\$wrap")
         val bridgeDesc = Type.getMethodDescriptor(boxedReturn, OBJECTS)
         classNode.methods.add(bridgeMethod(bridgeName, argTypes, returnType, original, prefix))
 
@@ -121,7 +121,86 @@ internal object OperationSupport {
             null,
         )
         val ins = method.instructions
-        ins.add(VarInsnNode(Opcodes.ALOAD, 0))
+        emitCheck(ins, 0, argTypes)
+        // Instantiation's bridge starts with NEW + DUP: the uninitialized reference never leaves the
+        // bridge, so the verifier's uninitialized-object rule is satisfied inside one straight-line body.
+        prefix.forEach(ins::add)
+        emitUnpack(ins, 0, argTypes)
+        ins.add(copyOf(original))
+        emitBoxedReturn(ins, returnType)
+        return method
+    }
+
+    /**
+     * Builds the `Operation` for a wrapped **method**: the bridge (instance for an instance method, static
+     * for a static one) unpacks the handler's arguments and calls the body moved to [movedName]. The lambda
+     * factory captures `this` for an instance method, so the bridge stays an instance method.
+     */
+    fun makeMethodOperation(
+        classNode: ClassNode,
+        insns: InsnList,
+        argTypes: Array<Type>,
+        returnType: Type,
+        movedName: String,
+        movedDesc: String,
+        isStatic: Boolean,
+    ) {
+        if ((classNode.access and Opcodes.ACC_INTERFACE) != 0) {
+            throw IllegalStateException("WrapMethod cannot wrap a method of an interface: ${classNode.name}")
+        }
+        val boxedReturn = boxed(returnType)
+        val bridgeName = uniqueName(classNode, "oml\$wrapCall")
+        val bridgeDesc = Type.getMethodDescriptor(boxedReturn, OBJECTS)
+        val bridge = MethodNode(
+            Opcodes.ASM9,
+            Opcodes.ACC_PRIVATE or (if (isStatic) Opcodes.ACC_STATIC else 0) or Opcodes.ACC_SYNTHETIC,
+            bridgeName,
+            bridgeDesc,
+            null,
+            null,
+        )
+        val ins = bridge.instructions
+        val argsSlot = if (isStatic) 0 else 1
+        emitCheck(ins, argsSlot, argTypes)
+        if (!isStatic) ins.add(VarInsnNode(Opcodes.ALOAD, 0))
+        emitUnpack(ins, argsSlot, argTypes)
+        ins.add(
+            MethodInsnNode(
+                if (isStatic) Opcodes.INVOKESTATIC else Opcodes.INVOKESPECIAL,
+                classNode.name,
+                movedName,
+                movedDesc,
+                false,
+            ),
+        )
+        emitBoxedReturn(ins, returnType)
+        classNode.methods.add(bridge)
+
+        val factoryDesc = if (isStatic) {
+            Type.getMethodDescriptor(OPERATION_TYPE)
+        } else {
+            Type.getMethodDescriptor(OPERATION_TYPE, Type.getObjectType(classNode.name))
+        }
+        insns.add(
+            InvokeDynamicInsnNode(
+                "call",
+                factoryDesc,
+                LMF,
+                Type.getMethodType(OBJECT, OBJECTS),
+                Handle(
+                    if (isStatic) Opcodes.H_INVOKESTATIC else Opcodes.H_INVOKESPECIAL,
+                    classNode.name,
+                    bridgeName,
+                    bridgeDesc,
+                    false,
+                ),
+                Type.getMethodType(boxedReturn, OBJECTS),
+            ),
+        )
+    }
+
+    private fun emitCheck(ins: InsnList, argsSlot: Int, argTypes: Array<Type>) {
+        ins.add(VarInsnNode(Opcodes.ALOAD, argsSlot))
         ins.add(intConst(argTypes.size))
         ins.add(LdcInsnNode(argTypes.joinToString(", ", "[", "]") { it.className }))
         ins.add(
@@ -131,12 +210,12 @@ internal object OperationSupport {
                 false,
             ),
         )
-        // Instantiation's bridge starts with NEW + DUP: the uninitialized reference never leaves the
-        // bridge, so the verifier's uninitialized-object rule is satisfied inside one straight-line body.
-        prefix.forEach(ins::add)
+    }
+
+    private fun emitUnpack(ins: InsnList, argsSlot: Int, argTypes: Array<Type>) {
         for (i in argTypes.indices) {
             val type = argTypes[i]
-            ins.add(VarInsnNode(Opcodes.ALOAD, 0))
+            ins.add(VarInsnNode(Opcodes.ALOAD, argsSlot))
             ins.add(intConst(i))
             ins.add(InsnNode(Opcodes.AALOAD))
             when (type.sort) {
@@ -149,7 +228,9 @@ internal object OperationSupport {
                 }
             }
         }
-        ins.add(copyOf(original))
+    }
+
+    private fun emitBoxedReturn(ins: InsnList, returnType: Type) {
         when {
             returnType == Type.VOID_TYPE -> ins.add(InsnNode(Opcodes.ACONST_NULL))
             returnType.sort != Type.OBJECT && returnType.sort != Type.ARRAY -> {
@@ -159,7 +240,6 @@ internal object OperationSupport {
             }
         }
         ins.add(InsnNode(Opcodes.ARETURN))
-        return method
     }
 
     /** A detached copy of the wrapped call / field instruction (only those two anchor kinds are supported). */
@@ -191,10 +271,10 @@ internal object OperationSupport {
         else -> LdcInsnNode(value)
     }
 
-    private fun uniqueName(classNode: ClassNode): String {
+    private fun uniqueName(classNode: ClassNode, prefix: String): String {
         var name: String
         do {
-            name = "oml\$wrap\$${counter.incrementAndGet()}"
+            name = "$prefix\$${counter.incrementAndGet()}"
         } while (classNode.methods.any { it.name == name })
         return name
     }

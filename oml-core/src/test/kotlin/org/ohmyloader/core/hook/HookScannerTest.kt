@@ -1137,6 +1137,27 @@ class HookScannerTest {
         assertEquals("I", handler.returnType)
     }
 
+    @Test
+    fun `wrapMethod parses a whole-method Operation handler`() {
+        newBridge()
+        val node = injectClass(
+            annotated(
+                "h",
+                "(ILorg/ohmyloader/api/hook/Operation;)I",
+                AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/WrapMethod;").apply {
+                    values = mutableListOf<Any?>("method", "runTick", "desc", "(I)I")
+                },
+            ),
+        )
+        val parsed = HookScanner.parseMixinClass(node, "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        assertEquals(1, parsed.rules.size)
+        val handler = HookRegistry.handler(1)!!
+        assertEquals(listOf("I", "Lorg/ohmyloader/api/hook/Operation;"), handler.captureTypes)
+        assertEquals(2, handler.handlerParamCount)
+        assertEquals("I", handler.returnType)
+    }
+
     // ---------- fixtures ----------
 
     private fun parse(

@@ -279,6 +279,25 @@ class MethodRuleBuilder @PublishedApi internal constructor(
      * the front-end, so attaching directly is more straightforward and does not
      * re-interpret the semantics in two places.
      */
+    /**
+     * **Wrap the whole selected method** (aligned with MixinExtras `@WrapMethod`).
+     *
+     * There is no anchor: the original body is moved to a private synthetic method and the target method
+     * becomes a wrapper calling `(params…, Operation<R>, extras…)R`; the original body can be re-run through
+     * [org.ohmyloader.api.hook.Operation.call] with different arguments, or not at all. Applied after the
+     * method's ordinary injection rules.
+     */
+    fun wrapMethod(owner: String, method: String, desc: String, extras: List<DslValue> = emptyList()) {
+        points += InjectionPoint.Head to Payload.WrapMethod(owner, method, desc, extras)
+    }
+
+    /** The merged form of [wrapMethod]: the handler moves into the target class, so `this` is the target. */
+    fun mergedWrapMethod(method: String, desc: String, captures: List<DslValue> = emptyList()) {
+        points += InjectionPoint.Head to Payload.HandlerCall(
+            targetInternal, method, desc, captures, HandlerVariant.NOTIFY, HandlerKind.WRAP_METHOD,
+        )
+    }
+
     fun point(anchor: InjectionPoint, payload: Payload) {
         points += anchor to payload
     }

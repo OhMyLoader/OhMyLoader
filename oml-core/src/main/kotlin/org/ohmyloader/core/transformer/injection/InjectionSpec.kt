@@ -26,6 +26,7 @@ internal fun Payload.dslValues(): List<DslValue> = when (this) {
     is Payload.ModifyReceiver -> extras
     is Payload.WrapWithCondition -> extras
     is Payload.WrapOperation -> extras
+    is Payload.WrapMethod -> extras
     is Payload.ModifyVariable -> extras
     // For every HandlerCall form (entry- and value-modifying alike) the values all live in captures:
     // the value-modifying discriminator (which argument / slot) is a **scalar**, carried by index / slot, not a DslValue.
@@ -99,7 +100,8 @@ class InjectionSpec internal constructor(
             if (result.changes.isNotEmpty()) changed = true
         }
 
-        for (rule in classRules.methods) {
+        // Whole-method wraps run last: their body move must see every ordinary injection already applied.
+        for (rule in classRules.methods.sortedBy { if (it.isWholeMethodWrap()) 1 else 0 }) {
             val named = context.node.methods.filter { rule.selector.matches(it.name, it.desc) }
             // Abstract/native methods have no instruction body (`instructions.size() == 0`), so injection has nothing to target
             val injectable = named.filter { it.instructions.size() > 0 }
@@ -196,6 +198,12 @@ class InjectionSpec internal constructor(
      * produce a class that fails verification — that would fail the whole class load at a much higher cost (and the
      * hit count decreases by one, which is then reported by require/expect).
      */
+    private fun org.ohmyloader.api.inject.MethodRule.isWholeMethodWrap(): Boolean =
+        points.any { (_, payload) ->
+            payload is Payload.WrapMethod ||
+                (payload is Payload.HandlerCall && payload.kind == HandlerKind.WRAP_METHOD)
+        }
+
     private fun insertBlock(
         method: MethodNode,
         anchor: AbstractInsnNode,
@@ -451,6 +459,18 @@ class InjectionSpec internal constructor(
                         inserted++
                     }
 
+                    is Payload.WrapMethod -> {
+                        if (MethodWrapper.wrap(
+                                classNode, method, owner, payload.owner, payload.method, payload.desc,
+                                payload.extras, instance = false,
+                            )
+                        ) {
+                            inserted++
+                        }
+                        // The body was moved; anchors collected for this rule are stale.
+                        return inserted
+                    }
+
                     is Payload.HandlerCall -> {
                         // Value-modifying kinds have anchor requirements **completely identical** to their external
                         // static form — only "where the handler lives and how it's called" changes; the anchor
@@ -594,6 +614,17 @@ class InjectionSpec internal constructor(
                                 ) ?: continue
                                 if (!insertBlock(method, anchor, list, after = false, frames)) continue
                                 inserted++
+                            }
+
+                            HandlerKind.WRAP_METHOD -> {
+                                if (MethodWrapper.wrap(
+                                        classNode, method, owner, payload.owner, payload.method, payload.desc,
+                                        payload.captures, instance = true,
+                                    )
+                                ) {
+                                    inserted++
+                                }
+                                return inserted
                             }
 
                             HandlerKind.WRAP_OPERATION -> {

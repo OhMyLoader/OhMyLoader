@@ -376,3 +376,23 @@ annotation class WrapWithCondition(
     val expect: Int = -1,
     val allow: Int = -1,
 )
+
+/**
+ * Wraps the **whole selected method** (aligned with MixinExtras' `@WrapMethod`). The original body is
+ * moved to a private synthetic method and the target becomes a wrapper that calls
+ * `(params…, Operation<R>)R`; the handler may run the original body through
+ * [org.ohmyloader.api.hook.Operation.call] with different arguments, or not at all. There is no `at`:
+ * [method]/[methods] plus [desc] select the method. Constructors, abstract and native methods are
+ * rejected. The wrap is applied after the method's ordinary injection rules, so those land in the moved
+ * body.
+ */
+@Target(AnnotationTarget.FUNCTION)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class WrapMethod(
+    val method: String = "",
+    val methods: Array<String> = [],
+    val desc: String = "",
+    val require: Int = -1,
+    val expect: Int = -1,
+    val allow: Int = -1,
+)

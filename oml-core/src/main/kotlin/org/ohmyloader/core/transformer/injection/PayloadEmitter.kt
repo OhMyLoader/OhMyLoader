@@ -78,7 +78,7 @@ internal object PayloadEmitter {
             HandlerKind.MODIFY_ARG, HandlerKind.MODIFY_ARGS, HandlerKind.MODIFY_VAR,
             HandlerKind.MODIFY_CONST, HandlerKind.MODIFY_RETURN, HandlerKind.MODIFY_EXPR_VALUE,
             HandlerKind.MODIFY_RECEIVER, HandlerKind.WRAP_WITH_CONDITION, HandlerKind.WRAP_OPERATION,
-            HandlerKind.REDIRECT,
+            HandlerKind.WRAP_METHOD, HandlerKind.REDIRECT,
                 -> error("HandlerCall(${payload.kind}) needs the anchor instruction and is handled directly by the engine, not through emit")
         }
 
@@ -89,6 +89,8 @@ internal object PayloadEmitter {
         is Payload.WrapWithCondition, is Payload.WrapOperation,
             ->
             error("${payload.javaClass.simpleName} needs the anchor instruction; the engine calls emitModify*/emitInPlaceValue directly")
+
+        is Payload.WrapMethod -> error("WrapMethod applies to the whole method and is handled by MethodWrapper")
 
         is Payload.Raw -> InsnList().apply { payload.build(this, method, owner) }
     }
@@ -1649,7 +1651,7 @@ internal object PayloadEmitter {
     }
 
     /** Emits the value-loading instructions one by one; voids the whole payload if any value cannot be loaded (returns false). */
-    private fun emitValues(list: InsnList, values: List<DslValue>, method: MethodNode, locals: AnchorLocals?): Boolean {
+    internal fun emitValues(list: InsnList, values: List<DslValue>, method: MethodNode, locals: AnchorLocals?): Boolean {
         for (value in values) {
             if (!emitValue(list, value, method, locals)) return false
         }

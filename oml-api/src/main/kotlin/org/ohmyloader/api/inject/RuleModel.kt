@@ -483,6 +483,21 @@ sealed class Payload {
     ) : Payload()
 
     /**
+     * **Wraps the whole selected method** (aligned with MixinExtras `@WrapMethod`). There is no anchor: the
+     * payload applies to the method body itself. The original body moves to a private synthetic method, and
+     * the public method becomes a wrapper that calls `(params…, Operation<R>, extras…)R`; the handler may
+     * run the original through [org.ohmyloader.api.hook.Operation.call] with different arguments, or not at
+     * all. The rule is applied **after** the method's ordinary injection rules, so those land in the moved
+     * body. Constructors and abstract/native methods are rejected.
+     */
+    data class WrapMethod(
+        val owner: String,
+        val method: String,
+        val desc: String,
+        val extras: List<DslValue> = emptyList(),
+    ) : Payload()
+
+    /**
      * **Rewrites a local variable** (aligned with Mixin `@ModifyVariable`). The anchor must be an [`InjectionPoint.Store`] or
      * [`InjectionPoint.Load`]; the handler is shaped `(T[, captures…])T` and the engine synthesizes `LOAD slot → captures → INVOKESTATIC
      * handler → STORE slot` — no stack juggling needed, because the changed value lives in that one local (contrast [ModifyArg], where the
@@ -615,4 +630,10 @@ enum class HandlerKind {
      * handler `(receiver?, operands…, Operation<R>)R`.
      */
     WRAP_OPERATION,
+
+    /**
+     * `@WrapMethod`: replaces the whole method body with a handler that receives an
+     * `Operation<R>` for the original body, `(params…, Operation<R>)R`.
+     */
+    WRAP_METHOD,
 }

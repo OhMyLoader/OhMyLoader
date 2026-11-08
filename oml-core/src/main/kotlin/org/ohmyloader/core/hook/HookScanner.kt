@@ -175,6 +175,7 @@ object HookScanner {
     private const val MODIFY_RECEIVER_DESC = "Lorg/ohmyloader/api/hook/ModifyReceiver;"
     private const val WRAP_WITH_CONDITION_DESC = "Lorg/ohmyloader/api/hook/WrapWithCondition;"
     private const val WRAP_OPERATION_DESC = "Lorg/ohmyloader/api/hook/WrapOperation;"
+    private const val WRAP_METHOD_DESC = "Lorg/ohmyloader/api/hook/WrapMethod;"
     private const val BORROWED_DESC = "Lorg/ohmyloader/api/hook/Borrowed;"
     private const val EXTRA_DESC = "Lorg/ohmyloader/api/hook/Extra;"
     private const val REPLACE_DESC = "Lorg/ohmyloader/api/hook/Replace;"
@@ -201,6 +202,7 @@ object HookScanner {
         MODIFY_RECEIVER_DESC to "@ModifyReceiver",
         WRAP_WITH_CONDITION_DESC to "@WrapWithCondition",
         WRAP_OPERATION_DESC to "@WrapOperation",
+        WRAP_METHOD_DESC to "@WrapMethod",
     )
 
     /** Tail kind of the handler parameter list (`@Inject` uses the first two; the other annotations have no callback handle). */
@@ -408,6 +410,15 @@ object HookScanner {
             allow = declaredInt(annotation, "allow"),
         )
         policyProblem(where, shortName, policy)?.let { problems += "[$modId] $it" }
+
+        // `@WrapMethod` has no at: it applies to the whole selected method.
+        if (annotation.desc == WRAP_METHOD_DESC) {
+            parseWrapMethod(
+                method, targetInternal, methodNames, methodDesc, mixinClass, modId,
+                where, policy, mergeInto, handlers, rules, problems,
+            )
+            return
+        }
 
         // `@ModifyConstant` has no at (it locates the constant with `constant = @Constant(...)`)
         if (annotation.desc == MODIFY_CONSTANT_DESC) {
@@ -846,6 +857,7 @@ object HookScanner {
             HandlerKind.MODIFY_RECEIVER -> "@ModifyReceiver"
             HandlerKind.WRAP_WITH_CONDITION -> "@WrapWithCondition"
             HandlerKind.WRAP_OPERATION -> "@WrapOperation"
+            HandlerKind.WRAP_METHOD -> "@WrapMethod"
         }
 
     // ---------- @Inject ----------
@@ -1261,6 +1273,79 @@ object HookScanner {
                 extras = listOf(DslValue.IntVal(id)),
             ),
             policy, emptyList(), "WrapWithCondition",
+        )
+    }
+
+    private fun parseWrapMethod(
+        method: MethodNode,
+        targetInternal: String,
+        methodNames: List<String>,
+        methodDesc: String?,
+        mixinClass: String,
+        modId: String,
+        where: String,
+        policy: Policy,
+        mergeInto: String?,
+        handlers: MutableSet<String>,
+        rules: MutableList<Rule>,
+        problems: MutableList<String>,
+    ) {
+        val params = Type.getArgumentTypes(method.desc)
+        if (params.isEmpty() || params.last().descriptor != OPERATION_DESC) {
+            problems += "[$modId] $where —— @WrapMethod handler's last parameter must be " +
+                "$OPERATION_DESC (Operation<R>), currently ${method.desc}"
+            return
+        }
+        val ret = Type.getReturnType(method.desc)
+        if (methodDesc != null) {
+            val targetParams = Type.getArgumentTypes(methodDesc)
+            val targetRet = Type.getReturnType(methodDesc)
+            if (params.size != targetParams.size + 1 ||
+                params.dropLast(1).take(targetParams.size) != targetParams.toList()
+            ) {
+                problems += "[$modId] $where —— @WrapMethod handler must be shaped " +
+                    "(params…, Operation<R>)R matching the target descriptor: target $methodDesc, " +
+                    "handler ${method.desc}"
+                return
+            }
+            if (ret != targetRet) {
+                problems += "[$modId] $where —— @WrapMethod handler return type must equal the method's: " +
+                    "target returns ${targetRet.className}, handler returns ${ret.className}"
+                return
+            }
+        }
+        if (mergeInto != null && !method.isDeclaredStatic()) {
+            handlers += "${method.name}${method.desc}"
+            rules += Rule(
+                targetInternal, methodNames, methodDesc, InjectionPoint.Head,
+                Payload.HandlerCall(
+                    mergeInto, method.name, method.desc, emptyList(),
+                    HandlerVariant.NOTIFY, HandlerKind.WRAP_METHOD,
+                ),
+                policy, emptyList(), "WrapMethod",
+            )
+            return
+        }
+        val id = HookRegistry.register(
+            modId = modId,
+            mixinClass = mixinClass,
+            handlerMethod = method.name,
+            targetMethod = methodNames.first(),
+            cancelable = false,
+            captureTypes = params.map { it.descriptor },
+            handlerParamCount = params.size,
+            returnType = ret.descriptor,
+        )
+        val kind = HookRegistry.BridgeKind.MODIFY
+        rules += Rule(
+            targetInternal, methodNames, methodDesc, InjectionPoint.Head,
+            Payload.WrapMethod(
+                owner = HookRegistry.BRIDGE_CLASS,
+                method = HookRegistry.bridgeMethodName(id, kind),
+                desc = HookRegistry.bridgeDesc(id, kind),
+                extras = listOf(DslValue.IntVal(id)),
+            ),
+            policy, emptyList(), "WrapMethod",
         )
     }
 
