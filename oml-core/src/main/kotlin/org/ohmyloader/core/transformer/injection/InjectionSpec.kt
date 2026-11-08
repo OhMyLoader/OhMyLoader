@@ -23,6 +23,8 @@ internal fun Payload.dslValues(): List<DslValue> = when (this) {
     is Payload.ModifyArgs -> extras
     is Payload.ModifyConstant -> extras
     is Payload.ModifyExpressionValue -> extras
+    is Payload.ModifyReceiver -> extras
+    is Payload.WrapWithCondition -> extras
     is Payload.ModifyVariable -> extras
     // For every HandlerCall form (entry- and value-modifying alike) the values all live in captures:
     // the value-modifying discriminator (which argument / slot) is a **scalar**, carried by index / slot, not a DslValue.
@@ -371,6 +373,41 @@ class InjectionSpec internal constructor(
                         inserted++
                     }
 
+                    is Payload.ModifyReceiver -> {
+                        if (anchor !is MethodInsnNode && anchor !is FieldInsnNode) {
+                            OmlLog.error(
+                                "Injection",
+                                "the anchor of ModifyReceiver must be an instance call or field access, " +
+                                    "currently ${AnchorResolver.describe(point)}: ${method.name}",
+                            )
+                            continue
+                        }
+                        val list = PayloadEmitter.emitModifyReceiver(
+                            payload.owner, payload.method, payload.desc, payload.extras,
+                            instance = false, method = method, owner = owner, anchor = anchor, locals = locals,
+                        ) ?: continue
+                        if (!insertBlock(method, anchor, list, after = false, frames)) continue
+                        inserted++
+                    }
+
+                    is Payload.WrapWithCondition -> {
+                        if (anchor !is MethodInsnNode && anchor !is FieldInsnNode) {
+                            OmlLog.error(
+                                "Injection",
+                                "the anchor of WrapWithCondition must be a call or field write, " +
+                                    "currently ${AnchorResolver.describe(point)}: ${method.name}",
+                            )
+                            continue
+                        }
+                        val list = PayloadEmitter.emitWrapWithCondition(
+                            payload.owner, payload.method, payload.desc, payload.extras,
+                            instance = false, method = method, owner = owner, anchor = anchor,
+                            frames = frames, locals = locals,
+                        ) ?: continue
+                        if (!insertBlock(method, anchor, list, after = false, frames)) continue
+                        inserted++
+                    }
+
                     is Payload.HandlerCall -> {
                         // Value-modifying kinds have anchor requirements **completely identical** to their external
                         // static form — only "where the handler lives and how it's called" changes; the anchor
@@ -478,6 +515,41 @@ class InjectionSpec internal constructor(
                                 val list = PayloadEmitter.emitModifyVariable(payload, method, owner, anchor, locals)
                                     ?: continue
                                 if (!insertBlock(method, anchor, list, point.after, frames)) continue
+                                inserted++
+                            }
+
+                            HandlerKind.MODIFY_RECEIVER -> {
+                                if (anchor !is MethodInsnNode && anchor !is FieldInsnNode) {
+                                    OmlLog.error(
+                                        "Injection",
+                                        "the anchor of HandlerCall(MODIFY_RECEIVER) must be an instance call or field access, " +
+                                            "currently ${AnchorResolver.describe(point)}: ${method.name}",
+                                    )
+                                    continue
+                                }
+                                val list = PayloadEmitter.emitModifyReceiver(
+                                    payload.owner, payload.method, payload.desc, payload.captures,
+                                    instance = true, method = method, owner = owner, anchor = anchor, locals = locals,
+                                ) ?: continue
+                                if (!insertBlock(method, anchor, list, after = false, frames)) continue
+                                inserted++
+                            }
+
+                            HandlerKind.WRAP_WITH_CONDITION -> {
+                                if (anchor !is MethodInsnNode && anchor !is FieldInsnNode) {
+                                    OmlLog.error(
+                                        "Injection",
+                                        "the anchor of HandlerCall(WRAP_WITH_CONDITION) must be a call or field write, " +
+                                            "currently ${AnchorResolver.describe(point)}: ${method.name}",
+                                    )
+                                    continue
+                                }
+                                val list = PayloadEmitter.emitWrapWithCondition(
+                                    payload.owner, payload.method, payload.desc, payload.captures,
+                                    instance = true, method = method, owner = owner, anchor = anchor,
+                                    frames = frames, locals = locals,
+                                ) ?: continue
+                                if (!insertBlock(method, anchor, list, after = false, frames)) continue
                                 inserted++
                             }
 

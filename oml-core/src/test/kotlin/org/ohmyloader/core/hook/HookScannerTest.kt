@@ -1065,6 +1065,54 @@ class HookScannerTest {
         assertSame(self, TypedSelfMixin.received)
     }
 
+    @Test
+    fun `modifyReceiver parses and registers the receiver plus operands`() {
+        newBridge()
+        val node = injectClass(
+            annotated(
+                "h",
+                "(Ljava/lang/String;I)Ljava/lang/String;",
+                AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyReceiver;").apply {
+                    values = mutableListOf<Any?>(
+                        "method", "runTick",
+                        "at", atNode("INVOKE", target = "Lnet/minecraft/client/Minecraft;runTick(Z)V"),
+                    )
+                },
+            ),
+        )
+        val parsed = HookScanner.parseMixinClass(node, "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        assertEquals(1, parsed.rules.size)
+        val handler = HookRegistry.handler(1)!!
+        assertEquals(listOf("Ljava/lang/String;", "I"), handler.captureTypes)
+        assertEquals(2, handler.handlerParamCount)
+        assertEquals("Ljava/lang/String;", handler.returnType)
+    }
+
+    @Test
+    fun `wrapWithCondition parses a boolean handler`() {
+        newBridge()
+        val node = injectClass(
+            annotated(
+                "h",
+                "(Ljava/lang/String;I)Z",
+                AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/WrapWithCondition;").apply {
+                    values = mutableListOf<Any?>(
+                        "method", "runTick",
+                        "at", atNode("INVOKE", target = "Lnet/minecraft/client/Minecraft;runTick(Z)V"),
+                    )
+                },
+            ),
+        )
+        val parsed = HookScanner.parseMixinClass(node, "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        assertEquals(1, parsed.rules.size)
+        val handler = HookRegistry.handler(1)!!
+        assertEquals(listOf("Ljava/lang/String;", "I"), handler.captureTypes)
+        assertEquals(2, handler.handlerParamCount)
+        assertEquals("Z", handler.returnType)
+    }
+
     // ---------- fixtures ----------
 
     private fun parse(

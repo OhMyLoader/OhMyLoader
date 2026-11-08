@@ -436,6 +436,36 @@ sealed class Payload {
     ) : Payload()
 
     /**
+     * **Rewrites the receiver** of an instance call / field access (aligned with MixinExtras
+     * `@ModifyReceiver`). The anchor must be an instance method call or `GETFIELD`/`PUTFIELD`, before the
+     * instruction. The engine stashes the receiver and the instruction's operands (call arguments / field
+     * value) into temporary locals, calls a handler shaped `(ReceiverType, operands…, extras…)ReceiverType`,
+     * and re-seats the returned receiver beneath the unchanged operands so the original instruction runs on
+     * it. Zero boxing. The receiver type and operand types are decided by the anchor instruction and checked
+     * against the handler's declaration at injection time.
+     */
+    data class ModifyReceiver(
+        val owner: String,
+        val method: String,
+        val desc: String,
+        val extras: List<DslValue> = emptyList(),
+    ) : Payload()
+
+    /**
+     * **Gates an operation on a boolean handler** (aligned with MixinExtras `@WrapWithCondition`). The anchor
+     * must be a **void** method call or a field write, before the instruction. The handler is shaped
+     * `(receiver?, operands…, extras…)Z`: false skips the original instruction entirely, true runs it
+     * unchanged. Only void operations are supported — a non-void result would need a dummy value on the skip
+     * path, which the engine does not synthesize yet.
+     */
+    data class WrapWithCondition(
+        val owner: String,
+        val method: String,
+        val desc: String,
+        val extras: List<DslValue> = emptyList(),
+    ) : Payload()
+
+    /**
      * **Rewrites a local variable** (aligned with Mixin `@ModifyVariable`). The anchor must be an [`InjectionPoint.Store`] or
      * [`InjectionPoint.Load`]; the handler is shaped `(T[, captures…])T` and the engine synthesizes `LOAD slot → captures → INVOKESTATIC
      * handler → STORE slot` — no stack juggling needed, because the changed value lives in that one local (contrast [ModifyArg], where the
@@ -548,4 +578,17 @@ enum class HandlerKind {
      * has already been produced.
      */
     MODIFY_EXPR_VALUE,
+
+    /**
+     * `@ModifyReceiver`: rewrites the receiver of an instance call / field access, handler
+     * `(ReceiverType, operands…)ReceiverType`. The receiver being rewritten is the **call's receiver** (a
+     * parameter), not the merged handler's `this` — like [REDIRECT], the first parameter is that receiver.
+     */
+    MODIFY_RECEIVER,
+
+    /**
+     * `@WrapWithCondition`: gates a void call / field write on a boolean handler,
+     * `(receiver?, operands…)Z`. Like [REDIRECT], the receiver is a parameter, not `this`.
+     */
+    WRAP_WITH_CONDITION,
 }

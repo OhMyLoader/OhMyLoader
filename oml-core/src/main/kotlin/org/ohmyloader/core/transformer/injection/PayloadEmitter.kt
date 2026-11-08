@@ -77,14 +77,15 @@ internal object PayloadEmitter {
             // REDIRECT is even more radical: it rewrites that call instruction in place; the anchor IS the instruction being replaced.
             HandlerKind.MODIFY_ARG, HandlerKind.MODIFY_ARGS, HandlerKind.MODIFY_VAR,
             HandlerKind.MODIFY_CONST, HandlerKind.MODIFY_RETURN, HandlerKind.MODIFY_EXPR_VALUE,
-            HandlerKind.REDIRECT,
+            HandlerKind.MODIFY_RECEIVER, HandlerKind.WRAP_WITH_CONDITION, HandlerKind.REDIRECT,
                 -> error("HandlerCall(${payload.kind}) needs the anchor instruction and is handled directly by the engine, not through emit")
         }
 
         // Anchor-related: needs the anchor instruction to compute (whether/which type of value is on the stack is
         // decided by that instruction), so applyToMethod calls emitModify* / emitInPlaceValue directly
         is Payload.ModifyArg, is Payload.ModifyArgs, is Payload.ModifyVariable,
-        is Payload.ModifyConstant, is Payload.ModifyExpressionValue,
+        is Payload.ModifyConstant, is Payload.ModifyExpressionValue, is Payload.ModifyReceiver,
+        is Payload.WrapWithCondition,
             ->
             error("${payload.javaClass.simpleName} needs the anchor instruction; the engine calls emitModify*/emitInPlaceValue directly")
 
@@ -683,6 +684,251 @@ internal object PayloadEmitter {
         }
         for (value in extras) emitValue(list, value, method, locals)
         list.add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, handlerOwner, handlerMethod, handlerDesc, false))
+        return list
+    }
+
+    /**
+     * **Rewrites the receiver** of an instance call / field access (MixinExtras `@ModifyReceiver`). The stack
+     * at the anchor is `[receiver, operands…]` (operands = the call's arguments, the field value for
+     * `PUTFIELD`, or nothing for `GETFIELD`). The engine stashes them, calls a handler shaped
+     * `(ReceiverType, operands…, extras…)ReceiverType`, and rebuilds `[newReceiver, operands…]` so the original
+     * instruction — left in place — runs on the new receiver. Straight-line code, zero boxing, no new frame.
+     */
+    internal fun emitModifyReceiver(
+        handlerOwner: String,
+        handlerMethod: String,
+        handlerDesc: String,
+        extras: List<DslValue>,
+        instance: Boolean,
+        method: MethodNode,
+        owner: String,
+        anchor: AbstractInsnNode,
+        locals: AnchorLocals?,
+    ): InsnList? {
+        val receiverType: Type
+        val operandTypes: Array<Type>
+        when (anchor) {
+            is MethodInsnNode -> {
+                if (anchor.opcode == Opcodes.INVOKESTATIC) {
+                    OmlLog.error(
+                        "Injection",
+                        "ModifyReceiver needs an instance call, not a static call: ${anchor.owner}.${anchor.name}${anchor.desc}",
+                    )
+                    return null
+                }
+                receiverType = Type.getObjectType(anchor.owner)
+                operandTypes = Type.getArgumentTypes(anchor.desc)
+            }
+
+            is FieldInsnNode -> when (anchor.opcode) {
+                Opcodes.GETFIELD -> {
+                    receiverType = Type.getObjectType(anchor.owner)
+                    operandTypes = emptyArray()
+                }
+
+                Opcodes.PUTFIELD -> {
+                    receiverType = Type.getObjectType(anchor.owner)
+                    operandTypes = arrayOf(Type.getType(anchor.desc))
+                }
+
+                else -> {
+                    OmlLog.error(
+                        "Injection",
+                        "ModifyReceiver needs an instance field access (GETFIELD/PUTFIELD), not a static field: ${anchor.owner}.${anchor.name}",
+                    )
+                    return null
+                }
+            }
+
+            else -> {
+                OmlLog.error("Injection", "ModifyReceiver's anchor must be an instance call or field access: ${method.name}")
+                return null
+            }
+        }
+
+        val handlerArgs = Type.getArgumentTypes(handlerDesc)
+        val handlerRet = Type.getReturnType(handlerDesc)
+        val valueCount = 1 + operandTypes.size
+        if (handlerRet != receiverType) {
+            throw InjectionError(
+                "[injection] the handler return type of ModifyReceiver must equal the receiver type: " +
+                    "receiver is ${receiverType.className}, handler returns ${handlerRet.className} ($handlerDesc)",
+            )
+        }
+        if (handlerArgs.size < valueCount + extras.size || handlerArgs[0] != receiverType) {
+            throw InjectionError(
+                "[injection] the handler of ModifyReceiver must be shaped (ReceiverType, operands…, extras…)ReceiverType: " +
+                    "expected first parameter ${receiverType.className} and at least $valueCount value parameter(s), actual $handlerDesc",
+            )
+        }
+        for (i in operandTypes.indices) {
+            if (handlerArgs[1 + i] != operandTypes[i]) {
+                throw InjectionError(
+                    "[injection] ModifyReceiver operand ${i + 1} type mismatch: expected ${operandTypes[i].className}, " +
+                        "actual ${handlerArgs[1 + i].className} ($handlerDesc)",
+                )
+            }
+        }
+        validateArgTypes(handlerDesc, extras, valueCount, method, owner, locals, "ModifyReceiver.extras")
+
+        val slots = storeArgs(method, operandTypes)
+        val receiverSlot = allocLocalSlot(method)
+        method.maxLocals = maxOf(method.maxLocals, receiverSlot + 1)
+
+        val list = InsnList()
+        // Operands sit above the receiver: reverse STORE consumes them, leaving [receiver].
+        for (i in operandTypes.indices.reversed()) {
+            list.add(VarInsnNode(Boxing.storeOpcode(operandTypes[i]), slots[i]))
+        }
+        list.add(VarInsnNode(Opcodes.ASTORE, receiverSlot))
+        // Instance form: ALOAD 0 is the merged handler's `this`, not a parameter.
+        if (instance) list.add(VarInsnNode(Opcodes.ALOAD, 0))
+        list.add(VarInsnNode(Opcodes.ALOAD, receiverSlot))
+        for (i in operandTypes.indices) {
+            list.add(VarInsnNode(Boxing.loadOpcode(operandTypes[i]), slots[i]))
+        }
+        if (!emitValues(list, extras, method, locals)) return null
+        list.add(
+            MethodInsnNode(
+                if (instance) Opcodes.INVOKEVIRTUAL else Opcodes.INVOKESTATIC,
+                handlerOwner, handlerMethod, handlerDesc, false,
+            ),
+        )
+        // The handler returned the new receiver; re-seat it beneath the unchanged operands.
+        list.add(VarInsnNode(Opcodes.ASTORE, receiverSlot))
+        list.add(VarInsnNode(Opcodes.ALOAD, receiverSlot))
+        for (i in operandTypes.indices) {
+            list.add(VarInsnNode(Boxing.loadOpcode(operandTypes[i]), slots[i]))
+        }
+        return list
+    }
+
+    /**
+     * **Gates a void operation on a boolean handler** (MixinExtras `@WrapWithCondition`). The stack at the
+     * anchor holds the value parameters (receiver + call args, or the field value for a write). The engine
+     * stashes them, calls `(receiver?, operands…, extras…)Z`, and when the handler returns true reloads the
+     * operands so the original instruction — left in place — runs; false falls through to a label placed
+     * **after** the original. The before-block is returned for the caller to insert; the after-block (the
+     * skip label + its stack frame) is inserted here because it must sit on the other side of the anchor.
+     * Only void operations are supported: a non-void result would need a dummy value on the skip path.
+     */
+    internal fun emitWrapWithCondition(
+        handlerOwner: String,
+        handlerMethod: String,
+        handlerDesc: String,
+        extras: List<DslValue>,
+        instance: Boolean,
+        method: MethodNode,
+        owner: String,
+        anchor: AbstractInsnNode,
+        frames: MethodFrames,
+        locals: AnchorLocals?,
+    ): InsnList? {
+        val valueTypes: Array<Type>
+        when (anchor) {
+            is MethodInsnNode -> valueTypes = if (anchor.opcode == Opcodes.INVOKESTATIC) {
+                Type.getArgumentTypes(anchor.desc)
+            } else {
+                arrayOf(Type.getObjectType(anchor.owner)) + Type.getArgumentTypes(anchor.desc)
+            }
+
+            is FieldInsnNode -> when (anchor.opcode) {
+                Opcodes.PUTFIELD -> valueTypes =
+                    arrayOf(Type.getObjectType(anchor.owner), Type.getType(anchor.desc))
+
+                Opcodes.PUTSTATIC -> valueTypes = arrayOf(Type.getType(anchor.desc))
+                else -> {
+                    OmlLog.error(
+                        "Injection",
+                        "WrapWithCondition supports field writes only (PUTFIELD/PUTSTATIC), not reads: " +
+                            "${anchor.owner}.${anchor.name}",
+                    )
+                    return null
+                }
+            }
+
+            else -> {
+                OmlLog.error("Injection", "WrapWithCondition's anchor must be a call or field write: ${method.name}")
+                return null
+            }
+        }
+        val resultType = when (anchor) {
+            is MethodInsnNode -> Type.getReturnType(anchor.desc)
+            else -> Type.VOID_TYPE
+        }
+        if (resultType != Type.VOID_TYPE) {
+            OmlLog.error(
+                "Injection",
+                "WrapWithCondition supports void operations only; this anchor produces ${resultType.className}: " +
+                    "${method.name} (a result that is immediately discarded is not supported yet)",
+            )
+            return null
+        }
+
+        val handlerArgs = Type.getArgumentTypes(handlerDesc)
+        if (handlerArgs.size < valueTypes.size + extras.size) {
+            throw InjectionError(
+                "[injection] the handler of WrapWithCondition gives too few parameters: the operation has " +
+                    "${valueTypes.size} value parameter(s) and the rule adds ${extras.size} extra(s), " +
+                    "but the handler declares ${handlerArgs.size} ($handlerDesc)",
+            )
+        }
+        for (i in valueTypes.indices) {
+            if (handlerArgs[i] != valueTypes[i]) {
+                throw InjectionError(
+                    "[injection] WrapWithCondition value parameter ${i + 1} type mismatch: expected " +
+                        "${valueTypes[i].className}, actual ${handlerArgs[i].className} ($handlerDesc)",
+                )
+            }
+        }
+        if (Type.getReturnType(handlerDesc) != Type.BOOLEAN_TYPE) {
+            throw InjectionError(
+                "[injection] the handler of WrapWithCondition must return boolean: ${handlerDesc}",
+            )
+        }
+        validateArgTypes(handlerDesc, extras, valueTypes.size, method, owner, locals, "WrapWithCondition.extras")
+
+        // The skip label is reached by IFEQ, so it needs a stack-map frame. Locals are the dataflow truth
+        // after the original instruction (a call/field write does not change them); both paths leave the
+        // stack empty, since only void operations are accepted.
+        val endLocals = frames.frameLocalsAt(anchor, after = true) ?: run {
+            OmlLog.error(
+                "Injection",
+                "injection skipped: the local state after the WrapWithCondition anchor cannot be derived " +
+                    "(dataflow failed): ${method.name}",
+            )
+            return null
+        }
+
+        val slots = storeArgs(method, valueTypes)
+        val list = InsnList()
+        for (i in valueTypes.indices.reversed()) {
+            list.add(VarInsnNode(Boxing.storeOpcode(valueTypes[i]), slots[i]))
+        }
+        if (instance) list.add(VarInsnNode(Opcodes.ALOAD, 0))
+        for (i in valueTypes.indices) {
+            list.add(VarInsnNode(Boxing.loadOpcode(valueTypes[i]), slots[i]))
+        }
+        if (!emitValues(list, extras, method, locals)) return null
+        list.add(
+            MethodInsnNode(
+                if (instance) Opcodes.INVOKEVIRTUAL else Opcodes.INVOKESTATIC,
+                handlerOwner, handlerMethod, handlerDesc, false,
+            ),
+        )
+        val end = LabelNode()
+        list.add(JumpInsnNode(Opcodes.IFEQ, end))
+        // True: reload the operands and let the original instruction run.
+        for (i in valueTypes.indices) {
+            list.add(VarInsnNode(Boxing.loadOpcode(valueTypes[i]), slots[i]))
+        }
+
+        // The skip target sits after the original instruction; insert its label + frame now.
+        val after = InsnList()
+        after.add(end)
+        after.add(FrameNode(Opcodes.F_NEW, endLocals.size, endLocals, 0, emptyArray<Any>()))
+        method.instructions.insert(anchor, after)
+        frames.invalidate()
         return list
     }
 

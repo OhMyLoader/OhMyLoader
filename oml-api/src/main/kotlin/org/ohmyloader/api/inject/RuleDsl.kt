@@ -656,6 +656,30 @@ class PayloadBuilder @PublishedApi internal constructor(
     }
 
     /**
+     * **Rewrite the receiver** of an instance call / field access (aligned with MixinExtras
+     * `@ModifyReceiver`).
+     *
+     * The anchor must be `beforeCall` (an instance call) or `beforeField` (`GETFIELD`/`PUTFIELD`); the handler
+     * is shaped `(ReceiverType, operands…, extras…)ReceiverType`, where the operands are the call's arguments
+     * (or the field value for a write), and `ReceiverType` is decided by the anchor instruction. The original
+     * instruction still runs, on the receiver the handler returns.
+     */
+    fun modifyReceiver(owner: String, method: String, desc: String, extras: List<DslValue> = emptyList()) {
+        payload = Payload.ModifyReceiver(owner, method, desc, extras)
+    }
+
+    /**
+     * **Gate an operation on a boolean handler** (aligned with MixinExtras `@WrapWithCondition`).
+     *
+     * The anchor must be a **void** method call or a field write (`beforeCall` / `beforeField`); the handler
+     * is shaped `(receiver?, operands…, extras…)Z` — false skips the original instruction, true runs it
+     * unchanged. A non-void call whose result is immediately discarded is not supported yet.
+     */
+    fun wrapWithCondition(owner: String, method: String, desc: String, extras: List<DslValue> = emptyList()) {
+        payload = Payload.WrapWithCondition(owner, method, desc, extras)
+    }
+
+    /**
      * **Rewrite a local variable** (aligned with Mixin `@ModifyVariable`).
      *
      * The anchor must be [MethodRuleBuilder.afterStore] / [MethodRuleBuilder.beforeLoad];

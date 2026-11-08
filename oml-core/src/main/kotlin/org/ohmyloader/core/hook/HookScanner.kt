@@ -172,6 +172,8 @@ object HookScanner {
     private const val MODIFY_VARIABLE_DESC = "Lorg/ohmyloader/api/hook/ModifyVariable;"
     private const val MODIFY_RETURN_VALUE_DESC = "Lorg/ohmyloader/api/hook/ModifyReturnValue;"
     private const val MODIFY_EXPRESSION_VALUE_DESC = "Lorg/ohmyloader/api/hook/ModifyExpressionValue;"
+    private const val MODIFY_RECEIVER_DESC = "Lorg/ohmyloader/api/hook/ModifyReceiver;"
+    private const val WRAP_WITH_CONDITION_DESC = "Lorg/ohmyloader/api/hook/WrapWithCondition;"
     private const val BORROWED_DESC = "Lorg/ohmyloader/api/hook/Borrowed;"
     private const val EXTRA_DESC = "Lorg/ohmyloader/api/hook/Extra;"
     private const val REPLACE_DESC = "Lorg/ohmyloader/api/hook/Replace;"
@@ -195,6 +197,8 @@ object HookScanner {
         MODIFY_VARIABLE_DESC to "@ModifyVariable",
         MODIFY_RETURN_VALUE_DESC to "@ModifyReturnValue",
         MODIFY_EXPRESSION_VALUE_DESC to "@ModifyExpressionValue",
+        MODIFY_RECEIVER_DESC to "@ModifyReceiver",
+        WRAP_WITH_CONDITION_DESC to "@WrapWithCondition",
     )
 
     /** Tail kind of the handler parameter list (`@Inject` uses the first two; the other annotations have no callback handle). */
@@ -604,6 +608,23 @@ object HookScanner {
                     problems,
                 )
             }
+
+            MODIFY_RECEIVER_DESC -> if (mergedInstance) {
+                parseMergedModify(
+                    method, annotation, anchor, targetInternal, methodNames, methodDesc,
+                    modId, mergeInto, handlers, HandlerKind.MODIFY_RECEIVER, rules, problems,
+                )
+            } else {
+                parseModifyReceiver(
+                    method, anchor, targetInternal, methodNames, methodDesc, mixinClass, modId,
+                    where, policy, rules, problems,
+                )
+            }
+
+            WRAP_WITH_CONDITION_DESC -> parseWrapWithCondition(
+                method, anchor, targetInternal, methodNames, methodDesc, mixinClass, modId,
+                where, policy, mergeInto, handlers, rules, problems,
+            )
         }
     }
 
@@ -751,6 +772,13 @@ object HookScanner {
                     return
                 }
 
+            HandlerKind.MODIFY_RECEIVER ->
+                if ((anchor.core !is InjectionPoint.Call && anchor.core !is InjectionPoint.FieldAccess) || anchor.after) {
+                    problems += "[$modId] $where —— ${kind.annotationName}'s @At must be an instance call (INVOKE) or " +
+                        "field access (FIELD), before the instruction"
+                    return
+                }
+
             else -> Unit // ModifyConstant's anchor is decided by `constant = @Constant(...)`; no extra requirement
         }
 
@@ -778,12 +806,12 @@ object HookScanner {
             problems += "[$modId] $where —— @ModifyArgs' handler must return void (the modified arguments are read back by the engine)," +
                 " currently returns ${ret.className}"
         }
-        if (kind == HandlerKind.MODIFY_RETURN || kind == HandlerKind.MODIFY_EXPR_VALUE) {
+        if (kind == HandlerKind.MODIFY_RETURN || kind == HandlerKind.MODIFY_EXPR_VALUE || kind == HandlerKind.MODIFY_RECEIVER) {
             // The value param's type must equal the return type (after modification it is put back on the stack) --
             // whether it is actually the target's type is only known at emission time once the anchor
             // instruction / target method is available (see ProducedValue)
             if (ret == Type.VOID_TYPE || params[0] != ret) {
-                problems += "[$modId] $where —— ${kind.annotationName}'s handler must be shaped (T)T" +
+                problems += "[$modId] $where —— ${kind.annotationName}'s handler must be shaped (T…)T" +
                     " (T = the value's type, put back on the stack after the change), currently ${method.desc}"
             }
         }
@@ -808,6 +836,8 @@ object HookScanner {
             HandlerKind.MODIFY_VAR -> "@ModifyVariable"
             HandlerKind.MODIFY_RETURN -> "@ModifyReturnValue"
             HandlerKind.MODIFY_EXPR_VALUE -> "@ModifyExpressionValue"
+            HandlerKind.MODIFY_RECEIVER -> "@ModifyReceiver"
+            HandlerKind.WRAP_WITH_CONDITION -> "@WrapWithCondition"
         }
 
     // ---------- @Inject ----------
@@ -1109,6 +1139,120 @@ object HookScanner {
                 extras = listOf(DslValue.IntVal(id)),
             ),
             policy, emptyList(), "ModifyArgs",
+        )
+    }
+
+    private fun parseModifyReceiver(
+        method: MethodNode,
+        anchor: InjectionPoint,
+        targetInternal: String,
+        methodNames: List<String>,
+        methodDesc: String?,
+        mixinClass: String,
+        modId: String,
+        where: String,
+        policy: Policy,
+        rules: MutableList<Rule>,
+        problems: MutableList<String>,
+    ) {
+        val core = anchor.core
+        if ((core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess) || anchor.after) {
+            problems += "[$modId] $where —— @ModifyReceiver's @At must be an instance call (INVOKE) or field access " +
+                "(FIELD), before the instruction (not INVOKE_ASSIGN / after)"
+            return
+        }
+        val params = Type.getArgumentTypes(method.desc)
+        val ret = Type.getReturnType(method.desc)
+        if (params.isEmpty() || ret == Type.VOID_TYPE || params[0] != ret) {
+            problems += "[$modId] $where —— @ModifyReceiver handler must be shaped (ReceiverType[, operands…])ReceiverType " +
+                "(the first parameter and the return type are the receiver type), currently ${method.desc}"
+            return
+        }
+        // The bridge captures are the handler's full value parameter list (receiver + operands); the engine
+        // checks them against the anchor instruction's receiver/operand types at injection time.
+        val id = HookRegistry.register(
+            modId = modId,
+            mixinClass = mixinClass,
+            handlerMethod = method.name,
+            targetMethod = methodNames.first(),
+            cancelable = false,
+            captureTypes = params.map { it.descriptor },
+            handlerParamCount = params.size,
+            returnType = ret.descriptor,
+        )
+        val kind = HookRegistry.BridgeKind.MODIFY
+        rules += Rule(
+            targetInternal, methodNames, methodDesc, anchor,
+            Payload.ModifyReceiver(
+                owner = HookRegistry.BRIDGE_CLASS,
+                method = HookRegistry.bridgeMethodName(id, kind),
+                desc = HookRegistry.bridgeDesc(id, kind),
+                extras = listOf(DslValue.IntVal(id)),
+            ),
+            policy, emptyList(), "ModifyReceiver",
+        )
+    }
+
+    private fun parseWrapWithCondition(
+        method: MethodNode,
+        anchor: InjectionPoint,
+        targetInternal: String,
+        methodNames: List<String>,
+        methodDesc: String?,
+        mixinClass: String,
+        modId: String,
+        where: String,
+        policy: Policy,
+        mergeInto: String?,
+        handlers: MutableSet<String>,
+        rules: MutableList<Rule>,
+        problems: MutableList<String>,
+    ) {
+        val core = anchor.core
+        if ((core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess) || anchor.after) {
+            problems += "[$modId] $where —— @WrapWithCondition's @At must be a call or field write, " +
+                "before the instruction"
+            return
+        }
+        val ret = Type.getReturnType(method.desc)
+        if (ret != Type.BOOLEAN_TYPE) {
+            problems += "[$modId] $where —— @WrapWithCondition handler must return boolean " +
+                "(whether the original operation runs), currently ${method.desc}"
+            return
+        }
+        val params = Type.getArgumentTypes(method.desc)
+        if (mergeInto != null && !method.isDeclaredStatic()) {
+            handlers += "${method.name}${method.desc}"
+            rules += Rule(
+                targetInternal, methodNames, methodDesc, anchor,
+                Payload.HandlerCall(
+                    mergeInto, method.name, method.desc, emptyList(),
+                    HandlerVariant.NOTIFY, HandlerKind.WRAP_WITH_CONDITION,
+                ),
+                policy, emptyList(), "WrapWithCondition",
+            )
+            return
+        }
+        val id = HookRegistry.register(
+            modId = modId,
+            mixinClass = mixinClass,
+            handlerMethod = method.name,
+            targetMethod = methodNames.first(),
+            cancelable = false,
+            captureTypes = params.map { it.descriptor },
+            handlerParamCount = params.size,
+            returnType = ret.descriptor,
+        )
+        val kind = HookRegistry.BridgeKind.MODIFY
+        rules += Rule(
+            targetInternal, methodNames, methodDesc, anchor,
+            Payload.WrapWithCondition(
+                owner = HookRegistry.BRIDGE_CLASS,
+                method = HookRegistry.bridgeMethodName(id, kind),
+                desc = HookRegistry.bridgeDesc(id, kind),
+                extras = listOf(DslValue.IntVal(id)),
+            ),
+            policy, emptyList(), "WrapWithCondition",
         )
     }
 

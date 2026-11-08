@@ -334,3 +334,45 @@ annotation class ModifyExpressionValue(
     val expect: Int = -1,
     val allow: Int = -1,
 )
+
+/**
+ * Rewrites the **receiver** of an instance call or field access (aligned with MixinExtras' `@ModifyReceiver`).
+ * Handler shape `(ReceiverType[, operands…])ReceiverType`: the first parameter and the return type are the
+ * receiver type; for a method call the remaining value parameters are the call's arguments, for a field write
+ * the field value, for a field read none. The original instruction still runs, on the receiver the handler
+ * returns — unlike [Redirect], which replaces the whole call. The anchor must be an instance call (`INVOKE`,
+ * before it) or `GETFIELD`/`PUTFIELD`; a static call or static field has no receiver and is rejected at
+ * injection time. The engine does not box: receiver and operands go through temporary locals.
+ */
+@Target(AnnotationTarget.FUNCTION)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class ModifyReceiver(
+    val at: At,
+    val method: String = "",
+    val methods: Array<String> = [],
+    val desc: String = "",
+    val slice: Slice = Slice(),
+    val require: Int = -1,
+    val expect: Int = -1,
+    val allow: Int = -1,
+)
+
+/**
+ * Gates an operation on a boolean handler (aligned with MixinExtras' `@WrapWithCondition`): the handler
+ * returns whether the original operation runs at all. Handler shape `(receiver?, operands…)Z` — the same
+ * value parameters as [Redirect], but returning boolean instead of the operation's result. The anchor must
+ * be a method call or a field write, before the instruction. Only **void** operations are supported for now:
+ * a non-void call whose result is immediately discarded is rejected at injection time.
+ */
+@Target(AnnotationTarget.FUNCTION)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class WrapWithCondition(
+    val at: At,
+    val method: String = "",
+    val methods: Array<String> = [],
+    val desc: String = "",
+    val slice: Slice = Slice(),
+    val require: Int = -1,
+    val expect: Int = -1,
+    val allow: Int = -1,
+)

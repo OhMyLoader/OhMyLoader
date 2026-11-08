@@ -421,6 +421,32 @@ internal object InjectionVerifier {
                         problems += instanceModifyShapeProblem(where, "@ModifyExpressionValue", payload.desc, 0, 1)
                     }
 
+                    HandlerKind.MODIFY_RECEIVER -> {
+                        if (payload.variant != HandlerVariant.NOTIFY) {
+                            problems += "$where — a value-modifying handler must not call back the handle (variant should be NOTIFY): ${payload.desc}"
+                        }
+                        val core = point.core
+                        if ((core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess) || point.after) {
+                            problems += "$where — the @At of @ModifyReceiver must be an instance call (INVOKE) or field " +
+                                "access (FIELD), before the instruction, now ${AnchorResolver.describe(point)}"
+                        }
+                        problems += instanceModifyShapeProblem(where, "@ModifyReceiver", payload.desc, 0, 1)
+                    }
+
+                    HandlerKind.WRAP_WITH_CONDITION -> {
+                        if (payload.variant != HandlerVariant.NOTIFY) {
+                            problems += "$where — a WrapWithCondition handler must not call back the handle (variant should be NOTIFY): ${payload.desc}"
+                        }
+                        val core = point.core
+                        if ((core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess) || point.after) {
+                            problems += "$where — the @At of @WrapWithCondition must be a call or field write, " +
+                                "before the instruction, now ${AnchorResolver.describe(point)}"
+                        }
+                        if (runCatching { Type.getReturnType(payload.desc) }.getOrNull() != Type.BOOLEAN_TYPE) {
+                            problems += "$where — the handler of @WrapWithCondition must return boolean: ${payload.desc}"
+                        }
+                    }
+
                     HandlerKind.REDIRECT -> {
                         if (payload.variant != HandlerVariant.NOTIFY) {
                             problems += "$where — a value-modifying handler must not call back the handle (variant should be NOTIFY): ${payload.desc}"
@@ -614,6 +640,40 @@ internal object InjectionVerifier {
                 problems += checkHandler(
                     where, "ModifyExpressionValue", payload.owner, payload.method, payload.desc, loader,
                 )
+            }
+
+            is Payload.ModifyReceiver -> {
+                val core = point.core
+                if ((core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess) || point.after) {
+                    problems += "$where — ModifyReceiver requires an instance call or field access anchor before the " +
+                        "instruction (beforeCall / beforeField), now ${AnchorResolver.describe(point)}"
+                }
+                val desc = runCatching { Type.getMethodType(payload.desc) }.getOrNull()
+                if (desc == null) {
+                    problems += "$where — the handler descriptor of ModifyReceiver cannot be parsed: ${payload.desc}"
+                } else if (desc.returnType == Type.VOID_TYPE) {
+                    problems += "$where — the handler of ModifyReceiver cannot return void (it must return the new receiver)"
+                } else if (desc.argumentTypes.isEmpty() || desc.argumentTypes[0] != desc.returnType) {
+                    problems += "$where — the handler of ModifyReceiver must be shaped (ReceiverType[, operands…])ReceiverType: " +
+                        "the first parameter should equal the return type ${desc.returnType.className}"
+                }
+                problems += checkHandler(where, "ModifyReceiver", payload.owner, payload.method, payload.desc, loader)
+            }
+
+            is Payload.WrapWithCondition -> {
+                val core = point.core
+                if ((core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess) || point.after) {
+                    problems += "$where — WrapWithCondition requires a call or field-write anchor before the " +
+                        "instruction (beforeCall / beforeField), now ${AnchorResolver.describe(point)}"
+                }
+                val desc = runCatching { Type.getMethodType(payload.desc) }.getOrNull()
+                if (desc == null) {
+                    problems += "$where — the handler descriptor of WrapWithCondition cannot be parsed: ${payload.desc}"
+                } else if (desc.returnType != Type.BOOLEAN_TYPE) {
+                    problems += "$where — the handler of WrapWithCondition must return boolean, " +
+                        "actual ${desc.returnType.className}"
+                }
+                problems += checkHandler(where, "WrapWithCondition", payload.owner, payload.method, payload.desc, loader)
             }
 
             is Payload.ModifyVariable -> {
