@@ -141,6 +141,68 @@ class InjectionWrapWithConditionTest {
         assertTrue(failure.message!!.contains("require"), failure.message)
     }
 
+    @Test
+    fun `a false condition skips a non-void call whose result is popped`() {
+        ProduceSink.clear()
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("target", desc = "(I)I") {
+                        beforeCall(owner = ProduceOps.OWNER, name = "produce", desc = "(I)I") {
+                            wrapWithCondition(WrapConditionHandlers.OWNER, "denyStatic", "(I)Z")
+                        }
+                    }
+                }
+            },
+            targetWithPoppedCall(),
+        )
+
+        val result = invoke(clazz, "target", 5)
+
+        assertEquals(emptyList(), ProduceSink.calls, "the non-void call must be skipped")
+        assertEquals(5, result)
+    }
+
+    @Test
+    fun `a true condition runs a non-void call whose result is popped`() {
+        ProduceSink.clear()
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("target", desc = "(I)I") {
+                        beforeCall(owner = ProduceOps.OWNER, name = "produce", desc = "(I)I") {
+                            wrapWithCondition(WrapConditionHandlers.OWNER, "allowStatic", "(I)Z")
+                        }
+                    }
+                }
+            },
+            targetWithPoppedCall(),
+        )
+
+        val result = invoke(clazz, "target", 5)
+
+        assertEquals(listOf(5), ProduceSink.calls)
+        assertEquals(5, result)
+    }
+
+    @Test
+    fun `a non-void call whose result is used is refused`() {
+        val spec = specOf {
+            classTarget(owner) {
+                method("target", desc = "(I)I") {
+                    beforeCall(owner = ProduceOps.OWNER, name = "produce", desc = "(I)I") {
+                        wrapWithCondition(WrapConditionHandlers.OWNER, "denyStatic", "(I)Z")
+                    }
+                    require(1)
+                }
+            }
+        }
+
+        assertFailsWith<InjectionError> {
+            spec.transform(TransformContext(owner, targetWithUsedCall()))
+        }
+    }
+
     // ---------- fixtures ----------
 
     private fun classNode(vararg methods: MethodNode): ClassNode =
@@ -202,13 +264,33 @@ class InjectionWrapWithConditionTest {
         },
     )
 
-    /** `static int target(int seed) { int x = Integer.parseInt("5"); return x; }` — a non-void call. */
+    /** `static int target(int seed) { int x = Integer.parseInt("5"); return x; }` — a non-void result is used. */
     private fun targetWithNonVoidCall(): ClassNode = classNode(
         methodNode("target", "(I)I") {
             add(LdcInsnNode("5"))
             add(MethodInsnNode(Opcodes.INVOKESTATIC, "java/lang/Integer", "parseInt", "(Ljava/lang/String;)I", false))
             add(VarInsnNode(Opcodes.ISTORE, 1))
             add(VarInsnNode(Opcodes.ILOAD, 1))
+            add(InsnNode(Opcodes.IRETURN))
+        },
+    )
+
+    /** `static int target(int seed) { ProduceOps.produce(seed); return seed; }` — the result is POPped. */
+    private fun targetWithPoppedCall(): ClassNode = classNode(
+        methodNode("target", "(I)I") {
+            add(VarInsnNode(Opcodes.ILOAD, 0))
+            add(MethodInsnNode(Opcodes.INVOKESTATIC, ProduceOps.OWNER, "produce", "(I)I", false))
+            add(InsnNode(Opcodes.POP))
+            add(VarInsnNode(Opcodes.ILOAD, 0))
+            add(InsnNode(Opcodes.IRETURN))
+        },
+    )
+
+    /** `static int target(int seed) { return ProduceOps.produce(seed); }` — the result is used. */
+    private fun targetWithUsedCall(): ClassNode = classNode(
+        methodNode("target", "(I)I") {
+            add(VarInsnNode(Opcodes.ILOAD, 0))
+            add(MethodInsnNode(Opcodes.INVOKESTATIC, ProduceOps.OWNER, "produce", "(I)I", false))
             add(InsnNode(Opcodes.IRETURN))
         },
     )
@@ -265,6 +347,25 @@ class InjectionWrapWithConditionTest {
         fun denyStatic(value: Int): Boolean = false
 
         @JvmStatic
+        fun allowStatic(value: Int): Boolean = true
+
+        @JvmStatic
         fun denyString(value: String): Boolean = false
+    }
+
+    object ProduceOps {
+        val OWNER: String = ProduceOps::class.java.name.replace('.', '/')
+
+        @JvmStatic
+        fun produce(value: Int): Int {
+            ProduceSink.calls += value
+            return value * 2
+        }
+    }
+
+    object ProduceSink {
+        val calls = mutableListOf<Int>()
+
+        fun clear() = calls.clear()
     }
 }

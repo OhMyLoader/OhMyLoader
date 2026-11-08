@@ -871,12 +871,20 @@ internal object PayloadEmitter {
             else -> Type.VOID_TYPE
         }
         if (resultType != Type.VOID_TYPE) {
-            OmlLog.error(
-                "Injection",
-                "WrapWithCondition supports void operations only; this anchor produces ${resultType.className}: " +
-                    "${method.name} (a result that is immediately discarded is not supported yet)",
-            )
-            return null
+            // A non-void operation is fine only when its result is thrown away immediately: the true path
+            // leaves the real result, the skip path pushes a default of the same type, and the POP/POP2
+            // right after the anchor discards whichever one survives.
+            val expected = if (resultType.size == 2) Opcodes.POP2 else Opcodes.POP
+            val next = nextReal(anchor)
+            if (next == null || next.opcode != expected) {
+                OmlLog.error(
+                    "Injection",
+                    "WrapWithCondition supports void operations, or a non-void result discarded immediately by " +
+                        "${if (resultType.size == 2) "POP2" else "POP"}; this anchor produces " +
+                        "${resultType.className}: ${method.name}",
+                )
+                return null
+            }
         }
 
         val handlerArgs = Type.getArgumentTypes(handlerDesc)
@@ -930,20 +938,55 @@ internal object PayloadEmitter {
                 handlerOwner, handlerMethod, handlerDesc, false,
             ),
         )
-        val end = LabelNode()
-        list.add(JumpInsnNode(Opcodes.IFEQ, end))
+        val skip = LabelNode()
+        list.add(JumpInsnNode(Opcodes.IFEQ, skip))
         // True: reload the operands and let the original instruction run.
         for (i in valueTypes.indices) {
             list.add(VarInsnNode(Boxing.loadOpcode(valueTypes[i]), slots[i]))
         }
 
-        // The skip target sits after the original instruction; insert its label + frame now.
         val after = InsnList()
-        after.add(end)
-        after.add(FrameNode(Opcodes.F_NEW, endLocals.size, endLocals, 0, emptyArray<Any>()))
+        if (resultType == Type.VOID_TYPE) {
+            after.add(skip)
+            after.add(FrameNode(Opcodes.F_NEW, endLocals.size, endLocals, 0, emptyArray<Any>()))
+        } else {
+            // True path: the original leaves the result on the stack; jump over the dummy.
+            val end = LabelNode()
+            after.add(JumpInsnNode(Opcodes.GOTO, end))
+            after.add(skip)
+            after.add(FrameNode(Opcodes.F_NEW, endLocals.size, endLocals, 0, emptyArray<Any>()))
+            pushDefault(after, resultType)
+            after.add(end)
+            after.add(
+                FrameNode(
+                    Opcodes.F_NEW, endLocals.size, endLocals, 1,
+                    arrayOf(frameType(resultType)),
+                ),
+            )
+        }
         method.instructions.insert(anchor, after)
         frames.invalidate()
         return list
+    }
+
+    /** The zero/null value a gated non-void operation leaves on the skip path. */
+    private fun pushDefault(list: InsnList, type: Type) {
+        when (type.sort) {
+            Type.LONG -> list.add(InsnNode(Opcodes.LCONST_0))
+            Type.FLOAT -> list.add(InsnNode(Opcodes.FCONST_0))
+            Type.DOUBLE -> list.add(InsnNode(Opcodes.DCONST_0))
+            Type.OBJECT, Type.ARRAY -> list.add(InsnNode(Opcodes.ACONST_NULL))
+            else -> list.add(InsnNode(Opcodes.ICONST_0))
+        }
+    }
+
+    /** A [Type] as a `StackMapTable` value (primitive opcodes / reference internal name). */
+    private fun frameType(type: Type): Any = when (type.sort) {
+        Type.LONG -> Opcodes.LONG
+        Type.FLOAT -> Opcodes.FLOAT
+        Type.DOUBLE -> Opcodes.DOUBLE
+        Type.INT, Type.BOOLEAN, Type.BYTE, Type.CHAR, Type.SHORT -> Opcodes.INTEGER
+        else -> type.internalName
     }
 
     /**
