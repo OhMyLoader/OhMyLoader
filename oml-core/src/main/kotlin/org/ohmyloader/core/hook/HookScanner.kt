@@ -41,7 +41,7 @@ object HookScanner {
      * DSL sugar) because `@Slice`/`shift`/`ordinal` are already ready-made objects in the front-end;
      * attaching them directly interprets the semantics only once.
      */
-    internal class Rule(
+    internal data class Rule(
         val targetInternal: String,
         val methodNames: List<String>,
         val methodDesc: String?,
@@ -50,6 +50,8 @@ object HookScanner {
         val policy: Policy,
         val captures: List<Capture>,
         val kind: String,
+        /** Non-null when the rule targets a synthetic lambda method instead of the named method itself. */
+        val lambda: LambdaSelector? = null,
     )
 
     /**
@@ -116,7 +118,7 @@ object HookScanner {
         val spec = injection {
             for (rule in rules) {
                 classTarget(rule.targetInternal) {
-                    method(*rule.methodNames.distinct().toTypedArray(), desc = rule.methodDesc) {
+                    val configure: MethodRuleBuilder.() -> Unit = {
                         point(rule.anchor, rule.payload)
                         rule.policy.require?.let { require(it) }
                         rule.policy.allow?.let { allow(it) }
@@ -127,6 +129,18 @@ object HookScanner {
                             // treat the rule as optional so per-version rules stop spamming "unmatched" warnings.
                             optional()
                         }
+                    }
+                    val lambda = rule.lambda
+                    if (lambda != null) {
+                        lambdaMethod(
+                            *rule.methodNames.distinct().toTypedArray(),
+                            desc = rule.methodDesc,
+                            interfaceInternal = lambda.interfaceInternal,
+                            ordinal = lambda.ordinal,
+                            block = configure,
+                        )
+                    } else {
+                        method(*rule.methodNames.distinct().toTypedArray(), desc = rule.methodDesc, block = configure)
                     }
                 }
             }
@@ -183,6 +197,7 @@ object HookScanner {
     private const val EXPRESSIONS_DESC = "Lorg/ohmyloader/api/hook/Expressions;"
     private const val DEFINITION_DESC = "Lorg/ohmyloader/api/hook/Definition;"
     private const val DEFINITIONS_DESC = "Lorg/ohmyloader/api/hook/Definitions;"
+    private const val LAMBDA_DESC = "Lorg/ohmyloader/api/hook/Lambda;"
     private const val BORROWED_DESC = "Lorg/ohmyloader/api/hook/Borrowed;"
     private const val EXTRA_DESC = "Lorg/ohmyloader/api/hook/Extra;"
     private const val REPLACE_DESC = "Lorg/ohmyloader/api/hook/Replace;"
@@ -308,11 +323,25 @@ object HookScanner {
                     " (the handler cannot be abstract/native)"
                 continue
             }
+            // `@Lambda` retargets every rule of this handler at a synthetic lambda method; its `method`
+            // names the enclosing method instead of the target
+            val lambdaNode = method.visibleAnnotations.orEmpty().firstOrNull { it.desc == LAMBDA_DESC }
+            val lambda = lambdaNode?.let { parseLambda(it, method, mixinClass, modId, problems) }
+            if (lambdaNode != null && lambda == null) continue
+            if (lambda != null && model == Model.MERGE && !method.isDeclaredStatic()) {
+                problems += "[$modId] $mixinClass.${method.name} —— an @Lambda handler on a @Merged carrier " +
+                    "must be static: the lambda method is static and has no target instance for `this`"
+                continue
+            }
+            val start = rules.size
             for (annotation in annotations) {
                 parseInjection(
                     method, annotation, targetInternal, mixinClass, modId, slices,
                     mergeInto, handlers, rules, problems,
                 )
+            }
+            if (lambda != null) {
+                for (i in start until rules.size) rules[i] = rules[i].copy(lambda = lambda)
             }
         }
 
@@ -2049,6 +2078,27 @@ object HookScanner {
                 else -> emptyList()
             }
         }
+
+    /** `@Lambda` → selector info; a malformed one is reported and the method skipped. */
+    private fun parseLambda(
+        node: AnnotationNode,
+        method: MethodNode,
+        mixinClass: String,
+        modId: String,
+        problems: MutableList<String>,
+    ): LambdaSelector? {
+        val type = annotationValue(node, "interfaceType") as? Type
+        if (type == null || type.sort != Type.OBJECT) {
+            problems += "[$modId] $mixinClass.${method.name} —— @Lambda's interfaceType must be a class"
+            return null
+        }
+        val ordinal = (annotationValue(node, "ordinal") as? Int) ?: 0
+        if (ordinal < 0) {
+            problems += "[$modId] $mixinClass.${method.name} —— @Lambda's ordinal cannot be negative ($ordinal)"
+            return null
+        }
+        return LambdaSelector(type.internalName, ordinal)
+    }
 
     /** Whether this `@At` names the expression anchor. */
     private fun isExpressionAt(atNode: AnnotationNode): Boolean =

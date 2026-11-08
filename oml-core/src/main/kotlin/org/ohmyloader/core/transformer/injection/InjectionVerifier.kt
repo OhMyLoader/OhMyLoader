@@ -42,7 +42,15 @@ internal object InjectionVerifier {
             problems += "$where — the rule has no injection point (write atHead/atTail/beforeCall…)"
         }
 
-        val isConstructor = rule.selector.names.contains("<init>")
+        val isConstructor = rule.selector.lambda == null && rule.selector.names.contains("<init>")
+        rule.selector.lambda?.let { lambda ->
+            if (lambda.interfaceInternal.isBlank()) {
+                problems += "$where — a lambda selector needs a functional interface"
+            }
+            if (lambda.ordinal < 0) {
+                problems += "$where — lambda ordinal cannot be negative (${lambda.ordinal})"
+            }
+        }
         for ([point, payload] in rule.points) {
             problems += verifyAnchor(where, point, isConstructor)
             problems += verifyPayload(where, point, payload, isConstructor, loader)

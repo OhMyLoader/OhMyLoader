@@ -10,13 +10,36 @@ import org.objectweb.asm.tree.MethodNode
  */
 
 /** Method selector: a match succeeds when any of [names] matches; [desc] being null matches any descriptor. */
-data class MethodSelector(val names: Set<String>, val desc: String?) {
+/**
+ * Selects a method. Without [lambda] this is a plain name/descriptor selector; with [lambda] the
+ * names/descriptor select the **enclosing** method and the actual target is the synthetic method
+ * behind a `LambdaMetafactory` `invokedynamic` of that interface (see [LambdaSelector]).
+ */
+data class MethodSelector(
+    val names: Set<String>,
+    val desc: String?,
+    val lambda: LambdaSelector? = null,
+) {
+    /** Only plain selectors match by name; lambda selectors resolve through their enclosing method. */
     fun matches(name: String, desc: String): Boolean =
-        name in names && (this.desc == null || this.desc == desc)
+        lambda == null && name in names && (this.desc == null || this.desc == desc)
 
     fun describe(): String =
-        "method(${names.joinToString("|")}${this.desc?.let { ", desc=$it" } ?: ""})"
+        if (lambda == null) {
+            "method(${names.joinToString("|")}${this.desc?.let { ", desc=$it" } ?: ""})"
+        } else {
+            "lambdaMethod(outer=${names.joinToString("|")}${this.desc?.let { ", desc=$it" } ?: ""}, " +
+                "interface=${lambda.interfaceInternal}, ordinal=${lambda.ordinal})"
+        }
 }
+
+/**
+ * Targets the synthetic method a lambda compiles to: [interfaceInternal] is the functional
+ * interface of the `invokedynamic` (internal name, e.g. `java/util/function/Supplier`), and [ordinal]
+ * picks the Nth matching lambda in the selected enclosing methods. Only lambdas whose implementation
+ * lives in the same class are resolvable.
+ */
+data class LambdaSelector(val interfaceInternal: String, val ordinal: Int = 0)
 
 /**
  * The injection rule itself is wrong (the kind determinable statically at

@@ -1,5 +1,6 @@
 package org.ohmyloader.core.transformer.injection
 
+import org.objectweb.asm.Handle
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.*
@@ -122,7 +123,7 @@ class InjectionSpec internal constructor(
         val shareStates = HashMap<MethodNode, ShareState>()
         // Whole-method wraps run last: their body move must see every ordinary injection already applied.
         for (rule in classRules.methods.sortedBy { if (it.isWholeMethodWrap()) 1 else 0 }) {
-            val named = context.node.methods.filter { rule.selector.matches(it.name, it.desc) }
+            val named = targetMethods(context.node, rule.selector)
             // Abstract/native methods have no instruction body (`instructions.size() == 0`), so injection has nothing to target
             val injectable = named.filter { it.instructions.size() > 0 }
             var hits = 0
@@ -239,7 +240,40 @@ class InjectionSpec internal constructor(
     /** The instruction-producing payloads that *replace* what they anchor on, so only one rule can own a site. */
     private enum class Exclusive { INSTRUCTION, WHOLE_METHOD }
 
-    private fun exclusiveKind(payload: Payload): Exclusive? = when (payload) {
+    /**
+     * The methods a selector targets. A lambda selector names the **enclosing** method; the target is the
+     * implementation method its `LambdaMetafactory` invokedynamic points at (same class only). [ordinal]
+     * picks the Nth distinct implementation in enclosing-method order.
+     */
+    private fun targetMethods(classNode: ClassNode, selector: MethodSelector): List<MethodNode> {
+        val lambda = selector.lambda ?: return classNode.methods.filter { selector.matches(it.name, it.desc) }
+        val outers = classNode.methods.filter {
+            it.name in selector.names && (selector.desc == null || selector.desc == it.desc)
+        }
+        val implementations = LinkedHashMap<String, MethodNode>()
+        for (outer in outers) {
+            for (insn in outer.instructions.toArray()) {
+                if (insn !is InvokeDynamicInsnNode) continue
+                if (insn.bsm.owner != LAMBDA_METAFACTORY || insn.bsm.name !in LAMBDA_BSMS) continue
+                if (Type.getReturnType(insn.desc).descriptor != "L${lambda.interfaceInternal};") continue
+                val impl = insn.bsmArgs.getOrNull(1) as? Handle ?: continue
+                if (impl.tag !in LAMBDA_HANDLE_TAGS) continue
+                if (impl.owner != classNode.name) continue
+                val method = classNode.methods.firstOrNull { it.name == impl.name && it.desc == impl.desc } ?: continue
+                implementations.putIfAbsent("${impl.name}${impl.desc}", method)
+            }
+        }
+        return listOfNotNull(implementations.values.toList().getOrNull(lambda.ordinal))
+    }
+
+    private companion object {
+        private const val LAMBDA_METAFACTORY = "java/lang/invoke/LambdaMetafactory"
+        private val LAMBDA_BSMS = setOf("metafactory", "altMetafactory")
+        private val LAMBDA_HANDLE_TAGS = setOf(
+            Opcodes.H_INVOKESTATIC, Opcodes.H_INVOKEVIRTUAL, Opcodes.H_INVOKESPECIAL,
+            Opcodes.H_INVOKEINTERFACE, Opcodes.H_NEWINVOKESPECIAL,
+        )
+    }    private fun exclusiveKind(payload: Payload): Exclusive? = when (payload) {
         is Payload.Redirect, is Payload.WrapOperation, is Payload.WrapBranch -> Exclusive.INSTRUCTION
         is Payload.WrapMethod -> Exclusive.WHOLE_METHOD
         is Payload.HandlerCall -> when (payload.kind) {
@@ -276,9 +310,7 @@ class InjectionSpec internal constructor(
         val frames = HashMap<MethodNode, MethodFrames>()
         val conflicts = mutableListOf<String>()
         for (rule in classRules.methods) {
-            val named = context.node.methods.filter {
-                it.instructions.size() > 0 && rule.selector.matches(it.name, it.desc)
-            }
+            val named = targetMethods(context.node, rule.selector).filter { it.instructions.size() > 0 }
             for (method in named) {
                 for ((point, payload) in rule.points) {
                     when (exclusiveKind(payload)) {

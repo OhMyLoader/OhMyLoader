@@ -510,6 +510,20 @@ annotation class DefinitionLocal(
 )
 
 /**
+ * Targets the **synthetic method a lambda compiles to** instead of writing its generated name
+ * (`lambda$tick$0`). Put it on the handler together with the injector annotation whose `method`
+ * names the **enclosing** method: [interfaceType] is the lambda's functional interface and
+ * [ordinal] picks the Nth matching lambda. Only lambdas whose implementation lives in the same class
+ * are resolvable; a method reference to another class is not a lambda body.
+ */
+@Target(AnnotationTarget.FUNCTION)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class Lambda(
+    val interfaceType: kotlin.reflect.KClass<*>,
+    val ordinal: Int = 0,
+)
+
+/**
  * Binds a handler parameter to a **local variable at the injection point** (aligned with MixinExtras'
  * `@Local`). Supported on handler parameters of every method annotation: on `@Inject` the sugar sits
  * **before** the trailing `HookContext`/`HookValue`, on every other injector it is a **trailing suffix**

@@ -1308,6 +1308,57 @@ class HookScannerTest {
     }
 
     @Test
+    fun `lambda annotation retargets the rule`() {
+        newBridge()
+        val inject = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Inject;").apply {
+            values = mutableListOf<Any?>("method", "tick", "at", atNode("HEAD"))
+        }
+        val lambda = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Lambda;").apply {
+            values = mutableListOf<Any?>(
+                "interfaceType", org.objectweb.asm.Type.getObjectType("java/util/function/Supplier"),
+                "ordinal", 1,
+            )
+        }
+        val method = MethodNode(
+            Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC,
+            "h",
+            "(Lorg/ohmyloader/api/hook/HookContext;)V",
+            null,
+            null,
+        ).apply {
+            instructions.add(InsnNode(Opcodes.RETURN))
+            visibleAnnotations = listOf(inject, lambda)
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        assertEquals("java/util/function/Supplier", parsed.rules[0].lambda?.interfaceInternal)
+        assertEquals(1, parsed.rules[0].lambda?.ordinal)
+    }
+
+    @Test
+    fun `a lambda handler on a merged carrier must be static`() {
+        newBridge()
+        val inject = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Inject;").apply {
+            values = mutableListOf<Any?>("method", "tick", "at", atNode("HEAD"))
+        }
+        val lambda = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Lambda;").apply {
+            values = mutableListOf<Any?>("interfaceType", org.objectweb.asm.Type.getObjectType("java/lang/Runnable"))
+        }
+        val method = MethodNode(
+            Opcodes.ACC_PUBLIC, "h", "(Lorg/ohmyloader/api/hook/HookContext;)V", null, null,
+        ).apply {
+            instructions.add(InsnNode(Opcodes.RETURN))
+            visibleAnnotations = listOf(inject, lambda)
+        }
+        val parsed = HookScanner.parseMixinClass(asMerged(mixinClass(method)), "m")
+        assertTrue(
+            parsed.problems.any { it.contains("must be static") },
+            parsed.problems.toString(),
+        )
+        assertEquals(0, parsed.rules.size)
+    }
+
+    @Test
     fun `merged wrapBranch calls the handler directly`() {
         newBridge()
         val method = MethodNode(Opcodes.ACC_PUBLIC, "h", "(II)Z", null, null).apply {

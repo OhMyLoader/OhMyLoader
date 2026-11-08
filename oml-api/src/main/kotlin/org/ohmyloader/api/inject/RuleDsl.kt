@@ -71,6 +71,27 @@ class ClassTargetBuilder @PublishedApi internal constructor(
         method("<init>", desc = desc, block = block)
 
     /**
+     * Targets the **synthetic method a lambda compiles to** instead of naming it (`lambda$tick$0`).
+     * [outer] names the method containing the lambda, [interfaceInternal] is the functional interface
+     * of its `invokedynamic` (e.g. `java/util/function/Supplier`), and [ordinal] picks the Nth matching
+     * lambda in the selected enclosing methods. The lambda's implementation must be in the same class.
+     */
+    fun lambdaMethod(
+        vararg outer: String,
+        desc: String? = null,
+        interfaceInternal: String,
+        ordinal: Int = 0,
+        block: MethodRuleBuilder.() -> Unit,
+    ) {
+        val selector = MethodSelector(
+            outer.toSet(), desc, LambdaSelector(interfaceInternal.replace('.', '/'), ordinal),
+        )
+        val rule = MethodRuleBuilder(selector, targetInternal)
+        rule.block()
+        rules += rule.build()
+    }
+
+    /**
      * Rewrites the **class's own** access flags.
      *
      * A top-level class has only two options — public and package-private;

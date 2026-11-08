@@ -3,6 +3,7 @@ package org.ohmyloader.core.transformer.injection
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.*
 import org.ohmyloader.api.inject.InjectionPoint
+import org.ohmyloader.api.inject.LambdaSelector
 import org.ohmyloader.api.inject.MethodRule
 import org.ohmyloader.api.inject.MethodSelector
 import org.ohmyloader.core.transformer.injection.MissDiagnosis.MAX_SAMPLES
@@ -48,6 +49,7 @@ internal object MissDiagnosis {
     // ---------- selector didn't match ----------
 
     private fun selectorProblem(node: ClassNode, selector: MethodSelector): String {
+        selector.lambda?.let { return lambdaProblem(node, selector, it) }
         // `<clinit>` is never an injection target, so don't count it when listing "how many methods it has"
         val all = node.methods.filter { it.name != "<clinit>" }
         val wantedNames = selector.names.joinToString("/")
@@ -70,6 +72,32 @@ internal object MissDiagnosis {
                     if (all.isEmpty()) " (it has no methods — is the target class right?)"
                     else " (it has ${all.size} method(s): " +
                         all.take(MAX_SAMPLES).joinToString(", ") { "${it.name}${it.desc}" } + "…)"
+        }
+    }
+
+    /** Why a lambda selector found no implementation: which lambdas the enclosing methods actually contain. */
+    private fun lambdaProblem(node: ClassNode, selector: MethodSelector, lambda: LambdaSelector): String {
+        val outers = node.methods.filter {
+            it.name in selector.names && (selector.desc == null || selector.desc == it.desc)
+        }
+        if (outers.isEmpty()) {
+            return "Selector did not match: the class has no method named ${selector.names.joinToString("/")}" +
+                if (selector.desc == null) "" else " with descriptor ${selector.desc}"
+        }
+        val found = outers.flatMap { outer ->
+            outer.instructions.toArray().filterIsInstance<InvokeDynamicInsnNode>()
+                .filter { it.bsm.owner == "java/lang/invoke/LambdaMetafactory" }
+                .map { indy ->
+                    val impl = indy.bsmArgs.getOrNull(1) as? org.objectweb.asm.Handle
+                    val where = impl?.let { "${it.owner.substringAfterLast('/')}.${it.name}${it.desc}" } ?: "?"
+                    "${org.objectweb.asm.Type.getReturnType(indy.desc).className} → $where"
+                }
+        }.distinct()
+        return if (found.isEmpty()) {
+            "Selector did not match: the enclosing method(s) contain no LambdaMetafactory invokedynamic — no lambda to target"
+        } else {
+            "Selector did not match: no lambda for ${lambda.interfaceInternal} (ordinal ${lambda.ordinal}) " +
+                "whose implementation lives in this class; the lambdas found are ${sample(found)}"
         }
     }
 
