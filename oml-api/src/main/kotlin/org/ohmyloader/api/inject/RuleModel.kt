@@ -303,6 +303,8 @@ sealed class DslValue {
         val type: String? = null,
         val ordinal: Int = 0,
         val strict: Boolean = true,
+        /** The handler parameter's ref type: `LocalRef` or a primitive-specialized `LocalXxxRef`. */
+        val refType: String = "Lorg/ohmyloader/api/hook/LocalRef;",
     ) : DslValue()
 
     /**

@@ -1403,6 +1403,35 @@ class HookScannerTest {
         assertEquals(3, handler.handlerParamCount)
     }
 
+    @Test
+    fun `typed local ref sugar carries the ref type`() {
+        newBridge()
+        val inject = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Inject;").apply {
+            values = mutableListOf<Any?>("method", "runTick", "at", atNode("HEAD"))
+        }
+        val local = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Local;").apply {
+            values = mutableListOf<Any?>("index", 1)
+        }
+        val method = MethodNode(
+            Opcodes.ACC_PUBLIC,
+            "h",
+            "(Lorg/ohmyloader/api/hook/LocalIntRef;Lorg/ohmyloader/api/hook/HookContext;)V",
+            null,
+            null,
+        ).apply {
+            instructions.add(InsnNode(Opcodes.RETURN))
+            visibleAnnotations = listOf(inject)
+            visibleParameterAnnotations = arrayOf(mutableListOf(local), mutableListOf())
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        val payload = parsed.rules[0].payload as Payload.StaticCall
+        val bound = payload.args[0] as DslValue.RefLocal
+        assertEquals(1, bound.index)
+        assertEquals("I", bound.type)
+        assertEquals("Lorg/ohmyloader/api/hook/LocalIntRef;", bound.refType)
+    }
+
     // ---------- fixtures ----------
 
     private fun parse(

@@ -42,3 +42,33 @@ internal const val LOCAL_REF_IMPL = "org/ohmyloader/api/hook/LocalRefImpl"
 
 /** Factory whose return type makes the shared-ref local slot exactly `LocalRef`. */
 internal const val LOCAL_REFS = "org/ohmyloader/api/hook/LocalRefs"
+
+/** A primitive-specialized local ref: interface, engine-created impl, local type, ctor and getter. */
+internal class TypedRef(
+    val interfaceInternal: String,
+    val implInternal: String,
+    val primitive: org.objectweb.asm.Type,
+    val ctorDesc: String,
+    val getterDesc: String,
+)
+
+/** Typed `LocalRef` descriptors → their engine facts. */
+internal val TYPED_REFS: Map<String, TypedRef> = buildMap {
+    fun reg(
+        name: String,
+        primitive: org.objectweb.asm.Type,
+        ctorDesc: String,
+        getterDesc: String,
+    ) {
+        val internal = "org/ohmyloader/api/hook/$name"
+        put("L$internal;", TypedRef(internal, "$internal" + "Impl", primitive, ctorDesc, getterDesc))
+    }
+    reg("LocalBooleanRef", org.objectweb.asm.Type.BOOLEAN_TYPE, "(Z)V", "()Z")
+    reg("LocalByteRef", org.objectweb.asm.Type.BYTE_TYPE, "(B)V", "()B")
+    reg("LocalCharRef", org.objectweb.asm.Type.CHAR_TYPE, "(C)V", "()C")
+    reg("LocalShortRef", org.objectweb.asm.Type.SHORT_TYPE, "(S)V", "()S")
+    reg("LocalIntRef", org.objectweb.asm.Type.INT_TYPE, "(I)V", "()I")
+    reg("LocalLongRef", org.objectweb.asm.Type.LONG_TYPE, "(J)V", "()J")
+    reg("LocalFloatRef", org.objectweb.asm.Type.FLOAT_TYPE, "(F)V", "()F")
+    reg("LocalDoubleRef", org.objectweb.asm.Type.DOUBLE_TYPE, "(D)V", "()D")
+}

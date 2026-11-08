@@ -1964,7 +1964,8 @@ object HookScanner {
             val ordinal = declaredInt(annotation, "ordinal") ?: 0
             val declaredType = (annotationValue(annotation, "type") as? String)?.takeIf { it.isNotEmpty() }
             val paramType = paramTypes.getOrNull(i)?.descriptor
-            val isRef = paramType == LOCAL_REF_DESC
+            val typedRef = paramType?.let { TYPED_REFS[it] }
+            val isRef = paramType == LOCAL_REF_DESC || typedRef != null
             if (annotationValue(annotation, "print") == true) {
                 OmlLog.info(
                     "Mixin",
@@ -1974,9 +1975,15 @@ object HookScanner {
                 )
             }
             out[i] = if (isRef) {
-                // The parameter type is the ref, not the local: the local's type must be written or inferred
-                // from a pinned slot.
-                DslValue.RefLocal(index = index, type = declaredType, ordinal = ordinal, strict = true)
+                // The parameter type is the ref, not the local: a typed ref fixes the local's type, while a
+                // generic LocalRef needs the type written or a pinned slot.
+                DslValue.RefLocal(
+                    index = index,
+                    type = declaredType ?: typedRef?.primitive?.descriptor,
+                    ordinal = ordinal,
+                    strict = true,
+                    refType = paramType,
+                )
             } else {
                 val type = declaredType ?: paramType ?: continue
                 DslValue.Local(index = index, type = type, ordinal = ordinal, strict = true)

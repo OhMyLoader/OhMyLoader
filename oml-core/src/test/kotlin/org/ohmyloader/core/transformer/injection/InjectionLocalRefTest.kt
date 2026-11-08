@@ -8,6 +8,7 @@ import org.objectweb.asm.tree.InsnNode
 import org.objectweb.asm.tree.MethodInsnNode
 import org.objectweb.asm.tree.MethodNode
 import org.objectweb.asm.tree.VarInsnNode
+import org.ohmyloader.api.hook.LocalIntRef
 import org.ohmyloader.api.hook.LocalRef
 import org.ohmyloader.api.inject.DslValue
 import org.ohmyloader.core.transformer.TransformContext
@@ -75,6 +76,38 @@ class InjectionLocalRefTest {
 
         assertEquals(listOf(99), LocalRefSink.calls)
         assertEquals(99, result)
+    }
+
+    @Test
+    fun `a typed LocalIntRef avoids boxing and writes back`() {
+        LocalRefSink.clear()
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("target", desc = "(I)I") {
+                        afterStore(index = 1, type = "I") {
+                            call(
+                                LocalRefHandlers.OWNER, "bumpInt",
+                                "(Lorg/ohmyloader/api/hook/LocalIntRef;)V",
+                                args = listOf(
+                                    DslValue.RefLocal(
+                                        index = 1,
+                                        type = "I",
+                                        refType = "Lorg/ohmyloader/api/hook/LocalIntRef;",
+                                    ),
+                                ),
+                            )
+                        }
+                    }
+                }
+            },
+            targetWithLocal(),
+        )
+
+        val result = invoke(clazz, "target", 5)
+
+        assertEquals(listOf(11), LocalRefSink.calls)
+        assertEquals(11, result)
     }
 
     // ---------- fixtures ----------
@@ -146,6 +179,11 @@ class InjectionLocalRefTest {
         @JvmStatic
         fun force(ref: LocalRef<Int>) {
             ref.value = 99
+        }
+
+        @JvmStatic
+        fun bumpInt(ref: LocalIntRef) {
+            ref.value += 1
         }
     }
 }

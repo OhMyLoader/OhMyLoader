@@ -508,7 +508,7 @@ internal object PayloadEmitter {
                 }
             }
 
-            is DslValue.RefLocal -> Type.getType(LOCAL_REF_DESC)
+            is DslValue.RefLocal -> Type.getType(value.refType)
             is DslValue.SharedRef -> Type.getType(value.type)
             is DslValue.RefSlot -> Type.getType(value.type)
             is DslValue.IntVal -> Type.INT_TYPE
@@ -1706,7 +1706,12 @@ internal object PayloadEmitter {
 
     /** Emits the value-loading instructions one by one; voids the whole payload if any value cannot be loaded (returns false). */
     /** A mutable `@Local` capture's post-call write-back: ref slot → target local slot + its type. */
-    internal class SugarWriteBack(val refSlot: Int, val localSlot: Int, val type: Type)
+    internal class SugarWriteBack(
+        val refSlot: Int,
+        val localSlot: Int,
+        val type: Type,
+        val refType: String = LOCAL_REF_DESC,
+    )
 
     internal fun emitValues(
         list: InsnList,
@@ -1728,23 +1733,32 @@ internal object PayloadEmitter {
      */
     internal fun emitWriteBacks(list: InsnList, writeBacks: List<SugarWriteBack>) {
         for (writeBack in writeBacks) {
+            val typed = TYPED_REFS[writeBack.refType]
             list.add(VarInsnNode(Opcodes.ALOAD, writeBack.refSlot))
-            list.add(
-                MethodInsnNode(
-                    Opcodes.INVOKEINTERFACE,
-                    LOCAL_REF,
-                    "getValue",
-                    Type.getMethodDescriptor(Type.getObjectType("java/lang/Object")),
-                    true,
-                ),
-            )
-            when (writeBack.type.sort) {
-                Type.OBJECT, Type.ARRAY -> list.add(TypeInsnNode(Opcodes.CHECKCAST, writeBack.type.internalName))
-                else -> {
-                    val unbox = Boxing.unbox(writeBack.type)
-                        ?: throw IllegalStateException("no unboxing type for ${writeBack.type.className}")
-                    list.add(TypeInsnNode(Opcodes.CHECKCAST, unbox.owner))
-                    list.add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, unbox.owner, unbox.name, unbox.desc, false))
+            if (typed != null) {
+                list.add(
+                    MethodInsnNode(
+                        Opcodes.INVOKEINTERFACE, typed.interfaceInternal, "getValue", typed.getterDesc, true,
+                    ),
+                )
+            } else {
+                list.add(
+                    MethodInsnNode(
+                        Opcodes.INVOKEINTERFACE,
+                        LOCAL_REF,
+                        "getValue",
+                        Type.getMethodDescriptor(Type.getObjectType("java/lang/Object")),
+                        true,
+                    ),
+                )
+                when (writeBack.type.sort) {
+                    Type.OBJECT, Type.ARRAY -> list.add(TypeInsnNode(Opcodes.CHECKCAST, writeBack.type.internalName))
+                    else -> {
+                        val unbox = Boxing.unbox(writeBack.type)
+                            ?: throw IllegalStateException("no unboxing type for ${writeBack.type.className}")
+                        list.add(TypeInsnNode(Opcodes.CHECKCAST, unbox.owner))
+                        list.add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, unbox.owner, unbox.name, unbox.desc, false))
+                    }
                 }
             }
             list.add(VarInsnNode(Boxing.storeOpcode(writeBack.type), writeBack.localSlot))
@@ -1863,26 +1877,45 @@ internal object PayloadEmitter {
                             "${method.name}${method.desc}",
                     )
                 }
+                val typed = TYPED_REFS[value.refType]
+                if (typed == null && value.refType != LOCAL_REF_DESC) {
+                    throw InjectionError(
+                        "[injection] unknown local ref type ${value.refType}: ${method.name}${method.desc}",
+                    )
+                }
+                if (typed != null && !LocalFrame.compatible(typed.primitive, found.type)) {
+                    throw InjectionError(
+                        "[injection] typed local ref ${value.refType} expects a ${typed.primitive.className} local, " +
+                            "but slot ${found.slot} is ${found.type.className}: ${method.name}${method.desc}",
+                    )
+                }
                 val refSlot = allocLocalSlot(method)
                 method.maxLocals = maxOf(method.maxLocals, refSlot + 1)
-                list.add(TypeInsnNode(Opcodes.NEW, LOCAL_REF_IMPL))
-                list.add(InsnNode(Opcodes.DUP))
-                list.add(VarInsnNode(Boxing.loadOpcode(found.type), found.slot))
-                Boxing.box(found.type)?.let { box ->
-                    list.add(MethodInsnNode(Opcodes.INVOKESTATIC, box.owner, box.name, box.desc, false))
+                if (typed != null) {
+                    list.add(TypeInsnNode(Opcodes.NEW, typed.implInternal))
+                    list.add(InsnNode(Opcodes.DUP))
+                    list.add(VarInsnNode(Boxing.loadOpcode(found.type), found.slot))
+                    list.add(MethodInsnNode(Opcodes.INVOKESPECIAL, typed.implInternal, "<init>", typed.ctorDesc, false))
+                } else {
+                    list.add(TypeInsnNode(Opcodes.NEW, LOCAL_REF_IMPL))
+                    list.add(InsnNode(Opcodes.DUP))
+                    list.add(VarInsnNode(Boxing.loadOpcode(found.type), found.slot))
+                    Boxing.box(found.type)?.let { box ->
+                        list.add(MethodInsnNode(Opcodes.INVOKESTATIC, box.owner, box.name, box.desc, false))
+                    }
+                    list.add(
+                        MethodInsnNode(
+                            Opcodes.INVOKESPECIAL,
+                            LOCAL_REF_IMPL,
+                            "<init>",
+                            Type.getMethodDescriptor(Type.VOID_TYPE, Type.getObjectType("java/lang/Object")),
+                            false,
+                        ),
+                    )
                 }
-                list.add(
-                    MethodInsnNode(
-                        Opcodes.INVOKESPECIAL,
-                        LOCAL_REF_IMPL,
-                        "<init>",
-                        Type.getMethodDescriptor(Type.VOID_TYPE, Type.getObjectType("java/lang/Object")),
-                        false,
-                    ),
-                )
                 list.add(VarInsnNode(Opcodes.ASTORE, refSlot))
                 list.add(VarInsnNode(Opcodes.ALOAD, refSlot))
-                writeBacks += SugarWriteBack(refSlot, found.slot, found.type)
+                writeBacks += SugarWriteBack(refSlot, found.slot, found.type, value.refType)
             }
 
             is DslValue.SharedRef -> throw InjectionError(
