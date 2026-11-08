@@ -1,0 +1,50 @@
+package org.ohmyloader.core.expression.ast.expressions;
+
+import org.ohmyloader.core.expression.ExpressionSource;
+import org.ohmyloader.core.expression.ast.identifiers.TypeIdentifier;
+import org.ohmyloader.core.expression.flow.FlowValue;
+import org.ohmyloader.core.expression.flow.postprocessing.ArrayCreationInfo;
+import org.ohmyloader.core.expression.point.ExpressionContext;
+import org.ohmyloader.core.expression.utils.FlowDecorations;
+import org.ohmyloader.core.expression.utils.ExpressionASMUtils;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
+import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.IntInsnNode;
+import org.objectweb.asm.tree.TypeInsnNode;
+
+import java.util.List;
+
+public class ArrayLiteralExpression extends SimpleExpression {
+    public final TypeIdentifier elementType;
+    public final List<Expression> values;
+
+    public ArrayLiteralExpression(ExpressionSource src, TypeIdentifier elementType, List<Expression> values) {
+        super(src);
+        this.elementType = elementType;
+        this.values = values;
+    }
+
+    @Override
+    protected boolean matchesImpl(FlowValue node, ExpressionContext ctx) {
+        ArrayCreationInfo creation = node.getDecoration(FlowDecorations.ARRAY_CREATION_INFO);
+        if (creation == null) {
+            return false;
+        }
+        Type newElementType = getElementType(node.getInsn());
+        if (newElementType == null || !elementType.matches(ctx.pool, newElementType)) {
+            return false;
+        }
+        return inputsMatch(node, ctx, ctx.allowIncompleteListInputs, values.toArray(new Expression[0]));
+    }
+
+    private Type getElementType(AbstractInsnNode insn) {
+        switch (insn.getOpcode()) {
+            case Opcodes.ANEWARRAY:
+                return Type.getObjectType(((TypeInsnNode) insn).desc);
+            case Opcodes.NEWARRAY:
+                return ExpressionASMUtils.getNewArrayType((IntInsnNode) insn);
+        }
+        return null;
+    }
+}

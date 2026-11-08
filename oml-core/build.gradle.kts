@@ -5,6 +5,8 @@ plugins {
     id("oml.convention.publishing")
     // Shared test wiring (NativeTestLibraries) travels as test fixtures instead of a drifting copy.
     `java-test-fixtures`
+    // The expression language's parser is generated from the grammar at build time.
+    antlr
 }
 
 dependencies {
@@ -16,7 +18,16 @@ dependencies {
 
     implementation(libs.bundles.asm)
 
+    // Expression language: generated parser (build tool) + its runtime. Both come from the same
+    // pinned version, and the runtime is embedded into the installed loader with oml-core.
+    antlr(libs.antlrTool)
+    implementation(libs.antlrRuntime)
+
     testImplementation(kotlin("test"))
+}
+
+tasks.generateGrammarSource {
+    arguments.addAll(listOf("-package", "org.ohmyloader.core.expression.grammar", "-visitor"))
 }
 
 tasks.withType<Test>().configureEach {

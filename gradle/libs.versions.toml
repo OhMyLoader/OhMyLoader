@@ -16,6 +16,10 @@ datafixerupper = "10.0.21"
 # The game's own vector library: `Component`'s statics need it at test run time.
 joml = "1.10.9"
 
+# The expression language's grammar is compiled at build time; the runtime ships with the loader
+# (the installer embeds oml-core's transitive closure). Keep the tool and runtime in lockstep.
+antlr = "4.13.2"
+
 [libraries]
 kotlinGradlePlugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
 
@@ -25,6 +29,9 @@ asm = { module = "org.ow2.asm:asm", version.ref = "asm" }
 asmTree = { module = "org.ow2.asm:asm-tree", version.ref = "asm" }
 asmAnalysis = { module = "org.ow2.asm:asm-analysis", version.ref = "asm" }
 asmCommons = { module = "org.ow2.asm:asm-commons", version.ref = "asm" }
+
+antlrRuntime = { module = "org.antlr:antlr4-runtime", version.ref = "antlr" }
+antlrTool = { module = "org.antlr:antlr4", version.ref = "antlr" }
 
 flatlaf = { module = "com.formdev:flatlaf", version.ref = "flatlaf" }
 
