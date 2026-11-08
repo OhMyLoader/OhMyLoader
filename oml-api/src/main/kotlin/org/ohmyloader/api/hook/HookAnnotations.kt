@@ -4,7 +4,10 @@ package org.ohmyloader.api.hook
  * Declares a **hook carrier**: methods carrying [Inject] / [Redirect] / `@Modify*` annotations are
  * compiled into injection rules and woven in when the target class loads; [target] is the mapped
  * fully qualified name. Every handler is dispatched through the engine's generated bridge —
- * `this` inside the handler is the carrier instance, **never** the target object.
+ * `this` inside the handler is the carrier instance, **never** the target object. The bridge calls
+ * the handler reflectively (a capture array and a [HookContext] per call); on per-frame hot paths
+ * prefer a [Merged] instance handler or a `@RuleSource` static call, which the injection point
+ * invokes directly with no bridge or reflection.
  *
  * Need the target instance? Declare it as the handler's **first parameter, typed as the target
  * class** — the bridge passes it at the injection point and the shape is checked at startup:

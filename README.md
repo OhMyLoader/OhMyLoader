@@ -8,8 +8,10 @@ stable line is 26.3; the stack runs on Java 27.
 ## Features
 
 - **Injection engine.** A declarative injection DSL and Mixin class merging (`@Shadow`, `@Overwrite`,
-  `@Accessor`, and others). Every rule is checked at startup for target existence, signature, and `require`
-  counts; a bad rule fails the launch instead of silently doing less in game.
+  `@Accessor`, and others). Rules are self-checked at startup (handler existence, signature, and
+  anchor/access-rule sanity); target existence and `require`/`allow` hit counts are enforced when the
+  target class loads, and the bundled adapters' anchors are checked against the real game jar at build
+  time. A bad rule fails fast instead of silently doing less in game.
 - **Mod API.** `@Mod` entry points and lambda-based event registration for ticks, lifecycle, block and entity
   interactions, damage, death, chat, GUI, world load, chunk lifecycle, HUD, and frame-rate limits. Event
   payloads are the game's own objects (`ServerPlayer`, `BlockPos`, `BlockState`, `DamageSource`, `Screen`),

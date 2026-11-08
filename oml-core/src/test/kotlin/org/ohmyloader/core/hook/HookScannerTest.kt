@@ -67,6 +67,23 @@ class HookScannerTest {
     }
 
     @Test
+    fun `unsupported shift is rejected instead of degrading to before`() {
+        assertNull(parse("INVOKE", target = "foo()V", shift = "BY"))
+        assertNull(parse("HEAD", shift = "BY"))
+        assertNotNull(parse("INVOKE", target = "foo()V", shift = "AFTER"))
+        assertNotNull(parse("INVOKE", target = "foo()V", shift = "BEFORE"))
+
+        // The front-end names the unsupported shift as a problem rather than silently injecting BEFORE.
+        val inject = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Inject;").apply {
+            values = mutableListOf<Any?>("method", "runTick", "at", atNode("HEAD", shift = "BY"))
+        }
+        val node = mixinClass(annotated("h", "(Lorg/ohmyloader/api/hook/HookContext;)V", inject))
+        val parsed = HookScanner.parseMixinClass(node, "m")
+        assertTrue(parsed.problems.any { it.contains("shift = \"BY\"") }, parsed.problems.toString())
+        assertEquals(0, parsed.rules.size)
+    }
+
+    @Test
     fun `at field carries opcode and field descriptor`() {
         val point = parse("FIELD", target = "Lnet/minecraft/Foo;bar:I", opcode = 180) as InjectionPoint.FieldAccess
         assertEquals("net/minecraft/Foo" to "bar", point.owner to point.name)
@@ -1011,6 +1028,43 @@ class HookScannerTest {
         assertTrue(cause.message!!.contains("(J)I"), cause.message)
     }
 
+    @Test
+    fun `typed self handler is woven and receives the target instance through the bridge`() {
+        newBridge()
+        TypedSelfMixin.received = null
+        val targetInternal = TypedSelfTarget::class.java.name.replace('.', '/')
+        val carrierInternal = TypedSelfMixin::class.java.name.replace('.', '/')
+        val selfDesc = "L$targetInternal;"
+        val ciDesc = "Lorg/ohmyloader/api/hook/HookContext;"
+
+        val inject = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Inject;").apply {
+            values = mutableListOf<Any?>("method", "run", "at", atNode("HEAD"))
+        }
+        val node = ClassNode(Opcodes.ASM9).apply {
+            name = carrierInternal
+            superName = "java/lang/Object"
+            version = Opcodes.V1_8
+            visibleAnnotations = listOf(
+                AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Hooked;").apply {
+                    values = listOf("target", targetInternal.replace('/', '.'))
+                },
+            )
+            methods.add(annotated("handler", "($selfDesc$ciDesc)V", inject))
+        }
+
+        val parsed = HookScanner.parseMixinClass(node, "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        assertEquals(1, parsed.rules.size)
+        val handler = HookRegistry.handler(1)!!
+        assertEquals(listOf(selfDesc), handler.captureTypes)
+        assertEquals(2, handler.handlerParamCount, "self + HookContext")
+
+        installBridge()
+        val self = TypedSelfTarget()
+        invokeBridge(1, cancelable = false, self)
+        assertSame(self, TypedSelfMixin.received)
+    }
+
     // ---------- fixtures ----------
 
     private fun parse(
@@ -1281,5 +1335,19 @@ class HookScannerTest {
 
         @Suppress("UNUSED_PARAMETER")
         fun bump(v: Int): Int = v + 1
+    }
+
+    /** Target type for the typed-self regression: the handler's first parameter names this class. */
+    class TypedSelfTarget
+
+    class TypedSelfMixin {
+        companion object {
+            var received: TypedSelfTarget? = null
+        }
+
+        @Suppress("UNUSED_PARAMETER")
+        fun handler(self: TypedSelfTarget, ci: HookContext) {
+            received = self
+        }
     }
 }

@@ -6,9 +6,8 @@ import org.objectweb.asm.tree.AnnotationNode
 import org.ohmyloader.api.inject.InjectionPoint
 
 /**
- * Translator of an `@At` into an [InjectionPoint]. Kept in its own file to be **reusable**: OML's own
- * `@At` and the "read Mixin annotations directly from external mod bytecode" path share the same syntax,
- * so parsing has a single implementation. `target` syntax (aligned with Mixin's canonical form): for INVOKE/INVOKE_ASSIGN,
+ * Translator of an `@At` into an [InjectionPoint]. Kept in its own file so the annotation front-end has
+ * a single implementation of the `@At` syntax. `target` syntax (aligned with Mixin's canonical form): for INVOKE/INVOKE_ASSIGN,
  * `Lowner/name;member(args)ret` (recommended; owner dots or slashes both fine), or `member(args)ret`, or
  * bare `member`; for FIELD, `Lowner/name;field:desc` / `field:desc` / `field`; for NEW, `Lowner/name;`
  * (matched by owner) or `(args)V` (matched by ctor descriptor). Mixin's legacy dotted form
@@ -38,7 +37,12 @@ internal object AtParser {
         val suffix = if (':' in rawValue) rawValue.substringAfter(':').trim().uppercase() else null
         val ordinal = (annotationValue(node, "ordinal") as? Int)?.takeIf { it >= 0 }
         val opcode = (annotationValue(node, "opcode") as? Int)?.takeIf { it >= 0 }
-        val after = shiftAfter(node)
+        val rawShift = annotationValue(node, "shift")
+        val shiftName = enumName(rawShift)
+        // An unsupported shift (Mixin's Shift.BY) must surface as a problem, not silently degrade to
+        // BEFORE: an arbitrary instruction offset drifts as the target code changes.
+        if (rawShift != null && shiftName !in SUPPORTED_SHIFTS) return null
+        val after = shiftName == "AFTER"
         val target = (annotationValue(node, "target") as? String).orEmpty()
 
         // FIRST/LAST are defined for call anchors; anything else carrying a suffix is unrecognized
@@ -120,6 +124,9 @@ internal object AtParser {
 
     /** The values a `:FIRST`/`:LAST` specifier suffix is defined for. */
     private val CALL_VALUES = setOf("INVOKE", "INVOKE_ASSIGN")
+
+    /** The `shift` values this front-end accepts; anything else (e.g. `BY`) is rejected, not ignored. */
+    val SUPPORTED_SHIFTS = setOf("", "BEFORE", "AFTER")
 
     /** The call anchor's match selector: [ordinal] plus whether the **last** match is wanted. */
     private data class Ordinal(val ordinal: Int?, val last: Boolean)
@@ -221,13 +228,6 @@ internal object AtParser {
     }
 
     // ---------- utilities ----------
-
-    /** `shift = "AFTER"`（or `"BEFORE"` = default）. `Shift.BY` is unsupported and its argument is ignored. */
-    private fun shiftAfter(node: AnnotationNode): Boolean {
-        val raw = annotationValue(node, "shift") ?: return false
-        val name = enumName(raw)
-        return name == "AFTER"
-    }
 
     /** ASM encodes an annotation's enum value as a `[desc, name]` pair (a bare string also occurs); "" for unknown. */
     fun enumName(raw: Any?): String = when (raw) {

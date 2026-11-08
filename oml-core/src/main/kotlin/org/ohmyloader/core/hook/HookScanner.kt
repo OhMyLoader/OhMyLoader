@@ -840,7 +840,7 @@ object HookScanner {
         }
         val handlerDesc = if (selfType != null) {
             val params = Type.getArgumentTypes(method.desc).drop(1)
-            "(${params.joinToString("") { it.descriptor }}${Type.getReturnType(method.desc).descriptor})"
+            "(${params.joinToString("") { it.descriptor }})${Type.getReturnType(method.desc).descriptor}"
         } else {
             method.desc
         }
@@ -939,14 +939,17 @@ object HookScanner {
             return
         }
 
+        // The bridge captures include the typed self when declared; the handler's real parameter count
+        // is those captures plus the trailing handle, which is what overload resolution matches on.
+        val bridgeCaptures = listOfNotNull(selfType) + captureTypes
         val id = HookRegistry.register(
             modId = modId,
             mixinClass = mixinClass,
             handlerMethod = method.name,
             targetMethod = methodNames.first(),
             cancelable = cancelable && entryAnchor && !returnsValue && targetIsVoid,
-            captureTypes = listOfNotNull(selfType) + captureTypes,
-            handlerParamCount = captureTypes.size + 1,
+            captureTypes = bridgeCaptures,
+            handlerParamCount = bridgeCaptures.size + 1,
             returnsValue = returnsValue,
         )
         val kind = HookRegistry.bridgeKind(id) ?: HookRegistry.BridgeKind.NOTIFY
@@ -1514,7 +1517,14 @@ object HookScanner {
     private fun unrecognizedAt(atNode: AnnotationNode): String {
         val target = (annotationValue(atNode, "target") as? String).orEmpty()
         val targetPart = if (target.isEmpty()) "" else ", target = \"$target\""
-        return "@At(value = \"${annotationValue(atNode, "value")}\"$targetPart) " +
+        val shiftRaw = annotationValue(atNode, "shift")
+        val shiftName = AtParser.enumName(shiftRaw)
+        val shiftPart = if (shiftRaw != null && shiftName !in AtParser.SUPPORTED_SHIFTS) {
+            ", shift = \"$shiftName\" is not supported (only BEFORE/AFTER)"
+        } else {
+            ""
+        }
+        return "@At(value = \"${annotationValue(atNode, "value")}\"$targetPart$shiftPart) " +
             "is not a recognized injection point (available: ${AtParser.SUPPORTED.joinToString("/")})"
     }
 
