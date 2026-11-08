@@ -396,3 +396,21 @@ annotation class WrapMethod(
     val expect: Int = -1,
     val allow: Int = -1,
 )
+
+/**
+ * Binds a handler parameter to a **local variable at the injection point** (aligned with MixinExtras'
+ * `@Local`). Currently supported on `@Inject` handler parameters placed **before** the trailing
+ * `HookContext`/`HookValue`; the parameter type is the local's type. [index] pins the slot (and asserts
+ * the dataflow type), [ordinal] selects the Nth local of the parameter's type (or [type]), and an omitted
+ * [type] defaults to the parameter's own type. Locals are resolved by dataflow, never by variable name,
+ * and a missing local is a hard error. Read-only capture only: a mutable `LocalRef` parameter and
+ * `@Share` are not supported yet.
+ */
+@Target(AnnotationTarget.VALUE_PARAMETER)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class Local(
+    val index: Int = -1,
+    val ordinal: Int = -1,
+    val type: String = "",
+    val print: Boolean = false,
+)

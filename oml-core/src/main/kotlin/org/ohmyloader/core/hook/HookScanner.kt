@@ -176,6 +176,7 @@ object HookScanner {
     private const val WRAP_WITH_CONDITION_DESC = "Lorg/ohmyloader/api/hook/WrapWithCondition;"
     private const val WRAP_OPERATION_DESC = "Lorg/ohmyloader/api/hook/WrapOperation;"
     private const val WRAP_METHOD_DESC = "Lorg/ohmyloader/api/hook/WrapMethod;"
+    private const val LOCAL_DESC = "Lorg/ohmyloader/api/hook/Local;"
     private const val BORROWED_DESC = "Lorg/ohmyloader/api/hook/Borrowed;"
     private const val EXTRA_DESC = "Lorg/ohmyloader/api/hook/Extra;"
     private const val REPLACE_DESC = "Lorg/ohmyloader/api/hook/Replace;"
@@ -393,6 +394,10 @@ object HookScanner {
     ) {
         val where = "$mixinClass.${method.name}"
         val shortName = INJECTION_ANNOTATIONS[annotation.desc] ?: return
+        if (annotation.desc != INJECT_DESC && hasLocalSugar(method)) {
+            problems += "[$modId] $where —— @Local is currently supported on @Inject handlers only"
+            return
+        }
 
         // Target method names (union of method / methods)
         val methodNames = buildList {
@@ -900,23 +905,47 @@ object HookScanner {
                 "HookValue (consistent with Mixin: the handler must be able to take the callback handle), currently ${method.desc}"
             return
         }
+        // Parameter-level sugar: @Local params sit among the captures (before the handle) and are bound
+        // by their own discriminator instead of the locals = LocalCapture type-order rule.
+        val sugar = localBindings(method)
+        if (sugar.isNotEmpty()) {
+            val originalParams = Type.getArgumentTypes(method.desc)
+            if (originalParams.size - 1 in sugar) {
+                problems += "[$modId] $where —— @Local cannot bind the trailing HookContext/HookValue parameter"
+                return
+            }
+            if (selfType != null && 0 in sugar) {
+                problems += "[$modId] $where —— @Local cannot bind the typed self parameter"
+                return
+            }
+        }
         val returnType = Type.getReturnType(method.desc)
         if (returnType != Type.VOID_TYPE) {
             problems += "[$modId] $where —— @Inject handler must return void, currently returns ${returnType.className}"
             return
         }
         val locals = localCaptureOf(annotation)
-        if (locals == LocalCapture.NO_CAPTURE && captureTypes.isNotEmpty()) {
-            problems += "[$modId] $where —— the handler declares ${captureTypes.size} capture parameters, but locals is the default " +
+        val sugarSlots = captureTypes.indices.filterTo(mutableSetOf()) { i ->
+            (i + if (selfType != null) 1 else 0) in sugar
+        }
+        val nonSugarCaptures = captureTypes.size - sugarSlots.size
+        if (locals == LocalCapture.NO_CAPTURE && nonSugarCaptures > 0) {
+            problems += "[$modId] $where —— the handler declares $nonSugarCaptures capture parameter(s), but locals is the default " +
                 "NO_CAPTURE: please write locals = LocalCapture.CAPTURE_FAILHARD explicitly (or CAPTURE_FAILSOFT)." +
                 " Consistent with Mixin —— local-variable capture cannot be verified statically, the author must state the intent explicitly"
             return
         }
-        if (locals != LocalCapture.NO_CAPTURE && captureTypes.isEmpty()) {
-            problems += "[$modId] $where —— locals = $locals but the handler declares no capture parameters (besides the callback handle)"
+        if (locals != LocalCapture.NO_CAPTURE && nonSugarCaptures == 0) {
+            problems += "[$modId] $where —— locals = $locals but the handler declares no capture parameters " +
+                "(besides the callback handle)"
             return
         }
         val captures = capturesOf(captureTypes, locals, where, modId)
+        val captureValues = captures.map { capture ->
+            val original = capture.handlerSlot + if (selfType != null) 1 else 0
+            sugar[original]
+                ?: DslValue.Local(type = capture.type, ordinal = capture.ordinal, strict = capture.strict)
+        }
 
         val cancelable = (annotationValue(annotation, "cancelable") as? Boolean) ?: false
         val targetIsVoid = methodDesc == null || Type.getReturnType(methodDesc) == Type.VOID_TYPE
@@ -980,7 +1009,7 @@ object HookScanner {
             // Descriptor = capture params + trailing handle, all inside the parens; returns void (the value of a
             // value-bearing variant is taken **from the handle**)
             val desc = "(${captureTypes.joinToString("")}$handleDesc)V"
-            val args = captures.map { DslValue.Local(type = it.type, ordinal = it.ordinal, strict = it.strict) }
+            val args = captureValues
             rules += Rule(
                 targetInternal, methodNames, methodDesc, anchor,
                 Payload.HandlerCall(mergeInto, method.name, desc, args, variant, HandlerKind.INJECT),
@@ -1008,7 +1037,7 @@ object HookScanner {
         // The typed self (when declared) is pushed as the target instance; a static target abandons
         // the whole injection at emission (emitValue's This guard) and `require` turns it startup-red.
         val args = (selfType?.let { listOf(DslValue.This) } ?: emptyList()) +
-            captures.map { DslValue.Local(type = it.type, ordinal = it.ordinal, strict = it.strict) } +
+            captureValues +
             DslValue.IntVal(id)
         val payload = when (kind) {
             HookRegistry.BridgeKind.CANCELABLE ->
@@ -1862,6 +1891,37 @@ object HookScanner {
     }
 
     /** `locals = LocalCapture.X` → the enum (in ASM an enum value is a `[desc, name]` pair). */
+    /**
+     * Parameter-level sugar (`@Local`) on a handler: parameter index → the local binding it requests.
+     * The parameter's own type is the fallback lookup type, so `@Local(ordinal = 1)` means "the 2nd local
+     * of this parameter's type". A missing local is made a hard error: the author asked for it explicitly.
+     */
+    private fun localBindings(method: MethodNode): Map<Int, DslValue.Local> {
+        val annotations = method.visibleParameterAnnotations ?: return emptyMap()
+        val paramTypes = Type.getArgumentTypes(method.desc)
+        val out = LinkedHashMap<Int, DslValue.Local>()
+        for (i in annotations.indices) {
+            val annotation = annotations[i]?.firstOrNull { it.desc == LOCAL_DESC } ?: continue
+            val index = declaredInt(annotation, "index")
+            val ordinal = declaredInt(annotation, "ordinal") ?: 0
+            val declaredType = (annotationValue(annotation, "type") as? String)?.takeIf { it.isNotEmpty() }
+            val type = declaredType ?: paramTypes.getOrNull(i)?.descriptor ?: continue
+            if (annotationValue(annotation, "print") == true) {
+                OmlLog.info(
+                    "Mixin",
+                    "@Local(print) ${method.name}${method.desc} parameter $i -> " +
+                        (index?.let { "slot $it" } ?: "the $ordinal-th local of type $type"),
+                )
+            }
+            out[i] = DslValue.Local(index = index, type = type, ordinal = ordinal, strict = true)
+        }
+        return out
+    }
+
+    /** Whether any parameter of [method] carries `@Local` (used to reject sugar on unsupported injectors). */
+    private fun hasLocalSugar(method: MethodNode): Boolean =
+        method.visibleParameterAnnotations?.any { list -> list?.any { it.desc == LOCAL_DESC } == true } == true
+
     private fun localCaptureOf(annotation: AnnotationNode): LocalCapture {
         val name = AtParser.enumName(annotationValue(annotation, "locals"))
         return LocalCapture.entries.firstOrNull { it.name == name } ?: LocalCapture.NO_CAPTURE

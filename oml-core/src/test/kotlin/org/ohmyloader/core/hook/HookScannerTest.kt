@@ -1158,6 +1158,78 @@ class HookScannerTest {
         assertEquals("I", handler.returnType)
     }
 
+    @Test
+    fun `local sugar binds a handler parameter by slot`() {
+        newBridge()
+        val inject = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Inject;").apply {
+            values = mutableListOf<Any?>("method", "runTick", "at", atNode("HEAD"))
+        }
+        val local = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Local;").apply {
+            values = mutableListOf<Any?>("index", 2, "type", "I")
+        }
+        val method = MethodNode(
+            Opcodes.ACC_PUBLIC, "h", "(ILorg/ohmyloader/api/hook/HookContext;)V", null, null,
+        ).apply {
+            instructions.add(InsnNode(Opcodes.RETURN))
+            visibleAnnotations = listOf(inject)
+            visibleParameterAnnotations = arrayOf(mutableListOf(local), mutableListOf())
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        assertEquals(1, parsed.rules.size)
+        val payload = parsed.rules[0].payload as Payload.StaticCall
+        val bound = payload.args[0] as DslValue.Local
+        assertEquals(2, bound.index)
+        assertEquals("I", bound.type)
+        assertTrue(bound.strict)
+    }
+
+    @Test
+    fun `local sugar cannot bind the callback handle`() {
+        newBridge()
+        val inject = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Inject;").apply {
+            values = mutableListOf<Any?>("method", "runTick", "at", atNode("HEAD"))
+        }
+        val local = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Local;").apply {
+            values = mutableListOf<Any?>("index", 0)
+        }
+        val method = MethodNode(
+            Opcodes.ACC_PUBLIC, "h", "(Lorg/ohmyloader/api/hook/HookContext;)V", null, null,
+        ).apply {
+            instructions.add(InsnNode(Opcodes.RETURN))
+            visibleAnnotations = listOf(inject)
+            visibleParameterAnnotations = arrayOf(mutableListOf(local))
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(
+            parsed.problems.any { it.contains("@Local cannot bind the trailing") },
+            parsed.problems.toString(),
+        )
+        assertEquals(0, parsed.rules.size)
+    }
+
+    @Test
+    fun `local sugar is rejected on a non-inject injector`() {
+        newBridge()
+        val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyArg;").apply {
+            values = mutableListOf<Any?>(
+                "method", "runTick",
+                "at", atNode("INVOKE", target = "Lnet/minecraft/client/Minecraft;runTick(Z)V"),
+            )
+        }
+        val local = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Local;").apply {
+            values = mutableListOf<Any?>("index", 1)
+        }
+        val method = MethodNode(Opcodes.ACC_PUBLIC, "h", "(I)I", null, null).apply {
+            instructions.add(InsnNode(Opcodes.RETURN))
+            visibleAnnotations = listOf(modify)
+            visibleParameterAnnotations = arrayOf(mutableListOf(local))
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(parsed.problems.any { it.contains("@Inject handlers only") }, parsed.problems.toString())
+        assertEquals(0, parsed.rules.size)
+    }
+
     // ---------- fixtures ----------
 
     private fun parse(
