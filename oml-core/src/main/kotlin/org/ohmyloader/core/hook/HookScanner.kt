@@ -918,6 +918,13 @@ object HookScanner {
                 problems += "[$modId] $where —— @Local cannot bind the typed self parameter"
                 return
             }
+            for ((param, binding) in sugar) {
+                if (binding is DslValue.RefLocal && binding.index == null && binding.type == null) {
+                    problems += "[$modId] $where —— @Local on a LocalRef parameter (parameter $param) needs " +
+                        "index or type: the parameter type is the ref, not the local"
+                    return
+                }
+            }
         }
         val returnType = Type.getReturnType(method.desc)
         if (returnType != Type.VOID_TYPE) {
@@ -1896,24 +1903,33 @@ object HookScanner {
      * The parameter's own type is the fallback lookup type, so `@Local(ordinal = 1)` means "the 2nd local
      * of this parameter's type". A missing local is made a hard error: the author asked for it explicitly.
      */
-    private fun localBindings(method: MethodNode): Map<Int, DslValue.Local> {
+    private fun localBindings(method: MethodNode): Map<Int, DslValue> {
         val annotations = method.visibleParameterAnnotations ?: return emptyMap()
         val paramTypes = Type.getArgumentTypes(method.desc)
-        val out = LinkedHashMap<Int, DslValue.Local>()
+        val out = LinkedHashMap<Int, DslValue>()
         for (i in annotations.indices) {
             val annotation = annotations[i]?.firstOrNull { it.desc == LOCAL_DESC } ?: continue
             val index = declaredInt(annotation, "index")
             val ordinal = declaredInt(annotation, "ordinal") ?: 0
             val declaredType = (annotationValue(annotation, "type") as? String)?.takeIf { it.isNotEmpty() }
-            val type = declaredType ?: paramTypes.getOrNull(i)?.descriptor ?: continue
+            val paramType = paramTypes.getOrNull(i)?.descriptor
+            val isRef = paramType == LOCAL_REF_DESC
             if (annotationValue(annotation, "print") == true) {
                 OmlLog.info(
                     "Mixin",
                     "@Local(print) ${method.name}${method.desc} parameter $i -> " +
-                        (index?.let { "slot $it" } ?: "the $ordinal-th local of type $type"),
+                        (index?.let { "slot $it" }
+                            ?: "the $ordinal-th local of type ${declaredType ?: if (isRef) "the ref's slot type" else paramType}"),
                 )
             }
-            out[i] = DslValue.Local(index = index, type = type, ordinal = ordinal, strict = true)
+            out[i] = if (isRef) {
+                // The parameter type is the ref, not the local: the local's type must be written or inferred
+                // from a pinned slot.
+                DslValue.RefLocal(index = index, type = declaredType, ordinal = ordinal, strict = true)
+            } else {
+                val type = declaredType ?: paramType ?: continue
+                DslValue.Local(index = index, type = type, ordinal = ordinal, strict = true)
+            }
         }
         return out
     }

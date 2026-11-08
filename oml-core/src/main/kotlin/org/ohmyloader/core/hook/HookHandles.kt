@@ -30,3 +30,12 @@ internal const val OPERATION = "org/ohmyloader/api/hook/Operation"
 
 /** [OPERATION]'s type descriptor. */
 internal const val OPERATION_DESC = "L$OPERATION;"
+
+/** Internal name of `LocalRef`, the writable local handle (`@Local` on a `LocalRef<T>` parameter). */
+internal const val LOCAL_REF = "org/ohmyloader/api/hook/LocalRef"
+
+/** [LOCAL_REF]'s type descriptor. */
+internal const val LOCAL_REF_DESC = "L$LOCAL_REF;"
+
+/** The engine-created [LOCAL_REF] implementation. */
+internal const val LOCAL_REF_IMPL = "org/ohmyloader/api/hook/LocalRefImpl"

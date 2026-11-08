@@ -291,6 +291,20 @@ sealed class DslValue {
         val strict: Boolean = false,
     ) : DslValue()
 
+    /**
+     * A **mutable** local capture (aligned with MixinExtras' `@Local` on a `LocalRef<T>` parameter).
+     * Resolution is identical to [Local]; the engine additionally creates a
+     * [org.ohmyloader.api.hook.LocalRef], initializes it from the local, pushes it as the handler argument,
+     * and writes the ref's final value back to the local after the handler returns. Only `@Inject`
+     * payloads support a write-back.
+     */
+    data class RefLocal(
+        val index: Int? = null,
+        val type: String? = null,
+        val ordinal: Int = 0,
+        val strict: Boolean = true,
+    ) : DslValue()
+
     data class IntVal(val value: Int) : DslValue()
     data class LongVal(val value: Long) : DslValue()
     data class Str(val value: String) : DslValue()

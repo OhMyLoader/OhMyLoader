@@ -29,8 +29,10 @@ internal object PayloadEmitter {
             // Argument types vs handler descriptor: both sides are statically known, so a mismatch is a definite rule error
             validateArgTypes(payload.desc, payload.args, 0, method, owner, locals, "StaticCall")
             val list = InsnList()
-            if (!emitValues(list, payload.args, method, locals)) return null
+            val writeBacks = mutableListOf<SugarWriteBack>()
+            if (!emitValues(list, payload.args, method, locals, writeBacks)) return null
             list.add(MethodInsnNode(Opcodes.INVOKESTATIC, payload.owner, payload.method, payload.desc, false))
+            emitWriteBacks(list, writeBacks)
             list
         }
 
@@ -113,8 +115,10 @@ internal object PayloadEmitter {
         continuationLocals: Array<Any>?,
     ): InsnList? {
         val list = InsnList()
-        if (!emitValues(list, payload.args, method, locals)) return null
+        val writeBacks = mutableListOf<SugarWriteBack>()
+        if (!emitValues(list, payload.args, method, locals, writeBacks)) return null
         list.add(MethodInsnNode(Opcodes.INVOKESTATIC, payload.owner, payload.method, payload.desc, false))
+        emitWriteBacks(list, writeBacks)
         val label = LabelNode()
         list.add(JumpInsnNode(Opcodes.IFEQ, label))
         list.add(InsnNode(Opcodes.RETURN))
@@ -279,9 +283,11 @@ internal object PayloadEmitter {
         list.add(VarInsnNode(Opcodes.ASTORE, slot))
 
         list.add(VarInsnNode(Opcodes.ALOAD, 0)) // receiver (target instance) — it isn't an argument
-        if (!emitValues(list, payload.captures, method, locals)) return null
+        val writeBacks = mutableListOf<SugarWriteBack>()
+        if (!emitValues(list, payload.captures, method, locals, writeBacks)) return null
         list.add(VarInsnNode(Opcodes.ALOAD, slot)) // the handle is an argument
         list.add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, payload.owner, payload.method, payload.desc, false))
+        emitWriteBacks(list, writeBacks)
 
         if (!readsBack) return list
 
@@ -349,9 +355,11 @@ internal object PayloadEmitter {
         list.add(VarInsnNode(Opcodes.ASTORE, slot))
 
         // handler(captures…, id, cir)  — bridgeArgs order matches the desc params
-        if (!emitValues(list, payload.bridgeArgs, method, locals)) return null
+        val writeBacks = mutableListOf<SugarWriteBack>()
+        if (!emitValues(list, payload.bridgeArgs, method, locals, writeBacks)) return null
         list.add(VarInsnNode(Opcodes.ALOAD, slot))
         list.add(MethodInsnNode(Opcodes.INVOKESTATIC, payload.owner, payload.method, payload.desc, false))
+        emitWriteBacks(list, writeBacks)
 
         // if (!cir.canceled) skip the short circuit
         list.add(VarInsnNode(Opcodes.ALOAD, slot))
@@ -500,6 +508,7 @@ internal object PayloadEmitter {
                 }
             }
 
+            is DslValue.RefLocal -> Type.getType(LOCAL_REF_DESC)
             is DslValue.IntVal -> Type.INT_TYPE
             is DslValue.LongVal -> Type.LONG_TYPE
             is DslValue.Str -> Type.getType("Ljava/lang/String;")
@@ -1651,11 +1660,50 @@ internal object PayloadEmitter {
     }
 
     /** Emits the value-loading instructions one by one; voids the whole payload if any value cannot be loaded (returns false). */
-    internal fun emitValues(list: InsnList, values: List<DslValue>, method: MethodNode, locals: AnchorLocals?): Boolean {
+    /** A mutable `@Local` capture's post-call write-back: ref slot → target local slot + its type. */
+    internal class SugarWriteBack(val refSlot: Int, val localSlot: Int, val type: Type)
+
+    internal fun emitValues(
+        list: InsnList,
+        values: List<DslValue>,
+        method: MethodNode,
+        locals: AnchorLocals?,
+        writeBacks: MutableList<SugarWriteBack>? = null,
+    ): Boolean {
         for (value in values) {
-            if (!emitValue(list, value, method, locals)) return false
+            if (!emitValue(list, value, method, locals, writeBacks)) return false
         }
         return true
+    }
+
+    /**
+     * Emits the write-back for every mutable `@Local` capture: the ref's current value, cast/unboxed per
+     * the local's type, stored back into the local. The handler owns the ref during the call; after it
+     * returns, the local is authoritative again.
+     */
+    internal fun emitWriteBacks(list: InsnList, writeBacks: List<SugarWriteBack>) {
+        for (writeBack in writeBacks) {
+            list.add(VarInsnNode(Opcodes.ALOAD, writeBack.refSlot))
+            list.add(
+                MethodInsnNode(
+                    Opcodes.INVOKEINTERFACE,
+                    LOCAL_REF,
+                    "getValue",
+                    Type.getMethodDescriptor(Type.getObjectType("java/lang/Object")),
+                    true,
+                ),
+            )
+            when (writeBack.type.sort) {
+                Type.OBJECT, Type.ARRAY -> list.add(TypeInsnNode(Opcodes.CHECKCAST, writeBack.type.internalName))
+                else -> {
+                    val unbox = Boxing.unbox(writeBack.type)
+                        ?: throw IllegalStateException("no unboxing type for ${writeBack.type.className}")
+                    list.add(TypeInsnNode(Opcodes.CHECKCAST, unbox.owner))
+                    list.add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, unbox.owner, unbox.name, unbox.desc, false))
+                }
+            }
+            list.add(VarInsnNode(Boxing.storeOpcode(writeBack.type), writeBack.localSlot))
+        }
     }
 
     /**
@@ -1666,7 +1714,13 @@ internal object PayloadEmitter {
      * harder to trace than "skip this injection + hit-count warning" (`require(n)` can turn it into an explicit
      * startup failure).
      */
-    private fun emitValue(list: InsnList, value: DslValue, method: MethodNode, locals: AnchorLocals?): Boolean {
+    private fun emitValue(
+        list: InsnList,
+        value: DslValue,
+        method: MethodNode,
+        locals: AnchorLocals?,
+        writeBacks: MutableList<SugarWriteBack>? = null,
+    ): Boolean {
         when (value) {
             is DslValue.This -> {
                 if ((method.access and Opcodes.ACC_STATIC) != 0) {
@@ -1725,6 +1779,65 @@ internal object PayloadEmitter {
                         return false
                     }
                 }
+            }
+
+            is DslValue.RefLocal -> {
+                val frame = locals?.frame()
+                if (frame == null) {
+                    OmlLog.error(
+                        "Injection",
+                        "cannot read the local variable at the injection point ($value): ${method.name}${method.desc} — " +
+                            (locals?.explain()
+                                ?: "this payload did not request a local-variable snapshot (engine internal error)"),
+                    )
+                    return false
+                }
+                val resolution = frame.resolve(
+                    DslValue.Local(value.index, value.type, value.ordinal, value.strict),
+                    (method.access and Opcodes.ACC_STATIC) != 0,
+                )
+                val found = when (resolution) {
+                    is LocalResolution.Found -> resolution
+                    is LocalResolution.Missing -> {
+                        if (value.index != null || value.strict) {
+                            throw InjectionError(
+                                "[injection] local-variable read contradicts the dataflow analysis: " +
+                                    "${method.name}${method.desc} $value — ${resolution.reason}",
+                            )
+                        }
+                        OmlLog.error(
+                            "Injection",
+                            "local-variable read skipped: ${method.name}${method.desc} $value — ${resolution.reason}",
+                        )
+                        return false
+                    }
+                }
+                if (writeBacks == null) {
+                    throw InjectionError(
+                        "[injection] a mutable @Local (LocalRef) is only supported on @Inject payloads: " +
+                            "${method.name}${method.desc}",
+                    )
+                }
+                val refSlot = allocLocalSlot(method)
+                method.maxLocals = maxOf(method.maxLocals, refSlot + 1)
+                list.add(TypeInsnNode(Opcodes.NEW, LOCAL_REF_IMPL))
+                list.add(InsnNode(Opcodes.DUP))
+                list.add(VarInsnNode(Boxing.loadOpcode(found.type), found.slot))
+                Boxing.box(found.type)?.let { box ->
+                    list.add(MethodInsnNode(Opcodes.INVOKESTATIC, box.owner, box.name, box.desc, false))
+                }
+                list.add(
+                    MethodInsnNode(
+                        Opcodes.INVOKESPECIAL,
+                        LOCAL_REF_IMPL,
+                        "<init>",
+                        Type.getMethodDescriptor(Type.VOID_TYPE, Type.getObjectType("java/lang/Object")),
+                        false,
+                    ),
+                )
+                list.add(VarInsnNode(Opcodes.ASTORE, refSlot))
+                list.add(VarInsnNode(Opcodes.ALOAD, refSlot))
+                writeBacks += SugarWriteBack(refSlot, found.slot, found.type)
             }
 
             is DslValue.IntVal -> list.add(LdcInsnNode(value.value))

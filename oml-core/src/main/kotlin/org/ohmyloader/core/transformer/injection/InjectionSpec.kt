@@ -41,7 +41,8 @@ internal fun Payload.dslValues(): List<DslValue> = when (this) {
  * Dataflow analysis is a **whole-method-level** cost, so it only runs when actually needed — most rules
  * (notifications, return-value rewrites, constant rewrites…) never touch local variables and shouldn't pay for it.
  */
-internal fun Payload.usesLocals(): Boolean = dslValues().any { it is DslValue.Local }
+internal fun Payload.usesLocals(): Boolean =
+    dslValues().any { it is DslValue.Local || it is DslValue.RefLocal }
 
 /**
  * The engine-side rule set: applies a [RuleSet] to target classes, and is responsible for startup self-checking.

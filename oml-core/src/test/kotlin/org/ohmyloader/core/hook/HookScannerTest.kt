@@ -1230,6 +1230,59 @@ class HookScannerTest {
         assertEquals(0, parsed.rules.size)
     }
 
+    @Test
+    fun `local sugar on a LocalRef parameter produces a mutable binding`() {
+        newBridge()
+        val inject = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Inject;").apply {
+            values = mutableListOf<Any?>("method", "runTick", "at", atNode("HEAD"))
+        }
+        val local = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Local;").apply {
+            values = mutableListOf<Any?>("index", 1, "type", "I")
+        }
+        val method = MethodNode(
+            Opcodes.ACC_PUBLIC,
+            "h",
+            "(Lorg/ohmyloader/api/hook/LocalRef;Lorg/ohmyloader/api/hook/HookContext;)V",
+            null,
+            null,
+        ).apply {
+            instructions.add(InsnNode(Opcodes.RETURN))
+            visibleAnnotations = listOf(inject)
+            visibleParameterAnnotations = arrayOf(mutableListOf(local), mutableListOf())
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        assertEquals(1, parsed.rules.size)
+        val payload = parsed.rules[0].payload as Payload.StaticCall
+        val bound = payload.args[0] as DslValue.RefLocal
+        assertEquals(1, bound.index)
+        assertEquals("I", bound.type)
+        assertTrue(bound.strict)
+    }
+
+    @Test
+    fun `a LocalRef sugar without index or type is reported`() {
+        newBridge()
+        val inject = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Inject;").apply {
+            values = mutableListOf<Any?>("method", "runTick", "at", atNode("HEAD"))
+        }
+        val local = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Local;")
+        val method = MethodNode(
+            Opcodes.ACC_PUBLIC,
+            "h",
+            "(Lorg/ohmyloader/api/hook/LocalRef;Lorg/ohmyloader/api/hook/HookContext;)V",
+            null,
+            null,
+        ).apply {
+            instructions.add(InsnNode(Opcodes.RETURN))
+            visibleAnnotations = listOf(inject)
+            visibleParameterAnnotations = arrayOf(mutableListOf(local), mutableListOf())
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(parsed.problems.any { it.contains("needs index or type") }, parsed.problems.toString())
+        assertEquals(0, parsed.rules.size)
+    }
+
     // ---------- fixtures ----------
 
     private fun parse(

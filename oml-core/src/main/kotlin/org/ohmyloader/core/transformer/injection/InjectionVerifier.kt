@@ -786,8 +786,23 @@ internal object InjectionVerifier {
         // Local-variable reads: only the **statically decidable** part can be checked here — non-negative slot,
         // valid type descriptor, "at least one of index / type". Whether that slot or type actually exists requires
         // dataflow analysis (runtime, per-method); see AnchorLocals / PayloadEmitter.emitValue.
-        val locals = payload.dslValues().filterIsInstance<DslValue.Local>()
-        for ((index, type1, ordinal) in locals) {
+        val locals = payload.dslValues().filter { it is DslValue.Local || it is DslValue.RefLocal }
+        for (value in locals) {
+            val index = when (value) {
+                is DslValue.Local -> value.index
+                is DslValue.RefLocal -> value.index
+                else -> null
+            }
+            val type1 = when (value) {
+                is DslValue.Local -> value.type
+                is DslValue.RefLocal -> value.type
+                else -> null
+            }
+            val ordinal = when (value) {
+                is DslValue.Local -> value.ordinal
+                is DslValue.RefLocal -> value.ordinal
+                else -> 0
+            }
             if (index == null && type1 == null) {
                 problems += "$where — Local must give at least one of index or type (otherwise the local variable cannot be located)"
             }

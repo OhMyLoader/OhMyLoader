@@ -403,8 +403,10 @@ annotation class WrapMethod(
  * `HookContext`/`HookValue`; the parameter type is the local's type. [index] pins the slot (and asserts
  * the dataflow type), [ordinal] selects the Nth local of the parameter's type (or [type]), and an omitted
  * [type] defaults to the parameter's own type. Locals are resolved by dataflow, never by variable name,
- * and a missing local is a hard error. Read-only capture only: a mutable `LocalRef` parameter and
- * `@Share` are not supported yet.
+ * and a missing local is a hard error. A `LocalRef<T>` parameter is **mutable**: the engine creates the
+ * ref at the injection point and writes its final value back to the local after the handler returns, so
+ * anchor before the local's next read (for example `afterStore`); a value already pushed onto the stack
+ * (e.g. as a call argument) is a copy and is not updated. `@Share` is not supported yet.
  */
 @Target(AnnotationTarget.VALUE_PARAMETER)
 @Retention(AnnotationRetention.RUNTIME)
