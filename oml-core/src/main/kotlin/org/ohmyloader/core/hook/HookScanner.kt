@@ -191,8 +191,8 @@ object HookScanner {
         "Lorg/ohmyloader/api/hook/MethodAccess;",
     )
 
-    /** Injection annotations this front-end recognizes → their names (for diagnostics). */
-    private val INJECTION_ANNOTATIONS = mapOf(
+    /** Injection annotations this front-end recognizes → their names (for diagnostics). Exposed for the API-consistency test. */
+    internal val INJECTION_ANNOTATIONS = mapOf(
         INJECT_DESC to "@Inject",
         REDIRECT_DESC to "@Redirect",
         MODIFY_ARG_DESC to "@ModifyArg",

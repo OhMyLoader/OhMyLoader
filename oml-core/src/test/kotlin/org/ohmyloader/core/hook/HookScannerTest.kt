@@ -1114,6 +1114,14 @@ class HookScannerTest {
     }
 
     @Test
+    fun `every scanned injector annotation exists in the API`() {
+        for ((descriptor, name) in HookScanner.INJECTION_ANNOTATIONS) {
+            val annotation = Class.forName(org.objectweb.asm.Type.getType(descriptor).className)
+            assertTrue(annotation.isAnnotation, "$name ($descriptor) is not an annotation type")
+        }
+    }
+
+    @Test
     fun `wrapOperation parses an Operation handler`() {
         newBridge()
         val node = injectClass(

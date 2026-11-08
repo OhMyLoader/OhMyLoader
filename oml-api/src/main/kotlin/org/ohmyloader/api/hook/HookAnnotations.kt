@@ -361,12 +361,33 @@ annotation class ModifyReceiver(
  * Gates an operation on a boolean handler (aligned with MixinExtras' `@WrapWithCondition`): the handler
  * returns whether the original operation runs at all. Handler shape `(receiver?, operands…)Z` — the same
  * value parameters as [Redirect], but returning boolean instead of the operation's result. The anchor must
- * be a method call or a field write, before the instruction. Only **void** operations are supported for now:
- * a non-void call whose result is immediately discarded is rejected at injection time.
+ * be a method call or a field write, before the instruction. A non-void call is accepted only when its
+ * result is immediately discarded (`POP`/`POP2`).
  */
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
 annotation class WrapWithCondition(
+    val at: At,
+    val method: String = "",
+    val methods: Array<String> = [],
+    val desc: String = "",
+    val slice: Slice = Slice(),
+    val require: Int = -1,
+    val expect: Int = -1,
+    val allow: Int = -1,
+)
+
+/**
+ * Wraps an operation with an [org.ohmyloader.api.hook.Operation] callback (aligned with MixinExtras'
+ * `@WrapOperation`): the handler receives the operation's receiver and operands plus an `Operation<R>`
+ * as its **last non-sugar parameter**, and may re-run the original operation with different arguments,
+ * not run it at all, or run it more than once. Handler return type = `R`. The anchor must be a call,
+ * a field access, a `NEW`, a `CHECKCAST`/`INSTANCEOF` or an array instruction, before the instruction.
+ * Exceptions thrown by the handler are **not isolated** (it replaces real behavior).
+ */
+@Target(AnnotationTarget.FUNCTION)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class WrapOperation(
     val at: At,
     val method: String = "",
     val methods: Array<String> = [],
@@ -399,14 +420,15 @@ annotation class WrapMethod(
 
 /**
  * Binds a handler parameter to a **local variable at the injection point** (aligned with MixinExtras'
- * `@Local`). Currently supported on `@Inject` handler parameters placed **before** the trailing
- * `HookContext`/`HookValue`; the parameter type is the local's type. [index] pins the slot (and asserts
- * the dataflow type), [ordinal] selects the Nth local of the parameter's type (or [type]), and an omitted
- * [type] defaults to the parameter's own type. Locals are resolved by dataflow, never by variable name,
- * and a missing local is a hard error. A `LocalRef<T>` parameter is **mutable**: the engine creates the
- * ref at the injection point and writes its final value back to the local after the handler returns, so
- * anchor before the local's next read (for example `afterStore`); a value already pushed onto the stack
- * (e.g. as a call argument) is a copy and is not updated. `@Share` is not supported yet.
+ * `@Local`). Supported on handler parameters of every method annotation: on `@Inject` the sugar sits
+ * **before** the trailing `HookContext`/`HookValue`, on every other injector it is a **trailing suffix**
+ * after the handler's ordinary parameters. The parameter type is the local's type. [index] pins the slot
+ * (and asserts the dataflow type), [ordinal] selects the Nth local of the parameter's type (or [type]),
+ * and an omitted [type] defaults to the parameter's own type. Locals are resolved by dataflow, never by
+ * variable name, and a missing local is a hard error. A `LocalRef<T>` parameter is **mutable**: the engine
+ * creates the ref at the injection point and writes its final value back to the local after the handler
+ * returns, so anchor before the local's next read (for example `afterStore`); a value already pushed onto
+ * the stack (e.g. as a call argument) is a copy and is not updated.
  */
 @Target(AnnotationTarget.VALUE_PARAMETER)
 @Retention(AnnotationRetention.RUNTIME)
@@ -424,8 +446,8 @@ annotation class Local(
  * handler requesting the same [value] within [namespace] (which defaults to the carrier class). Handlers
  * earlier in the method can leave a value for later ones.
  *
- * Currently supported on `@Inject` handler parameters placed before the trailing `HookContext`/
- * `HookValue`. The ref is per invocation and never written back to a local; do not store it.
+ * Follows the same placement rule as [Local]: before the trailing handle on `@Inject`, a trailing suffix
+ * elsewhere. The ref is per invocation and never written back to a local; do not store it.
  */
 @Target(AnnotationTarget.VALUE_PARAMETER)
 @Retention(AnnotationRetention.RUNTIME)

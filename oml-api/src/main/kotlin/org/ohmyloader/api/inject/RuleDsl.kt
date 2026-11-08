@@ -699,7 +699,7 @@ class PayloadBuilder @PublishedApi internal constructor(
      *
      * The anchor must be a **void** method call or a field write (`beforeCall` / `beforeField`); the handler
      * is shaped `(receiver?, operands…, extras…)Z` — false skips the original instruction, true runs it
-     * unchanged. A non-void call whose result is immediately discarded is not supported yet.
+     * unchanged. A non-void call is accepted only when its result is immediately discarded (`POP`/`POP2`).
      */
     fun wrapWithCondition(owner: String, method: String, desc: String, extras: List<DslValue> = emptyList()) {
         payload = Payload.WrapWithCondition(owner, method, desc, extras)
