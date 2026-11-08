@@ -66,11 +66,12 @@ internal object OperationSupport {
         argTypes: Array<Type>,
         returnType: Type,
         original: AbstractInsnNode,
+        prefix: List<AbstractInsnNode> = emptyList(),
     ) {
         val boxedReturn = boxed(returnType)
         val bridgeName = uniqueName(classNode)
         val bridgeDesc = Type.getMethodDescriptor(boxedReturn, OBJECTS)
-        classNode.methods.add(bridgeMethod(bridgeName, argTypes, returnType, original))
+        classNode.methods.add(bridgeMethod(bridgeName, argTypes, returnType, original, prefix))
 
         insns.add(
             InvokeDynamicInsnNode(
@@ -108,6 +109,7 @@ internal object OperationSupport {
         argTypes: Array<Type>,
         returnType: Type,
         original: AbstractInsnNode,
+        prefix: List<AbstractInsnNode>,
     ): MethodNode {
         val boxedReturn = boxed(returnType)
         val method = MethodNode(
@@ -129,6 +131,9 @@ internal object OperationSupport {
                 false,
             ),
         )
+        // Instantiation's bridge starts with NEW + DUP: the uninitialized reference never leaves the
+        // bridge, so the verifier's uninitialized-object rule is satisfied inside one straight-line body.
+        prefix.forEach(ins::add)
         for (i in argTypes.indices) {
             val type = argTypes[i]
             ins.add(VarInsnNode(Opcodes.ALOAD, 0))

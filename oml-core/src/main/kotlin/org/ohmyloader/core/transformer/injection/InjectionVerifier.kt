@@ -453,9 +453,11 @@ internal object InjectionVerifier {
                             problems += "$where — a WrapOperation handler must not call back the handle (variant should be NOTIFY): ${payload.desc}"
                         }
                         val core = point.core
-                        if ((core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess) || point.after) {
-                            problems += "$where — the @At of @WrapOperation must be a call or field access, before " +
-                                "the instruction, now ${AnchorResolver.describe(point)}"
+                        if ((core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess &&
+                                core !is InjectionPoint.NewInstance) || point.after
+                        ) {
+                            problems += "$where — the @At of @WrapOperation must be a call, field access or NEW, " +
+                                "before the instruction, now ${AnchorResolver.describe(point)}"
                         }
                         val last = runCatching { Type.getArgumentTypes(payload.desc).lastOrNull() }.getOrNull()
                         if (last?.descriptor != OPERATION_DESC) {
@@ -695,9 +697,11 @@ internal object InjectionVerifier {
 
             is Payload.WrapOperation -> {
                 val core = point.core
-                if ((core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess) || point.after) {
-                    problems += "$where — WrapOperation requires a call or field-access anchor before the " +
-                        "instruction (beforeCall / beforeField), now ${AnchorResolver.describe(point)}"
+                if ((core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess &&
+                        core !is InjectionPoint.NewInstance) || point.after
+                ) {
+                    problems += "$where — WrapOperation requires a call, field-access or NEW anchor before the " +
+                        "instruction (beforeCall / beforeField / beforeNew), now ${AnchorResolver.describe(point)}"
                 }
                 val desc = runCatching { Type.getMethodType(payload.desc) }.getOrNull()
                 if (desc == null) {

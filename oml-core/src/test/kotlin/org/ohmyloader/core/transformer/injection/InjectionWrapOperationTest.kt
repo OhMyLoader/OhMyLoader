@@ -133,6 +133,50 @@ class InjectionWrapOperationTest {
         assertEquals(8, invoke(clazz, "target", 7))
     }
 
+    @Test
+    fun `wrapOperation wraps an instantiation`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("make", desc = "(I)L${Receiver.OWNER};") {
+                        beforeNew(owner = Receiver.OWNER, desc = "(I)V") {
+                            wrapOperation(
+                                WrapOpHandlers.OWNER, "construct",
+                                "(I$OPERATION_DESC)L${Receiver.OWNER};",
+                            )
+                        }
+                    }
+                }
+            },
+            targetWithInstantiation(),
+        )
+
+        val made = invoke(clazz, "make", 5) as Receiver
+        assertEquals(6, made.factor, "the constructor must run with the argument the handler passed")
+    }
+
+    @Test
+    fun `wrapOperation can replace an instantiation without calling the original`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("make", desc = "(I)L${Receiver.OWNER};") {
+                        beforeNew(owner = Receiver.OWNER, desc = "(I)V") {
+                            wrapOperation(
+                                WrapOpHandlers.OWNER, "substitute",
+                                "(I$OPERATION_DESC)L${Receiver.OWNER};",
+                            )
+                        }
+                    }
+                }
+            },
+            targetWithInstantiation(),
+        )
+
+        val made = invoke(clazz, "make", 5) as Receiver
+        assertEquals(99, made.factor, "the handler returned its own object; the original constructor never ran")
+    }
+
     // ---------- fixtures ----------
 
     private val OPERATION_DESC = "Lorg/ohmyloader/api/hook/Operation;"
@@ -206,6 +250,17 @@ class InjectionWrapOperationTest {
         },
     )
 
+    /** `static Receiver make(int seed) { return new Receiver(seed); }` */
+    private fun targetWithInstantiation(): ClassNode = classNode(
+        methodNode("make", "(I)L${Receiver.OWNER};") {
+            add(TypeInsnNode(Opcodes.NEW, Receiver.OWNER))
+            add(InsnNode(Opcodes.DUP))
+            add(VarInsnNode(Opcodes.ILOAD, 0))
+            add(MethodInsnNode(Opcodes.INVOKESPECIAL, Receiver.OWNER, "<init>", "(I)V", false))
+            add(InsnNode(Opcodes.ARETURN))
+        },
+    )
+
     private fun define(spec: InjectionSpec, node: ClassNode): Class<*> {
         assertTrue(spec.transform(TransformContext(owner, node)), "injection should happen")
         val writer = ClassWriter(ClassWriter.COMPUTE_MAXS)
@@ -260,5 +315,12 @@ class InjectionWrapOperationTest {
         fun writeField(receiver: Receiver, value: Int, operation: Operation<Void>) {
             operation.call(receiver, value + 1)
         }
+
+        @JvmStatic
+        fun construct(value: Int, operation: Operation<Receiver>): Receiver = operation.call(value + 1)
+
+        @Suppress("UNUSED_PARAMETER")
+        @JvmStatic
+        fun substitute(value: Int, operation: Operation<Receiver>): Receiver = Receiver(99)
     }
 }

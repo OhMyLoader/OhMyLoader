@@ -1280,8 +1280,10 @@ object HookScanner {
         problems: MutableList<String>,
     ) {
         val core = anchor.core
-        if ((core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess) || anchor.after) {
-            problems += "[$modId] $where —— @WrapOperation's @At must be a call or field access, " +
+        if ((core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess &&
+                core !is InjectionPoint.NewInstance) || anchor.after
+        ) {
+            problems += "[$modId] $where —— @WrapOperation's @At must be a call, field access or NEW, " +
                 "before the instruction"
             return
         }

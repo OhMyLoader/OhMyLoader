@@ -411,10 +411,31 @@ class InjectionSpec internal constructor(
                     }
 
                     is Payload.WrapOperation -> {
-                        if ((anchor !is MethodInsnNode && anchor !is FieldInsnNode) || point.after) {
+                        if (point.after) {
                             OmlLog.error(
                                 "Injection",
-                                "the anchor of WrapOperation must be a call or field access, before the instruction, " +
+                                "the anchor of WrapOperation must be before the operation, " +
+                                    "currently ${AnchorResolver.describe(point)}: ${method.name}",
+                            )
+                            continue
+                        }
+                        if (anchor is TypeInsnNode && anchor.opcode == Opcodes.NEW) {
+                            val edit = PayloadEmitter.emitWrapNewOperation(
+                                payload.owner, payload.method, payload.desc, payload.extras,
+                                instance = false, classNode = classNode, method = method, owner = owner,
+                                newInsn = anchor, locals = locals,
+                            ) ?: continue
+                            if (!insertBlock(method, edit.initInsn, edit.block, after = false, frames)) continue
+                            method.instructions.remove(edit.initInsn)
+                            method.instructions.set(edit.newInsn, InsnNode(Opcodes.ACONST_NULL))
+                            frames.invalidate()
+                            inserted++
+                            continue
+                        }
+                        if (anchor !is MethodInsnNode && anchor !is FieldInsnNode) {
+                            OmlLog.error(
+                                "Injection",
+                                "the anchor of WrapOperation must be a call, field access or NEW, " +
                                     "currently ${AnchorResolver.describe(point)}: ${method.name}",
                             )
                             continue
@@ -576,11 +597,32 @@ class InjectionSpec internal constructor(
                             }
 
                             HandlerKind.WRAP_OPERATION -> {
-                                if ((anchor !is MethodInsnNode && anchor !is FieldInsnNode) || point.after) {
+                                if (point.after) {
                                     OmlLog.error(
                                         "Injection",
-                                        "the anchor of HandlerCall(WRAP_OPERATION) must be a call or field access, " +
-                                            "before the instruction, currently ${AnchorResolver.describe(point)}: ${method.name}",
+                                        "the anchor of HandlerCall(WRAP_OPERATION) must be before the operation, " +
+                                            "currently ${AnchorResolver.describe(point)}: ${method.name}",
+                                    )
+                                    continue
+                                }
+                                if (anchor is TypeInsnNode && anchor.opcode == Opcodes.NEW) {
+                                    val edit = PayloadEmitter.emitWrapNewOperation(
+                                        payload.owner, payload.method, payload.desc, payload.captures,
+                                        instance = true, classNode = classNode, method = method, owner = owner,
+                                        newInsn = anchor, locals = locals,
+                                    ) ?: continue
+                                    if (!insertBlock(method, edit.initInsn, edit.block, after = false, frames)) continue
+                                    method.instructions.remove(edit.initInsn)
+                                    method.instructions.set(edit.newInsn, InsnNode(Opcodes.ACONST_NULL))
+                                    frames.invalidate()
+                                    inserted++
+                                    continue
+                                }
+                                if (anchor !is MethodInsnNode && anchor !is FieldInsnNode) {
+                                    OmlLog.error(
+                                        "Injection",
+                                        "the anchor of HandlerCall(WRAP_OPERATION) must be a call, field access or NEW, " +
+                                            "currently ${AnchorResolver.describe(point)}: ${method.name}",
                                     )
                                     continue
                                 }

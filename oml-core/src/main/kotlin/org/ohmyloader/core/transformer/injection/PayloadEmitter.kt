@@ -1057,6 +1057,146 @@ internal object PayloadEmitter {
         return list
     }
 
+    /** The three edits an instantiation wrap needs: the NEW to neutralize, the `<init>` to replace, the block. */
+    internal class WrapNewEdit(
+        val newInsn: TypeInsnNode,
+        val initInsn: MethodInsnNode,
+        val block: InsnList,
+    )
+
+    /**
+     * **Wraps an instantiation** (MixinExtras `@WrapOperation` targeting `NEW`). The anchor is the `NEW`,
+     * but the handler call must land on the matching `<init>` — the only point where the constructor's
+     * arguments are on the stack. The NEW is neutralized to `ACONST_NULL`, so the two references the
+     * original `NEW; DUP` left behind are ordinary nulls; the block consumes the arguments, calls
+     * `(args…, Operation<ObjectType>)ObjectType`, and uses `DUP_X2` + three `POP`s to keep only the
+     * handler's object. The `Operation` bridge re-emits `NEW; DUP; args; <init>` inside one straight-line
+     * body, so the uninitialized reference never crosses a frame.
+     *
+     * Only the standard `NEW; DUP; args; <init>` shape is accepted; a NEW whose reference is not duped
+     * (or whose `<init>` cannot be paired by depth) is rejected at injection time.
+     */
+    internal fun emitWrapNewOperation(
+        handlerOwner: String,
+        handlerMethod: String,
+        handlerDesc: String,
+        extras: List<DslValue>,
+        instance: Boolean,
+        classNode: ClassNode,
+        method: MethodNode,
+        owner: String,
+        newInsn: TypeInsnNode,
+        locals: AnchorLocals?,
+    ): WrapNewEdit? {
+        val next = nextReal(newInsn)
+        if (next == null || next.opcode != Opcodes.DUP) {
+            OmlLog.error(
+                "Injection",
+                "WrapOperation on NEW requires the standard NEW; DUP; args; <init> shape: ${method.name}",
+            )
+            return null
+        }
+        val init = findInit(newInsn) ?: run {
+            OmlLog.error(
+                "Injection",
+                "WrapOperation on NEW could not pair it with an <init> of ${newInsn.desc}: ${method.name}",
+            )
+            return null
+        }
+        val argTypes = Type.getArgumentTypes(init.desc)
+        val returnType = Type.getObjectType(newInsn.desc)
+        val handlerArgs = Type.getArgumentTypes(handlerDesc)
+        val handlerRet = Type.getReturnType(handlerDesc)
+        val opIndex = argTypes.size
+        if (handlerArgs.size < opIndex + 1 + extras.size) {
+            throw InjectionError(
+                "[injection] the handler of WrapOperation(NEW) gives too few parameters: the constructor has " +
+                    "$opIndex argument(s), then Operation<R>, then ${extras.size} extra(s); the handler declares " +
+                    "${handlerArgs.size} ($handlerDesc)",
+            )
+        }
+        for (i in argTypes.indices) {
+            if (handlerArgs[i] != argTypes[i]) {
+                throw InjectionError(
+                    "[injection] WrapOperation(NEW) constructor argument ${i + 1} type mismatch: expected " +
+                        "${argTypes[i].className}, actual ${handlerArgs[i].className} ($handlerDesc)",
+                )
+            }
+        }
+        if (handlerArgs[opIndex].descriptor != OPERATION_DESC) {
+            throw InjectionError(
+                "[injection] the handler of WrapOperation(NEW) must take $OPERATION_DESC right after the " +
+                    "constructor arguments: actual ${handlerArgs[opIndex].className} ($handlerDesc)",
+            )
+        }
+        if (handlerRet != returnType) {
+            throw InjectionError(
+                "[injection] the handler return type of WrapOperation(NEW) must equal the constructed type: " +
+                    "expected ${returnType.className}, actual ${handlerRet.className} ($handlerDesc)",
+            )
+        }
+        validateArgTypes(handlerDesc, extras, opIndex + 1, method, owner, locals, "WrapOperation(NEW).extras")
+
+        val slots = storeArgs(method, argTypes)
+        val list = InsnList()
+        // The stack here is [null, null, args…] (NEW was neutralized and DUP left the second null).
+        for (i in argTypes.indices.reversed()) {
+            list.add(VarInsnNode(Boxing.storeOpcode(argTypes[i]), slots[i]))
+        }
+        if (instance) list.add(VarInsnNode(Opcodes.ALOAD, 0))
+        for (i in argTypes.indices) {
+            list.add(VarInsnNode(Boxing.loadOpcode(argTypes[i]), slots[i]))
+        }
+        OperationSupport.makeOperation(
+            classNode, list, argTypes, returnType, init,
+            prefix = listOf(TypeInsnNode(Opcodes.NEW, newInsn.desc), InsnNode(Opcodes.DUP)),
+        )
+        if (!emitValues(list, extras, method, locals)) return null
+        list.add(
+            MethodInsnNode(
+                if (instance) Opcodes.INVOKEVIRTUAL else Opcodes.INVOKESTATIC,
+                handlerOwner, handlerMethod, handlerDesc, false,
+            ),
+        )
+        // [null, null, result] → [result]: duplicate the result below the two nulls, then drop them.
+        list.add(InsnNode(Opcodes.DUP_X2))
+        list.add(InsnNode(Opcodes.POP))
+        list.add(InsnNode(Opcodes.POP))
+        list.add(InsnNode(Opcodes.POP))
+        return WrapNewEdit(newInsn, init, list)
+    }
+
+    /** The next executable instruction (skipping labels, line numbers and stack frames). */
+    private fun nextReal(insn: AbstractInsnNode): AbstractInsnNode? {
+        var node = insn.next
+        while (node != null && (node is LabelNode || node is LineNumberNode || node is FrameNode)) {
+            node = node.next
+        }
+        return node
+    }
+
+    /**
+     * The `<init>` paired with [newNode], by the same depth rule the anchor resolver uses: each further
+     * NEW of the same type opens a nesting level, each `<init>` of that type closes one; the one that
+     * closes the initial level is this NEW's constructor.
+     */
+    private fun findInit(newNode: TypeInsnNode): MethodInsnNode? {
+        var depth = 0
+        var node: AbstractInsnNode? = newNode
+        while (node != null) {
+            if (node is TypeInsnNode && node.opcode == Opcodes.NEW && node.desc == newNode.desc) {
+                depth++
+            } else if (node is MethodInsnNode && node.opcode == Opcodes.INVOKESPECIAL &&
+                node.name == "<init>" && node.owner == newNode.desc
+            ) {
+                depth--
+                if (depth == 0) return node
+            }
+            node = node.next
+        }
+        return null
+    }
+
     /**
      * The value-modifying [Payload.HandlerCall] → instance form, delegating to [emitModifyArg].
      *
