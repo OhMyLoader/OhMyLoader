@@ -395,8 +395,8 @@ object HookScanner {
     ) {
         val where = "$mixinClass.${method.name}"
         val shortName = INJECTION_ANNOTATIONS[annotation.desc] ?: return
-        if (annotation.desc != INJECT_DESC && hasSugar(method)) {
-            problems += "[$modId] $where —— @Local/@Share are currently supported on @Inject handlers only"
+        if (annotation.desc == REDIRECT_DESC && hasSugar(method)) {
+            problems += "[$modId] $where —— @Local/@Share are not supported on @Redirect handlers"
             return
         }
 
@@ -439,7 +439,7 @@ object HookScanner {
                 )
                 val mergedAnchor = withSlice(base, null, annotation, slices, where, shortName, problems)
                 parseMergedModify(
-                    method, annotation, mergedAnchor, targetInternal, methodNames, methodDesc,
+                    method, annotation, mergedAnchor, targetInternal, methodNames, methodDesc, mixinClass,
                     modId, mergeInto, handlers, HandlerKind.MODIFY_CONST, rules, problems,
                 )
                 return
@@ -491,7 +491,7 @@ object HookScanner {
             // `mergedInstance` is only computed after that point.
             if (mergeInto != null && !method.isDeclaredStatic()) {
                 parseMergedModify(
-                    method, annotation, anchor, targetInternal, methodNames, methodDesc,
+                    method, annotation, anchor, targetInternal, methodNames, methodDesc, mixinClass,
                     modId, mergeInto, handlers, kind, rules, problems,
                 )
             } else if (isReturnValue) {
@@ -528,7 +528,7 @@ object HookScanner {
             val mergedInstance = mergeInto != null && !method.isDeclaredStatic()
             if (mergedInstance) {
                 parseMergedModify(
-                    method, annotation, varAnchor, targetInternal, methodNames, methodDesc,
+                    method, annotation, varAnchor, targetInternal, methodNames, methodDesc, mixinClass,
                     modId, mergeInto, handlers, HandlerKind.MODIFY_VAR, rules, problems,
                 )
             } else {
@@ -587,7 +587,7 @@ object HookScanner {
 
             MODIFY_ARG_DESC -> if (mergedInstance) {
                 parseMergedModify(
-                    method, annotation, anchor, targetInternal, methodNames, methodDesc,
+                    method, annotation, anchor, targetInternal, methodNames, methodDesc, mixinClass,
                     modId, mergeInto, handlers, HandlerKind.MODIFY_ARG, rules, problems,
                 )
             } else {
@@ -609,7 +609,7 @@ object HookScanner {
 
             MODIFY_ARGS_DESC -> if (mergedInstance) {
                 parseMergedModify(
-                    method, annotation, anchor, targetInternal, methodNames, methodDesc,
+                    method, annotation, anchor, targetInternal, methodNames, methodDesc, mixinClass,
                     modId, mergeInto, handlers, HandlerKind.MODIFY_ARGS, rules, problems,
                 )
             } else {
@@ -630,7 +630,7 @@ object HookScanner {
 
             MODIFY_RECEIVER_DESC -> if (mergedInstance) {
                 parseMergedModify(
-                    method, annotation, anchor, targetInternal, methodNames, methodDesc,
+                    method, annotation, anchor, targetInternal, methodNames, methodDesc, mixinClass,
                     modId, mergeInto, handlers, HandlerKind.MODIFY_RECEIVER, rules, problems,
                 )
             } else {
@@ -747,6 +747,7 @@ object HookScanner {
         targetInternal: String,
         methodNames: List<String>,
         methodDesc: String?,
+        mixinClass: String,
         modId: String,
         mergeInto: String,
         handlers: MutableSet<String>,
@@ -756,10 +757,12 @@ object HookScanner {
     ) {
         val where = "$mergeInto.${method.name}"
         val params = Type.getArgumentTypes(method.desc)
+        val split = trailingSugar(method, mixinClass, where, modId, problems) ?: return
+        val normal = split.normal
         val ret = Type.getReturnType(method.desc)
         // The parameter list holds "value + captures", with at least one (the value) -- the receiver is
-        // supplied by `this` and is not written in
-        if (params.isEmpty()) {
+        // supplied by `this` and is not written in; trailing @Local/@Share are sugar
+        if (normal.isEmpty()) {
             problems += "[$modId] $where —— ${kind.annotationName}'s instance handler must have at least one value parameter:" +
                 " shaped (values…)T, the receiver is provided by this and not written into the parameter list, currently ${method.desc}"
             return
@@ -816,7 +819,7 @@ object HookScanner {
                 owner = mergeInto,
                 method = method.name,
                 desc = handlerDesc,
-                captures = emptyList(),
+                captures = split.bindings,
                 kind = kind,
                 index = handlerIndex,
                 slot = slot,
@@ -834,7 +837,7 @@ object HookScanner {
             // The value param's type must equal the return type (after modification it is put back on the stack) --
             // whether it is actually the target's type is only known at emission time once the anchor
             // instruction / target method is available (see ProducedValue)
-            if (ret == Type.VOID_TYPE || params[0] != ret) {
+            if (ret == Type.VOID_TYPE || normal[0] != ret) {
                 problems += "[$modId] $where —— ${kind.annotationName}'s handler must be shaped (T…)T" +
                     " (T = the value's type, put back on the stack after the change), currently ${method.desc}"
             }
@@ -922,23 +925,7 @@ object HookScanner {
                 problems += "[$modId] $where —— @Local cannot bind the typed self parameter"
                 return
             }
-            for ((param, binding) in sugar) {
-                if (binding is DslValue.RefLocal && binding.index == null && binding.type == null) {
-                    problems += "[$modId] $where —— @Local on a LocalRef parameter (parameter $param) needs " +
-                        "index or type: the parameter type is the ref, not the local"
-                    return
-                }
-                if (binding is DslValue.SharedRef) {
-                    if (binding.id.isEmpty()) {
-                        problems += "[$modId] $where —— @Share needs a non-empty value (the share id)"
-                        return
-                    }
-                    if (originalParams.getOrNull(param)?.descriptor != LOCAL_REF_DESC) {
-                        problems += "[$modId] $where —— @Share parameter $param must be LocalRef<T>"
-                        return
-                    }
-                }
-            }
+            if (!validateSugarBindings(sugar, originalParams, where, modId, problems)) return
         }
         val returnType = Type.getReturnType(method.desc)
         if (returnType != Type.VOID_TYPE) {
@@ -1150,16 +1137,19 @@ object HookScanner {
             problems += "[$modId] $where —— @ModifyArg's @At must be a method call (INVOKE)"
             return
         }
-        val params = Type.getArgumentTypes(method.desc)
-        if (params.size != 1 || Type.getReturnType(method.desc) != params[0]) {
-            problems += "[$modId] $where —— @ModifyArg handler must be shaped (T)T (T is the type of the argument being modified)," +
-                " currently ${method.desc}"
+        val split = trailingSugar(method, mixinClass, where, modId, problems) ?: return
+        val normal = split.normal
+        if (normal.size != 1 || Type.getReturnType(method.desc) != normal[0]) {
+            problems += "[$modId] $where —— @ModifyArg handler must be shaped (T[, sugar…])T " +
+                "(T is the type of the argument being modified), currently ${method.desc}"
             return
         }
         val index = declaredInt(annotation, "index") ?: -1
-        val t = params[0].descriptor
-        val [id, bridgeName, bridgeDesc] = registerModify(
-            modId, mixinClass, method.name, methodNames.first(), t,
+        val t = normal[0].descriptor
+        val [id, bridgeName, bridgeDesc] = registerValueHandler(
+            modId, mixinClass, method.name, methodNames.first(),
+            captureTypes = listOf(t) + split.sugarTypes,
+            returnType = t,
         )
         rules += Rule(
             targetInternal, methodNames, methodDesc, anchor,
@@ -1168,7 +1158,7 @@ object HookScanner {
                 method = bridgeName,
                 desc = bridgeDesc,
                 index = index,
-                extras = listOf(DslValue.IntVal(id)),
+                extras = split.bindings + DslValue.IntVal(id),
             ),
             policy, emptyList(), "ModifyArg",
         )
@@ -1191,14 +1181,17 @@ object HookScanner {
             problems += "[$modId] $where —— @ModifyArgs' @At must be a method call (INVOKE)"
             return
         }
-        val params = Type.getArgumentTypes(method.desc)
-        if (params.size != 1 || params[0].descriptor != ARGS_DESC || Type.getReturnType(method.desc) != Type.VOID_TYPE) {
+        val split = trailingSugar(method, mixinClass, where, modId, problems) ?: return
+        val normal = split.normal
+        if (normal.size != 1 || normal[0].descriptor != ARGS_DESC || Type.getReturnType(method.desc) != Type.VOID_TYPE) {
             problems += "[$modId] $where —— @ModifyArgs handler must be shaped " +
-                "($ARGS_DESC)V, currently ${method.desc}"
+                "($ARGS_DESC[, sugar…])V, currently ${method.desc}"
             return
         }
-        val [id, bridgeName, bridgeDesc] = registerModify(
-            modId, mixinClass, method.name, methodNames.first(), ARGS_DESC, returnVoid = true,
+        val [id, bridgeName, bridgeDesc] = registerValueHandler(
+            modId, mixinClass, method.name, methodNames.first(),
+            captureTypes = listOf(ARGS_DESC) + split.sugarTypes,
+            returnType = "V",
         )
         rules += Rule(
             targetInternal, methodNames, methodDesc, anchor,
@@ -1206,7 +1199,7 @@ object HookScanner {
                 owner = HookRegistry.BRIDGE_CLASS,
                 method = bridgeName,
                 desc = bridgeDesc,
-                extras = listOf(DslValue.IntVal(id)),
+                extras = split.bindings + DslValue.IntVal(id),
             ),
             policy, emptyList(), "ModifyArgs",
         )
@@ -1231,23 +1224,25 @@ object HookScanner {
                 "(FIELD), before the instruction (not INVOKE_ASSIGN / after)"
             return
         }
-        val params = Type.getArgumentTypes(method.desc)
+        val split = trailingSugar(method, mixinClass, where, modId, problems) ?: return
+        val normal = split.normal
         val ret = Type.getReturnType(method.desc)
-        if (params.isEmpty() || ret == Type.VOID_TYPE || params[0] != ret) {
-            problems += "[$modId] $where —— @ModifyReceiver handler must be shaped (ReceiverType[, operands…])ReceiverType " +
+        if (normal.isEmpty() || ret == Type.VOID_TYPE || normal[0] != ret) {
+            problems += "[$modId] $where —— @ModifyReceiver handler must be shaped " +
+                "(ReceiverType[, operands…, sugar…])ReceiverType " +
                 "(the first parameter and the return type are the receiver type), currently ${method.desc}"
             return
         }
-        // The bridge captures are the handler's full value parameter list (receiver + operands); the engine
-        // checks them against the anchor instruction's receiver/operand types at injection time.
+        // The bridge captures are the handler's full value parameter list (receiver + operands + sugar);
+        // the engine checks them against the anchor instruction's types at injection time.
         val id = HookRegistry.register(
             modId = modId,
             mixinClass = mixinClass,
             handlerMethod = method.name,
             targetMethod = methodNames.first(),
             cancelable = false,
-            captureTypes = params.map { it.descriptor },
-            handlerParamCount = params.size,
+            captureTypes = normal.map { it.descriptor } + split.sugarTypes,
+            handlerParamCount = normal.size + split.sugarTypes.size,
             returnType = ret.descriptor,
         )
         val kind = HookRegistry.BridgeKind.MODIFY
@@ -1257,7 +1252,7 @@ object HookScanner {
                 owner = HookRegistry.BRIDGE_CLASS,
                 method = HookRegistry.bridgeMethodName(id, kind),
                 desc = HookRegistry.bridgeDesc(id, kind),
-                extras = listOf(DslValue.IntVal(id)),
+                extras = split.bindings + DslValue.IntVal(id),
             ),
             policy, emptyList(), "ModifyReceiver",
         )
@@ -1290,13 +1285,14 @@ object HookScanner {
                 "(whether the original operation runs), currently ${method.desc}"
             return
         }
-        val params = Type.getArgumentTypes(method.desc)
+        val split = trailingSugar(method, mixinClass, where, modId, problems) ?: return
+        val normal = split.normal
         if (mergeInto != null && !method.isDeclaredStatic()) {
             handlers += "${method.name}${method.desc}"
             rules += Rule(
                 targetInternal, methodNames, methodDesc, anchor,
                 Payload.HandlerCall(
-                    mergeInto, method.name, method.desc, emptyList(),
+                    mergeInto, method.name, method.desc, split.bindings,
                     HandlerVariant.NOTIFY, HandlerKind.WRAP_WITH_CONDITION,
                 ),
                 policy, emptyList(), "WrapWithCondition",
@@ -1309,8 +1305,8 @@ object HookScanner {
             handlerMethod = method.name,
             targetMethod = methodNames.first(),
             cancelable = false,
-            captureTypes = params.map { it.descriptor },
-            handlerParamCount = params.size,
+            captureTypes = normal.map { it.descriptor } + split.sugarTypes,
+            handlerParamCount = normal.size + split.sugarTypes.size,
             returnType = ret.descriptor,
         )
         val kind = HookRegistry.BridgeKind.MODIFY
@@ -1320,7 +1316,7 @@ object HookScanner {
                 owner = HookRegistry.BRIDGE_CLASS,
                 method = HookRegistry.bridgeMethodName(id, kind),
                 desc = HookRegistry.bridgeDesc(id, kind),
-                extras = listOf(DslValue.IntVal(id)),
+                extras = split.bindings + DslValue.IntVal(id),
             ),
             policy, emptyList(), "WrapWithCondition",
         )
@@ -1340,9 +1336,10 @@ object HookScanner {
         rules: MutableList<Rule>,
         problems: MutableList<String>,
     ) {
-        val params = Type.getArgumentTypes(method.desc)
-        if (params.isEmpty() || params.last().descriptor != OPERATION_DESC) {
-            problems += "[$modId] $where —— @WrapMethod handler's last parameter must be " +
+        val split = trailingSugar(method, mixinClass, where, modId, problems) ?: return
+        val normal = split.normal
+        if (normal.isEmpty() || normal.last().descriptor != OPERATION_DESC) {
+            problems += "[$modId] $where —— @WrapMethod handler's last non-sugar parameter must be " +
                 "$OPERATION_DESC (Operation<R>), currently ${method.desc}"
             return
         }
@@ -1350,8 +1347,8 @@ object HookScanner {
         if (methodDesc != null) {
             val targetParams = Type.getArgumentTypes(methodDesc)
             val targetRet = Type.getReturnType(methodDesc)
-            if (params.size != targetParams.size + 1 ||
-                params.dropLast(1).take(targetParams.size) != targetParams.toList()
+            if (normal.size != targetParams.size + 1 ||
+                normal.dropLast(1).take(targetParams.size) != targetParams.toList()
             ) {
                 problems += "[$modId] $where —— @WrapMethod handler must be shaped " +
                     "(params…, Operation<R>)R matching the target descriptor: target $methodDesc, " +
@@ -1369,7 +1366,7 @@ object HookScanner {
             rules += Rule(
                 targetInternal, methodNames, methodDesc, InjectionPoint.Head,
                 Payload.HandlerCall(
-                    mergeInto, method.name, method.desc, emptyList(),
+                    mergeInto, method.name, method.desc, split.bindings,
                     HandlerVariant.NOTIFY, HandlerKind.WRAP_METHOD,
                 ),
                 policy, emptyList(), "WrapMethod",
@@ -1382,8 +1379,8 @@ object HookScanner {
             handlerMethod = method.name,
             targetMethod = methodNames.first(),
             cancelable = false,
-            captureTypes = params.map { it.descriptor },
-            handlerParamCount = params.size,
+            captureTypes = normal.map { it.descriptor } + split.sugarTypes,
+            handlerParamCount = normal.size + split.sugarTypes.size,
             returnType = ret.descriptor,
         )
         val kind = HookRegistry.BridgeKind.MODIFY
@@ -1393,7 +1390,7 @@ object HookScanner {
                 owner = HookRegistry.BRIDGE_CLASS,
                 method = HookRegistry.bridgeMethodName(id, kind),
                 desc = HookRegistry.bridgeDesc(id, kind),
-                extras = listOf(DslValue.IntVal(id)),
+                extras = split.bindings + DslValue.IntVal(id),
             ),
             policy, emptyList(), "WrapMethod",
         )
@@ -1422,9 +1419,10 @@ object HookScanner {
                 "before the instruction"
             return
         }
-        val params = Type.getArgumentTypes(method.desc)
-        if (params.isEmpty() || params.last().descriptor != OPERATION_DESC) {
-            problems += "[$modId] $where —— @WrapOperation handler's last parameter must be " +
+        val split = trailingSugar(method, mixinClass, where, modId, problems) ?: return
+        val normal = split.normal
+        if (normal.isEmpty() || normal.last().descriptor != OPERATION_DESC) {
+            problems += "[$modId] $where —— @WrapOperation handler's last non-sugar parameter must be " +
                 "$OPERATION_DESC (Operation<R>), currently ${method.desc}"
             return
         }
@@ -1434,7 +1432,7 @@ object HookScanner {
             rules += Rule(
                 targetInternal, methodNames, methodDesc, anchor,
                 Payload.HandlerCall(
-                    mergeInto, method.name, method.desc, emptyList(),
+                    mergeInto, method.name, method.desc, split.bindings,
                     HandlerVariant.NOTIFY, HandlerKind.WRAP_OPERATION,
                 ),
                 policy, emptyList(), "WrapOperation",
@@ -1447,8 +1445,8 @@ object HookScanner {
             handlerMethod = method.name,
             targetMethod = methodNames.first(),
             cancelable = false,
-            captureTypes = params.map { it.descriptor },
-            handlerParamCount = params.size,
+            captureTypes = normal.map { it.descriptor } + split.sugarTypes,
+            handlerParamCount = normal.size + split.sugarTypes.size,
             returnType = ret.descriptor,
         )
         val kind = HookRegistry.BridgeKind.MODIFY
@@ -1458,7 +1456,7 @@ object HookScanner {
                 owner = HookRegistry.BRIDGE_CLASS,
                 method = HookRegistry.bridgeMethodName(id, kind),
                 desc = HookRegistry.bridgeDesc(id, kind),
-                extras = listOf(DslValue.IntVal(id)),
+                extras = split.bindings + DslValue.IntVal(id),
             ),
             policy, emptyList(), "WrapOperation",
         )
@@ -1478,10 +1476,11 @@ object HookScanner {
         rules: MutableList<Rule>,
         problems: MutableList<String>,
     ) {
-        val params = Type.getArgumentTypes(method.desc)
-        if (params.size != 1 || Type.getReturnType(method.desc) != params[0]) {
-            problems += "[$modId] $where —— @ModifyConstant handler must be shaped (T)T (T is the constant type)," +
-                " currently ${method.desc}"
+        val split = trailingSugar(method, mixinClass, where, modId, problems) ?: return
+        val normal = split.normal
+        if (normal.size != 1 || Type.getReturnType(method.desc) != normal[0]) {
+            problems += "[$modId] $where —— @ModifyConstant handler must be shaped (T[, sugar…])T " +
+                "(T is the constant type), currently ${method.desc}"
             return
         }
         val constant = annotationValue(annotation, "constant") as? AnnotationNode
@@ -1494,9 +1493,11 @@ object HookScanner {
         )
         // `slice` also applies to ModifyConstant (finding the constant within the window)
         val anchor = withSlice(base, null, annotation, slices, where, "@ModifyConstant", problems)
-        val t = params[0].descriptor
-        val [id, bridgeName, bridgeDesc] = registerModify(
-            modId, mixinClass, method.name, methodNames.first(), t,
+        val t = normal[0].descriptor
+        val [id, bridgeName, bridgeDesc] = registerValueHandler(
+            modId, mixinClass, method.name, methodNames.first(),
+            captureTypes = listOf(t) + split.sugarTypes,
+            returnType = t,
         )
         rules += Rule(
             targetInternal, methodNames, methodDesc, anchor,
@@ -1504,7 +1505,7 @@ object HookScanner {
                 owner = HookRegistry.BRIDGE_CLASS,
                 method = bridgeName,
                 desc = bridgeDesc,
-                extras = listOf(DslValue.IntVal(id)),
+                extras = split.bindings + DslValue.IntVal(id),
             ),
             policy, emptyList(), "ModifyConstant",
         )
@@ -1583,8 +1584,10 @@ object HookScanner {
         problems: MutableList<String>,
     ) {
         val params = Type.getArgumentTypes(method.desc)
+        val split = trailingSugar(method, mixinClass, where, modId, problems) ?: return
+        val normal = split.normal
         val valueType = Type.getReturnType(method.desc).descriptor
-        val captureTypes = params.drop(1).map { it.descriptor }
+        val captureTypes = normal.drop(1).map { it.descriptor }
         val locals = localCaptureOf(annotation)
         // Same rule as @Inject: captures must be declared explicitly; if inconsistent, **do not register this
         // rule** (rather than injecting as-is). The reason for not injecting as-is: an unresolvable capture
@@ -1606,8 +1609,8 @@ object HookScanner {
             handlerMethod = method.name,
             targetMethod = methodNames.first(),
             cancelable = false,
-            // The bridge's param list is exactly "the engine's push order": value first, then captures, then id
-            captureTypes = listOf(valueType) + captureTypes,
+            // The bridge's param list is exactly "the engine's push order": value, captures, sugars, then id
+            captureTypes = listOf(valueType) + captureTypes + split.sugarTypes,
             handlerParamCount = params.size,
             returnType = valueType,
         )
@@ -1622,6 +1625,7 @@ object HookScanner {
                 method = bridgeName,
                 desc = bridgeDesc,
                 extras = captures.map { DslValue.Local(type = it.type, ordinal = it.ordinal, strict = it.strict) } +
+                    split.bindings +
                     DslValue.IntVal(id),
             ),
             policy, captures, "ModifyVariable",
@@ -1664,15 +1668,18 @@ object HookScanner {
         rules: MutableList<Rule>,
         problems: MutableList<String>,
     ) {
-        val params = Type.getArgumentTypes(method.desc)
+        val split = trailingSugar(method, mixinClass, where, modId, problems) ?: return
+        val normal = split.normal
         val ret = Type.getReturnType(method.desc)
-        if (ret == Type.VOID_TYPE || params.size != 1 || params[0] != ret) {
-            problems += "[$modId] $where —— @ModifyReturnValue handler must be shaped (R)R (R is the return type," +
-                " put back on the stack after the change), currently ${method.desc}"
+        if (ret == Type.VOID_TYPE || normal.size != 1 || normal[0] != ret) {
+            problems += "[$modId] $where —— @ModifyReturnValue handler must be shaped (R[, sugar…])R " +
+                "(R is the return type, put back on the stack after the change), currently ${method.desc}"
             return
         }
-        val [id, bridgeName, bridgeDesc] = registerModify(
-            modId, mixinClass, method.name, methodNames.first(), params[0].descriptor,
+        val [id, bridgeName, bridgeDesc] = registerValueHandler(
+            modId, mixinClass, method.name, methodNames.first(),
+            captureTypes = listOf(normal[0].descriptor) + split.sugarTypes,
+            returnType = normal[0].descriptor,
         )
         rules += Rule(
             targetInternal, methodNames, methodDesc, anchor,
@@ -1680,7 +1687,7 @@ object HookScanner {
                 owner = HookRegistry.BRIDGE_CLASS,
                 method = bridgeName,
                 desc = bridgeDesc,
-                extras = listOf(DslValue.IntVal(id)),
+                extras = split.bindings + DslValue.IntVal(id),
             ),
             policy, emptyList(), "ModifyReturnValue",
         )
@@ -1707,15 +1714,19 @@ object HookScanner {
         rules: MutableList<Rule>,
         problems: MutableList<String>,
     ) {
-        val params = Type.getArgumentTypes(method.desc)
+        val split = trailingSugar(method, mixinClass, where, modId, problems) ?: return
+        val normal = split.normal
         val ret = Type.getReturnType(method.desc)
-        if (ret == Type.VOID_TYPE || params.size != 1 || params[0] != ret) {
-            problems += "[$modId] $where —— @ModifyExpressionValue handler must be shaped (T)T (T is the type produced by" +
-                " the expression, put back on the stack after the change), currently ${method.desc}"
+        if (ret == Type.VOID_TYPE || normal.size != 1 || normal[0] != ret) {
+            problems += "[$modId] $where —— @ModifyExpressionValue handler must be shaped (T[, sugar…])T " +
+                "(T is the type produced by the expression, put back on the stack after the change), " +
+                "currently ${method.desc}"
             return
         }
-        val [id, bridgeName, bridgeDesc] = registerModify(
-            modId, mixinClass, method.name, methodNames.first(), params[0].descriptor,
+        val [id, bridgeName, bridgeDesc] = registerValueHandler(
+            modId, mixinClass, method.name, methodNames.first(),
+            captureTypes = listOf(normal[0].descriptor) + split.sugarTypes,
+            returnType = normal[0].descriptor,
         )
         rules += Rule(
             targetInternal, methodNames, methodDesc, anchor,
@@ -1723,10 +1734,36 @@ object HookScanner {
                 owner = HookRegistry.BRIDGE_CLASS,
                 method = bridgeName,
                 desc = bridgeDesc,
-                extras = listOf(DslValue.IntVal(id)),
+                extras = split.bindings + DslValue.IntVal(id),
             ),
             policy, emptyList(), "ModifyExpressionValue",
         )
+    }
+
+    /**
+     * Register a value-rewriting handler with its full bridge capture list (normal value params plus any
+     * trailing sugar params). The bridge appends the handler id, so the descriptor is `(captures, I)return`.
+     */
+    private fun registerValueHandler(
+        modId: String,
+        mixinClass: String,
+        handlerMethod: String,
+        targetMethod: String,
+        captureTypes: List<String>,
+        returnType: String,
+    ): Triple<Int, String, String> {
+        val id = HookRegistry.register(
+            modId = modId,
+            mixinClass = mixinClass,
+            handlerMethod = handlerMethod,
+            targetMethod = targetMethod,
+            cancelable = false,
+            captureTypes = captureTypes,
+            handlerParamCount = captureTypes.size,
+            returnType = returnType,
+        )
+        val kind = HookRegistry.BridgeKind.MODIFY
+        return Triple(id, HookRegistry.bridgeMethodName(id, kind), HookRegistry.bridgeDesc(id, kind))
     }
 
     /** Register a "value-changing" handler (bridge `(T, I)T`) and return its id/method name/descriptor. */
@@ -1967,6 +2004,88 @@ object HookScanner {
         method.visibleParameterAnnotations?.any { list ->
             list?.any { it.desc == LOCAL_DESC || it.desc == SHARE_DESC } == true
         } == true
+
+    /**
+     * A non-@Inject handler split into its normal parameter prefix, the trailing sugar parameters'
+     * descriptors, and the sugar bindings themselves.
+     */
+    private class SugarSplit(
+        val normal: Array<Type>,
+        val sugarTypes: List<String>,
+        val bindings: List<DslValue>,
+    )
+
+    /**
+     * Splits a handler of a value-rewriting injector: `@Local`/`@Share` parameters must form a
+     * contiguous **trailing** suffix, and the prefix is the injector's normal parameter list.
+     */
+    private fun trailingSugar(
+        method: MethodNode,
+        mixinClass: String,
+        where: String,
+        modId: String,
+        problems: MutableList<String>,
+    ): SugarSplit? {
+        val params = Type.getArgumentTypes(method.desc)
+        val annotations = method.visibleParameterAnnotations
+        val annotated = params.indices.filter { i ->
+            annotations?.getOrNull(i)?.any { it.desc == LOCAL_DESC || it.desc == SHARE_DESC } == true
+        }
+        if (annotated.isEmpty()) return SugarSplit(params, emptyList(), emptyList())
+        val first = annotated.first()
+        if (annotated.size != params.size - first || annotated != (first until params.size).toList()) {
+            problems += "[$modId] $where —— @Local/@Share parameters must be a contiguous trailing suffix"
+            return null
+        }
+        val locals = localBindings(method)
+        val shares = shareBindings(method, mixinClass)
+        val bindings = (first until params.size).map { i ->
+            locals[i] ?: shares[i] ?: run {
+                problems += "[$modId] $where —— internal: no sugar binding for parameter $i"
+                return null
+            }
+        }
+        if (!validateSugarBindings((first until params.size).associateWith { bindings[it - first] }, params, where, modId, problems)) {
+            return null
+        }
+        if (bindings.any { it is DslValue.RefLocal }) {
+            problems += "[$modId] $where —— mutable @Local (a LocalRef parameter) is only supported on @Inject handlers"
+            return null
+        }
+        return SugarSplit(
+            params.copyOfRange(0, first),
+            (first until params.size).map { params[it].descriptor },
+            bindings,
+        )
+    }
+
+    /** Shared validation for @Local/@Share bindings (parameter type, discriminator, non-empty share id). */
+    private fun validateSugarBindings(
+        sugar: Map<Int, DslValue>,
+        params: Array<Type>,
+        where: String,
+        modId: String,
+        problems: MutableList<String>,
+    ): Boolean {
+        for ((param, binding) in sugar) {
+            if (binding is DslValue.RefLocal && binding.index == null && binding.type == null) {
+                problems += "[$modId] $where —— @Local on a LocalRef parameter (parameter $param) needs " +
+                    "index or type: the parameter type is the ref, not the local"
+                return false
+            }
+            if (binding is DslValue.SharedRef) {
+                if (binding.id.isEmpty()) {
+                    problems += "[$modId] $where —— @Share needs a non-empty value (the share id)"
+                    return false
+                }
+                if (params.getOrNull(param)?.descriptor != LOCAL_REF_DESC) {
+                    problems += "[$modId] $where —— @Share parameter $param must be LocalRef<T>"
+                    return false
+                }
+            }
+        }
+        return true
+    }
 
     private fun localCaptureOf(annotation: AnnotationNode): LocalCapture {
         val name = AtParser.enumName(annotationValue(annotation, "locals"))

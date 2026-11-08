@@ -278,6 +278,16 @@ class InjectionSpec internal constructor(
         is Payload.CheckCall -> copy(args = args.map { it.rewriteShare(slots) })
         is Payload.CancelableReturn -> copy(bridgeArgs = bridgeArgs.map { it.rewriteShare(slots) })
         is Payload.HandlerCall -> copy(captures = captures.map { it.rewriteShare(slots) })
+        is Payload.TransformReturn -> copy(extras = extras.map { it.rewriteShare(slots) })
+        is Payload.ModifyArg -> copy(extras = extras.map { it.rewriteShare(slots) })
+        is Payload.ModifyArgs -> copy(extras = extras.map { it.rewriteShare(slots) })
+        is Payload.ModifyConstant -> copy(extras = extras.map { it.rewriteShare(slots) })
+        is Payload.ModifyExpressionValue -> copy(extras = extras.map { it.rewriteShare(slots) })
+        is Payload.ModifyReceiver -> copy(extras = extras.map { it.rewriteShare(slots) })
+        is Payload.ModifyVariable -> copy(extras = extras.map { it.rewriteShare(slots) })
+        is Payload.WrapOperation -> copy(extras = extras.map { it.rewriteShare(slots) })
+        is Payload.WrapMethod -> copy(extras = extras.map { it.rewriteShare(slots) })
+        is Payload.WrapWithCondition -> copy(extras = extras.map { it.rewriteShare(slots) })
         else -> this
     }
 

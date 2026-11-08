@@ -393,7 +393,7 @@ class HookScannerTest {
         val parsed = HookScanner.parseMixinClass(
             modifyClass("ModifyArg", "(II)I", at = atNode("INVOKE", target = "Lnet/minecraft/Foo;bar(I)V")), "m",
         )
-        assertTrue(parsed.problems.single().contains("must be shaped (T)T"), parsed.problems.toString())
+        assertTrue(parsed.problems.single().contains("must be shaped (T[, sugar…])T"), parsed.problems.toString())
     }
 
     @Test
@@ -1209,9 +1209,9 @@ class HookScannerTest {
     }
 
     @Test
-    fun `local sugar is rejected on a non-inject injector`() {
+    fun `local sugar is rejected on a redirect handler`() {
         newBridge()
-        val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyArg;").apply {
+        val redirect = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Redirect;").apply {
             values = mutableListOf<Any?>(
                 "method", "runTick",
                 "at", atNode("INVOKE", target = "Lnet/minecraft/client/Minecraft;runTick(Z)V"),
@@ -1222,11 +1222,11 @@ class HookScannerTest {
         }
         val method = MethodNode(Opcodes.ACC_PUBLIC, "h", "(I)I", null, null).apply {
             instructions.add(InsnNode(Opcodes.RETURN))
-            visibleAnnotations = listOf(modify)
+            visibleAnnotations = listOf(redirect)
             visibleParameterAnnotations = arrayOf(mutableListOf(local))
         }
         val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
-        assertTrue(parsed.problems.any { it.contains("@Inject handlers only") }, parsed.problems.toString())
+        assertTrue(parsed.problems.any { it.contains("not supported on @Redirect") }, parsed.problems.toString())
         assertEquals(0, parsed.rules.size)
     }
 
@@ -1335,6 +1335,72 @@ class HookScannerTest {
         val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
         assertTrue(parsed.problems.any { it.contains("must be LocalRef") }, parsed.problems.toString())
         assertEquals(0, parsed.rules.size)
+    }
+
+    @Test
+    fun `local sugar trails a ModifyArg handler`() {
+        newBridge()
+        val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyArg;").apply {
+            values = mutableListOf<Any?>(
+                "method", "runTick",
+                "at", atNode("INVOKE", target = "Lnet/minecraft/client/Minecraft;runTick(Z)V"),
+            )
+        }
+        val local = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Local;").apply {
+            values = mutableListOf<Any?>("index", 1)
+        }
+        val method = MethodNode(Opcodes.ACC_PUBLIC, "h", "(II)I", null, null).apply {
+            instructions.add(InsnNode(Opcodes.RETURN))
+            visibleAnnotations = listOf(modify)
+            visibleParameterAnnotations = arrayOf(mutableListOf(), mutableListOf(local))
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        assertEquals(1, parsed.rules.size)
+        val payload = parsed.rules[0].payload as Payload.ModifyArg
+        val bound = payload.extras[0] as DslValue.Local
+        assertEquals(1, bound.index)
+        assertEquals("I", bound.type)
+        val handler = HookRegistry.handler(1)!!
+        assertEquals(listOf("I", "I"), handler.captureTypes)
+        assertEquals(2, handler.handlerParamCount)
+    }
+
+    @Test
+    fun `share sugar trails a WrapOperation handler`() {
+        newBridge()
+        val wrap = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/WrapOperation;").apply {
+            values = mutableListOf<Any?>(
+                "method", "runTick",
+                "at", atNode("INVOKE", target = "Lnet/minecraft/client/Minecraft;runTick(Z)V"),
+            )
+        }
+        val share = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Share;").apply {
+            values = mutableListOf<Any?>("value", "s")
+        }
+        val method = MethodNode(
+            Opcodes.ACC_PUBLIC,
+            "h",
+            "(ILorg/ohmyloader/api/hook/Operation;Lorg/ohmyloader/api/hook/LocalRef;)I",
+            null,
+            null,
+        ).apply {
+            instructions.add(InsnNode(Opcodes.RETURN))
+            visibleAnnotations = listOf(wrap)
+            visibleParameterAnnotations = arrayOf(mutableListOf(), mutableListOf(), mutableListOf(share))
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        assertEquals(1, parsed.rules.size)
+        val payload = parsed.rules[0].payload as Payload.WrapOperation
+        val bound = payload.extras[0] as DslValue.SharedRef
+        assertEquals("s", bound.id)
+        val handler = HookRegistry.handler(1)!!
+        assertEquals(
+            listOf("I", "Lorg/ohmyloader/api/hook/Operation;", "Lorg/ohmyloader/api/hook/LocalRef;"),
+            handler.captureTypes,
+        )
+        assertEquals(3, handler.handlerParamCount)
     }
 
     // ---------- fixtures ----------
