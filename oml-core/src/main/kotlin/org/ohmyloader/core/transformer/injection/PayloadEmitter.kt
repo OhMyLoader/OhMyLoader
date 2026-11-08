@@ -55,8 +55,10 @@ internal object PayloadEmitter {
             val list = InsnList()
             // This anchor is a return instruction, so the stack top is already the return value R: extras push on
             // top of R, so the argument order is exactly (R, extras...)
-            if (!emitValues(list, payload.extras, method, locals)) return null
+            val writeBacks = mutableListOf<SugarWriteBack>()
+            if (!emitValues(list, payload.extras, method, locals, writeBacks)) return null
             list.add(MethodInsnNode(Opcodes.INVOKESTATIC, payload.owner, payload.method, payload.desc, false))
+            emitWriteBacks(list, writeBacks)
             list
         }
 
@@ -205,13 +207,15 @@ internal object PayloadEmitter {
             list.add(VarInsnNode(Opcodes.ALOAD, 0))
             list.add(VarInsnNode(Boxing.loadOpcode(value), slot))
         }
-        if (!emitValues(list, extras, method, locals)) return null
+        val writeBacks = mutableListOf<SugarWriteBack>()
+        if (!emitValues(list, extras, method, locals, writeBacks)) return null
         list.add(
             MethodInsnNode(
                 if (instance) Opcodes.INVOKEVIRTUAL else Opcodes.INVOKESTATIC,
                 handlerOwner, handlerMethod, handlerDesc, false,
             ),
         )
+        emitWriteBacks(list, writeBacks)
         return list
     }
 
@@ -641,13 +645,15 @@ internal object PayloadEmitter {
                 list.add(VarInsnNode(Boxing.loadOpcode(targetArgs[i]), slots[i]))
             }
         }
-        for (value in extras) emitValue(list, value, method, locals)
+        val writeBacks = mutableListOf<SugarWriteBack>()
+        for (value in extras) emitValue(list, value, method, locals, writeBacks)
         list.add(
             MethodInsnNode(
                 if (instance) Opcodes.INVOKEVIRTUAL else Opcodes.INVOKESTATIC,
                 handlerOwner, handlerMethod, handlerDesc, false,
             ),
         )
+        emitWriteBacks(list, writeBacks)
         list.add(VarInsnNode(Boxing.storeOpcode(targetArgs[index]), slots[index]))
 
         for (i in targetArgs.indices) {
@@ -696,8 +702,10 @@ internal object PayloadEmitter {
         for (i in targetArgs.indices) {
             list.add(VarInsnNode(Boxing.loadOpcode(targetArgs[i]), slots[i]))
         }
-        for (value in extras) emitValue(list, value, method, locals)
+        val writeBacks = mutableListOf<SugarWriteBack>()
+        for (value in extras) emitValue(list, value, method, locals, writeBacks)
         list.add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, handlerOwner, handlerMethod, handlerDesc, false))
+        emitWriteBacks(list, writeBacks)
         return list
     }
 
@@ -801,13 +809,15 @@ internal object PayloadEmitter {
         for (i in operandTypes.indices) {
             list.add(VarInsnNode(Boxing.loadOpcode(operandTypes[i]), slots[i]))
         }
-        if (!emitValues(list, extras, method, locals)) return null
+        val writeBacks = mutableListOf<SugarWriteBack>()
+        if (!emitValues(list, extras, method, locals, writeBacks)) return null
         list.add(
             MethodInsnNode(
                 if (instance) Opcodes.INVOKEVIRTUAL else Opcodes.INVOKESTATIC,
                 handlerOwner, handlerMethod, handlerDesc, false,
             ),
         )
+        emitWriteBacks(list, writeBacks)
         // The handler returned the new receiver; re-seat it beneath the unchanged operands.
         list.add(VarInsnNode(Opcodes.ASTORE, receiverSlot))
         list.add(VarInsnNode(Opcodes.ALOAD, receiverSlot))
@@ -931,13 +941,15 @@ internal object PayloadEmitter {
         for (i in valueTypes.indices) {
             list.add(VarInsnNode(Boxing.loadOpcode(valueTypes[i]), slots[i]))
         }
-        if (!emitValues(list, extras, method, locals)) return null
+        val writeBacks = mutableListOf<SugarWriteBack>()
+        if (!emitValues(list, extras, method, locals, writeBacks)) return null
         list.add(
             MethodInsnNode(
                 if (instance) Opcodes.INVOKEVIRTUAL else Opcodes.INVOKESTATIC,
                 handlerOwner, handlerMethod, handlerDesc, false,
             ),
         )
+        emitWriteBacks(list, writeBacks)
         val skip = LabelNode()
         list.add(JumpInsnNode(Opcodes.IFEQ, skip))
         // True: reload the operands and let the original instruction run.
@@ -1164,13 +1176,15 @@ internal object PayloadEmitter {
             list.add(VarInsnNode(Boxing.loadOpcode(argTypes[i]), slots[i]))
         }
         OperationSupport.makeOperation(classNode, list, argTypes, returnType, anchor)
-        if (!emitValues(list, extras, method, locals)) return null
+        val writeBacks = mutableListOf<SugarWriteBack>()
+        if (!emitValues(list, extras, method, locals, writeBacks)) return null
         list.add(
             MethodInsnNode(
                 if (instance) Opcodes.INVOKEVIRTUAL else Opcodes.INVOKESTATIC,
                 handlerOwner, handlerMethod, handlerDesc, false,
             ),
         )
+        emitWriteBacks(list, writeBacks)
         return list
     }
 
@@ -1316,13 +1330,15 @@ internal object PayloadEmitter {
             classNode, list, argTypes, returnType, init,
             prefix = listOf(TypeInsnNode(Opcodes.NEW, newInsn.desc), InsnNode(Opcodes.DUP)),
         )
-        if (!emitValues(list, extras, method, locals)) return null
+        val writeBacks = mutableListOf<SugarWriteBack>()
+        if (!emitValues(list, extras, method, locals, writeBacks)) return null
         list.add(
             MethodInsnNode(
                 if (instance) Opcodes.INVOKEVIRTUAL else Opcodes.INVOKESTATIC,
                 handlerOwner, handlerMethod, handlerDesc, false,
             ),
         )
+        emitWriteBacks(list, writeBacks)
         // [null, null, result] → [result]: duplicate the result below the two nulls, then drop them.
         list.add(InsnNode(Opcodes.DUP_X2))
         list.add(InsnNode(Opcodes.POP))
@@ -1550,13 +1566,15 @@ internal object PayloadEmitter {
         // not in the parameter list — so it is followed directly by that `Object[]`.
         if (instance) list.add(VarInsnNode(Opcodes.ALOAD, 0))
         list.add(VarInsnNode(Opcodes.ALOAD, argsSlot))
-        for (value in extras) emitValue(list, value, method, locals)
+        val writeBacks = mutableListOf<SugarWriteBack>()
+        for (value in extras) emitValue(list, value, method, locals, writeBacks)
         list.add(
             MethodInsnNode(
                 if (instance) Opcodes.INVOKEVIRTUAL else Opcodes.INVOKESTATIC,
                 handlerOwner, handlerMethod, handlerDesc, false,
             ),
         )
+        emitWriteBacks(list, writeBacks)
 
         // Read back: the values are in that `Object[]`, unbox each and return it to the temp slot
         for (i in targetArgs.indices) {
@@ -1693,13 +1711,15 @@ internal object PayloadEmitter {
         val list = InsnList()
         if (instance) list.add(VarInsnNode(Opcodes.ALOAD, 0)) // receiver (target instance)
         list.add(VarInsnNode(Boxing.loadOpcode(type), slot))
-        if (!emitValues(list, extras, method, locals)) return null
+        val writeBacks = mutableListOf<SugarWriteBack>()
+        if (!emitValues(list, extras, method, locals, writeBacks)) return null
         list.add(
             MethodInsnNode(
                 if (instance) Opcodes.INVOKEVIRTUAL else Opcodes.INVOKESTATIC,
                 handlerOwner, handlerMethod, handlerDesc, false,
             ),
         )
+        emitWriteBacks(list, writeBacks)
         list.add(VarInsnNode(Boxing.storeOpcode(type), slot))
         return list
     }

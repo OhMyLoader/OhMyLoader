@@ -128,7 +128,8 @@ internal object MethodWrapper {
         OperationSupport.makeMethodOperation(
             classNode, body, argTypes, returnType, movedName, method.desc, isStatic,
         )
-        if (!PayloadEmitter.emitValues(body, extras, method, null)) {
+        val writeBacks = mutableListOf<PayloadEmitter.SugarWriteBack>()
+        if (!PayloadEmitter.emitValues(body, extras, method, null, writeBacks)) {
             throw InjectionError(
                 "[injection] the extras of WrapMethod could not be emitted at method entry: ${method.name}${method.desc}",
             )
@@ -142,6 +143,7 @@ internal object MethodWrapper {
                 false,
             ),
         )
+        PayloadEmitter.emitWriteBacks(body, writeBacks)
         body.add(
             if (returnType == Type.VOID_TYPE) InsnNode(Opcodes.RETURN)
             else InsnNode(Boxing.returnOpcode(returnType)),

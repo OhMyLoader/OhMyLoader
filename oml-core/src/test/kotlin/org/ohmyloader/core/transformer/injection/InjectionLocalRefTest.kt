@@ -5,6 +5,7 @@ import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.ClassNode
 import org.objectweb.asm.tree.InsnList
 import org.objectweb.asm.tree.InsnNode
+import org.objectweb.asm.tree.IntInsnNode
 import org.objectweb.asm.tree.MethodInsnNode
 import org.objectweb.asm.tree.MethodNode
 import org.objectweb.asm.tree.VarInsnNode
@@ -110,6 +111,33 @@ class InjectionLocalRefTest {
         assertEquals(11, result)
     }
 
+    @Test
+    fun `mutable local sugar works on a ModifyArg handler`() {
+        LocalRefSink.clear()
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("touch", desc = "(I)I") {
+                        beforeCall(owner = LocalRefSink.OWNER, name = "record", desc = "(I)V") {
+                            modifyArg(
+                                LocalRefHandlers.OWNER, "bumpArg",
+                                "(ILorg/ohmyloader/api/hook/LocalRef;)I",
+                                index = 0,
+                                extras = listOf(DslValue.RefLocal(index = 1, type = "I")),
+                            )
+                        }
+                    }
+                }
+            },
+            targetWithModifyArgLocal(),
+        )
+
+        val result = invoke(clazz, "touch", 5)
+
+        assertEquals(listOf(7), LocalRefSink.calls, "the original call still sees its argument")
+        assertEquals(99, result, "the handler's ref value is written back to the local")
+    }
+
     // ---------- fixtures ----------
 
     private fun classNode(vararg methods: MethodNode): ClassNode =
@@ -136,6 +164,18 @@ class InjectionLocalRefTest {
             add(InsnNode(Opcodes.IMUL))
             add(VarInsnNode(Opcodes.ISTORE, 1))
             add(VarInsnNode(Opcodes.ILOAD, 1))
+            add(MethodInsnNode(Opcodes.INVOKESTATIC, LocalRefSink.OWNER, "record", "(I)V", false))
+            add(VarInsnNode(Opcodes.ILOAD, 1))
+            add(InsnNode(Opcodes.IRETURN))
+        },
+    )
+
+    /** `static int touch(int seed) { int x = seed; LocalRefSink.record(7); return x; }` */
+    private fun targetWithModifyArgLocal(): ClassNode = classNode(
+        methodNode("touch", "(I)I") {
+            add(VarInsnNode(Opcodes.ILOAD, 0))
+            add(VarInsnNode(Opcodes.ISTORE, 1))
+            add(IntInsnNode(Opcodes.BIPUSH, 7))
             add(MethodInsnNode(Opcodes.INVOKESTATIC, LocalRefSink.OWNER, "record", "(I)V", false))
             add(VarInsnNode(Opcodes.ILOAD, 1))
             add(InsnNode(Opcodes.IRETURN))
@@ -184,6 +224,12 @@ class InjectionLocalRefTest {
         @JvmStatic
         fun bumpInt(ref: LocalIntRef) {
             ref.value += 1
+        }
+
+        @JvmStatic
+        fun bumpArg(value: Int, ref: LocalRef<Int>): Int {
+            ref.value = 99
+            return value
         }
     }
 }

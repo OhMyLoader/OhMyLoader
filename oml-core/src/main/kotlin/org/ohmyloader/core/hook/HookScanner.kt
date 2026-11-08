@@ -2056,10 +2056,6 @@ object HookScanner {
         if (!validateSugarBindings((first until params.size).associateWith { bindings[it - first] }, params, where, modId, problems)) {
             return null
         }
-        if (bindings.any { it is DslValue.RefLocal }) {
-            problems += "[$modId] $where —— mutable @Local (a LocalRef parameter) is only supported on @Inject handlers"
-            return null
-        }
         return SugarSplit(
             params.copyOfRange(0, first),
             (first until params.size).map { params[it].descriptor },
