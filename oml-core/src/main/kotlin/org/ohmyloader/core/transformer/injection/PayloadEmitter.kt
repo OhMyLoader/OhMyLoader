@@ -1055,8 +1055,69 @@ internal object PayloadEmitter {
                 }
             }
 
+            is TypeInsnNode -> when (anchor.opcode) {
+                Opcodes.CHECKCAST -> {
+                    argTypes = arrayOf(Type.getObjectType("java/lang/Object"))
+                    returnType = typeOfDescriptor(anchor.desc)
+                }
+
+                Opcodes.INSTANCEOF -> {
+                    argTypes = arrayOf(Type.getObjectType("java/lang/Object"))
+                    returnType = Type.BOOLEAN_TYPE
+                }
+
+                Opcodes.ANEWARRAY -> {
+                    argTypes = arrayOf(Type.INT_TYPE)
+                    returnType = arrayTypeForElement(anchor.desc)
+                }
+
+                else -> {
+                    OmlLog.error(
+                        "Injection",
+                        "WrapOperation does not support ${anchor.opcode} on ${anchor.desc}: ${method.name}",
+                    )
+                    return null
+                }
+            }
+
+            is InsnNode -> {
+                val load = arrayLoad(anchor.opcode)
+                val store = arrayStore(anchor.opcode)
+                when {
+                    load != null -> {
+                        argTypes = arrayOf(load.array, Type.INT_TYPE)
+                        returnType = load.element
+                    }
+
+                    store != null -> {
+                        argTypes = arrayOf(store.array, Type.INT_TYPE, store.element)
+                        returnType = Type.VOID_TYPE
+                    }
+
+                    else -> {
+                        OmlLog.error("Injection", "WrapOperation does not support opcode ${anchor.opcode}: ${method.name}")
+                        return null
+                    }
+                }
+            }
+
+            is IntInsnNode -> {
+                val array = if (anchor.opcode == Opcodes.NEWARRAY) arrayTypeForAtype(anchor.operand) else null
+                if (array == null) {
+                    OmlLog.error("Injection", "WrapOperation does not support ${anchor.opcode}: ${method.name}")
+                    return null
+                }
+                argTypes = arrayOf(Type.INT_TYPE)
+                returnType = array
+            }
+
+            is MultiANewArrayInsnNode -> {
+                argTypes = Array(anchor.dims) { Type.INT_TYPE }
+                returnType = Type.getType(anchor.desc)
+            }
+
             else -> {
-                OmlLog.error("Injection", "WrapOperation's anchor must be a call or field access: ${method.name}")
+                OmlLog.error("Injection", "WrapOperation's anchor must be a call, field access, type check or array instruction: ${method.name}")
                 return null
             }
         }
@@ -1111,6 +1172,54 @@ internal object PayloadEmitter {
             ),
         )
         return list
+    }
+
+    /** An array load/store's stack types: the array and its element. */
+    private data class ArrayOperation(val array: Type, val element: Type)
+
+    private fun arrayLoad(opcode: Int): ArrayOperation? = when (opcode) {
+        Opcodes.IALOAD -> ArrayOperation(Type.getType("[I"), Type.INT_TYPE)
+        Opcodes.LALOAD -> ArrayOperation(Type.getType("[J"), Type.LONG_TYPE)
+        Opcodes.FALOAD -> ArrayOperation(Type.getType("[F"), Type.FLOAT_TYPE)
+        Opcodes.DALOAD -> ArrayOperation(Type.getType("[D"), Type.DOUBLE_TYPE)
+        Opcodes.AALOAD -> ArrayOperation(Type.getType("[Ljava/lang/Object;"), Type.getObjectType("java/lang/Object"))
+        Opcodes.BALOAD -> ArrayOperation(Type.getType("[B"), Type.BYTE_TYPE)
+        Opcodes.CALOAD -> ArrayOperation(Type.getType("[C"), Type.CHAR_TYPE)
+        Opcodes.SALOAD -> ArrayOperation(Type.getType("[S"), Type.SHORT_TYPE)
+        else -> null
+    }
+
+    private fun arrayStore(opcode: Int): ArrayOperation? = when (opcode) {
+        Opcodes.IASTORE -> ArrayOperation(Type.getType("[I"), Type.INT_TYPE)
+        Opcodes.LASTORE -> ArrayOperation(Type.getType("[J"), Type.LONG_TYPE)
+        Opcodes.FASTORE -> ArrayOperation(Type.getType("[F"), Type.FLOAT_TYPE)
+        Opcodes.DASTORE -> ArrayOperation(Type.getType("[D"), Type.DOUBLE_TYPE)
+        Opcodes.AASTORE -> ArrayOperation(Type.getType("[Ljava/lang/Object;"), Type.getObjectType("java/lang/Object"))
+        Opcodes.BASTORE -> ArrayOperation(Type.getType("[B"), Type.BYTE_TYPE)
+        Opcodes.CASTORE -> ArrayOperation(Type.getType("[C"), Type.CHAR_TYPE)
+        Opcodes.SASTORE -> ArrayOperation(Type.getType("[S"), Type.SHORT_TYPE)
+        else -> null
+    }
+
+    /** A `TypeInsnNode.desc` (internal name or array descriptor) as a [Type]. */
+    private fun typeOfDescriptor(desc: String): Type =
+        if (desc.startsWith("[")) Type.getType(desc) else Type.getObjectType(desc)
+
+    /** `ANEWARRAY`'s element internal name → the created array type. */
+    private fun arrayTypeForElement(element: String): Type =
+        Type.getType("[${if (element.startsWith("[")) element else "L$element;"}")
+
+    /** `NEWARRAY`'s `T_*` code → the created array type. */
+    private fun arrayTypeForAtype(atype: Int): Type? = when (atype) {
+        4 -> Type.getType("[Z")
+        5 -> Type.getType("[C")
+        6 -> Type.getType("[F")
+        7 -> Type.getType("[D")
+        8 -> Type.getType("[B")
+        9 -> Type.getType("[S")
+        10 -> Type.getType("[I")
+        11 -> Type.getType("[J")
+        else -> null
     }
 
     /** The three edits an instantiation wrap needs: the NEW to neutralize, the `<init>` to replace, the block. */

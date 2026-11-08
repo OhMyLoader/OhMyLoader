@@ -302,6 +302,11 @@ class MethodRuleBuilder @PublishedApi internal constructor(
         points += anchor to payload
     }
 
+    /** Anchor + payload block, for anchors without a dedicated builder method (type checks, arrays). */
+    fun point(anchor: InjectionPoint, block: PayloadBuilder.() -> Unit) {
+        points += anchor to payloadOf(block)
+    }
+
     /** Before the first instruction of the method body (aligned with Mixin `HEAD`). */
     fun atHead(block: PayloadBuilder.() -> Unit) {
         points += at(InjectionPoint.Head) to payloadOf(block)
@@ -763,6 +768,23 @@ object Anchor {
 
     fun newInstance(owner: String? = null, desc: String? = null, ordinal: Int? = null): InjectionPoint =
         InjectionPoint.NewInstance(owner, desc, ordinal)
+
+    /** A `CHECKCAST` / `INSTANCEOF` instruction; [desc] is the internal name or array descriptor. */
+    fun typeCheck(opcode: Int, desc: String? = null, ordinal: Int? = null): InjectionPoint =
+        InjectionPoint.TypeCheck(opcode, desc, ordinal)
+
+    /** An array load/store; [opcode] pins the exact `xALOAD`/`xASTORE`, null = any. */
+    fun arrayAccess(opcode: Int? = null, ordinal: Int? = null): InjectionPoint =
+        InjectionPoint.ArrayAccess(opcode, ordinal)
+
+    /** Array creation; see [InjectionPoint.ArrayCreate]. */
+    fun arrayCreate(
+        opcode: Int,
+        atype: Int = -1,
+        desc: String? = null,
+        dims: Int = 0,
+        ordinal: Int? = null,
+    ): InjectionPoint = InjectionPoint.ArrayCreate(opcode, atype, desc, dims, ordinal)
 
     fun constant(value: Any?, ordinal: Int? = null): InjectionPoint = InjectionPoint.Constant(value, ordinal)
 

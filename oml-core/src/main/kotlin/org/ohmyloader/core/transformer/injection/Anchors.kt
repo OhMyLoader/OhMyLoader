@@ -104,6 +104,12 @@ internal object AnchorResolver {
 
         is InjectionPoint.NewInstance -> newInstances(method, point)
 
+        is InjectionPoint.TypeCheck -> typeChecks(method, point)
+
+        is InjectionPoint.ArrayAccess -> arrayAccesses(method, point)
+
+        is InjectionPoint.ArrayCreate -> arrayCreations(method, point)
+
         is InjectionPoint.Constant -> constants(method, point)
 
         is InjectionPoint.Store -> varAccesses(
@@ -194,6 +200,9 @@ internal object AnchorResolver {
         is InjectionPoint.Call -> point.ordinal
         is InjectionPoint.FieldAccess -> point.ordinal
         is InjectionPoint.NewInstance -> point.ordinal
+        is InjectionPoint.TypeCheck -> point.ordinal
+        is InjectionPoint.ArrayAccess -> point.ordinal
+        is InjectionPoint.ArrayCreate -> point.ordinal
         is InjectionPoint.Constant -> point.ordinal
         is InjectionPoint.Store -> point.ordinal
         is InjectionPoint.Load -> point.ordinal
@@ -281,6 +290,35 @@ internal object AnchorResolver {
         // matching Mixin's implementation (its ordinal also accumulates over candidates)
         return news
     }
+
+    private fun typeChecks(method: MethodNode, point: InjectionPoint.TypeCheck): List<AbstractInsnNode> =
+        method.instructions.toArray().filterIsInstance<TypeInsnNode>().filter { node ->
+            node.opcode == point.opcode && (point.desc == null || node.desc == point.desc)
+        }
+
+    private fun arrayAccesses(method: MethodNode, point: InjectionPoint.ArrayAccess): List<AbstractInsnNode> =
+        method.instructions.toArray().filter { node ->
+            val isArrayAccess = node.opcode in Opcodes.IALOAD..Opcodes.SALOAD ||
+                node.opcode in Opcodes.IASTORE..Opcodes.SASTORE
+            isArrayAccess && (point.opcode == null || node.opcode == point.opcode)
+        }
+
+    private fun arrayCreations(method: MethodNode, point: InjectionPoint.ArrayCreate): List<AbstractInsnNode> =
+        method.instructions.toArray().filter { node ->
+            when (point.opcode) {
+                Opcodes.NEWARRAY -> node is IntInsnNode && node.opcode == Opcodes.NEWARRAY &&
+                    (point.atype < 0 || node.operand == point.atype)
+
+                Opcodes.ANEWARRAY -> node is TypeInsnNode && node.opcode == Opcodes.ANEWARRAY &&
+                    (point.desc == null || node.desc == point.desc)
+
+                Opcodes.MULTIANEWARRAY -> node is MultiANewArrayInsnNode &&
+                    (point.desc == null || node.desc == point.desc) &&
+                    (point.dims <= 0 || node.dims == point.dims)
+
+                else -> false
+            }
+        }
 
     /**
      * From the `NEW` at [newIndex], pairs by depth and checks whether its `<init>` matches.
@@ -488,6 +526,20 @@ internal object AnchorResolver {
 
         is InjectionPoint.Constant -> "CONSTANT(${point.value ?: "null"})" +
             (point.ordinal?.let { "[$it]" } ?: "")
+
+        is InjectionPoint.TypeCheck ->
+            (if (point.opcode == Opcodes.CHECKCAST) "CHECKCAST" else "INSTANCEOF") +
+                "(${point.desc ?: "any"})" + (point.ordinal?.let { "[$it]" } ?: "")
+
+        is InjectionPoint.ArrayAccess -> "ARRAY(${point.opcode ?: "any"})" +
+            (point.ordinal?.let { "[$it]" } ?: "")
+
+        is InjectionPoint.ArrayCreate -> when (point.opcode) {
+            Opcodes.NEWARRAY -> "NEWARRAY(atype=${point.atype})"
+            Opcodes.ANEWARRAY -> "ANEWARRAY(${point.desc ?: "any"})"
+            Opcodes.MULTIANEWARRAY -> "MULTIANEWARRAY(${point.desc ?: "any"}, dims=${point.dims})"
+            else -> "ARRAY_CREATE(${point.opcode})"
+        } + (point.ordinal?.let { "[$it]" } ?: "")
 
         is InjectionPoint.Store -> varAnchor(
             "STORE",

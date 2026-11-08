@@ -100,6 +100,21 @@ internal object AtParser {
                 InjectionPoint.NewInstance(t.owner, t.desc, ordinal)
             }
 
+            "CHECKCAST" -> InjectionPoint.TypeCheck(Opcodes.CHECKCAST, typeCheckDesc(target), ordinal)
+            "INSTANCEOF" -> InjectionPoint.TypeCheck(Opcodes.INSTANCEOF, typeCheckDesc(target), ordinal)
+
+            "ARRAY_LOAD" -> InjectionPoint.ArrayAccess(
+                opcode = opcode?.takeIf { it in Opcodes.IALOAD..Opcodes.SALOAD },
+                ordinal = ordinal,
+            )
+
+            "ARRAY_STORE" -> InjectionPoint.ArrayAccess(
+                opcode = opcode?.takeIf { it in Opcodes.IASTORE..Opcodes.SASTORE },
+                ordinal = ordinal,
+            )
+
+            "NEW_ARRAY" -> arrayCreate(target, dimsFromArgs(node), ordinal)
+
             "CONSTANT" -> {
                 // The constant value is written in `args` (same as Mixin); when absent, "any constant".
                 val constant = constantFromArgs(node)
@@ -119,8 +134,57 @@ internal object AtParser {
     /** Whether the `@At` value is supported by this front-end (for diagnostics). */
     val SUPPORTED = listOf(
         "HEAD", "CTOR_HEAD", "RETURN", "TAIL", "INVOKE", "INVOKE_ASSIGN", "FIELD", "NEW", "CONSTANT",
-        "STORE", "LOAD",
+        "STORE", "LOAD", "CHECKCAST", "INSTANCEOF", "ARRAY_LOAD", "ARRAY_STORE", "NEW_ARRAY",
     )
+
+    /** `Lfoo;` → `foo`, an array descriptor stays as-is, blank = any. */
+    private fun typeCheckDesc(target: String): String? {
+        if (target.isBlank()) return null
+        return if (target.startsWith("L") && target.endsWith(";")) target.substring(1, target.length - 1) else target
+    }
+
+    /** `NEW_ARRAY`'s target is the resulting array descriptor; `[[…` needs `args = ["dims=n"]`. */
+    private fun arrayCreate(target: String, dims: Int, ordinal: Int?): InjectionPoint? {
+        if (target.isBlank()) return null
+        if (target.startsWith("[[")) {
+            return InjectionPoint.ArrayCreate(
+                Opcodes.MULTIANEWARRAY, desc = target, dims = dims, ordinal = ordinal,
+            )
+        }
+        if (target.startsWith("[L") && target.endsWith(";")) {
+            return InjectionPoint.ArrayCreate(
+                Opcodes.ANEWARRAY, desc = target.substring(2, target.length - 1), ordinal = ordinal,
+            )
+        }
+        if (target.length == 2 && target[0] == '[') {
+            val atype = when (target[1]) {
+                'Z' -> 4
+                'C' -> 5
+                'F' -> 6
+                'D' -> 7
+                'B' -> 8
+                'S' -> 9
+                'I' -> 10
+                'J' -> 11
+                else -> return null
+            }
+            return InjectionPoint.ArrayCreate(Opcodes.NEWARRAY, atype = atype, ordinal = ordinal)
+        }
+        return null
+    }
+
+    /** `args = ["dims=2"]` → 2; absent = 0 (wildcard for MULTIANEWARRAY). */
+    private fun dimsFromArgs(node: AnnotationNode): Int {
+        val args = when (val raw = annotationValue(node, "args")) {
+            is List<*> -> raw.filterIsInstance<String>()
+            is Array<*> -> raw.filterIsInstance<String>()
+            else -> emptyList()
+        }
+        return args.firstOrNull { it.substringBefore('=').trim() == "dims" }
+            ?.substringAfter('=', "")
+            ?.trim()
+            ?.toIntOrNull() ?: 0
+    }
 
     /** The values a `:FIRST`/`:LAST` specifier suffix is defined for. */
     private val CALL_VALUES = setOf("INVOKE", "INVOKE_ASSIGN")

@@ -1413,10 +1413,11 @@ object HookScanner {
     ) {
         val core = anchor.core
         if ((core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess &&
-                core !is InjectionPoint.NewInstance) || anchor.after
+                core !is InjectionPoint.NewInstance && core !is InjectionPoint.TypeCheck &&
+                core !is InjectionPoint.ArrayAccess && core !is InjectionPoint.ArrayCreate) || anchor.after
         ) {
-            problems += "[$modId] $where —— @WrapOperation's @At must be a call, field access or NEW, " +
-                "before the instruction"
+            problems += "[$modId] $where —— @WrapOperation's @At must be a call, field access, NEW, type " +
+                "check or array instruction, before the instruction"
             return
         }
         val split = trailingSugar(method, mixinClass, where, modId, problems) ?: return

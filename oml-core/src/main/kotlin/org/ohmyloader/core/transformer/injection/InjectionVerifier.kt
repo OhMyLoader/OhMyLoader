@@ -454,10 +454,13 @@ internal object InjectionVerifier {
                         }
                         val core = point.core
                         if ((core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess &&
-                                core !is InjectionPoint.NewInstance) || point.after
+                                core !is InjectionPoint.NewInstance && core !is InjectionPoint.TypeCheck &&
+                                core !is InjectionPoint.ArrayAccess && core !is InjectionPoint.ArrayCreate) ||
+                            point.after
                         ) {
-                            problems += "$where — the @At of @WrapOperation must be a call, field access or NEW, " +
-                                "before the instruction, now ${AnchorResolver.describe(point)}"
+                            problems += "$where — the @At of @WrapOperation must be a call, field access, NEW, " +
+                                "type check or array instruction, before the instruction, now " +
+                                AnchorResolver.describe(point)
                         }
                         val last = runCatching { Type.getArgumentTypes(payload.desc).lastOrNull() }.getOrNull()
                         if (last?.descriptor != OPERATION_DESC) {
@@ -709,10 +712,12 @@ internal object InjectionVerifier {
             is Payload.WrapOperation -> {
                 val core = point.core
                 if ((core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess &&
-                        core !is InjectionPoint.NewInstance) || point.after
+                        core !is InjectionPoint.NewInstance && core !is InjectionPoint.TypeCheck &&
+                        core !is InjectionPoint.ArrayAccess && core !is InjectionPoint.ArrayCreate) ||
+                    point.after
                 ) {
-                    problems += "$where — WrapOperation requires a call, field-access or NEW anchor before the " +
-                        "instruction (beforeCall / beforeField / beforeNew), now ${AnchorResolver.describe(point)}"
+                    problems += "$where — WrapOperation requires a call, field-access, NEW, type-check or " +
+                        "array anchor before the instruction, now ${AnchorResolver.describe(point)}"
                 }
                 val desc = runCatching { Type.getMethodType(payload.desc) }.getOrNull()
                 if (desc == null) {

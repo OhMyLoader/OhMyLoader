@@ -96,6 +96,15 @@ internal object MissDiagnosis {
 
             is InjectionPoint.NewInstance -> "$where did not hit$inMethods: " + newHint(node, methods, point)
 
+            is InjectionPoint.TypeCheck ->
+                "$where did not hit$inMethods: check the CHECKCAST/INSTANCEOF target descriptor"
+
+            is InjectionPoint.ArrayAccess ->
+                "$where did not hit$inMethods: check the array-load/store opcode"
+
+            is InjectionPoint.ArrayCreate ->
+                "$where did not hit$inMethods: check the array-creation kind, descriptor and dimensions"
+
             is InjectionPoint.Store ->
                 "$where did not hit$inMethods: the only **writes** to locals are " + varHint(methods, store = true)
 

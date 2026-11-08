@@ -183,6 +183,37 @@ sealed class InjectionPoint {
     ) : InjectionPoint()
 
     /**
+     * A `CHECKCAST` / `INSTANCEOF` instruction. [desc] is the target's internal name (or array
+     * descriptor); null matches any target.
+     */
+    data class TypeCheck(
+        val opcode: Int,
+        val desc: String? = null,
+        val ordinal: Int? = null,
+    ) : InjectionPoint()
+
+    /**
+     * An array load/store instruction (`xALOAD` / `xASTORE`). [opcode] pins the exact instruction
+     * (`Opcodes.IALOAD`, …); null matches any array access.
+     */
+    data class ArrayAccess(
+        val opcode: Int? = null,
+        val ordinal: Int? = null,
+    ) : InjectionPoint()
+
+    /**
+     * An array creation: `NEWARRAY` ([atype] is the JVM `T_*` code), `ANEWARRAY` ([desc] is the element
+     * internal name), or `MULTIANEWARRAY` ([desc] is the array descriptor, [dims] the allocated count).
+     */
+    data class ArrayCreate(
+        val opcode: Int,
+        val atype: Int = -1,
+        val desc: String? = null,
+        val dims: Int = 0,
+        val ordinal: Int? = null,
+    ) : InjectionPoint()
+
+    /**
      * Before a constant-loading instruction (aligned with Mixin `CONSTANT`). The type of [value]
      * picks the kind: `Int` / `Long` / `Float` / `Double` / `String` / `org.objectweb.asm.Type`,
      * or `null` (matches `ACONST_NULL`).

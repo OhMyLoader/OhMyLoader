@@ -217,6 +217,11 @@ class InjectionSpec internal constructor(
      * produce a class that fails verification — that would fail the whole class load at a much higher cost (and the
      * hit count decreases by one, which is then reported by require/expect).
      */
+    /** The instruction shapes a WrapOperation can wrap (NEW is handled separately). */
+    private fun isWrapOperationAnchor(anchor: AbstractInsnNode): Boolean =
+        anchor is MethodInsnNode || anchor is FieldInsnNode || anchor is TypeInsnNode ||
+            anchor is InsnNode || anchor is IntInsnNode || anchor is MultiANewArrayInsnNode
+
     private fun org.ohmyloader.api.inject.MethodRule.isWholeMethodWrap(): Boolean =
         points.any { (_, payload) ->
             payload is Payload.WrapMethod ||
@@ -560,11 +565,11 @@ class InjectionSpec internal constructor(
                             inserted++
                             continue
                         }
-                        if (anchor !is MethodInsnNode && anchor !is FieldInsnNode) {
+                        if (!isWrapOperationAnchor(anchor)) {
                             OmlLog.error(
                                 "Injection",
-                                "the anchor of WrapOperation must be a call, field access or NEW, " +
-                                    "currently ${AnchorResolver.describe(point)}: ${method.name}",
+                                "the anchor of WrapOperation must be a call, field access, type check or " +
+                                    "array instruction, currently ${AnchorResolver.describe(point)}: ${method.name}",
                             )
                             continue
                         }
@@ -783,11 +788,12 @@ class InjectionSpec internal constructor(
                                     inserted++
                                     continue
                                 }
-                                if (anchor !is MethodInsnNode && anchor !is FieldInsnNode) {
+                                if (!isWrapOperationAnchor(anchor)) {
                                     OmlLog.error(
                                         "Injection",
-                                        "the anchor of HandlerCall(WRAP_OPERATION) must be a call, field access or NEW, " +
-                                            "currently ${AnchorResolver.describe(point)}: ${method.name}",
+                                        "the anchor of HandlerCall(WRAP_OPERATION) must be a call, field access, " +
+                                            "type check or array instruction, currently " +
+                                            "${AnchorResolver.describe(point)}: ${method.name}",
                                     )
                                     continue
                                 }
