@@ -19,6 +19,8 @@ import org.ohmyloader.core.expression.point.ExpressionContext
 import org.ohmyloader.core.expression.pool.IdentifierPool
 import org.ohmyloader.core.expression.pool.MemberDefinition
 import org.ohmyloader.core.expression.pool.TypeDefinition
+import org.ohmyloader.core.expression.utils.ExpressionDecorations
+import org.ohmyloader.core.expression.utils.FlowDecorations
 import org.ohmyloader.core.hook.AtParser
 
 /**
@@ -79,7 +81,27 @@ internal object ExpressionAnchors {
                 // Register the injector's interest in this compound instruction now; the engine expands it
                 // lazily at injection and lands on the part this capture referred to
                 val expansion = InsnExpander.prepareExpansion(node, target, injector, ctx)
-                captured += expansion?.compound ?: node.insn
+                val instruction = expansion?.compound ?: node.insn
+                captured += instruction
+                // Persistent flow decorations (array creation info, …) belong to the instruction the engine
+                // will anchor on; the injector reads them to find the value's real position
+                for ((key, value) in node.decorations) {
+                    if (key.startsWith(FlowDecorations.PERSISTENT)) {
+                        decorations.getOrPut(instruction) { HashMap() }[key] = value
+                    }
+                }
+                // The produced value's type: SimpleExpression records it for most nodes, but node kinds that
+                // extend Expression directly (instantiation, returns, assignments) do not — the injector
+                // still needs to know what the capture leaves on the stack
+                val type = runCatching { node.type }.getOrNull()
+                if (type != null && type != Type.VOID_TYPE) {
+                    val normalized = when (type.descriptor) {
+                        "Lnull;" -> Type.getObjectType("java/lang/Object")
+                        else -> type
+                    }
+                    decorations.getOrPut(instruction) { HashMap() }
+                        .putIfAbsent(ExpressionDecorations.SIMPLE_EXPRESSION_TYPE, normalized)
+                }
             }
 
             override fun decorate(insn: AbstractInsnNode, key: String, value: Any?) {

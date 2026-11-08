@@ -212,6 +212,52 @@ class InjectionExpressionTest {
     }
 
     @Test
+    fun `modifyExpressionValue rewrites a constructed object`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("name", desc = "()Ljava/lang/String;") {
+                        atExpression(
+                            "new StringBuilder(?)",
+                            definitions = listOf(
+                                InjectionPoint.Expression.Definition(
+                                    "StringBuilder", types = listOf("Ljava/lang/StringBuilder;"),
+                                ),
+                            ),
+                        ) {
+                            modifyExpressionValue(
+                                ExpressionHandlers.OWNER, "shout",
+                                "(Ljava/lang/StringBuilder;)Ljava/lang/StringBuilder;",
+                            )
+                        }
+                    }
+                }
+            },
+            newTarget(),
+        )
+
+        assertEquals("x!", invoke(clazz, "name"))
+    }
+
+    @Test
+    fun `modifyExpressionValue rewrites an array literal`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("arr", desc = "()[I") {
+                        atExpression("new int[]{1, 2}") {
+                            modifyExpressionValue(ExpressionHandlers.OWNER, "replace", "([I)[I")
+                        }
+                    }
+                }
+            },
+            arrayTarget(),
+        )
+
+        assertEquals(9, (invoke(clazz, "arr") as IntArray)[0])
+    }
+
+    @Test
     fun `an undeclared identifier fails the transform`() {
         val spec = specOf {
             classTarget(owner) {
@@ -326,6 +372,45 @@ class InjectionExpressionTest {
         },
     )
 
+    /** `static String name() { return new StringBuilder("x").toString(); }` */
+    private fun newTarget(): ClassNode = classNode(
+        methodNode("name", "()Ljava/lang/String;") {
+            add(org.objectweb.asm.tree.TypeInsnNode(Opcodes.NEW, "java/lang/StringBuilder"))
+            add(InsnNode(Opcodes.DUP))
+            add(org.objectweb.asm.tree.LdcInsnNode("x"))
+            add(
+                MethodInsnNode(
+                    Opcodes.INVOKESPECIAL, "java/lang/StringBuilder", "<init>",
+                    "(Ljava/lang/String;)V", false,
+                ),
+            )
+            add(
+                MethodInsnNode(
+                    Opcodes.INVOKEVIRTUAL, "java/lang/StringBuilder", "toString",
+                    "()Ljava/lang/String;", false,
+                ),
+            )
+            add(InsnNode(Opcodes.ARETURN))
+        },
+    )
+
+    /** `static int[] arr() { return new int[]{1, 2}; }` */
+    private fun arrayTarget(): ClassNode = classNode(
+        methodNode("arr", "()[I") {
+            add(InsnNode(Opcodes.ICONST_2))
+            add(IntInsnNode(Opcodes.NEWARRAY, Opcodes.T_INT))
+            add(InsnNode(Opcodes.DUP))
+            add(InsnNode(Opcodes.ICONST_0))
+            add(InsnNode(Opcodes.ICONST_1))
+            add(InsnNode(Opcodes.IASTORE))
+            add(InsnNode(Opcodes.DUP))
+            add(InsnNode(Opcodes.ICONST_1))
+            add(InsnNode(Opcodes.ICONST_2))
+            add(InsnNode(Opcodes.IASTORE))
+            add(InsnNode(Opcodes.ARETURN))
+        },
+    )
+
     /** `static int local(int seed) { int x = seed + 1; return x * 2; }` */
     private fun localTarget(): ClassNode = classNode(
         methodNode("local", "(I)I") {
@@ -412,5 +497,11 @@ class InjectionExpressionTest {
 
         @JvmStatic
         fun triple(value: Int): Int = value * 3
+
+        @JvmStatic
+        fun shout(builder: StringBuilder): StringBuilder = builder.append("!")
+
+        @JvmStatic
+        fun replace(value: IntArray): IntArray = intArrayOf(9)
     }
 }

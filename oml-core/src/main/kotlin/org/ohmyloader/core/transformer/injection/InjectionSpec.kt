@@ -7,9 +7,11 @@ import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.inject.*
 import org.ohmyloader.core.expression.flow.ExpressionTarget
 import org.ohmyloader.core.expression.flow.expansion.InsnExpander
+import org.ohmyloader.core.expression.flow.postprocessing.ArrayCreationInfo
 import org.ohmyloader.core.expression.utils.ComparisonInfo
 import org.ohmyloader.core.expression.utils.ComplexComparisonInfo
 import org.ohmyloader.core.expression.utils.ExpressionDecorations
+import org.ohmyloader.core.expression.utils.FlowDecorations
 import org.ohmyloader.core.hook.LOCAL_REF
 import org.ohmyloader.core.hook.LOCAL_REF_DESC
 import org.ohmyloader.core.hook.LOCAL_REFS
@@ -269,6 +271,71 @@ class InjectionSpec internal constructor(
         val expanded = InsnExpander.doExpansion(node, resolution.target, payload)
         frames.invalidate()
         return expanded.currentTarget
+    }
+
+    /**
+     * Where the value an expression produces actually comes into existence. A `NEW` produces an
+     * **uninitialized** reference, so the value is only usable after its `<init>` call (a missing `DUP` is
+     * inserted and the handler's result popped again); an array literal's value is complete after its last
+     * store. Every other capture is the producing instruction itself.
+     *
+     * Returns the anchor and whether the handler's result must be discarded.
+     */
+    private fun expressionValueAnchor(
+        point: InjectionPoint,
+        resolution: ExpressionAnchors.Resolution?,
+        decorations: Map<AbstractInsnNode, Map<String, Any?>>,
+        anchor: AbstractInsnNode,
+        method: MethodNode,
+        frames: MethodFrames,
+    ): Pair<AbstractInsnNode, Boolean>? {
+        if (point.core !is InjectionPoint.Expression || resolution == null) return anchor to false
+        val creation = decorations[anchor]?.get(FlowDecorations.ARRAY_CREATION_INFO) as? ArrayCreationInfo
+        if (creation != null) {
+            return creation.initialized.getNode(resolution.target).currentTarget to false
+        }
+        if (anchor is TypeInsnNode && anchor.opcode == Opcodes.NEW) {
+            val init = findInitCall(anchor)
+            if (init == null) {
+                OmlLog.error(
+                    "Injection",
+                    "injection skipped: no <init> call follows the NEW captured by the expression: ${method.name}",
+                )
+                return null
+            }
+            val duped = nextReal(anchor)?.opcode == Opcodes.DUP
+            if (!duped) {
+                method.instructions.insert(anchor, InsnNode(Opcodes.DUP))
+                frames.invalidate()
+            }
+            return init to !duped
+        }
+        return anchor to false
+    }
+
+    /** The `<init>` call paired with [new], matching nested `NEW`s by depth. */
+    private fun findInitCall(new: TypeInsnNode): MethodInsnNode? {
+        var depth = 0
+        var node: AbstractInsnNode? = new
+        while (node != null) {
+            when {
+                node is TypeInsnNode && node.opcode == Opcodes.NEW -> depth++
+                node is MethodInsnNode && node.opcode == Opcodes.INVOKESPECIAL && node.name == "<init>" -> {
+                    depth--
+                    if (depth == 0) return node.takeIf { it.owner == new.desc }
+                }
+            }
+            node = node.next
+        }
+        return null
+    }
+
+    private fun nextReal(node: AbstractInsnNode): AbstractInsnNode? {
+        var next = node.next
+        while (next != null && (next is LabelNode || next is LineNumberNode || next is FrameNode)) {
+            next = next.next
+        }
+        return next
     }
 
     /**
@@ -783,15 +850,19 @@ class InjectionSpec internal constructor(
                                     continue
                                 }
                                 // The expression value: the capture's recorded type, or the instruction's own
+                                val valueAnchor = expressionValueAnchor(
+                                    point, expressionResolution, expressionDecorations, anchor, method, frames,
+                                ) ?: continue
                                 val value = expressionValueType(point, expressionDecorations, anchor)
                                     ?: ProducedValue.requireReadable(
-                                        "@ModifyExpressionValue", point, anchor, method,
+                                        "@ModifyExpressionValue", point, valueAnchor.first, method,
                                     )
                                 val list = PayloadEmitter.emitInPlaceHandler(
                                     payload, "@ModifyExpressionValue", value, method, owner, locals,
                                 ) ?: continue
+                                if (valueAnchor.second) list.add(InsnNode(Opcodes.POP))
                                 val after = point.after || point.core is InjectionPoint.Expression
-                                if (!insertBlock(method, anchor, list, after, frames, knownShares)) continue
+                                if (!insertBlock(method, valueAnchor.first, list, after, frames, knownShares)) continue
                                 inserted++
                             }
 
@@ -1004,14 +1075,18 @@ class InjectionSpec internal constructor(
                             inserted++
                             continue
                         }
+                        val valueAnchor = expressionValueAnchor(
+                            point, expressionResolution, expressionDecorations, anchor, method, frames,
+                        ) ?: continue
                         val value = expressionValueType(point, expressionDecorations, anchor)
-                            ?: ProducedValue.requireReadable("ModifyExpressionValue", point, anchor, method)
+                            ?: ProducedValue.requireReadable("ModifyExpressionValue", point, valueAnchor.first, method)
                         val list = PayloadEmitter.emitInPlaceValue(
                             "ModifyExpressionValue", payload.owner, payload.method, payload.desc, payload.extras,
                             instance = false, value = value, method = method, owner = owner, locals = locals,
                         ) ?: continue
+                        if (valueAnchor.second) list.add(InsnNode(Opcodes.POP))
                         val after = point.after || point.core is InjectionPoint.Expression
-                        if (!insertBlock(method, anchor, list, after, frames, knownShares)) continue
+                        if (!insertBlock(method, valueAnchor.first, list, after, frames, knownShares)) continue
                         inserted++
                     }
 
