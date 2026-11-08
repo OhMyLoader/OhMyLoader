@@ -34,7 +34,7 @@ internal fun Payload.dslValues(): List<DslValue> = when (this) {
     // For every HandlerCall form (entry- and value-modifying alike) the values all live in captures:
     // the value-modifying discriminator (which argument / slot) is a **scalar**, carried by index / slot, not a DslValue.
     is Payload.HandlerCall -> captures
-    is Payload.Redirect -> emptyList()
+    is Payload.Redirect -> extras
     is Payload.Raw -> emptyList()
 }
 
@@ -293,6 +293,7 @@ class InjectionSpec internal constructor(
         is Payload.WrapOperation -> copy(extras = extras.map { it.rewriteShare(slots) })
         is Payload.WrapMethod -> copy(extras = extras.map { it.rewriteShare(slots) })
         is Payload.WrapWithCondition -> copy(extras = extras.map { it.rewriteShare(slots) })
+        is Payload.Redirect -> copy(extras = extras.map { it.rewriteShare(slots) })
         else -> this
     }
 
@@ -902,16 +903,24 @@ class InjectionSpec internal constructor(
                         // Static call: the descriptor is taken as-is. **For an instance call the receiver must be folded into the
                         // parameter list** — on the stack it's [receiver, args…], so after switching to INVOKESTATIC the
                         // receiver must become the first parameter, otherwise only the args get consumed and the stack is off.
+                        // With sugar the payload carries the bridge descriptor (extras + handler id included).
                         val staticCall = anchor.opcode == Opcodes.INVOKESTATIC
-                        val desc = if (staticCall) {
+                        val desc = payload.desc ?: if (staticCall) {
                             anchor.desc
                         } else {
                             "(${org.objectweb.asm.Type.getObjectType(anchor.owner).descriptor}${anchor.desc.substring(1)}"
                         }
-                        val replacement = MethodInsnNode(
-                            Opcodes.INVOKESTATIC, payload.handlerOwner, payload.handlerMethod, desc, false,
+                        val block = InsnList()
+                        val writeBacks = mutableListOf<PayloadEmitter.SugarWriteBack>()
+                        if (payload.extras.isNotEmpty() &&
+                            !PayloadEmitter.emitValues(block, payload.extras, method, locals, writeBacks)
+                        ) {
+                            continue
+                        }
+                        block.add(
+                            MethodInsnNode(Opcodes.INVOKESTATIC, payload.handlerOwner, payload.handlerMethod, desc, false),
                         )
-                        val block = InsnList().apply { add(replacement) }
+                        PayloadEmitter.emitWriteBacks(block, writeBacks)
                         if (!insertBlock(method, anchor, block, after = true, frames, knownShares)) continue
                         method.instructions.remove(anchor)
                         frames.invalidate()

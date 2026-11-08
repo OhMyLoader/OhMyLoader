@@ -1209,7 +1209,7 @@ class HookScannerTest {
     }
 
     @Test
-    fun `local sugar is rejected on a redirect handler`() {
+    fun `redirect sugar must be a trailing suffix`() {
         newBridge()
         val redirect = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Redirect;").apply {
             values = mutableListOf<Any?>(
@@ -1220,13 +1220,22 @@ class HookScannerTest {
         val local = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Local;").apply {
             values = mutableListOf<Any?>("index", 1)
         }
-        val method = MethodNode(Opcodes.ACC_PUBLIC, "h", "(I)I", null, null).apply {
+        val method = MethodNode(
+            Opcodes.ACC_PUBLIC,
+            "h",
+            "(Lorg/ohmyloader/api/hook/LocalRef;Z)V",
+            null,
+            null,
+        ).apply {
             instructions.add(InsnNode(Opcodes.RETURN))
             visibleAnnotations = listOf(redirect)
-            visibleParameterAnnotations = arrayOf(mutableListOf(local))
+            visibleParameterAnnotations = arrayOf(mutableListOf(local), mutableListOf())
         }
         val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
-        assertTrue(parsed.problems.any { it.contains("not supported on @Redirect") }, parsed.problems.toString())
+        assertTrue(
+            parsed.problems.any { it.contains("contiguous trailing suffix") },
+            parsed.problems.toString(),
+        )
         assertEquals(0, parsed.rules.size)
     }
 
@@ -1430,6 +1439,35 @@ class HookScannerTest {
         assertEquals(1, bound.index)
         assertEquals("I", bound.type)
         assertEquals("Lorg/ohmyloader/api/hook/LocalIntRef;", bound.refType)
+    }
+
+    @Test
+    fun `local sugar trails a Redirect handler`() {
+        newBridge()
+        val redirect = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Redirect;").apply {
+            values = mutableListOf<Any?>(
+                "method", "runTick",
+                "at", atNode("INVOKE", target = "Ljava/lang/Integer;toString(I)Ljava/lang/String;"),
+            )
+        }
+        val local = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Local;").apply {
+            values = mutableListOf<Any?>("index", 1)
+        }
+        val method = MethodNode(Opcodes.ACC_PUBLIC, "h", "(II)Ljava/lang/String;", null, null).apply {
+            instructions.add(InsnNode(Opcodes.RETURN))
+            visibleAnnotations = listOf(redirect)
+            visibleParameterAnnotations = arrayOf(mutableListOf(), mutableListOf(local))
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        val payload = parsed.rules[0].payload as Payload.Redirect
+        assertNotNull(payload.desc)
+        val bound = payload.extras[0] as DslValue.Local
+        assertEquals(1, bound.index)
+        assertEquals("I", bound.type)
+        val handler = HookRegistry.handler(1)!!
+        assertEquals(listOf("I", "I"), handler.captureTypes)
+        assertEquals(2, handler.handlerParamCount)
     }
 
     // ---------- fixtures ----------

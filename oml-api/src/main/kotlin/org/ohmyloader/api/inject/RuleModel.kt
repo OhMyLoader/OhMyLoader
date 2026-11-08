@@ -407,6 +407,12 @@ sealed class Payload {
     data class Redirect(
         val handlerOwner: String,
         val handlerMethod: String,
+        /**
+         * null = the handler is a **descriptor mirror** of the replaced call (no sugar). When sugar
+         * params are present the desc is the bridge's `(receiver?, args…, sugar…, id)ret` form.
+         */
+        val desc: String? = null,
+        val extras: List<DslValue> = emptyList(),
     ) : Payload()
 
     /**

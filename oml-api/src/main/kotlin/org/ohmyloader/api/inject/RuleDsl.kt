@@ -514,9 +514,11 @@ class MethodRuleBuilder @PublishedApi internal constructor(
         desc: String? = null,
         handlerOwner: String,
         handlerMethod: String,
+        handlerDesc: String? = null,
+        extras: List<DslValue> = emptyList(),
     ) {
         points += at(InjectionPoint.Call(owner, name, desc, after = false)) to
-            Payload.Redirect(handlerOwner, handlerMethod)
+            Payload.Redirect(handlerOwner, handlerMethod, handlerDesc, extras)
     }
 
     private fun payloadOf(block: PayloadBuilder.() -> Unit): Payload =

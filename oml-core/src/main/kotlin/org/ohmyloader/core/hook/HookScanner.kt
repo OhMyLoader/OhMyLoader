@@ -395,10 +395,6 @@ object HookScanner {
     ) {
         val where = "$mixinClass.${method.name}"
         val shortName = INJECTION_ANNOTATIONS[annotation.desc] ?: return
-        if (annotation.desc == REDIRECT_DESC && hasSugar(method)) {
-            problems += "[$modId] $where —— @Local/@Share are not supported on @Redirect handlers"
-            return
-        }
 
         // Target method names (union of method / methods)
         val methodNames = buildList {
@@ -565,7 +561,7 @@ object HookScanner {
 
             REDIRECT_DESC -> if (mergedInstance) {
                 parseMergedRedirect(
-                    method, point, anchor, targetInternal, methodNames, methodDesc,
+                    method, point, anchor, targetInternal, methodNames, methodDesc, mixinClass,
                     modId, mergeInto, handlers, rules, problems,
                 )
             } else {
@@ -682,6 +678,7 @@ object HookScanner {
         targetInternal: String,
         methodNames: List<String>,
         methodDesc: String?,
+        mixinClass: String,
         modId: String,
         mergeInto: String,
         handlers: MutableSet<String>,
@@ -712,10 +709,13 @@ object HookScanner {
                 " an instance handler has no receiver to accept, please make the handler static (it will return to the static bridge path)"
             return
         }
-        val want = "(${Type.getObjectType(callOwner).descriptor}${callDesc.substring(1)}"
-        if (method.desc != want || handlerRet != callRet) {
-            problems += "[$modId] $where —— the instance @Redirect handler's parameter list must equal the replaced call's receiver + its arguments," +
-                " and the return type must equal the replaced call's return type: expected $want, actual ${method.desc}"
+        val split = trailingSugar(method, mixinClass, where, modId, problems) ?: return
+        val want = listOf(Type.getObjectType(callOwner).descriptor) +
+            Type.getArgumentTypes(callDesc).map { it.descriptor }
+        if (split.normal.map { it.descriptor } != want || handlerRet != callRet) {
+            problems += "[$modId] $where —— the instance @Redirect handler's non-sugar parameter list must " +
+                "equal the replaced call's receiver + its arguments, and the return type must equal the " +
+                "replaced call's return type: expected ${want.joinToString("")}, actual ${method.desc}"
             return
         }
         handlers += "${method.name}${method.desc}"
@@ -725,6 +725,7 @@ object HookScanner {
                 owner = mergeInto,
                 method = method.name,
                 desc = method.desc,
+                captures = split.bindings,
                 kind = HandlerKind.REDIRECT,
             ),
             Policy(), emptyList(), "Redirect",
@@ -1085,35 +1086,62 @@ object HookScanner {
                 " the engine must determine the bridge method's descriptor at startup"
             return
         }
+        val split = trailingSugar(method, mixinClass, where, modId, problems) ?: return
         val callArgs = Type.getArgumentTypes(call.desc).map { it.descriptor }
         val callRet = Type.getReturnType(call.desc).descriptor
-        val handlerParams = Type.getArgumentTypes(method.desc).map { it.descriptor }
+        val handlerParams = split.normal.map { it.descriptor }
         val handlerRet = Type.getReturnType(method.desc).descriptor
 
         // Handler params = the arguments, or "receiver + arguments" (instance call; consistent with Mixin's
-        // "first param is the receiver")
+        // "first param is the receiver"); trailing sugar params are extras.
         val receiverOk = handlerParams == callArgs || handlerParams.drop(1) == callArgs
         if (!receiverOk || handlerRet != callRet) {
-            problems += "[$modId] $where —— @Redirect handler's parameter list must equal the replaced call" +
-                " (an instance call places the receiver as the first parameter): expected (${callArgs.joinToString("")})$callRet " +
-                " or (receiver${callArgs.joinToString("")})$callRet, actual ${method.desc}"
+            problems += "[$modId] $where —— @Redirect handler's non-sugar parameter list must equal the " +
+                "replaced call (an instance call places the receiver as the first parameter): expected " +
+                "(${callArgs.joinToString("")})$callRet or (receiver${callArgs.joinToString("")})$callRet, " +
+                "actual ${method.desc}"
             return
         }
-        val id = HookRegistry.register(
-            modId = modId,
-            mixinClass = mixinClass,
-            handlerMethod = method.name,
-            targetMethod = methodNames.first(),
-            cancelable = false,
-            captureTypes = handlerParams,
-            handlerParamCount = handlerParams.size,
-            returnType = handlerRet,
-            mirror = true,
-        )
-        val bridgeName = HookRegistry.bridgeMethodName(id, HookRegistry.BridgeKind.MIRROR)
+        val payload: Payload
+        if (split.bindings.isEmpty()) {
+            val id = HookRegistry.register(
+                modId = modId,
+                mixinClass = mixinClass,
+                handlerMethod = method.name,
+                targetMethod = methodNames.first(),
+                cancelable = false,
+                captureTypes = handlerParams,
+                handlerParamCount = handlerParams.size,
+                returnType = handlerRet,
+                mirror = true,
+            )
+            payload = Payload.Redirect(
+                HookRegistry.BRIDGE_CLASS,
+                HookRegistry.bridgeMethodName(id, HookRegistry.BridgeKind.MIRROR),
+            )
+        } else {
+            val captures = handlerParams + split.sugarTypes
+            val id = HookRegistry.register(
+                modId = modId,
+                mixinClass = mixinClass,
+                handlerMethod = method.name,
+                targetMethod = methodNames.first(),
+                cancelable = false,
+                captureTypes = captures,
+                handlerParamCount = captures.size,
+                returnType = handlerRet,
+                mirror = false,
+            )
+            val kind = HookRegistry.BridgeKind.MODIFY
+            payload = Payload.Redirect(
+                HookRegistry.BRIDGE_CLASS,
+                HookRegistry.bridgeMethodName(id, kind),
+                desc = HookRegistry.bridgeDesc(id, kind),
+                extras = split.bindings + DslValue.IntVal(id),
+            )
+        }
         rules += Rule(
-            targetInternal, methodNames, methodDesc, anchor,
-            Payload.Redirect(HookRegistry.BRIDGE_CLASS, bridgeName), policy, emptyList(), "Redirect",
+            targetInternal, methodNames, methodDesc, anchor, payload, policy, emptyList(), "Redirect",
         )
     }
 
@@ -2006,12 +2034,6 @@ object HookScanner {
         }
         return out
     }
-
-    /** Whether any parameter of [method] carries `@Local`/`@Share` (sugar is currently @Inject-only). */
-    private fun hasSugar(method: MethodNode): Boolean =
-        method.visibleParameterAnnotations?.any { list ->
-            list?.any { it.desc == LOCAL_DESC || it.desc == SHARE_DESC } == true
-        } == true
 
     /**
      * A non-@Inject handler split into its normal parameter prefix, the trailing sugar parameters'

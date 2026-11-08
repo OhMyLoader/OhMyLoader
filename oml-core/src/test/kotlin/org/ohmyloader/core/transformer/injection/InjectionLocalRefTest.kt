@@ -138,6 +138,31 @@ class InjectionLocalRefTest {
         assertEquals(99, result, "the handler's ref value is written back to the local")
     }
 
+    @Test
+    fun `redirect sugar can write back a local`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("redirected", desc = "(I)I") {
+                        redirectCall(
+                            owner = "java/lang/Math",
+                            name = "max",
+                            desc = "(II)I",
+                            handlerOwner = LocalRefHandlers.OWNER,
+                            handlerMethod = "replaceMax",
+                            handlerDesc = "(IILorg/ohmyloader/api/hook/LocalRef;)I",
+                            extras = listOf(DslValue.RefLocal(index = 1, type = "I")),
+                        )
+                    }
+                }
+            },
+            targetWithRedirectLocal(),
+        )
+
+        // x = seed; y = max(1, 2) replaced by the handler (returns 3, sets x = 99); return x + y.
+        assertEquals(102, invoke(clazz, "redirected", 5))
+    }
+
     // ---------- fixtures ----------
 
     private fun classNode(vararg methods: MethodNode): ClassNode =
@@ -166,6 +191,26 @@ class InjectionLocalRefTest {
             add(VarInsnNode(Opcodes.ILOAD, 1))
             add(MethodInsnNode(Opcodes.INVOKESTATIC, LocalRefSink.OWNER, "record", "(I)V", false))
             add(VarInsnNode(Opcodes.ILOAD, 1))
+            add(InsnNode(Opcodes.IRETURN))
+        },
+    )
+
+    /** `static int redirected(int seed) { int x = seed; int y = Math.max(1, 2); return x + y; }` */
+    private fun targetWithRedirectLocal(): ClassNode = classNode(
+        methodNode("redirected", "(I)I") {
+            add(VarInsnNode(Opcodes.ILOAD, 0))
+            add(VarInsnNode(Opcodes.ISTORE, 1))
+            add(InsnNode(Opcodes.ICONST_1))
+            add(InsnNode(Opcodes.ICONST_2))
+            add(
+                MethodInsnNode(
+                    Opcodes.INVOKESTATIC, "java/lang/Math", "max", "(II)I", false,
+                ),
+            )
+            add(VarInsnNode(Opcodes.ISTORE, 2))
+            add(VarInsnNode(Opcodes.ILOAD, 1))
+            add(VarInsnNode(Opcodes.ILOAD, 2))
+            add(InsnNode(Opcodes.IADD))
             add(InsnNode(Opcodes.IRETURN))
         },
     )
@@ -230,6 +275,12 @@ class InjectionLocalRefTest {
         fun bumpArg(value: Int, ref: LocalRef<Int>): Int {
             ref.value = 99
             return value
+        }
+
+        @JvmStatic
+        fun replaceMax(a: Int, b: Int, ref: LocalRef<Int>): Int {
+            ref.value = 99
+            return a + b
         }
     }
 }

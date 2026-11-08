@@ -760,18 +760,15 @@ internal object InjectionVerifier {
             }
 
             is Payload.Redirect -> {
-                // The descriptor must equal the replaced call's, which is only known once an anchor matches — so only the name is checked here
+                // Without sugar the descriptor must equal the replaced call's, which is only known once an
+                // anchor matches; with sugar the payload carries the handler's descriptor.
                 val handlerClass = resolve(payload.handlerOwner, loader)
                 if (handlerClass == null) {
                     problems += noteUnresolved(where, "Redirect", payload.handlerOwner)
-                } else if (allMethods(handlerClass, payload.handlerMethod, null).isEmpty()) {
+                } else if (allMethods(handlerClass, payload.handlerMethod, payload.desc).isEmpty()) {
+                    val detail = payload.desc?.let { " with descriptor $it" } ?: " (no descriptor with that name)"
                     problems += "$where — the handler method of Redirect does not exist: " +
-                        "${
-                            payload.handlerOwner.replace(
-                                '/',
-                                '.',
-                            )
-                        }.${payload.handlerMethod} (no descriptor with that name)"
+                        "${payload.handlerOwner.replace('/', '.')}.${payload.handlerMethod}$detail"
                 }
             }
 
