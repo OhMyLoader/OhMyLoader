@@ -69,6 +69,8 @@ annotation class At(
     val opcode: Int = -1,
     val shift: String = "",
     val slice: String = "",
+    /** Selects which `@Expression` (by its `id`) an `EXPRESSION` anchor refers to. */
+    val id: String = "",
 ) {
     companion object {
         const val HEAD = "HEAD"
@@ -465,7 +467,13 @@ annotation class WrapMethod(
  */
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
-annotation class Expression(val value: Array<String>)
+@Repeatable
+annotation class Expression(val value: Array<String>, val id: String = "")
+
+/** The repeatable container of [Expression] (Kotlin/Java compilers emit this for repeated uses). */
+@Target(AnnotationTarget.FUNCTION)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class Expressions(val value: Array<Expression>)
 
 /**
  * Declares an identifier used by an [Expression] (aligned with MixinExtras' `@Definition`).
@@ -474,6 +482,7 @@ annotation class Expression(val value: Array<String>)
  */
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
+@Repeatable
 annotation class Definition(
     val id: String,
     val method: Array<String> = [],
@@ -481,6 +490,11 @@ annotation class Definition(
     val type: Array<kotlin.reflect.KClass<*>> = [],
     val local: Array<DefinitionLocal> = [],
 )
+
+/** The repeatable container of [Definition]. */
+@Target(AnnotationTarget.FUNCTION)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class Definitions(val value: Array<Definition>)
 
 /**
  * One local-variable identifier for [Definition] (aligned with MixinExtras' `Local` inside

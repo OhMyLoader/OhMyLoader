@@ -142,7 +142,7 @@ internal object AtParser {
 
     /** Whether the `@At` value is supported by this front-end (for diagnostics). */
     val SUPPORTED = listOf(
-        "HEAD", "CTOR_HEAD", "RETURN", "TAIL", "INVOKE", "INVOKE_ASSIGN", "FIELD", "NEW", "JUMP", "CONSTANT",
+        "HEAD", "CTOR_HEAD", "RETURN", "TAIL", "INVOKE", "INVOKE_ASSIGN", "FIELD", "NEW", "JUMP", "EXPRESSION", "CONSTANT",
         "STORE", "LOAD", "CHECKCAST", "INSTANCEOF", "ARRAY_LOAD", "ARRAY_STORE", "NEW_ARRAY",
     )
 

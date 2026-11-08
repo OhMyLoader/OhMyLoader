@@ -180,7 +180,9 @@ object HookScanner {
     private const val LOCAL_DESC = "Lorg/ohmyloader/api/hook/Local;"
     private const val SHARE_DESC = "Lorg/ohmyloader/api/hook/Share;"
     private const val EXPRESSION_DESC = "Lorg/ohmyloader/api/hook/Expression;"
+    private const val EXPRESSIONS_DESC = "Lorg/ohmyloader/api/hook/Expressions;"
     private const val DEFINITION_DESC = "Lorg/ohmyloader/api/hook/Definition;"
+    private const val DEFINITIONS_DESC = "Lorg/ohmyloader/api/hook/Definitions;"
     private const val BORROWED_DESC = "Lorg/ohmyloader/api/hook/Borrowed;"
     private const val EXTRA_DESC = "Lorg/ohmyloader/api/hook/Extra;"
     private const val REPLACE_DESC = "Lorg/ohmyloader/api/hook/Replace;"
@@ -437,7 +439,7 @@ object HookScanner {
                     ordinal = constant?.let { declaredInt(it, "ordinal") },
                     after = true,
                 )
-                val mergedAnchor = withSlice(base, null, annotation, slices, where, shortName, problems)
+                val mergedAnchor = withSlice(base, null, annotation, slices, method, modId, where, shortName, problems)
                 parseMergedModify(
                     method, annotation, mergedAnchor, targetInternal, methodNames, methodDesc, mixinClass,
                     modId, mergeInto, handlers, HandlerKind.MODIFY_CONST, rules, problems,
@@ -485,7 +487,7 @@ object HookScanner {
                 return
             }
             val refined = if (isReturnValue) parsed else forceAfter(parsed)
-            val anchor = withSlice(refined, atNode, annotation, slices, where, shortName, problems)
+            val anchor = withSlice(refined, atNode, annotation, slices, method, modId, where, shortName, problems)
             val kind = if (isReturnValue) HandlerKind.MODIFY_RETURN else HandlerKind.MODIFY_EXPR_VALUE
             // Here `mergeInto` is checked directly instead of reusing the `mergedInstance` below -- this block
             // has to come **before** the "must have at" check (which `@ModifyReturnValue` can omit), while
@@ -525,7 +527,7 @@ object HookScanner {
         // so it takes its own path.
         if (annotation.desc == MODIFY_VARIABLE_DESC) {
             val refined = refineVarAnchor(method, annotation, point, where, shortName, problems) ?: return
-            val varAnchor = withSlice(refined, atNode, annotation, slices, where, shortName, problems)
+            val varAnchor = withSlice(refined, atNode, annotation, slices, method, modId, where, shortName, problems)
             val mergedInstance = mergeInto != null && !method.isDeclaredStatic()
             if (mergedInstance) {
                 parseMergedModify(
@@ -541,7 +543,7 @@ object HookScanner {
             return
         }
 
-        val anchor = withSlice(point, atNode, annotation, slices, where, shortName, problems)
+        val anchor = withSlice(point, atNode, annotation, slices, method, modId, where, shortName, problems)
 
         // ---------- **instance** handlers among merge candidates ----------
         // The handler rides into the target class via merge ⇒ the injection point calls it directly
@@ -1616,7 +1618,7 @@ object HookScanner {
             after = true,
         )
         // `slice` also applies to ModifyConstant (finding the constant within the window)
-        val anchor = withSlice(base, null, annotation, slices, where, "@ModifyConstant", problems)
+        val anchor = withSlice(base, null, annotation, slices, method, modId, where, "@ModifyConstant", problems)
         val t = normal[0].descriptor
         val [id, bridgeName, bridgeDesc] = registerValueHandler(
             modId, mixinClass, method.name, methodNames.first(),
@@ -1986,6 +1988,8 @@ object HookScanner {
         atNode: AnnotationNode?,
         annotation: AnnotationNode,
         slices: Map<String, AnnotationNode>,
+        method: MethodNode,
+        modId: String,
         where: String,
         shortName: String,
         problems: MutableList<String>,
@@ -2005,8 +2009,8 @@ object HookScanner {
         }
         val fromNode = annotationValue(sliceNode, "from") as? AnnotationNode
         val toNode = annotationValue(sliceNode, "to") as? AnnotationNode
-        val from = fromNode?.let { AtParser.parse(it) }
-        val to = toNode?.let { AtParser.parse(it) }
+        val from = fromNode?.let { parseAnchor(it, method, where, modId, shortName, problems) }
+        val to = toNode?.let { parseAnchor(it, method, where, modId, shortName, problems) }
         // A boundary that is written but unrecognizable is a rule error, not "no boundary": silently
         // dropping it would widen the search window to the whole method (the engine side refuses for
         // the same reason when a boundary cannot be resolved, see Anchors.applySlice).
@@ -2023,6 +2027,28 @@ object HookScanner {
     }
 
     // ---------- annotation retrieval ----------
+
+    /** All `@Expression`s on the handler, whether written directly or through the repeatable container. */
+    private fun expressionAnnotations(method: MethodNode): List<AnnotationNode> =
+        method.visibleAnnotations.orEmpty().flatMap { annotation ->
+            when (annotation.desc) {
+                EXPRESSION_DESC -> listOf(annotation)
+                EXPRESSIONS_DESC -> (annotationValue(annotation, "value") as? List<*>).orEmpty()
+                    .filterIsInstance<AnnotationNode>()
+                else -> emptyList()
+            }
+        }
+
+    /** All `@Definition`s on the handler, whether written directly or through the repeatable container. */
+    private fun definitionAnnotations(method: MethodNode): List<AnnotationNode> =
+        method.visibleAnnotations.orEmpty().flatMap { annotation ->
+            when (annotation.desc) {
+                DEFINITION_DESC -> listOf(annotation)
+                DEFINITIONS_DESC -> (annotationValue(annotation, "value") as? List<*>).orEmpty()
+                    .filterIsInstance<AnnotationNode>()
+                else -> emptyList()
+            }
+        }
 
     /** Whether this `@At` names the expression anchor. */
     private fun isExpressionAt(atNode: AnnotationNode): Boolean =
@@ -2044,12 +2070,14 @@ object HookScanner {
     ): InjectionPoint? {
         if (!isExpressionAt(atNode)) return AtParser.parse(atNode)
 
-        val patterns = method.visibleAnnotations.orEmpty()
-            .filter { it.desc == EXPRESSION_DESC }
+        val id = (annotationValue(atNode, "id") as? String).orEmpty()
+        val patterns = expressionAnnotations(method)
+            .filter { ((annotationValue(it, "id") as? String).orEmpty()) == id }
             .flatMap { stringArray(annotationValue(it, "value")) }
             .filter { it.isNotBlank() }
         if (patterns.isEmpty()) {
-            problems += "[$modId] $where —— $shortName's @At(EXPRESSION) needs an @Expression(\"…\") on the handler"
+            problems += "[$modId] $where —— $shortName's @At(EXPRESSION) needs an @Expression(\"…\") " +
+                (if (id.isEmpty()) "on the handler" else "with id = \"$id\" on the handler")
             return null
         }
         for (pattern in patterns) {
@@ -2060,8 +2088,7 @@ object HookScanner {
                 return null
             }
         }
-        val definitions = method.visibleAnnotations.orEmpty()
-            .filter { it.desc == DEFINITION_DESC }
+        val definitions = definitionAnnotations(method)
             .map { node ->
                 val types = (annotationValue(node, "type") as? List<*>).orEmpty()
                     .filterIsInstance<org.objectweb.asm.Type>()

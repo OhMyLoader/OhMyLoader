@@ -1280,6 +1280,34 @@ class HookScannerTest {
     }
 
     @Test
+    fun `a container of expressions is selected by id`() {
+        newBridge()
+        val inner = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Expression;").apply {
+            values = mutableListOf<Any?>("value", listOf("max(?, 3)"), "id", "inner")
+        }
+        val outer = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Expression;").apply {
+            values = mutableListOf<Any?>("value", listOf("max(?, ?)"))
+        }
+        val container = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Expressions;").apply {
+            values = mutableListOf<Any?>("value", listOf(inner, outer))
+        }
+        val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyExpressionValue;").apply {
+            values = mutableListOf<Any?>(
+                "method", "runTick",
+                "at", atNode("EXPRESSION").put("id", "inner"),
+            )
+        }
+        val method = MethodNode(Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h", "(I)I", null, null).apply {
+            instructions.add(InsnNode(Opcodes.IRETURN))
+            visibleAnnotations = listOf(modify, container)
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        val point = parsed.rules[0].anchor as InjectionPoint.Expression
+        assertEquals(listOf("max(?, 3)"), point.expressions)
+    }
+
+    @Test
     fun `merged wrapBranch calls the handler directly`() {
         newBridge()
         val method = MethodNode(Opcodes.ACC_PUBLIC, "h", "(II)Z", null, null).apply {

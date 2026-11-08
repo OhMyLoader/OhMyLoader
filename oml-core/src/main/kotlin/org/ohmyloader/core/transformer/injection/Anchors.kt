@@ -77,6 +77,7 @@ internal object AnchorResolver {
      */
     fun resolve(
         point: InjectionPoint,
+        classNode: ClassNode,
         method: MethodNode,
         owner: String,
         superName: String?,
@@ -85,11 +86,11 @@ internal object AnchorResolver {
         // Sliced anchors: find by core first, then trim the window, and only then apply the ordinal
         // —— the ordinal is "the Nth within the window", matching Mixin's Slice behavior
         if (point is InjectionPoint.Sliced) {
-            val inner = resolveCandidates(point.inner, method, owner, superName, frames)
-            val windowed = applySlice(inner, point, method, owner, superName, frames)
+            val inner = resolveCandidates(point.inner, classNode, method, owner, superName, frames)
+            val windowed = applySlice(inner, point, classNode, method, owner, superName, frames)
             return applySelector(windowed, point.inner)
         }
-        return applySelector(resolveCandidates(point, method, owner, superName, frames), point)
+        return applySelector(resolveCandidates(point, classNode, method, owner, superName, frames), point)
     }
 
     /** Ordinal / `:LAST` selection; both read off the anchor's core (a [InjectionPoint.Sliced] shell is transparent). */
@@ -111,6 +112,7 @@ internal object AnchorResolver {
     /** Only finds the location; does not apply the window or ordinal. */
     private fun resolveCandidates(
         point: InjectionPoint,
+        classNode: ClassNode,
         method: MethodNode,
         owner: String,
         superName: String?,
@@ -142,9 +144,9 @@ internal object AnchorResolver {
         is InjectionPoint.Jump -> jumps(method, point)
 
         is InjectionPoint.Expression ->
-            throw org.ohmyloader.api.inject.InjectionError(
-                "[injection] expression anchors are not supported as @Slice bounds yet",
-            )
+            ExpressionAnchors.resolve(
+                classNode, method, point, point, org.ohmyloader.core.expression.point.ExpressionContext.Type.SLICE,
+            ).instructions
 
         is InjectionPoint.Constant -> constants(method, point)
 
@@ -170,8 +172,8 @@ internal object AnchorResolver {
 
         // Nested within: the inner window is trimmed first, then the outer trims again (intersection, equal to a narrower range)
         is InjectionPoint.Sliced -> {
-            val inner = resolveCandidates(point.inner, method, owner, superName, frames)
-            applySlice(inner, point, method, owner, superName, frames)
+            val inner = resolveCandidates(point.inner, classNode, method, owner, superName, frames)
+            applySlice(inner, point, classNode, method, owner, superName, frames)
         }
     }
 
@@ -185,6 +187,7 @@ internal object AnchorResolver {
     private fun applySlice(
         candidates: List<AbstractInsnNode>,
         slice: InjectionPoint.Sliced,
+        classNode: ClassNode,
         method: MethodNode,
         owner: String,
         superName: String?,
@@ -200,7 +203,7 @@ internal object AnchorResolver {
         val fromIndex = if (from == null) {
             -1
         } else {
-            val node = resolveCandidates(from, method, owner, superName, frames).lastOrNull()
+            val node = resolveCandidates(from, classNode, method, owner, superName, frames).lastOrNull()
             if (node == null) {
                 OmlLog.error(
                     "Injection",
@@ -215,7 +218,7 @@ internal object AnchorResolver {
         val toIndex = if (to == null) {
             Int.MAX_VALUE
         } else {
-            val node = resolveCandidates(to, method, owner, superName, frames).firstOrNull()
+            val node = resolveCandidates(to, classNode, method, owner, superName, frames).firstOrNull()
             if (node == null) {
                 OmlLog.error(
                     "Injection",

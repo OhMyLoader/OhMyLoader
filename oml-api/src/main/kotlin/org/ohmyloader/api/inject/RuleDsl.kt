@@ -819,6 +819,13 @@ object Anchor {
     fun jump(opcode: Int? = null, ordinal: Int? = null): InjectionPoint =
         InjectionPoint.Jump(opcode, ordinal)
 
+    /** An expression anchor usable as a slice bound (see [InjectionPoint.Expression]). */
+    fun expression(
+        expression: String,
+        ordinal: Int? = null,
+        definitions: List<InjectionPoint.Expression.Definition> = emptyList(),
+    ): InjectionPoint = InjectionPoint.Expression(listOf(expression), ordinal, definitions)
+
     /** An array load/store; [opcode] pins the exact `xALOAD`/`xASTORE`, null = any. */
     fun arrayAccess(opcode: Int? = null, ordinal: Int? = null): InjectionPoint =
         InjectionPoint.ArrayAccess(opcode, ordinal)

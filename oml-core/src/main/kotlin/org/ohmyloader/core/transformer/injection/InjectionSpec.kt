@@ -516,7 +516,7 @@ class InjectionSpec internal constructor(
                     resolution.instructions
                 }
 
-                else -> AnchorResolver.resolve(point, method, owner, superName, frames)
+                else -> AnchorResolver.resolve(point, classNode, method, owner, superName, frames)
             }
             if (anchors.isEmpty()) {
                 OmlLog.error(

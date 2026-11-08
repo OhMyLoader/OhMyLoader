@@ -12,6 +12,7 @@ import org.objectweb.asm.tree.MethodInsnNode
 import org.objectweb.asm.tree.MethodNode
 import org.objectweb.asm.tree.VarInsnNode
 import org.ohmyloader.api.hook.Operation
+import org.ohmyloader.api.inject.Anchor
 import org.ohmyloader.api.inject.InjectionError
 import org.ohmyloader.api.inject.InjectionPoint
 import org.ohmyloader.core.transformer.TransformContext
@@ -281,6 +282,33 @@ class InjectionExpressionTest {
     }
 
     @Test
+    fun `an expression bounds the slice window`() {
+        val definition = InjectionPoint.Expression.Definition(
+            "max", methods = listOf("Ljava/lang/Math;max(II)I"),
+        )
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("seq", desc = "(I)I") {
+                        within(from = Anchor.expression("max(?, 3)", definitions = listOf(definition))) {
+                            afterCall(
+                                owner = "java/lang/Math", name = "max", desc = "(II)I",
+                                opcode = Opcodes.INVOKESTATIC,
+                            ) {
+                                modifyExpressionValue(ExpressionHandlers.OWNER, "plusOne", "(I)I")
+                            }
+                        }
+                    }
+                }
+            },
+            sequenceTarget(),
+        )
+
+        // Only the second max (after the `max(?, 3)` boundary) is modified
+        assertEquals(11, invoke(clazz, "seq", 10))
+    }
+
+    @Test
     fun `an undeclared identifier fails the transform`() {
         val spec = specOf {
             classTarget(owner) {
@@ -434,6 +462,22 @@ class InjectionExpressionTest {
         },
     )
 
+    /** `static int seq(int x) { int a = Math.max(x, 3); int b = Math.max(a, 7); return b; }` */
+    private fun sequenceTarget(): ClassNode = classNode(
+        methodNode("seq", "(I)I") {
+            add(VarInsnNode(Opcodes.ILOAD, 0))
+            add(InsnNode(Opcodes.ICONST_3))
+            add(MethodInsnNode(Opcodes.INVOKESTATIC, "java/lang/Math", "max", "(II)I", false))
+            add(VarInsnNode(Opcodes.ISTORE, 1))
+            add(VarInsnNode(Opcodes.ILOAD, 1))
+            add(IntInsnNode(Opcodes.BIPUSH, 7))
+            add(MethodInsnNode(Opcodes.INVOKESTATIC, "java/lang/Math", "max", "(II)I", false))
+            add(VarInsnNode(Opcodes.ISTORE, 2))
+            add(VarInsnNode(Opcodes.ILOAD, 2))
+            add(InsnNode(Opcodes.IRETURN))
+        },
+    )
+
     /** `static int local(int seed) { int x = seed + 1; return x * 2; }` */
     private fun localTarget(): ClassNode = classNode(
         methodNode("local", "(I)I") {
@@ -529,5 +573,8 @@ class InjectionExpressionTest {
 
         @JvmStatic
         fun invert(a: Int, b: Int, operation: Operation<Boolean>): Boolean = !operation.call(a, b)
+
+        @JvmStatic
+        fun plusOne(value: Int): Int = value + 1
     }
 }
