@@ -189,6 +189,24 @@ class MissDiagnosisTest {
     }
 
     @Test
+    fun `a jump that is absent lists the conditional branches that are there`() {
+        val node = classNode(
+            methodNode("m", "(I)V") {
+                val label = LabelNode()
+                add(VarInsnNode(Opcodes.ILOAD, 1))
+                add(JumpInsnNode(Opcodes.IFEQ, label))
+                add(label)
+                add(InsnNode(Opcodes.RETURN))
+            },
+        )
+
+        val text = diagnoseAnchor(node, InjectionPoint.Jump(Opcodes.IF_ICMPGE))
+
+        assertTrue(text.contains("conditional branches are"), text)
+        assertTrue(text.contains("IFEQ"), text)
+    }
+
+    @Test
     fun `a sliced anchor names the window and recurses into the inner anchor`() {
         val node = classNode(methodNode("m", "()V") { add(InsnNode(Opcodes.RETURN)) })
 

@@ -54,9 +54,9 @@ annotation class Hooked(val target: String)
 annotation class Merged(val target: String)
 
 /**
- * The injection location (aligned with Mixin's `@At`). Constants: [HEAD] first instruction; [CTOR_HEAD] after a constructor's `super()`/`this()` (equals [HEAD] elsewhere); [RETURN] every return; [TAIL] the last return; [INVOKE] / [INVOKE_ASSIGN] before / after a matched call; [FIELD] a field access; [NEW] a `new`; [CONSTANT] a constant load ([args] writes the value); [STORE] / [LOAD] after a local write / before a local read.
- * [target]: `INVOKE`-family `"Lowner/name;member(args)ret"` (package dots allowed), `"member(args)ret"` or `"member"` (unrestricted); `FIELD` `"Lowner/name;field:desc"` / `"field:desc"` / `"field"`; `NEW` `"Lowner/name;"` or `"(args)V"`.
- * [args] (used by [CONSTANT]) takes `intValue` / `longValue` / `floatValue` / `doubleValue` / `stringValue` / `nullValue`. [ordinal] takes the Nth match (0-based; -1 = all); [opcode] restricts a field access to an `org.objectweb.asm.Opcodes` value (-1 = any).
+ * The injection location (aligned with Mixin's `@At`). Constants: [HEAD] first instruction; [CTOR_HEAD] after a constructor's `super()`/`this()` (equals [HEAD] elsewhere); [RETURN] every return; [TAIL] the last return; [INVOKE] / [INVOKE_ASSIGN] before / after a matched call; [FIELD] a field access; [NEW] a `new`; [JUMP] a conditional branch; [CONSTANT] a constant load ([args] writes the value); [STORE] / [LOAD] after a local write / before a local read.
+ * [target]: `INVOKE`-family `"Lowner/name;member(args)ret"` (package dots allowed), `"member(args)ret"` or `"member"` (unrestricted); `FIELD` `"Lowner/name;field:desc"` / `"field:desc"` / `"field"`; `NEW` `"Lowner/name;"` or `"(args)V"`; `JUMP` the opcode name (`"IF_ICMPGE"`, …).
+ * [args] (used by [CONSTANT]) takes `intValue` / `longValue` / `floatValue` / `doubleValue` / `stringValue` / `nullValue`. [ordinal] takes the Nth match (0-based; -1 = all); [opcode] restricts a field access or a jump to an `org.objectweb.asm.Opcodes` value (-1 = any).
  * [shift] is `""` / [SHIFT_BEFORE] / [SHIFT_AFTER] — Mixin's `Shift.BY` is unsupported (arbitrary instruction offsets drift as the target code changes); [slice] selects the window (see [Inject.slice]).
  */
 @Target(AnnotationTarget.ANNOTATION_CLASS)
@@ -79,6 +79,10 @@ annotation class At(
         const val INVOKE_ASSIGN = "INVOKE_ASSIGN"
         const val FIELD = "FIELD"
         const val NEW = "NEW"
+
+        /** A conditional branch (`IFEQ`…`IF_ACMPNE`, `IFNULL`/`IFNONNULL`); used with [WrapBranch]. */
+        const val JUMP = "JUMP"
+
         const val CONSTANT = "CONSTANT"
 
         /** After a local variable is **written** (used with [ModifyVariable]). */
@@ -367,6 +371,32 @@ annotation class ModifyReceiver(
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
 annotation class WrapWithCondition(
+    val at: At,
+    val method: String = "",
+    val methods: Array<String> = [],
+    val desc: String = "",
+    val slice: Slice = Slice(),
+    val require: Int = -1,
+    val expect: Int = -1,
+    val allow: Int = -1,
+)
+
+/**
+ * Decides a **conditional branch** — OML's own landing point beyond MixinExtras. The anchor must be a
+ * conditional jump (`@At(value = "JUMP", target = "IF_ICMPGE")` or `opcode = Opcodes.IF_ICMPGE`). The
+ * values the jump compares are already on the operand stack; the handler is shaped
+ * `(operands…)Z` and its return value is **whether the branch is taken** (true = jump to the original
+ * target, false = fall through). The operands follow the opcode's stack form: `(I)` for the
+ * `IFEQ`-family, `(II)` for `IF_ICMP*`, `(Object, Object)` for `IF_ACMP*`, `(Object)` for
+ * `IFNULL`/`IFNONNULL`.
+ *
+ * This is the bytecode-level branch, not the source-level condition: `if (x > 10)` compiles to
+ * "jump when `x <= 10`", so relocating the threshold means returning that inverted test. Exceptions
+ * thrown by the handler are **not isolated** — it replaces real control flow.
+ */
+@Target(AnnotationTarget.FUNCTION)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class WrapBranch(
     val at: At,
     val method: String = "",
     val methods: Array<String> = [],

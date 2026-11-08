@@ -337,4 +337,46 @@ class InjectionVerificationTest {
         val problems = spec.verify()
         assertTrue(problems.any { it.contains("require must not be negative") }, problems.toString())
     }
+
+    @Test
+    fun `verify reports a wrapBranch operand mismatch`() {
+        val spec = spec {
+            classTarget("a/B") {
+                method("m", desc = "()V") {
+                    atJump(opcode = Opcodes.IF_ICMPGE) {
+                        wrapBranch(BranchHandlerStub.OWNER, "decide", "(I)Z")
+                    }
+                }
+            }
+        }
+
+        val problems = spec.verify()
+        assertTrue(problems.any { it.contains("jump compares 2") }, problems.toString())
+    }
+
+    @Test
+    fun `verify reports a wrapBranch off a jump anchor`() {
+        val spec = spec {
+            classTarget("a/B") {
+                method("m", desc = "()V") {
+                    atHead {
+                        wrapBranch(BranchHandlerStub.OWNER, "decide", "(Z)Z")
+                    }
+                }
+            }
+        }
+
+        val problems = spec.verify()
+        assertTrue(problems.any { it.contains("conditional-jump anchor") }, problems.toString())
+    }
+
+    object BranchHandlerStub {
+        val OWNER: String = BranchHandlerStub::class.java.name.replace('.', '/')
+
+        @JvmStatic
+        fun decide(value: Int): Boolean = value > 0
+
+        @JvmStatic
+        fun decide(value: Boolean): Boolean = value
+    }
 }

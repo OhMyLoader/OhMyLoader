@@ -103,6 +103,18 @@ class HookScannerTest {
     }
 
     @Test
+    fun `at jump reads the opcode from the target or the opcode field`() {
+        assertEquals(InjectionPoint.Jump(Opcodes.IF_ICMPGE, null), parse("JUMP", target = "IF_ICMPGE"))
+        assertEquals(InjectionPoint.Jump(Opcodes.IFNULL, 2), parse("JUMP", opcode = Opcodes.IFNULL, ordinal = 2))
+        assertEquals(InjectionPoint.Jump(null, null), parse("JUMP"))
+        // A mismatched pair, a non-conditional opcode and shift = AFTER are all rejected, not degraded
+        assertNull(parse("JUMP", target = "IF_ICMPGE", opcode = Opcodes.IF_ICMPLT))
+        assertNull(parse("JUMP", opcode = Opcodes.GOTO))
+        assertNull(parse("JUMP", target = "NOT_A_JUMP"))
+        assertNull(parse("JUMP", target = "IFEQ", shift = "AFTER"))
+    }
+
+    @Test
     fun `at constant reads its value from args`() {
         assertEquals(InjectionPoint.Constant(42, null, after = false), parse("CONSTANT", args = listOf("intValue=42")))
         assertEquals(InjectionPoint.Constant(7L, null, false), parse("CONSTANT", args = listOf("longValue=7")))
@@ -131,13 +143,13 @@ class HookScannerTest {
 
     @Test
     fun `unknown at value is rejected with a problem`() {
-        assertNull(parse("JUMP"))
+        assertNull(parse("BOGUS"))
         val parsed = HookScanner.parseMixinClass(
             injectClass(
                 handler(
                     "h",
                     "(Lorg/ohmyloader/api/hook/HookContext;)V",
-                    at = "JUMP",
+                    at = "BOGUS",
                 ),
             ),
             "m",
@@ -826,11 +838,11 @@ class HookScannerTest {
         // Dropping a boundary silently would widen the search window to the whole method — reported
         // like any other unrecognizable @At instead, so the self-check fails startup
         val node = injectClass(handler("h", "(Lorg/ohmyloader/api/hook/HookContext;)V", at = "RETURN"))
-        node.methods[0].visibleAnnotations[0].put("slice", sliceNode("JUMP", "BOGUS"))
+        node.methods[0].visibleAnnotations[0].put("slice", sliceNode("BOGUS_FROM", "BOGUS"))
         val parsed = HookScanner.parseMixinClass(node, "m")
 
         assertTrue(
-            parsed.problems.any { it.contains("@Slice(from") && it.contains("JUMP") },
+            parsed.problems.any { it.contains("@Slice(from") && it.contains("BOGUS_FROM") },
             parsed.problems.toString(),
         )
         assertTrue(parsed.problems.any { it.contains("@Slice(to") && it.contains("BOGUS") }, parsed.problems.toString())
@@ -1122,6 +1134,14 @@ class HookScannerTest {
     }
 
     @Test
+    fun `the jump name tables of the parser and the engine agree`() {
+        assertEquals(
+            org.ohmyloader.core.transformer.injection.AnchorResolver.CONDITIONAL_JUMPS,
+            AtParser.JUMP_OPCODES.entries.associate { (name, opcode) -> opcode to name },
+        )
+    }
+
+    @Test
     fun `wrapOperation parses an Operation handler`() {
         newBridge()
         val node = injectClass(
@@ -1143,6 +1163,74 @@ class HookScannerTest {
         assertEquals(listOf("I", "Lorg/ohmyloader/api/hook/Operation;"), handler.captureTypes)
         assertEquals(2, handler.handlerParamCount)
         assertEquals("I", handler.returnType)
+    }
+
+    @Test
+    fun `wrapBranch parses a boolean handler`() {
+        newBridge()
+        val node = injectClass(
+            annotated(
+                "h",
+                "(II)Z",
+                AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/WrapBranch;").apply {
+                    values = mutableListOf<Any?>(
+                        "method", "runTick",
+                        "at", atNode("JUMP", target = "IF_ICMPGE"),
+                    )
+                },
+            ),
+        )
+        val parsed = HookScanner.parseMixinClass(node, "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        assertEquals(1, parsed.rules.size)
+        val payload = parsed.rules[0].payload as Payload.WrapBranch
+        assertNotNull(payload.desc)
+        assertEquals(1, payload.extras.count { it is DslValue.IntVal })
+        val handler = HookRegistry.handler(1)!!
+        assertEquals(listOf("I", "I"), handler.captureTypes)
+        assertEquals("Z", handler.returnType)
+        assertEquals(2, handler.handlerParamCount)
+    }
+
+    @Test
+    fun `wrapBranch requires a conditional-jump anchor`() {
+        newBridge()
+        val node = injectClass(
+            annotated(
+                "h",
+                "(II)Z",
+                AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/WrapBranch;").apply {
+                    values = mutableListOf<Any?>("method", "runTick", "at", atNode("HEAD"))
+                },
+            ),
+        )
+        val parsed = HookScanner.parseMixinClass(node, "m")
+        assertTrue(
+            parsed.problems.any { it.contains("conditional jump") },
+            parsed.problems.toString(),
+        )
+        assertEquals(0, parsed.rules.size)
+    }
+
+    @Test
+    fun `merged wrapBranch calls the handler directly`() {
+        newBridge()
+        val method = MethodNode(Opcodes.ACC_PUBLIC, "h", "(II)Z", null, null).apply {
+            instructions.add(InsnNode(Opcodes.IRETURN))
+            visibleAnnotations = listOf(
+                AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/WrapBranch;").apply {
+                    values = mutableListOf<Any?>(
+                        "method", "runTick",
+                        "at", atNode("JUMP", target = "IF_ICMPGE"),
+                    )
+                },
+            )
+        }
+        val parsed = HookScanner.parseMixinClass(asMerged(mixinClass(method)), "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        val payload = parsed.rules[0].payload as Payload.HandlerCall
+        assertEquals(HandlerKind.WRAP_BRANCH, payload.kind)
+        assertEquals("(II)Z", payload.desc)
     }
 
     @Test

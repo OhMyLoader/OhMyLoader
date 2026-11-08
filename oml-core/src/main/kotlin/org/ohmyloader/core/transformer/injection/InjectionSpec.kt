@@ -35,6 +35,7 @@ internal fun Payload.dslValues(): List<DslValue> = when (this) {
     // the value-modifying discriminator (which argument / slot) is a **scalar**, carried by index / slot, not a DslValue.
     is Payload.HandlerCall -> captures
     is Payload.Redirect -> extras
+    is Payload.WrapBranch -> extras
     is Payload.Raw -> emptyList()
 }
 
@@ -294,6 +295,7 @@ class InjectionSpec internal constructor(
         is Payload.WrapMethod -> copy(extras = extras.map { it.rewriteShare(slots) })
         is Payload.WrapWithCondition -> copy(extras = extras.map { it.rewriteShare(slots) })
         is Payload.Redirect -> copy(extras = extras.map { it.rewriteShare(slots) })
+        is Payload.WrapBranch -> copy(extras = extras.map { it.rewriteShare(slots) })
         else -> this
     }
 
@@ -749,6 +751,25 @@ class InjectionSpec internal constructor(
                                 inserted++
                             }
 
+                            HandlerKind.WRAP_BRANCH -> {
+                                if (anchor !is JumpInsnNode) {
+                                    OmlLog.error(
+                                        "Injection",
+                                        "the anchor of HandlerCall(WRAP_BRANCH) must be a conditional jump, " +
+                                            "currently ${AnchorResolver.describe(point)}: ${method.name}",
+                                    )
+                                    continue
+                                }
+                                val list = PayloadEmitter.emitWrapBranch(
+                                    payload.owner, payload.method, payload.desc, payload.captures,
+                                    instance = true, method = method, owner = owner, jump = anchor, locals = locals,
+                                ) ?: continue
+                                if (!insertBlock(method, anchor, list, after = false, frames, knownShares)) continue
+                                method.instructions.remove(anchor)
+                                frames.invalidate()
+                                inserted++
+                            }
+
                             HandlerKind.WRAP_METHOD -> {
                                 if (hasShares) {
                                     throw InjectionError(
@@ -922,6 +943,25 @@ class InjectionSpec internal constructor(
                         )
                         PayloadEmitter.emitWriteBacks(block, writeBacks)
                         if (!insertBlock(method, anchor, block, after = true, frames, knownShares)) continue
+                        method.instructions.remove(anchor)
+                        frames.invalidate()
+                        inserted++
+                    }
+
+                    is Payload.WrapBranch -> {
+                        if (anchor !is JumpInsnNode) {
+                            OmlLog.error(
+                                "Injection",
+                                "the anchor of WrapBranch must be a conditional jump, currently " +
+                                    "${AnchorResolver.describe(point)}: ${method.name}",
+                            )
+                            continue
+                        }
+                        val list = PayloadEmitter.emitWrapBranch(
+                            payload.owner, payload.method, payload.desc, payload.extras,
+                            instance = false, method = method, owner = owner, jump = anchor, locals = locals,
+                        ) ?: continue
+                        if (!insertBlock(method, anchor, list, after = false, frames, knownShares)) continue
                         method.instructions.remove(anchor)
                         frames.invalidate()
                         inserted++

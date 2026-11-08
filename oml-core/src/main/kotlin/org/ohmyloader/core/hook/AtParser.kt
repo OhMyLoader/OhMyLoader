@@ -100,6 +100,15 @@ internal object AtParser {
                 InjectionPoint.NewInstance(t.owner, t.desc, ordinal)
             }
 
+            "JUMP" -> {
+                // A conditional branch; the opcode may be written as `target = "IF_ICMPGE"` or `opcode = Opcodes.IF_ICMPGE`
+                if (after) return null
+                val named = if (target.isBlank()) null else JUMP_OPCODES[target.trim().uppercase()] ?: return null
+                if (opcode != null && opcode !in JUMP_OPCODES.values) return null
+                if (opcode != null && named != null && opcode != named) return null
+                InjectionPoint.Jump(opcode ?: named, ordinal)
+            }
+
             "CHECKCAST" -> InjectionPoint.TypeCheck(Opcodes.CHECKCAST, typeCheckDesc(target), ordinal)
             "INSTANCEOF" -> InjectionPoint.TypeCheck(Opcodes.INSTANCEOF, typeCheckDesc(target), ordinal)
 
@@ -133,8 +142,28 @@ internal object AtParser {
 
     /** Whether the `@At` value is supported by this front-end (for diagnostics). */
     val SUPPORTED = listOf(
-        "HEAD", "CTOR_HEAD", "RETURN", "TAIL", "INVOKE", "INVOKE_ASSIGN", "FIELD", "NEW", "CONSTANT",
+        "HEAD", "CTOR_HEAD", "RETURN", "TAIL", "INVOKE", "INVOKE_ASSIGN", "FIELD", "NEW", "JUMP", "CONSTANT",
         "STORE", "LOAD", "CHECKCAST", "INSTANCEOF", "ARRAY_LOAD", "ARRAY_STORE", "NEW_ARRAY",
+    )
+
+    /** The conditional-branch opcodes, by the name written in `@At(target = …)`. Exposed for the consistency test. */
+    internal val JUMP_OPCODES = mapOf(
+        "IFEQ" to Opcodes.IFEQ,
+        "IFNE" to Opcodes.IFNE,
+        "IFLT" to Opcodes.IFLT,
+        "IFGE" to Opcodes.IFGE,
+        "IFGT" to Opcodes.IFGT,
+        "IFLE" to Opcodes.IFLE,
+        "IF_ICMPEQ" to Opcodes.IF_ICMPEQ,
+        "IF_ICMPNE" to Opcodes.IF_ICMPNE,
+        "IF_ICMPLT" to Opcodes.IF_ICMPLT,
+        "IF_ICMPGE" to Opcodes.IF_ICMPGE,
+        "IF_ICMPGT" to Opcodes.IF_ICMPGT,
+        "IF_ICMPLE" to Opcodes.IF_ICMPLE,
+        "IF_ACMPEQ" to Opcodes.IF_ACMPEQ,
+        "IF_ACMPNE" to Opcodes.IF_ACMPNE,
+        "IFNULL" to Opcodes.IFNULL,
+        "IFNONNULL" to Opcodes.IFNONNULL,
     )
 
     /** `Lfoo;` → `foo`, an array descriptor stays as-is, blank = any. */

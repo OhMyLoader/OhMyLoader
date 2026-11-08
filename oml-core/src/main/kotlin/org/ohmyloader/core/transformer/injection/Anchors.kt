@@ -19,6 +19,35 @@ import org.ohmyloader.core.transformer.injection.AnchorResolver.sameConstant
  */
 internal object AnchorResolver {
 
+    /**
+     * The conditional-branch opcodes and their mnemonics — the single source of truth for `@At` parsing,
+     * anchor matching and diagnostics. `GOTO`/`JSR`/switches are not conditional: they have no test.
+     */
+    internal val CONDITIONAL_JUMPS: Map<Int, String> = linkedMapOf(
+        Opcodes.IFEQ to "IFEQ",
+        Opcodes.IFNE to "IFNE",
+        Opcodes.IFLT to "IFLT",
+        Opcodes.IFGE to "IFGE",
+        Opcodes.IFGT to "IFGT",
+        Opcodes.IFLE to "IFLE",
+        Opcodes.IF_ICMPEQ to "IF_ICMPEQ",
+        Opcodes.IF_ICMPNE to "IF_ICMPNE",
+        Opcodes.IF_ICMPLT to "IF_ICMPLT",
+        Opcodes.IF_ICMPGE to "IF_ICMPGE",
+        Opcodes.IF_ICMPGT to "IF_ICMPGT",
+        Opcodes.IF_ICMPLE to "IF_ICMPLE",
+        Opcodes.IF_ACMPEQ to "IF_ACMPEQ",
+        Opcodes.IF_ACMPNE to "IF_ACMPNE",
+        Opcodes.IFNULL to "IFNULL",
+        Opcodes.IFNONNULL to "IFNONNULL",
+    )
+
+    /** Whether [opcode] is a conditional branch (matched by [InjectionPoint.Jump]). */
+    internal fun isConditionalJump(opcode: Int): Boolean = opcode in CONDITIONAL_JUMPS
+
+    /** The mnemonic of a conditional branch, or `opcode=<n>` for anything else. */
+    internal fun jumpName(opcode: Int): String = CONDITIONAL_JUMPS[opcode] ?: "opcode=$opcode"
+
     /** `null` means [Constant] matched `ACONST_NULL`; it separates "matched null" from "not a constant". */
     private val NULL_CONSTANT = Any()
 
@@ -109,6 +138,8 @@ internal object AnchorResolver {
         is InjectionPoint.ArrayAccess -> arrayAccesses(method, point)
 
         is InjectionPoint.ArrayCreate -> arrayCreations(method, point)
+
+        is InjectionPoint.Jump -> jumps(method, point)
 
         is InjectionPoint.Constant -> constants(method, point)
 
@@ -203,6 +234,7 @@ internal object AnchorResolver {
         is InjectionPoint.TypeCheck -> point.ordinal
         is InjectionPoint.ArrayAccess -> point.ordinal
         is InjectionPoint.ArrayCreate -> point.ordinal
+        is InjectionPoint.Jump -> point.ordinal
         is InjectionPoint.Constant -> point.ordinal
         is InjectionPoint.Store -> point.ordinal
         is InjectionPoint.Load -> point.ordinal
@@ -318,6 +350,11 @@ internal object AnchorResolver {
 
                 else -> false
             }
+        }
+
+    private fun jumps(method: MethodNode, point: InjectionPoint.Jump): List<AbstractInsnNode> =
+        method.instructions.toArray().filterIsInstance<JumpInsnNode>().filter { node ->
+            isConditionalJump(node.opcode) && (point.opcode == null || node.opcode == point.opcode)
         }
 
     /**
@@ -540,6 +577,9 @@ internal object AnchorResolver {
             Opcodes.MULTIANEWARRAY -> "MULTIANEWARRAY(${point.desc ?: "any"}, dims=${point.dims})"
             else -> "ARRAY_CREATE(${point.opcode})"
         } + (point.ordinal?.let { "[$it]" } ?: "")
+
+        is InjectionPoint.Jump -> "JUMP(${point.opcode?.let(::jumpName) ?: "any"})" +
+            (point.ordinal?.let { "[$it]" } ?: "")
 
         is InjectionPoint.Store -> varAnchor(
             "STORE",

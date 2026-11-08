@@ -214,6 +214,19 @@ sealed class InjectionPoint {
     ) : InjectionPoint()
 
     /**
+     * A **conditional branch**: `IFEQ`…`IF_ACMPNE`, `IFNULL` / `IFNONNULL`. [opcode] pins the exact
+     * instruction (`Opcodes.IFEQ`, …); null matches any conditional jump. [ordinal] selects the Nth
+     * match.
+     * The values the jump compares are already on the operand stack (one int, two ints, one reference,
+     * or two references, depending on the opcode); [Payload.WrapBranch] hands them to a handler that
+     * decides whether the branch is taken.
+     */
+    data class Jump(
+        val opcode: Int? = null,
+        val ordinal: Int? = null,
+    ) : InjectionPoint()
+
+    /**
      * Before a constant-loading instruction (aligned with Mixin `CONSTANT`). The type of [value]
      * picks the kind: `Int` / `Long` / `Float` / `Double` / `String` / `org.objectweb.asm.Type`,
      * or `null` (matches `ACONST_NULL`).
@@ -528,12 +541,29 @@ sealed class Payload {
 
     /**
      * **Gates an operation on a boolean handler** (aligned with MixinExtras `@WrapWithCondition`). The anchor
-     * must be a **void** method call or a field write, before the instruction. The handler is shaped
+     * must be a method call or a field write, before the instruction. The handler is shaped
      * `(receiver?, operands…, extras…)Z`: false skips the original instruction entirely, true runs it
-     * unchanged. Only void operations are supported — a non-void result would need a dummy value on the skip
-     * path, which the engine does not synthesize yet.
+     * unchanged. A non-void call is accepted only when its result is discarded immediately (`POP`/`POP2`).
      */
     data class WrapWithCondition(
+        val owner: String,
+        val method: String,
+        val desc: String,
+        val extras: List<DslValue> = emptyList(),
+    ) : Payload()
+
+    /**
+     * **Decides a conditional branch** (OML's own, beyond MixinExtras). The anchor must be a conditional
+     * jump ([InjectionPoint.Jump]), before the instruction. The values the jump compares are already on
+     * the operand stack; the engine appends [extras] and calls a handler shaped
+     * `(operands…, extras…)Z`, then replaces the jump with `IFNE <same target>`: **true = take the
+     * original branch, false = fall through**. The operands mirror the opcode's stack form — `(I)` for
+     * `IFEQ`-family, `(II)` for `IF_ICMP*`, `(Object, Object)` for `IF_ACMP*`, `(Object)` for
+     * `IFNULL`/`IFNONNULL` — so the handler sees the bytecode-level branch, not the source-level
+     * condition: to "relax `if (damage > 10)` to `> 5`", rewrite the branch opcode's own test
+     * (`damage <= 10` → `damage <= 5`) and return that.
+     */
+    data class WrapBranch(
         val owner: String,
         val method: String,
         val desc: String,
@@ -698,6 +728,12 @@ enum class HandlerKind {
      * `(receiver?, operands…)Z`. Like [REDIRECT], the receiver is a parameter, not `this`.
      */
     WRAP_WITH_CONDITION,
+
+    /**
+     * `@WrapBranch`: decides a conditional branch, handler `(operands…)Z` — true = take the branch,
+     * false = fall through. The operands are the jump's own comparison values.
+     */
+    WRAP_BRANCH,
 
     /**
      * `@WrapOperation`: replaces an operation with a handler that receives an

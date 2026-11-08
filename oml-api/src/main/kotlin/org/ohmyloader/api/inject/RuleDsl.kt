@@ -445,6 +445,17 @@ class MethodRuleBuilder @PublishedApi internal constructor(
     }
 
     /**
+     * Before a **conditional branch** (`IFEQ`…`IF_ACMPNE`, `IFNULL`/`IFNONNULL`).
+     *
+     * The values the jump compares are already on the operand stack; [PayloadBuilder.wrapBranch]
+     * hands them to a boolean handler that decides whether the branch is taken. [opcode] pins the
+     * exact `Opcodes.IF*` instruction, null = any conditional jump.
+     */
+    fun atJump(opcode: Int? = null, ordinal: Int? = null, block: PayloadBuilder.() -> Unit) {
+        points += at(InjectionPoint.Jump(opcode, ordinal)) to payloadOf(block)
+    }
+
+    /**
      * Before a constant-loading instruction (aligned with Mixin `CONSTANT`).
      *
      * The type of [value] decides which constant kind to match (`Int`/`Long`/
@@ -706,6 +717,17 @@ class PayloadBuilder @PublishedApi internal constructor(
     }
 
     /**
+     * **Decide a conditional branch** (`atJump` anchor). The handler is shaped `(operands…, extras…)Z`
+     * and receives the values the jump compares; its return value is **whether the branch is taken**
+     * (true = jump to the original target, false = fall through). The operands follow the opcode's
+     * stack form: `(I)` for `IFEQ`-family, `(II)` for `IF_ICMP*`, `(Object, Object)` for `IF_ACMP*`,
+     * `(Object)` for `IFNULL`/`IFNONNULL`.
+     */
+    fun wrapBranch(owner: String, method: String, desc: String, extras: List<DslValue> = emptyList()) {
+        payload = Payload.WrapBranch(owner, method, desc, extras)
+    }
+
+    /**
      * **Wrap an operation with an `Operation<R>` callback** (aligned with MixinExtras `@WrapOperation`).
      *
      * The anchor must be a call or field access (`beforeCall` / `beforeField`); the handler is shaped
@@ -774,6 +796,10 @@ object Anchor {
     /** A `CHECKCAST` / `INSTANCEOF` instruction; [desc] is the internal name or array descriptor. */
     fun typeCheck(opcode: Int, desc: String? = null, ordinal: Int? = null): InjectionPoint =
         InjectionPoint.TypeCheck(opcode, desc, ordinal)
+
+    /** A conditional branch; [opcode] pins the exact `Opcodes.IF*` instruction, null = any. */
+    fun jump(opcode: Int? = null, ordinal: Int? = null): InjectionPoint =
+        InjectionPoint.Jump(opcode, ordinal)
 
     /** An array load/store; [opcode] pins the exact `xALOAD`/`xASTORE`, null = any. */
     fun arrayAccess(opcode: Int? = null, ordinal: Int? = null): InjectionPoint =

@@ -174,6 +174,7 @@ object HookScanner {
     private const val MODIFY_EXPRESSION_VALUE_DESC = "Lorg/ohmyloader/api/hook/ModifyExpressionValue;"
     private const val MODIFY_RECEIVER_DESC = "Lorg/ohmyloader/api/hook/ModifyReceiver;"
     private const val WRAP_WITH_CONDITION_DESC = "Lorg/ohmyloader/api/hook/WrapWithCondition;"
+    private const val WRAP_BRANCH_DESC = "Lorg/ohmyloader/api/hook/WrapBranch;"
     private const val WRAP_OPERATION_DESC = "Lorg/ohmyloader/api/hook/WrapOperation;"
     private const val WRAP_METHOD_DESC = "Lorg/ohmyloader/api/hook/WrapMethod;"
     private const val LOCAL_DESC = "Lorg/ohmyloader/api/hook/Local;"
@@ -203,6 +204,7 @@ object HookScanner {
         MODIFY_EXPRESSION_VALUE_DESC to "@ModifyExpressionValue",
         MODIFY_RECEIVER_DESC to "@ModifyReceiver",
         WRAP_WITH_CONDITION_DESC to "@WrapWithCondition",
+        WRAP_BRANCH_DESC to "@WrapBranch",
         WRAP_OPERATION_DESC to "@WrapOperation",
         WRAP_METHOD_DESC to "@WrapMethod",
     )
@@ -641,6 +643,11 @@ object HookScanner {
                 where, policy, mergeInto, handlers, rules, problems,
             )
 
+            WRAP_BRANCH_DESC -> parseWrapBranch(
+                method, anchor, targetInternal, methodNames, methodDesc, mixinClass, modId,
+                where, policy, mergeInto, handlers, rules, problems,
+            )
+
             WRAP_OPERATION_DESC -> parseWrapOperation(
                 method, anchor, targetInternal, methodNames, methodDesc, mixinClass, modId,
                 where, policy, mergeInto, handlers, rules, problems,
@@ -866,6 +873,7 @@ object HookScanner {
             HandlerKind.MODIFY_EXPR_VALUE -> "@ModifyExpressionValue"
             HandlerKind.MODIFY_RECEIVER -> "@ModifyReceiver"
             HandlerKind.WRAP_WITH_CONDITION -> "@WrapWithCondition"
+            HandlerKind.WRAP_BRANCH -> "@WrapBranch"
             HandlerKind.WRAP_OPERATION -> "@WrapOperation"
             HandlerKind.WRAP_METHOD -> "@WrapMethod"
         }
@@ -1347,6 +1355,81 @@ object HookScanner {
                 extras = split.bindings + DslValue.IntVal(id),
             ),
             policy, emptyList(), "WrapWithCondition",
+        )
+    }
+
+    /**
+     * `@WrapBranch` — a handler deciding a conditional branch. The handler's non-sugar parameters are
+     * the jump's compared values (validated against the matched opcode at injection time, since a
+     * wildcard `JUMP` may hit several forms); its return value is whether the branch is taken.
+     */
+    private fun parseWrapBranch(
+        method: MethodNode,
+        anchor: InjectionPoint,
+        targetInternal: String,
+        methodNames: List<String>,
+        methodDesc: String?,
+        mixinClass: String,
+        modId: String,
+        where: String,
+        policy: Policy,
+        mergeInto: String?,
+        handlers: MutableSet<String>,
+        rules: MutableList<Rule>,
+        problems: MutableList<String>,
+    ) {
+        val core = anchor.core
+        if (core !is InjectionPoint.Jump || anchor.after) {
+            problems += "[$modId] $where —— @WrapBranch's @At must be a conditional jump (JUMP), " +
+                "before the instruction"
+            return
+        }
+        val ret = Type.getReturnType(method.desc)
+        if (ret != Type.BOOLEAN_TYPE) {
+            problems += "[$modId] $where —— @WrapBranch handler must return boolean " +
+                "(whether the branch is taken), currently ${method.desc}"
+            return
+        }
+        val split = trailingSugar(method, mixinClass, where, modId, problems) ?: return
+        val normal = split.normal
+        if (normal.isEmpty()) {
+            problems += "[$modId] $where —— @WrapBranch handler must take the jump's compared values " +
+                "((I)Z for IFEQ, (II)Z for IF_ICMP*, (Ljava/lang/Object;)Z for IFNULL, …), " +
+                "currently ${method.desc}"
+            return
+        }
+        if (mergeInto != null && !method.isDeclaredStatic()) {
+            handlers += "${method.name}${method.desc}"
+            rules += Rule(
+                targetInternal, methodNames, methodDesc, anchor,
+                Payload.HandlerCall(
+                    mergeInto, method.name, method.desc, split.bindings,
+                    HandlerVariant.NOTIFY, HandlerKind.WRAP_BRANCH,
+                ),
+                policy, emptyList(), "WrapBranch",
+            )
+            return
+        }
+        val id = HookRegistry.register(
+            modId = modId,
+            mixinClass = mixinClass,
+            handlerMethod = method.name,
+            targetMethod = methodNames.first(),
+            cancelable = false,
+            captureTypes = normal.map { it.descriptor } + split.sugarTypes,
+            handlerParamCount = normal.size + split.sugarTypes.size,
+            returnType = ret.descriptor,
+        )
+        val kind = HookRegistry.BridgeKind.MODIFY
+        rules += Rule(
+            targetInternal, methodNames, methodDesc, anchor,
+            Payload.WrapBranch(
+                owner = HookRegistry.BRIDGE_CLASS,
+                method = HookRegistry.bridgeMethodName(id, kind),
+                desc = HookRegistry.bridgeDesc(id, kind),
+                extras = split.bindings + DslValue.IntVal(id),
+            ),
+            policy, emptyList(), "WrapBranch",
         )
     }
 

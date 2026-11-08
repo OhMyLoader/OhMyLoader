@@ -147,6 +147,7 @@ internal object InjectionVerifier {
             is InjectionPoint.Call -> point.ordinal
             is InjectionPoint.FieldAccess -> point.ordinal
             is InjectionPoint.NewInstance -> point.ordinal
+            is InjectionPoint.Jump -> point.ordinal
             is InjectionPoint.Constant -> point.ordinal
             is InjectionPoint.Store -> point.ordinal
             is InjectionPoint.Load -> point.ordinal
@@ -182,6 +183,14 @@ internal object InjectionVerifier {
                 if (point.opcode != null && point.opcode !in allowed) {
                     problems += "$where — FIELD opcode can only be GETFIELD/PUTFIELD/GETSTATIC/PUTSTATIC, " +
                         "actual ${point.opcode}"
+                }
+            }
+
+            is InjectionPoint.Jump -> {
+                val jumpOpcode = point.opcode
+                if (jumpOpcode != null && !AnchorResolver.isConditionalJump(jumpOpcode)) {
+                    problems += "$where — JUMP opcode must be a conditional branch " +
+                        "(IFEQ…IF_ACMPNE, IFNULL/IFNONNULL), actual $jumpOpcode"
                 }
             }
 
@@ -294,8 +303,54 @@ internal object InjectionVerifier {
         return problems
     }
 
-    /** Extra constraints on entry-style short-circuit payloads: in a constructor they must land on CTOR_HEAD (an early return before the delegating call is illegal). */
-    private fun earlyReturnProblem(
+    /**
+     * Shape check shared by `@WrapBranch`'s external bridge form and its merged instance form: boolean
+     * return, and — when the anchor pins the opcode — exactly the jump's operand count with matching
+     * int/reference categories (a wildcard `JUMP` may hit several forms, so those are checked per hit).
+     */
+    private fun branchShapeProblems(
+        where: String,
+        annotation: String,
+        desc: String,
+        extrasCount: Int,
+        opcode: Int?,
+    ): List<String> {
+        val type = runCatching { Type.getMethodType(desc) }.getOrNull()
+            ?: return listOf("$where — handler descriptor of $annotation cannot be parsed: $desc")
+        val problems = mutableListOf<String>()
+        if (type.returnType != Type.BOOLEAN_TYPE) {
+            problems += "$where — the handler of $annotation must return boolean " +
+                "(whether the branch is taken): $desc"
+        }
+        val operands = type.argumentTypes.size - extrasCount
+        if (operands < 1) {
+            problems += "$where — the handler of $annotation must take the jump's compared values as " +
+                "its first parameters: $desc"
+            return problems
+        }
+        val expected = opcode?.let(PayloadEmitter::jumpOperandTypes) ?: return problems
+        if (operands != expected.size) {
+            problems += "$where — the jump compares ${expected.size} value(s), but the handler of " +
+                "$annotation declares $operands value parameter(s): $desc"
+            return problems
+        }
+        for (i in expected.indices) {
+            val actual = type.argumentTypes[i]
+            val ok = if (expected[i].sort == Type.INT) {
+                actual.sort in setOf(Type.BOOLEAN, Type.BYTE, Type.CHAR, Type.SHORT, Type.INT)
+            } else {
+                actual.sort == Type.OBJECT || actual.sort == Type.ARRAY
+            }
+            if (!ok) {
+                problems += "$where — operand ${i + 1} of $annotation must be " +
+                    "${if (expected[i].sort == Type.INT) "an int" else "a reference"}, " +
+                    "actual ${actual.className} ($desc)"
+            }
+        }
+        return problems
+    }
+
+    /** Extra constraints on entry-style short-circuit payloads: in a constructor they must land on CTOR_HEAD (an early return before the delegating call is illegal). */    private fun earlyReturnProblem(
         where: String,
         point: InjectionPoint,
         isConstructor: Boolean,
@@ -446,6 +501,21 @@ internal object InjectionVerifier {
                         if (runCatching { Type.getReturnType(payload.desc) }.getOrNull() != Type.BOOLEAN_TYPE) {
                             problems += "$where — the handler of @WrapWithCondition must return boolean: ${payload.desc}"
                         }
+                    }
+
+                    HandlerKind.WRAP_BRANCH -> {
+                        if (payload.variant != HandlerVariant.NOTIFY) {
+                            problems += "$where — a WrapBranch handler must not call back the handle (variant should be NOTIFY): ${payload.desc}"
+                        }
+                        val core = point.core
+                        if (core !is InjectionPoint.Jump || point.after) {
+                            problems += "$where — the @At of @WrapBranch must be a conditional jump (JUMP), " +
+                                "before the instruction, now ${AnchorResolver.describe(point)}"
+                        }
+                        problems += branchShapeProblems(
+                            where, "@WrapBranch", payload.desc, payload.captures.size,
+                            (core as? InjectionPoint.Jump)?.opcode,
+                        )
                     }
 
                     HandlerKind.WRAP_OPERATION -> {
@@ -707,6 +777,19 @@ internal object InjectionVerifier {
                         "actual ${desc.returnType.className}"
                 }
                 problems += checkHandler(where, "WrapWithCondition", payload.owner, payload.method, payload.desc, loader)
+            }
+
+            is Payload.WrapBranch -> {
+                val core = point.core
+                if (core !is InjectionPoint.Jump || point.after) {
+                    problems += "$where — WrapBranch requires a conditional-jump anchor before the " +
+                        "instruction (atJump / @At(JUMP)), now ${AnchorResolver.describe(point)}"
+                }
+                problems += branchShapeProblems(
+                    where, "WrapBranch", payload.desc, payload.extras.size,
+                    (core as? InjectionPoint.Jump)?.opcode,
+                )
+                problems += checkHandler(where, "WrapBranch", payload.owner, payload.method, payload.desc, loader)
             }
 
             is Payload.WrapOperation -> {

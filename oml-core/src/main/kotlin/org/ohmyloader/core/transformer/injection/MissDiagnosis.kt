@@ -105,6 +105,9 @@ internal object MissDiagnosis {
             is InjectionPoint.ArrayCreate ->
                 "$where did not hit$inMethods: check the array-creation kind, descriptor and dimensions"
 
+            is InjectionPoint.Jump ->
+                "$where did not hit$inMethods: the method's conditional branches are " + jumpHint(methods)
+
             is InjectionPoint.Store ->
                 "$where did not hit$inMethods: the only **writes** to locals are " + varHint(methods, store = true)
 
@@ -174,6 +177,16 @@ internal object MissDiagnosis {
 
     private fun constantsHint(methods: List<MethodNode>): String =
         sample(methods.flatMap { AnchorResolver.constantTexts(it) }.distinct())
+
+    /** The conditional branches the method does contain (mnemonics, distinct, in occurrence order). */
+    private fun jumpHint(methods: List<MethodNode>): String {
+        val jumps = methods.asSequence().flatMap { it.instructions.toArray().toList() }
+            .filterIsInstance<JumpInsnNode>()
+            .filter { AnchorResolver.isConditionalJump(it.opcode) }
+            .map { AnchorResolver.jumpName(it.opcode) }
+            .distinct().toList()
+        return if (jumps.isEmpty()) "none (it has no conditional branches at all)" else sample(jumps)
+    }
 
     private fun newHint(node: ClassNode, methods: List<MethodNode>, point: InjectionPoint.NewInstance): String {
         val news = methods.asSequence().flatMap { it.instructions.toArray().toList() }

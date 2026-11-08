@@ -17,6 +17,9 @@ internal object PayloadEmitter {
     /** How a bridge descriptor should end: the handle is the last parameter, returning void. */
     private const val CALLBACK_RETURNABLE_TAIL = "$CALLBACK_RETURNABLE_DESC)V"
 
+    /** The reference placeholder for values whose precise type the anchor does not declare (jump operands). */
+    private val OBJECT_TYPE: Type = Type.getObjectType("java/lang/Object")
+
     /**
      * Emits the payload instructions; returns `null` when **this injection cannot be completed** (reason already
      * printed), and the caller should skip.
@@ -68,6 +71,7 @@ internal object PayloadEmitter {
         }
 
         is Payload.Redirect -> error("Redirect substitutes the instruction directly in the engine and does not go through emit")
+        is Payload.WrapBranch -> error("WrapBranch substitutes the jump directly in the engine and does not go through emit")
         is Payload.CancelableReturn -> emitCancelableReturn(payload, method, owner, locals)
 
         // Value-modifying instance handlers: **no handle** — the handler's return value IS the conclusion.
@@ -81,8 +85,8 @@ internal object PayloadEmitter {
             // REDIRECT is even more radical: it rewrites that call instruction in place; the anchor IS the instruction being replaced.
             HandlerKind.MODIFY_ARG, HandlerKind.MODIFY_ARGS, HandlerKind.MODIFY_VAR,
             HandlerKind.MODIFY_CONST, HandlerKind.MODIFY_RETURN, HandlerKind.MODIFY_EXPR_VALUE,
-            HandlerKind.MODIFY_RECEIVER, HandlerKind.WRAP_WITH_CONDITION, HandlerKind.WRAP_OPERATION,
-            HandlerKind.WRAP_METHOD, HandlerKind.REDIRECT,
+            HandlerKind.MODIFY_RECEIVER, HandlerKind.WRAP_WITH_CONDITION, HandlerKind.WRAP_BRANCH,
+            HandlerKind.WRAP_OPERATION, HandlerKind.WRAP_METHOD, HandlerKind.REDIRECT,
                 -> error("HandlerCall(${payload.kind}) needs the anchor instruction and is handled directly by the engine, not through emit")
         }
 
@@ -1000,6 +1004,107 @@ internal object PayloadEmitter {
         Type.INT, Type.BOOLEAN, Type.BYTE, Type.CHAR, Type.SHORT -> Opcodes.INTEGER
         else -> type.internalName
     }
+
+    /**
+     * **Decides a conditional branch** (`@WrapBranch`). The jump's compared values are on the operand stack;
+     * the engine appends [extras] and calls `(operands…, extras…)Z`, then replaces the jump with
+     * `INVOKE…; IFNE <original target>`: true = take the branch, false = fall through.
+     *
+     * The static form consumes the values in place; the merged instance form must stash them first, because
+     * `ALOAD 0` (the handler's `this`) has to go **below** them. Straight-line code either way — the branch
+     * target keeps its existing frame, so no new stack-map frame is needed.
+     */
+    internal fun emitWrapBranch(
+        handlerOwner: String,
+        handlerMethod: String,
+        handlerDesc: String,
+        extras: List<DslValue>,
+        instance: Boolean,
+        method: MethodNode,
+        owner: String,
+        jump: JumpInsnNode,
+        locals: AnchorLocals?,
+    ): InsnList? {
+        val operandTypes = jumpOperandTypes(jump.opcode) ?: run {
+            OmlLog.error(
+                "Injection",
+                "WrapBranch's anchor must be a conditional jump, actual opcode ${jump.opcode}: ${method.name}",
+            )
+            return null
+        }
+        val handlerArgs = Type.getArgumentTypes(handlerDesc)
+        val handlerRet = Type.getReturnType(handlerDesc)
+        if (handlerRet != Type.BOOLEAN_TYPE) {
+            throw InjectionError(
+                "[injection] the handler of WrapBranch must return boolean (whether the branch is taken): " +
+                    handlerDesc,
+            )
+        }
+        if (handlerArgs.size < operandTypes.size + extras.size) {
+            throw InjectionError(
+                "[injection] the handler of WrapBranch gives too few parameters: the jump compares " +
+                    "${operandTypes.size} value(s) and the rule adds ${extras.size} extra(s), " +
+                    "but the handler declares ${handlerArgs.size} ($handlerDesc)",
+            )
+        }
+        for (i in operandTypes.indices) {
+            val actual = handlerArgs[i]
+            val ok = if (operandTypes[i] == Type.INT_TYPE) actual.isIntFamily else actual.isReference
+            if (!ok) {
+                throw InjectionError(
+                    "[injection] WrapBranch operand ${i + 1} type mismatch: the jump compares " +
+                        "${if (operandTypes[i] == Type.INT_TYPE) "an int" else "a reference"}, " +
+                        "but the handler declares ${actual.className} ($handlerDesc)",
+                )
+            }
+        }
+        validateArgTypes(handlerDesc, extras, operandTypes.size, method, owner, locals, "WrapBranch.extras")
+
+        val list = InsnList()
+        if (instance) {
+            val slots = storeArgs(method, operandTypes)
+            for (i in operandTypes.indices.reversed()) {
+                list.add(VarInsnNode(Boxing.storeOpcode(operandTypes[i]), slots[i]))
+            }
+            list.add(VarInsnNode(Opcodes.ALOAD, 0))
+            for (i in operandTypes.indices) {
+                list.add(VarInsnNode(Boxing.loadOpcode(operandTypes[i]), slots[i]))
+            }
+        }
+        val writeBacks = mutableListOf<SugarWriteBack>()
+        if (!emitValues(list, extras, method, locals, writeBacks)) return null
+        list.add(
+            MethodInsnNode(
+                if (instance) Opcodes.INVOKEVIRTUAL else Opcodes.INVOKESTATIC,
+                handlerOwner, handlerMethod, handlerDesc, false,
+            ),
+        )
+        emitWriteBacks(list, writeBacks)
+        list.add(JumpInsnNode(Opcodes.IFNE, jump.label))
+        return list
+    }
+
+    /**
+     * The values a conditional jump compares, in stack order: one int (`IFEQ`-family), two ints
+     * (`IF_ICMP*`), one reference (`IFNULL`/`IFNONNULL`) or two references (`IF_ACMP*`).
+     */
+    internal fun jumpOperandTypes(opcode: Int): Array<Type>? = when (opcode) {        Opcodes.IFEQ, Opcodes.IFNE, Opcodes.IFLT, Opcodes.IFGE, Opcodes.IFGT, Opcodes.IFLE ->
+            arrayOf(Type.INT_TYPE)
+
+        Opcodes.IF_ICMPEQ, Opcodes.IF_ICMPNE, Opcodes.IF_ICMPLT, Opcodes.IF_ICMPGE, Opcodes.IF_ICMPGT,
+        Opcodes.IF_ICMPLE -> arrayOf(Type.INT_TYPE, Type.INT_TYPE)
+
+        Opcodes.IF_ACMPEQ, Opcodes.IF_ACMPNE -> arrayOf(OBJECT_TYPE, OBJECT_TYPE)
+        Opcodes.IFNULL, Opcodes.IFNONNULL -> arrayOf(OBJECT_TYPE)
+        else -> null
+    }
+
+    private val Type.isIntFamily: Boolean
+        get() = sort == Type.BOOLEAN || sort == Type.BYTE || sort == Type.CHAR ||
+            sort == Type.SHORT || sort == Type.INT
+
+    private val Type.isReference: Boolean
+        get() = sort == Type.OBJECT || sort == Type.ARRAY
 
     /**
      * **Wraps an operation with an `Operation<R>`** (MixinExtras `@WrapOperation`). The stack at the anchor
