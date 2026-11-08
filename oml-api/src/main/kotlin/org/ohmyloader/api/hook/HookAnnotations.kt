@@ -470,7 +470,7 @@ annotation class Expression(val value: Array<String>)
 /**
  * Declares an identifier used by an [Expression] (aligned with MixinExtras' `@Definition`).
  * [method] and [field] take the same strings as `@At(target = …)`; [type] takes classes referenced
- * by `instanceof` / casts / instantiations.
+ * by `instanceof` / casts / instantiations; [local] declares a local-variable identifier.
  */
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
@@ -479,6 +479,20 @@ annotation class Definition(
     val method: Array<String> = [],
     val field: Array<String> = [],
     val type: Array<kotlin.reflect.KClass<*>> = [],
+    val local: Array<DefinitionLocal> = [],
+)
+
+/**
+ * One local-variable identifier for [Definition] (aligned with MixinExtras' `Local` inside
+ * `@Definition`): [index] pins the slot, otherwise the [ordinal]-th live local of [type] is used, and
+ * [argsOnly] restricts the search to parameter slots.
+ */
+@Retention(AnnotationRetention.RUNTIME)
+annotation class DefinitionLocal(
+    val index: Int = -1,
+    val ordinal: Int = -1,
+    val type: String = "",
+    val argsOnly: Boolean = false,
 )
 
 /**

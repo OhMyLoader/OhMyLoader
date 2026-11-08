@@ -183,6 +183,35 @@ class InjectionExpressionTest {
     }
 
     @Test
+    fun `a local identifier matches a computed local`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("local", desc = "(I)I") {
+                        atExpression(
+                            "x * 2",
+                            definitions = listOf(
+                                InjectionPoint.Expression.Definition(
+                                    "x",
+                                    locals = listOf(
+                                        InjectionPoint.Expression.Definition.Local(index = 1, type = "I"),
+                                    ),
+                                ),
+                            ),
+                        ) {
+                            modifyExpressionValue(ExpressionHandlers.OWNER, "triple", "(I)I")
+                        }
+                    }
+                }
+            },
+            localTarget(),
+        )
+
+        // x = 5, x * 2 = 10, the handler triples it to 30
+        assertEquals(30, invoke(clazz, "local", 4))
+    }
+
+    @Test
     fun `an undeclared identifier fails the transform`() {
         val spec = specOf {
             classTarget(owner) {
@@ -297,6 +326,20 @@ class InjectionExpressionTest {
         },
     )
 
+    /** `static int local(int seed) { int x = seed + 1; return x * 2; }` */
+    private fun localTarget(): ClassNode = classNode(
+        methodNode("local", "(I)I") {
+            add(VarInsnNode(Opcodes.ILOAD, 0))
+            add(InsnNode(Opcodes.ICONST_1))
+            add(InsnNode(Opcodes.IADD))
+            add(VarInsnNode(Opcodes.ISTORE, 1))
+            add(VarInsnNode(Opcodes.ILOAD, 1))
+            add(InsnNode(Opcodes.ICONST_2))
+            add(InsnNode(Opcodes.IMUL))
+            add(InsnNode(Opcodes.IRETURN))
+        },
+    )
+
     /** `static int cmp(int x) { if (x > 5) return 100; return 0; }` */
     private fun compareTarget(): ClassNode = classNode(
         methodNode("cmp", "(I)I") {
@@ -366,5 +409,8 @@ class InjectionExpressionTest {
 
         @JvmStatic
         fun hello(@Suppress("UNUSED_PARAMETER") value: String): String = "Hello "
+
+        @JvmStatic
+        fun triple(value: Int): Int = value * 3
     }
 }

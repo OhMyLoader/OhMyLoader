@@ -2066,16 +2066,32 @@ object HookScanner {
                 val types = (annotationValue(node, "type") as? List<*>).orEmpty()
                     .filterIsInstance<org.objectweb.asm.Type>()
                     .map { it.descriptor }
+                val locals = (annotationValue(node, "local") as? List<*>).orEmpty()
+                    .filterIsInstance<AnnotationNode>()
+                    .map { local ->
+                        InjectionPoint.Expression.Definition.Local(
+                            index = (annotationValue(local, "index") as? Int)?.takeIf { it >= 0 },
+                            type = (annotationValue(local, "type") as? String)?.takeIf { it.isNotEmpty() },
+                            ordinal = (annotationValue(local, "ordinal") as? Int)?.takeIf { it >= 0 } ?: 0,
+                            argsOnly = annotationValue(local, "argsOnly") as? Boolean ?: false,
+                        )
+                    }
                 InjectionPoint.Expression.Definition(
                     id = (annotationValue(node, "id") as? String).orEmpty(),
                     methods = stringArray(annotationValue(node, "method")),
                     fields = stringArray(annotationValue(node, "field")),
                     types = types,
+                    locals = locals,
                 )
             }
         for (definition in definitions) {
             if (definition.id.isBlank()) {
                 problems += "[$modId] $where —— @Definition needs a non-empty id (the identifier the expression uses)"
+                return null
+            }
+            if (definition.locals.any { it.index == null && it.type == null }) {
+                problems += "[$modId] $where —— a @DefinitionLocal needs index or type " +
+                    "(otherwise the local variable cannot be located)"
                 return null
             }
         }

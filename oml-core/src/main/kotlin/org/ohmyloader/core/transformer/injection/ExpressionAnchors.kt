@@ -1,7 +1,9 @@
 package org.ohmyloader.core.transformer.injection
 
+import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.*
+import org.ohmyloader.api.inject.DslValue
 import org.ohmyloader.api.inject.HandlerKind
 import org.ohmyloader.api.inject.InjectionError
 import org.ohmyloader.api.inject.InjectionPoint
@@ -58,7 +60,7 @@ internal object ExpressionAnchors {
                 )
             }
         }
-        val pool = identifierPool(point.definitions)
+        val pool = identifierPool(point.definitions, classNode, method)
         val flows = try {
             FlowInterpreter.analyze(classNode, method, null)
         } catch (failure: RuntimeException) {
@@ -129,8 +131,15 @@ internal object ExpressionAnchors {
     }
 
     /** The identifier pool the author declared; the default primitives and `length` come from [IdentifierPool]. */
-    private fun identifierPool(definitions: List<InjectionPoint.Expression.Definition>): IdentifierPool {
+    private fun identifierPool(
+        definitions: List<InjectionPoint.Expression.Definition>,
+        classNode: ClassNode,
+        method: MethodNode,
+    ): IdentifierPool {
         val pool = IdentifierPool()
+        val frames = if (definitions.any { it.locals.isNotEmpty() }) MethodFrames(classNode.name, method) else null
+        val isStatic = (method.access and Opcodes.ACC_STATIC) != 0
+        val argSlots = (if (isStatic) 0 else 1) + Type.getArgumentTypes(method.desc).sumOf { it.size }
         for (definition in definitions) {
             for (method in definition.methods) {
                 val target = AtParser.methodTarget(method)
@@ -161,6 +170,24 @@ internal object ExpressionAnchors {
             for (type in definition.types) {
                 val parsed = parseType(type)
                 pool.addType(definition.id, TypeDefinition { actual -> actual == parsed })
+            }
+            for (local in definition.locals) {
+                pool.addMember(
+                    definition.id,
+                    MemberDefinition { flow ->
+                        val insn = flow.insnOrNull
+                        if (insn !is VarInsnNode || insn.opcode !in Opcodes.ILOAD..Opcodes.ALOAD) {
+                            return@MemberDefinition false
+                        }
+                        val frame = frames?.at(insn, after = false)?.frame() ?: return@MemberDefinition false
+                        val resolved = frame.resolve(
+                            DslValue.Local(local.index, local.type, local.ordinal, strict = false),
+                            isStatic,
+                        )
+                        val slot = (resolved as? LocalResolution.Found)?.slot ?: return@MemberDefinition false
+                        slot == insn.`var` && (!local.argsOnly || insn.`var` < argSlots)
+                    },
+                )
             }
         }
         return pool

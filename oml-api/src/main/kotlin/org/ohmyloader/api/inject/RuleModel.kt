@@ -242,13 +242,26 @@ sealed class InjectionPoint {
         val definitions: List<Definition> = emptyList(),
         override val after: Boolean = false,
     ) : InjectionPoint() {
-        /** One `@Definition`: the identifier plus the members/types it stands for (At-style strings). */
+        /** One `@Definition`: the identifier plus the members/types/locals it stands for (At-style strings). */
         data class Definition(
             val id: String,
             val methods: List<String> = emptyList(),
             val fields: List<String> = emptyList(),
             val types: List<String> = emptyList(),
-        )
+            val locals: List<Local> = emptyList(),
+        ) {
+            /**
+             * A `@DefinitionLocal`: the local variable the identifier stands for. [index] pins the slot;
+             * otherwise the [ordinal]-th live local of [type] is used. [argsOnly] restricts the search to
+             * the method's parameter slots.
+             */
+            data class Local(
+                val index: Int? = null,
+                val type: String? = null,
+                val ordinal: Int = 0,
+                val argsOnly: Boolean = false,
+            )
+        }
     }
 
     /**

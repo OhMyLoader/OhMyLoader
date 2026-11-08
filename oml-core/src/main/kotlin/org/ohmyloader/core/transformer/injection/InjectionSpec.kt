@@ -1,6 +1,7 @@
 package org.ohmyloader.core.transformer.injection
 
 import org.objectweb.asm.Opcodes
+import org.objectweb.asm.Type
 import org.objectweb.asm.tree.*
 import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.inject.*
@@ -233,6 +234,22 @@ class InjectionSpec internal constructor(
         decorations: Map<AbstractInsnNode, Map<String, Any?>>,
         anchor: AbstractInsnNode,
     ): ComparisonInfo? = decorations[anchor]?.get(ExpressionDecorations.COMPARISON_INFO) as? ComparisonInfo
+
+    /**
+     * The value type an expression capture produces, when the matcher recorded it. Arithmetic and other
+     * instructions that `ProducedValue` cannot classify (it only knows calls/fields/constants) are typed
+     * by the matched expression itself.
+     */
+    private fun expressionValueType(
+        point: InjectionPoint,
+        decorations: Map<AbstractInsnNode, Map<String, Any?>>,
+        anchor: AbstractInsnNode,
+    ): Type? {
+        if (point.core !is InjectionPoint.Expression) return null
+        val type = decorations[anchor]?.get(ExpressionDecorations.SIMPLE_EXPRESSION_TYPE) as? Type ?: return null
+        // The matcher's "any int-like constant" placeholder is an int on the stack
+        return if (type.descriptor == "Lint-like;") Type.INT_TYPE else type
+    }
 
     /**
      * Expands the compound instruction a captured expression belongs to and returns the component this
@@ -765,10 +782,11 @@ class InjectionSpec internal constructor(
                                     inserted++
                                     continue
                                 }
-                                // The expression value: its type and whether it is on the stack are both determined by that instruction
-                                val value = ProducedValue.requireReadable(
-                                    "@ModifyExpressionValue", point, anchor, method,
-                                )
+                                // The expression value: the capture's recorded type, or the instruction's own
+                                val value = expressionValueType(point, expressionDecorations, anchor)
+                                    ?: ProducedValue.requireReadable(
+                                        "@ModifyExpressionValue", point, anchor, method,
+                                    )
                                 val list = PayloadEmitter.emitInPlaceHandler(
                                     payload, "@ModifyExpressionValue", value, method, owner, locals,
                                 ) ?: continue
@@ -986,7 +1004,8 @@ class InjectionSpec internal constructor(
                             inserted++
                             continue
                         }
-                        val value = ProducedValue.requireReadable("ModifyExpressionValue", point, anchor, method)
+                        val value = expressionValueType(point, expressionDecorations, anchor)
+                            ?: ProducedValue.requireReadable("ModifyExpressionValue", point, anchor, method)
                         val list = PayloadEmitter.emitInPlaceValue(
                             "ModifyExpressionValue", payload.owner, payload.method, payload.desc, payload.extras,
                             instance = false, value = value, method = method, owner = owner, locals = locals,
