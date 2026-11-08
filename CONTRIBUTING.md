@@ -17,7 +17,7 @@ test-mod run there.
 ## Prerequisites
 
 - JDK 27. CI uses the Zulu distribution.
-- The Gradle wrapper in this repository (Gradle 9.8.2).
+- The Gradle wrapper in this repository (Gradle 9.9.0).
 - Zig 0.17.0 on `PATH` for `oml-native` and for `publishToMavenLocal`.
 - Network access for the Piston metadata and Maven artifacts used by fetch tasks.
 - A sibling `OhMyLoaderTestMod` checkout for real game gates. It is not a build dependency.

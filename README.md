@@ -125,7 +125,7 @@ change.
 
 ### Toolchain
 
-JDK 27 (Zulu), Gradle 9.8.2, and Kotlin 2.5.0-Beta2. Kotlin 2.5.0-Beta2 is currently the only line that
+JDK 27 (Zulu), Gradle 9.9.0, and Kotlin 2.5.0-Beta2. Kotlin 2.5.0-Beta2 is currently the only line that
 declares JVM 27 as its target. `build-logic` runs on JVM 26 because `kotlin-dsl` binds to Gradle's embedded
 compiler; this is valid.
 
