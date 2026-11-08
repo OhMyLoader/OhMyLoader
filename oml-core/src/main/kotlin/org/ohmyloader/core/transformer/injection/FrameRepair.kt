@@ -40,6 +40,7 @@ internal object FrameRepair {
         block: InsnList,
         after: Boolean,
         frames: MethodFrames?,
+        knownLocals: Map<Int, Any> = emptyMap(),
     ): Result {
         val reads = externalReads(block)
         if (reads.isEmpty()) return Result.Nothing
@@ -52,23 +53,27 @@ internal object FrameRepair {
         }
         if (missing.isEmpty()) return Result.Nothing
 
-        // Analysis unavailable ⇒ do nothing: better to keep the status quo than write a frame with a guessed type
-        val truth = frames?.frameLocalsAt(anchor, after) ?: return Result.Nothing
-        val unresolved = missing.filter { slot ->
-            truth.getOrNull(slot).let { it == null || it == Opcodes.TOP }
-        }
+        // The dataflow cannot see a prologue inserted after the emission (shared refs), so the engine supplies
+        // those slot types explicitly; otherwise a frame is only patched when the analysis can infer the type.
+        val truth = frames?.frameLocalsAt(anchor, after)
+        fun typeOf(slot: Int): Any? =
+            knownLocals[slot] ?: truth?.getOrNull(slot)?.takeIf { it != Opcodes.TOP }
+
+        val unresolved = missing.filter { typeOf(it) == null }
         if (unresolved.isNotEmpty()) {
+            // Analysis unavailable: keep the status quo (do not write a frame with a guessed type).
+            if (truth == null) return Result.Nothing
             return Result.Failed(
                 "they are neither declared by this frame nor written between the frame and the injection point, " +
                     "and dataflow cannot infer a type (possibly an uninitialized object): slots ${unresolved.joinToString()}",
             )
         }
 
-        val size = maxOf(declared.size, missing.maxOf { slot -> slot + widthOf(truth[slot]) })
+        val size = maxOf(declared.size, missing.maxOf { slot -> slot + widthOf(typeOf(slot)!!) })
         val locals = ArrayList<Any>(size)
         for (slot in 0 until size) {
             val kept = declared.getOrNull(slot)?.takeIf { it != Opcodes.TOP }
-            locals += kept ?: truth.getOrNull(slot) ?: Opcodes.TOP
+            locals += kept ?: typeOf(slot) ?: Opcodes.TOP
         }
         covering.local = locals
         return Result.Fixed(missing)

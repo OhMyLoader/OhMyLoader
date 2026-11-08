@@ -1283,6 +1283,60 @@ class HookScannerTest {
         assertEquals(0, parsed.rules.size)
     }
 
+    @Test
+    fun `share sugar produces a shared ref binding`() {
+        newBridge()
+        val inject = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Inject;").apply {
+            values = mutableListOf<Any?>("method", "runTick", "at", atNode("HEAD"))
+        }
+        val share = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Share;").apply {
+            values = mutableListOf<Any?>("value", "x")
+        }
+        val method = MethodNode(
+            Opcodes.ACC_PUBLIC,
+            "h",
+            "(Lorg/ohmyloader/api/hook/LocalRef;Lorg/ohmyloader/api/hook/HookContext;)V",
+            null,
+            null,
+        ).apply {
+            instructions.add(InsnNode(Opcodes.RETURN))
+            visibleAnnotations = listOf(inject)
+            visibleParameterAnnotations = arrayOf(mutableListOf(share), mutableListOf())
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        assertEquals(1, parsed.rules.size)
+        val payload = parsed.rules[0].payload as Payload.StaticCall
+        val bound = payload.args[0] as DslValue.SharedRef
+        assertEquals("x", bound.id)
+        assertEquals("org.ohmyloader.testmod.TestMixin", bound.namespace)
+    }
+
+    @Test
+    fun `share sugar requires a LocalRef parameter`() {
+        newBridge()
+        val inject = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Inject;").apply {
+            values = mutableListOf<Any?>("method", "runTick", "at", atNode("HEAD"))
+        }
+        val share = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Share;").apply {
+            values = mutableListOf<Any?>("value", "x")
+        }
+        val method = MethodNode(
+            Opcodes.ACC_PUBLIC,
+            "h",
+            "(Ljava/lang/String;Lorg/ohmyloader/api/hook/HookContext;)V",
+            null,
+            null,
+        ).apply {
+            instructions.add(InsnNode(Opcodes.RETURN))
+            visibleAnnotations = listOf(inject)
+            visibleParameterAnnotations = arrayOf(mutableListOf(share), mutableListOf())
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(parsed.problems.any { it.contains("must be LocalRef") }, parsed.problems.toString())
+        assertEquals(0, parsed.rules.size)
+    }
+
     // ---------- fixtures ----------
 
     private fun parse(

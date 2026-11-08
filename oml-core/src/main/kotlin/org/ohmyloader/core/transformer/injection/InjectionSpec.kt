@@ -4,6 +4,9 @@ import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.*
 import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.inject.*
+import org.ohmyloader.core.hook.LOCAL_REF
+import org.ohmyloader.core.hook.LOCAL_REF_DESC
+import org.ohmyloader.core.hook.LOCAL_REFS
 import org.ohmyloader.core.transformer.TransformContext
 
 /**
@@ -85,7 +88,7 @@ class InjectionSpec internal constructor(
         var changed = false
 
         // One dataflow cache per method node, shared by every rule touching that method (see MethodFrames)
-        val frames = HashMap<MethodNode, MethodFrames>()
+        val frameCache = HashMap<MethodNode, MethodFrames>()
 
         // Access flags land first: they are **declaration-level**, and body injection and class merging both build
         // on the final flags. Only flag bits change, no instructions, so no stack frames are involved; the class is
@@ -101,6 +104,8 @@ class InjectionSpec internal constructor(
             if (result.changes.isNotEmpty()) changed = true
         }
 
+        // One shared-ref state per method, reused by every rule touching that method.
+        val shareStates = HashMap<MethodNode, ShareState>()
         // Whole-method wraps run last: their body move must see every ordinary injection already applied.
         for (rule in classRules.methods.sortedBy { if (it.isWholeMethodWrap()) 1 else 0 }) {
             val named = context.node.methods.filter { rule.selector.matches(it.name, it.desc) }
@@ -110,8 +115,13 @@ class InjectionSpec internal constructor(
             for (method in injectable) {
                 // The dataflow cache hangs on the method, not the rule: several rules hitting the same
                 // method share one MethodFrames, re-analyzed only when a rule actually mutated the list
-                val frames = frames.getOrPut(method) { MethodFrames(context.internalName, method) }
-                hits += applyToMethod(context.internalName, context.node.superName, context.node, method, rule.points, frames)
+                val prepared = prepareShares(method, rule.points, shareStates)
+                val frames = frameCache.getOrPut(method) { MethodFrames(context.internalName, method) }
+                hits += applyToMethod(
+                    context.internalName, context.node.superName, context.node, method, prepared.points, frames,
+                    prepared.knownShares,
+                    shareStates[method]?.slots?.isNotEmpty() == true,
+                )
             }
             reportHits(
                 "${context.internalName} :: ${rule.selector.describe()}",
@@ -125,6 +135,14 @@ class InjectionSpec internal constructor(
                 ) else emptyList(),
             )
             if (hits > 0) changed = true
+        }
+
+        // Shared-ref prologues go in last: every HEAD block is already placed before the method's original
+        // first instruction, and inserting the initializer at the head keeps it ahead of all of them.
+        for ((method, state) in shareStates) {
+            if (state.newSlots.isEmpty()) continue
+            method.instructions.insert(state.init)
+            declareShareSlots(method, state.newSlots)
         }
         return changed
     }
@@ -211,8 +229,9 @@ class InjectionSpec internal constructor(
         block: InsnList,
         after: Boolean,
         frames: MethodFrames?,
+        knownLocals: Map<Int, Any> = emptyMap(),
     ): Boolean {
-        when (val repair = FrameRepair.ensure(method, anchor, block, after, frames)) {
+        when (val repair = FrameRepair.ensure(method, anchor, block, after, frames, knownLocals)) {
             is FrameRepair.Result.Nothing -> Unit
 
             is FrameRepair.Result.Fixed -> OmlLog.error(
@@ -237,6 +256,94 @@ class InjectionSpec internal constructor(
         return true
     }
 
+    /** A `@Share` identity: the carrier-chosen namespace plus the author-chosen id. */
+    private data class ShareKey(val namespace: String, val id: String)
+
+    private fun Payload.shareKeys(): List<ShareKey> =
+        dslValues().filterIsInstance<DslValue.SharedRef>().map { ShareKey(it.namespace, it.id) }
+
+    private fun DslValue.rewriteShare(slots: Map<ShareKey, Int>): DslValue =
+        if (this is DslValue.SharedRef) {
+            val slot = slots[ShareKey(namespace, id)]
+                ?: throw InjectionError("[injection] internal: no shared-ref slot for $namespace/$id")
+            // A plain local read would be resolved by the dataflow analysis, which cannot see a prologue
+            // that is inserted after the emission; RefSlot reads the fixed slot directly.
+            DslValue.RefSlot(slot = slot, type = LOCAL_REF_DESC)
+        } else {
+            this
+        }
+
+    private fun Payload.rewriteShares(slots: Map<ShareKey, Int>): Payload = when (this) {
+        is Payload.StaticCall -> copy(args = args.map { it.rewriteShare(slots) })
+        is Payload.CheckCall -> copy(args = args.map { it.rewriteShare(slots) })
+        is Payload.CancelableReturn -> copy(bridgeArgs = bridgeArgs.map { it.rewriteShare(slots) })
+        is Payload.HandlerCall -> copy(captures = captures.map { it.rewriteShare(slots) })
+        else -> this
+    }
+
+    /**
+     * Allocates one `LocalRef` local per distinct `@Share` key used by [points], initializes them at the
+     * method head, and declares the slots in every StackMapTable frame. Each SharedRef capture is then
+     * rewritten to a plain read of its slot.
+     *
+     * The slot's type must be exactly `LocalRef` (the engine's local resolver demands identical reference
+     * descriptors), so the initializer calls a factory whose return type is the interface.
+     */
+    /**
+     * Per-method shared-ref state: the key→slot map, the prologue being accumulated, and the slots that
+     * still need a frame declaration. The prologue is inserted at the end of [transform], so it cannot
+     * steal the HEAD anchor and sits ahead of every HEAD block.
+     */
+    private class ShareState(
+        val slots: MutableMap<ShareKey, Int> = mutableMapOf(),
+        val init: InsnList = InsnList(),
+        val newSlots: MutableList<Int> = mutableListOf(),
+    )
+
+    private class PreparedShares(
+        val points: List<Pair<InjectionPoint, Payload>>,
+        val knownShares: Map<Int, Any>,
+    )
+
+    private fun prepareShares(
+        method: MethodNode,
+        points: List<Pair<InjectionPoint, Payload>>,
+        shareStates: MutableMap<MethodNode, ShareState>,
+    ): PreparedShares {
+        val keys = points.flatMap { (_, payload) -> payload.shareKeys() }.distinct()
+        if (keys.isEmpty()) return PreparedShares(points, emptyMap())
+        val state = shareStates.getOrPut(method) { ShareState() }
+        for (key in keys) {
+            if (key in state.slots) continue
+            val slot = PayloadEmitter.allocLocalSlot(method)
+            method.maxLocals = maxOf(method.maxLocals, slot + 1)
+            state.slots[key] = slot
+            state.newSlots += slot
+            state.init.add(
+                MethodInsnNode(Opcodes.INVOKESTATIC, LOCAL_REFS, "create", "()$LOCAL_REF_DESC", false),
+            )
+            state.init.add(VarInsnNode(Opcodes.ASTORE, slot))
+        }
+        val rewritten = points.map { (point, payload) -> point to payload.rewriteShares(state.slots) }
+        val known = keys.mapNotNull { key -> state.slots[key]?.let { slot -> slot to LOCAL_REF } }.toMap()
+        return PreparedShares(rewritten, known)
+    }
+
+    /**
+     * The share slots are live from the method head; every existing frame must declare them (as `LocalRef`),
+     * otherwise a frame between the initializer and the use resets the slot to `TOP` in the verifier's eyes.
+     */
+    private fun declareShareSlots(method: MethodNode, slots: List<Int>) {
+        val max = slots.max()
+        for (node in method.instructions) {
+            if (node !is FrameNode) continue
+            val locals = node.local?.toMutableList() ?: mutableListOf()
+            while (locals.size <= max) locals.add(Opcodes.TOP)
+            for (slot in slots) locals[slot] = LOCAL_REF
+            node.local = locals
+        }
+    }
+
     private fun applyToMethod(
         owner: String,
         superName: String?,
@@ -244,6 +351,8 @@ class InjectionSpec internal constructor(
         method: MethodNode,
         points: List<Pair<InjectionPoint, Payload>>,
         frames: MethodFrames,
+        knownShares: Map<Int, Any>,
+        hasShares: Boolean,
     ): Int {
         var inserted = 0
         for ([point, payload] in points) {
@@ -311,7 +420,7 @@ class InjectionSpec internal constructor(
                         val list =
                             PayloadEmitter.emitCheckCall(payload, method, owner, locals, continuationLocals)
                                 ?: continue
-                        if (!insertBlock(method, anchor, list, after = !point.isMethodHead(), frames)) continue
+                        if (!insertBlock(method, anchor, list, after = !point.isMethodHead(), frames, knownShares)) continue
                         inserted++
                     }
 
@@ -333,7 +442,7 @@ class InjectionSpec internal constructor(
                             continue
                         }
                         val list = PayloadEmitter.emit(payload, method, owner, locals) ?: continue
-                        if (!insertBlock(method, anchor, list, after = false, frames)) continue
+                        if (!insertBlock(method, anchor, list, after = false, frames, knownShares)) continue
                         inserted++
                     }
 
@@ -347,7 +456,7 @@ class InjectionSpec internal constructor(
                             continue
                         }
                         val list = PayloadEmitter.emitModifyArg(payload, method, owner, anchor, locals) ?: continue
-                        if (!insertBlock(method, anchor, list, after = false, frames)) continue
+                        if (!insertBlock(method, anchor, list, after = false, frames, knownShares)) continue
                         inserted++
                     }
 
@@ -361,7 +470,7 @@ class InjectionSpec internal constructor(
                             continue
                         }
                         val list = PayloadEmitter.emitModifyArgs(payload, method, owner, anchor, locals) ?: continue
-                        if (!insertBlock(method, anchor, list, after = false, frames)) continue
+                        if (!insertBlock(method, anchor, list, after = false, frames, knownShares)) continue
                         inserted++
                     }
 
@@ -380,7 +489,7 @@ class InjectionSpec internal constructor(
                             ?: continue
                         // Store sets after=true (write after the write), Load sets after=false (write before the read) —
                         // both landing points are answered by the anchor itself; handled uniformly here
-                        if (!insertBlock(method, anchor, list, point.after, frames)) continue
+                        if (!insertBlock(method, anchor, list, point.after, frames, knownShares)) continue
                         inserted++
                     }
 
@@ -397,7 +506,7 @@ class InjectionSpec internal constructor(
                             payload.owner, payload.method, payload.desc, payload.extras,
                             instance = false, method = method, owner = owner, anchor = anchor, locals = locals,
                         ) ?: continue
-                        if (!insertBlock(method, anchor, list, after = false, frames)) continue
+                        if (!insertBlock(method, anchor, list, after = false, frames, knownShares)) continue
                         inserted++
                     }
 
@@ -415,7 +524,7 @@ class InjectionSpec internal constructor(
                             instance = false, method = method, owner = owner, anchor = anchor,
                             frames = frames, locals = locals,
                         ) ?: continue
-                        if (!insertBlock(method, anchor, list, after = false, frames)) continue
+                        if (!insertBlock(method, anchor, list, after = false, frames, knownShares)) continue
                         inserted++
                     }
 
@@ -434,7 +543,7 @@ class InjectionSpec internal constructor(
                                 instance = false, classNode = classNode, method = method, owner = owner,
                                 newInsn = anchor, locals = locals,
                             ) ?: continue
-                            if (!insertBlock(method, edit.initInsn, edit.block, after = false, frames)) continue
+                            if (!insertBlock(method, edit.initInsn, edit.block, after = false, frames, knownShares)) continue
                             method.instructions.remove(edit.initInsn)
                             method.instructions.set(edit.newInsn, InsnNode(Opcodes.ACONST_NULL))
                             frames.invalidate()
@@ -454,13 +563,20 @@ class InjectionSpec internal constructor(
                             instance = false, classNode = classNode, method = method, owner = owner,
                             anchor = anchor, locals = locals,
                         ) ?: continue
-                        if (!insertBlock(method, anchor, list, after = false, frames)) continue
+                        if (!insertBlock(method, anchor, list, after = false, frames, knownShares)) continue
                         method.instructions.remove(anchor)
                         frames.invalidate()
                         inserted++
                     }
 
                     is Payload.WrapMethod -> {
+                        if (hasShares) {
+                            throw InjectionError(
+                                "[injection] @Share and @WrapMethod cannot be combined on " +
+                                    "${method.name}${method.desc}: the body move would carry the ref reads " +
+                                    "into a different frame",
+                            )
+                        }
                         if (MethodWrapper.wrap(
                                 classNode, method, owner, payload.owner, payload.method, payload.desc,
                                 payload.extras, instance = false,
@@ -481,7 +597,7 @@ class InjectionSpec internal constructor(
                                 // Entry kind: the anchor is carried by the rule itself (HEAD / CTOR_HEAD, etc.),
                                 // and the landing goes through the common branch
                                 val list = PayloadEmitter.emit(payload, method, owner, locals) ?: continue
-                                if (!insertBlock(method, anchor, list, point.after, frames)) continue
+                                if (!insertBlock(method, anchor, list, point.after, frames, knownShares)) continue
                                 inserted++
                             }
 
@@ -496,7 +612,7 @@ class InjectionSpec internal constructor(
                                 }
                                 val list = PayloadEmitter.emitModifyArg(payload, method, owner, anchor, locals)
                                     ?: continue
-                                if (!insertBlock(method, anchor, list, after = false, frames)) continue
+                                if (!insertBlock(method, anchor, list, after = false, frames, knownShares)) continue
                                 inserted++
                             }
 
@@ -511,7 +627,7 @@ class InjectionSpec internal constructor(
                                 }
                                 val list = PayloadEmitter.emitModifyArgs(payload, method, owner, anchor, locals)
                                     ?: continue
-                                if (!insertBlock(method, anchor, list, after = false, frames)) continue
+                                if (!insertBlock(method, anchor, list, after = false, frames, knownShares)) continue
                                 inserted++
                             }
 
@@ -524,7 +640,7 @@ class InjectionSpec internal constructor(
                                 val list = PayloadEmitter.emitInPlaceHandler(
                                     payload, "@ModifyConstant", value, method, owner, locals,
                                 ) ?: continue
-                                if (!insertBlock(method, anchor, list, point.after, frames)) continue
+                                if (!insertBlock(method, anchor, list, point.after, frames, knownShares)) continue
                                 inserted++
                             }
 
@@ -550,7 +666,7 @@ class InjectionSpec internal constructor(
                                 val list = PayloadEmitter.emitInPlaceHandler(
                                     payload, "@ModifyReturnValue", value, method, owner, locals,
                                 ) ?: continue
-                                if (!insertBlock(method, anchor, list, point.after, frames)) continue
+                                if (!insertBlock(method, anchor, list, point.after, frames, knownShares)) continue
                                 inserted++
                             }
 
@@ -562,7 +678,7 @@ class InjectionSpec internal constructor(
                                 val list = PayloadEmitter.emitInPlaceHandler(
                                     payload, "@ModifyExpressionValue", value, method, owner, locals,
                                 ) ?: continue
-                                if (!insertBlock(method, anchor, list, point.after, frames)) continue
+                                if (!insertBlock(method, anchor, list, point.after, frames, knownShares)) continue
                                 inserted++
                             }
 
@@ -578,7 +694,7 @@ class InjectionSpec internal constructor(
                                 }
                                 val list = PayloadEmitter.emitModifyVariable(payload, method, owner, anchor, locals)
                                     ?: continue
-                                if (!insertBlock(method, anchor, list, point.after, frames)) continue
+                                if (!insertBlock(method, anchor, list, point.after, frames, knownShares)) continue
                                 inserted++
                             }
 
@@ -595,7 +711,7 @@ class InjectionSpec internal constructor(
                                     payload.owner, payload.method, payload.desc, payload.captures,
                                     instance = true, method = method, owner = owner, anchor = anchor, locals = locals,
                                 ) ?: continue
-                                if (!insertBlock(method, anchor, list, after = false, frames)) continue
+                                if (!insertBlock(method, anchor, list, after = false, frames, knownShares)) continue
                                 inserted++
                             }
 
@@ -613,11 +729,18 @@ class InjectionSpec internal constructor(
                                     instance = true, method = method, owner = owner, anchor = anchor,
                                     frames = frames, locals = locals,
                                 ) ?: continue
-                                if (!insertBlock(method, anchor, list, after = false, frames)) continue
+                                if (!insertBlock(method, anchor, list, after = false, frames, knownShares)) continue
                                 inserted++
                             }
 
                             HandlerKind.WRAP_METHOD -> {
+                                if (hasShares) {
+                                    throw InjectionError(
+                                        "[injection] @Share and @WrapMethod cannot be combined on " +
+                                            "${method.name}${method.desc}: the body move would carry the ref " +
+                                            "reads into a different frame",
+                                    )
+                                }
                                 if (MethodWrapper.wrap(
                                         classNode, method, owner, payload.owner, payload.method, payload.desc,
                                         payload.captures, instance = true,
@@ -643,7 +766,7 @@ class InjectionSpec internal constructor(
                                         instance = true, classNode = classNode, method = method, owner = owner,
                                         newInsn = anchor, locals = locals,
                                     ) ?: continue
-                                    if (!insertBlock(method, edit.initInsn, edit.block, after = false, frames)) continue
+                                    if (!insertBlock(method, edit.initInsn, edit.block, after = false, frames, knownShares)) continue
                                     method.instructions.remove(edit.initInsn)
                                     method.instructions.set(edit.newInsn, InsnNode(Opcodes.ACONST_NULL))
                                     frames.invalidate()
@@ -663,7 +786,7 @@ class InjectionSpec internal constructor(
                                     instance = true, classNode = classNode, method = method, owner = owner,
                                     anchor = anchor, locals = locals,
                                 ) ?: continue
-                                if (!insertBlock(method, anchor, list, after = false, frames)) continue
+                                if (!insertBlock(method, anchor, list, after = false, frames, knownShares)) continue
                                 method.instructions.remove(anchor)
                                 frames.invalidate()
                                 inserted++
@@ -717,7 +840,7 @@ class InjectionSpec internal constructor(
                                     payload.owner, payload.method, payload.desc, payload.captures,
                                     method, owner, anchor, locals,
                                 )
-                                if (!insertBlock(method, anchor, list, after = false, frames)) continue
+                                if (!insertBlock(method, anchor, list, after = false, frames, knownShares)) continue
                                 method.instructions.remove(anchor)
                                 frames.invalidate()
                                 inserted++
@@ -731,7 +854,7 @@ class InjectionSpec internal constructor(
                             "ModifyConstant", payload.owner, payload.method, payload.desc, payload.extras,
                             instance = false, value = value, method = method, owner = owner, locals = locals,
                         ) ?: continue
-                        if (!insertBlock(method, anchor, list, point.after, frames)) continue
+                        if (!insertBlock(method, anchor, list, point.after, frames, knownShares)) continue
                         inserted++
                     }
 
@@ -741,7 +864,7 @@ class InjectionSpec internal constructor(
                             "ModifyExpressionValue", payload.owner, payload.method, payload.desc, payload.extras,
                             instance = false, value = value, method = method, owner = owner, locals = locals,
                         ) ?: continue
-                        if (!insertBlock(method, anchor, list, point.after, frames)) continue
+                        if (!insertBlock(method, anchor, list, point.after, frames, knownShares)) continue
                         inserted++
                     }
 
@@ -773,7 +896,7 @@ class InjectionSpec internal constructor(
                             Opcodes.INVOKESTATIC, payload.handlerOwner, payload.handlerMethod, desc, false,
                         )
                         val block = InsnList().apply { add(replacement) }
-                        if (!insertBlock(method, anchor, block, after = true, frames)) continue
+                        if (!insertBlock(method, anchor, block, after = true, frames, knownShares)) continue
                         method.instructions.remove(anchor)
                         frames.invalidate()
                         inserted++
@@ -782,7 +905,7 @@ class InjectionSpec internal constructor(
                     else -> {
                         val list =
                             PayloadEmitter.emit(payload, method, owner, locals) ?: continue // validation failed, skip
-                        if (!insertBlock(method, anchor, list, point.after, frames)) continue
+                        if (!insertBlock(method, anchor, list, point.after, frames, knownShares)) continue
                         inserted++
                     }
                 }

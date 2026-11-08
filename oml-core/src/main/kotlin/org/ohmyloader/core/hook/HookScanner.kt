@@ -177,6 +177,7 @@ object HookScanner {
     private const val WRAP_OPERATION_DESC = "Lorg/ohmyloader/api/hook/WrapOperation;"
     private const val WRAP_METHOD_DESC = "Lorg/ohmyloader/api/hook/WrapMethod;"
     private const val LOCAL_DESC = "Lorg/ohmyloader/api/hook/Local;"
+    private const val SHARE_DESC = "Lorg/ohmyloader/api/hook/Share;"
     private const val BORROWED_DESC = "Lorg/ohmyloader/api/hook/Borrowed;"
     private const val EXTRA_DESC = "Lorg/ohmyloader/api/hook/Extra;"
     private const val REPLACE_DESC = "Lorg/ohmyloader/api/hook/Replace;"
@@ -394,8 +395,8 @@ object HookScanner {
     ) {
         val where = "$mixinClass.${method.name}"
         val shortName = INJECTION_ANNOTATIONS[annotation.desc] ?: return
-        if (annotation.desc != INJECT_DESC && hasLocalSugar(method)) {
-            problems += "[$modId] $where —— @Local is currently supported on @Inject handlers only"
+        if (annotation.desc != INJECT_DESC && hasSugar(method)) {
+            problems += "[$modId] $where —— @Local/@Share are currently supported on @Inject handlers only"
             return
         }
 
@@ -907,7 +908,10 @@ object HookScanner {
         }
         // Parameter-level sugar: @Local params sit among the captures (before the handle) and are bound
         // by their own discriminator instead of the locals = LocalCapture type-order rule.
-        val sugar = localBindings(method)
+        val sugar = LinkedHashMap<Int, DslValue>().apply {
+            putAll(localBindings(method))
+            putAll(shareBindings(method, mixinClass))
+        }
         if (sugar.isNotEmpty()) {
             val originalParams = Type.getArgumentTypes(method.desc)
             if (originalParams.size - 1 in sugar) {
@@ -923,6 +927,16 @@ object HookScanner {
                     problems += "[$modId] $where —— @Local on a LocalRef parameter (parameter $param) needs " +
                         "index or type: the parameter type is the ref, not the local"
                     return
+                }
+                if (binding is DslValue.SharedRef) {
+                    if (binding.id.isEmpty()) {
+                        problems += "[$modId] $where —— @Share needs a non-empty value (the share id)"
+                        return
+                    }
+                    if (originalParams.getOrNull(param)?.descriptor != LOCAL_REF_DESC) {
+                        problems += "[$modId] $where —— @Share parameter $param must be LocalRef<T>"
+                        return
+                    }
                 }
             }
         }
@@ -1934,9 +1948,25 @@ object HookScanner {
         return out
     }
 
-    /** Whether any parameter of [method] carries `@Local` (used to reject sugar on unsupported injectors). */
-    private fun hasLocalSugar(method: MethodNode): Boolean =
-        method.visibleParameterAnnotations?.any { list -> list?.any { it.desc == LOCAL_DESC } == true } == true
+    /** `@Share` bindings: parameter index → the shared ref it requests. */
+    private fun shareBindings(method: MethodNode, mixinClass: String): Map<Int, DslValue> {
+        val annotations = method.visibleParameterAnnotations ?: return emptyMap()
+        val out = LinkedHashMap<Int, DslValue>()
+        for (i in annotations.indices) {
+            val annotation = annotations[i]?.firstOrNull { it.desc == SHARE_DESC } ?: continue
+            val id = (annotationValue(annotation, "value") as? String).orEmpty()
+            val namespace = (annotationValue(annotation, "namespace") as? String)?.takeIf { it.isNotEmpty() }
+                ?: mixinClass
+            out[i] = DslValue.SharedRef(namespace, id, LOCAL_REF_DESC)
+        }
+        return out
+    }
+
+    /** Whether any parameter of [method] carries `@Local`/`@Share` (sugar is currently @Inject-only). */
+    private fun hasSugar(method: MethodNode): Boolean =
+        method.visibleParameterAnnotations?.any { list ->
+            list?.any { it.desc == LOCAL_DESC || it.desc == SHARE_DESC } == true
+        } == true
 
     private fun localCaptureOf(annotation: AnnotationNode): LocalCapture {
         val name = AtParser.enumName(annotationValue(annotation, "locals"))

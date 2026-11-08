@@ -509,6 +509,8 @@ internal object PayloadEmitter {
             }
 
             is DslValue.RefLocal -> Type.getType(LOCAL_REF_DESC)
+            is DslValue.SharedRef -> Type.getType(value.type)
+            is DslValue.RefSlot -> Type.getType(value.type)
             is DslValue.IntVal -> Type.INT_TYPE
             is DslValue.LongVal -> Type.LONG_TYPE
             is DslValue.Str -> Type.getType("Ljava/lang/String;")
@@ -1839,6 +1841,13 @@ internal object PayloadEmitter {
                 list.add(VarInsnNode(Opcodes.ALOAD, refSlot))
                 writeBacks += SugarWriteBack(refSlot, found.slot, found.type)
             }
+
+            is DslValue.SharedRef -> throw InjectionError(
+                "[injection] a @Share capture must be rewritten to the method's ref slot before emission: " +
+                    "${method.name}${method.desc}",
+            )
+
+            is DslValue.RefSlot -> list.add(VarInsnNode(Opcodes.ALOAD, value.slot))
 
             is DslValue.IntVal -> list.add(LdcInsnNode(value.value))
             is DslValue.LongVal -> list.add(LdcInsnNode(value.value))

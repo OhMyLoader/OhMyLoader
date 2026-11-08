@@ -416,3 +416,20 @@ annotation class Local(
     val type: String = "",
     val print: Boolean = false,
 )
+
+/**
+ * Shares a mutable [org.ohmyloader.api.hook.LocalRef] between handlers of the **same target method
+ * invocation** (aligned with MixinExtras' `@Share`). The parameter type must be `LocalRef<T>`; the ref is
+ * created once when the method is entered (initial value `null`) and the same instance is passed to every
+ * handler requesting the same [value] within [namespace] (which defaults to the carrier class). Handlers
+ * earlier in the method can leave a value for later ones.
+ *
+ * Currently supported on `@Inject` handler parameters placed before the trailing `HookContext`/
+ * `HookValue`. The ref is per invocation and never written back to a local; do not store it.
+ */
+@Target(AnnotationTarget.VALUE_PARAMETER)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class Share(
+    val value: String,
+    val namespace: String = "",
+)

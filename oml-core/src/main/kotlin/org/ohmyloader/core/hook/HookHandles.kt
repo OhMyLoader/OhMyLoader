@@ -39,3 +39,6 @@ internal const val LOCAL_REF_DESC = "L$LOCAL_REF;"
 
 /** The engine-created [LOCAL_REF] implementation. */
 internal const val LOCAL_REF_IMPL = "org/ohmyloader/api/hook/LocalRefImpl"
+
+/** Factory whose return type makes the shared-ref local slot exactly `LocalRef`. */
+internal const val LOCAL_REFS = "org/ohmyloader/api/hook/LocalRefs"

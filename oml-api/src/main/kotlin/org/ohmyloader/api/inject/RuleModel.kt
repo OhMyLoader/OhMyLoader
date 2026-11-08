@@ -305,6 +305,28 @@ sealed class DslValue {
         val strict: Boolean = true,
     ) : DslValue()
 
+    /**
+     * A **shared** `LocalRef` (aligned with MixinExtras' `@Share`): the engine creates one ref per target
+     * method invocation and hands the same instance to every payload requesting the same
+     * ([namespace], [id]). The engine rewrites this to the method's ref slot before emission; it is only
+     * valid on `@Inject` payloads.
+     */
+    data class SharedRef(
+        val namespace: String,
+        val id: String,
+        val type: String = "Lorg/ohmyloader/api/hook/LocalRef;",
+    ) : DslValue()
+
+    /**
+     * Engine-internal: a read of an already-allocated shared-ref slot. The engine rewrites [SharedRef] to
+     * this after allocating the method's slot. The slot is initialized by a prologue inserted at the end of
+     * the transform, so it is deliberately **not** resolved by the dataflow analysis; the type is fixed.
+     */
+    data class RefSlot(
+        val slot: Int,
+        val type: String = "Lorg/ohmyloader/api/hook/LocalRef;",
+    ) : DslValue()
+
     data class IntVal(val value: Int) : DslValue()
     data class LongVal(val value: Long) : DslValue()
     data class Str(val value: String) : DslValue()

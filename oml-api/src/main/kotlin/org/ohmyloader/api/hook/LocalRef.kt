@@ -18,3 +18,12 @@ interface LocalRef<T> {
 class LocalRefImpl<T>(initial: T? = null) : LocalRef<T> {
     override var value: T? = initial
 }
+
+/**
+ * Engine-facing factory for [LocalRef]. The engine's injected bytecode calls it so the local slot's
+ * inferred type is the interface, not the implementation. Not intended for mod code.
+ */
+object LocalRefs {
+    @JvmStatic
+    fun create(): LocalRef<Any?> = LocalRefImpl()
+}
