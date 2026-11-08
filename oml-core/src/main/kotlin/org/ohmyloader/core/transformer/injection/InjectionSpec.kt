@@ -702,6 +702,29 @@ class InjectionSpec internal constructor(
                             )
                             continue
                         }
+                        // A comparison has no single operation instruction; it is wrapped as an
+                        // Operation<Boolean> re-evaluating the comparison (complex cmps are still out)
+                        val comparison = comparisonDecoration(expressionDecorations, anchor)
+                        val comparisonJump = comparison?.let { resolveComparisonJump(it, anchor, method) }
+                        if (comparison != null && comparisonJump != null) {
+                            if (comparison is ComplexComparisonInfo) {
+                                OmlLog.error(
+                                    "Injection",
+                                    "WrapOperation on a complex comparison (lcmp/fcmp/dcmp) is not supported yet: " +
+                                        method.name,
+                                )
+                                continue
+                            }
+                            val list = PayloadEmitter.emitWrapComparison(
+                                payload.owner, payload.method, payload.desc, payload.extras,
+                                instance = false, comparison, classNode, method, owner, comparisonJump, locals,
+                            ) ?: continue
+                            if (!insertBlock(method, comparisonJump, list, after = false, frames, knownShares)) continue
+                            method.instructions.remove(comparisonJump)
+                            frames.invalidate()
+                            inserted++
+                            continue
+                        }
                         if (anchor is TypeInsnNode && anchor.opcode == Opcodes.NEW) {
                             val edit = PayloadEmitter.emitWrapNewOperation(
                                 payload.owner, payload.method, payload.desc, payload.extras,
@@ -961,6 +984,27 @@ class InjectionSpec internal constructor(
                                         "the anchor of HandlerCall(WRAP_OPERATION) must be before the operation, " +
                                             "currently ${AnchorResolver.describe(point)}: ${method.name}",
                                     )
+                                    continue
+                                }
+                                val comparison = comparisonDecoration(expressionDecorations, anchor)
+                                val comparisonJump = comparison?.let { resolveComparisonJump(it, anchor, method) }
+                                if (comparison != null && comparisonJump != null) {
+                                    if (comparison is ComplexComparisonInfo) {
+                                        OmlLog.error(
+                                            "Injection",
+                                            "WrapOperation on a complex comparison (lcmp/fcmp/dcmp) is not " +
+                                                "supported yet: ${method.name}",
+                                        )
+                                        continue
+                                    }
+                                    val list = PayloadEmitter.emitWrapComparison(
+                                        payload.owner, payload.method, payload.desc, payload.captures,
+                                        instance = true, comparison, classNode, method, owner, comparisonJump, locals,
+                                    ) ?: continue
+                                    if (!insertBlock(method, comparisonJump, list, after = false, frames, knownShares)) continue
+                                    method.instructions.remove(comparisonJump)
+                                    frames.invalidate()
+                                    inserted++
                                     continue
                                 }
                                 if (anchor is TypeInsnNode && anchor.opcode == Opcodes.NEW) {

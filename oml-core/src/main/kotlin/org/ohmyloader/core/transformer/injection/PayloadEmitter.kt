@@ -1180,6 +1180,85 @@ internal object PayloadEmitter {
     }
 
     /**
+     * **Wraps a comparison** with an `Operation<Boolean>` (`@WrapOperation` on an expression capturing a
+     * comparison). The operands are stashed first, then the handler gets `(left, right, Operation<Boolean>,
+     * extras…)boolean`; the operation re-evaluates the source-level comparison with whatever values the
+     * handler passes, and the handler's result decides the branch (the original jump is removed by the caller).
+     */
+    internal fun emitWrapComparison(
+        handlerOwner: String,
+        handlerMethod: String,
+        handlerDesc: String,
+        extras: List<DslValue>,
+        instance: Boolean,
+        comparison: ComparisonInfo,
+        classNode: ClassNode,
+        method: MethodNode,
+        owner: String,
+        jump: JumpInsnNode,
+        locals: AnchorLocals?,
+    ): InsnList? {
+        // The matcher's "any int-like" placeholder is an int on the stack
+        val input = if (comparison.input.descriptor == "Lint-like;") Type.INT_TYPE else comparison.input
+        val operandTypes = arrayOf(input, input)
+        val handlerArgs = Type.getArgumentTypes(handlerDesc)
+        val handlerRet = Type.getReturnType(handlerDesc)
+        val opIndex = operandTypes.size
+        if (handlerArgs.size < opIndex + 1 + extras.size) {
+            throw InjectionError(
+                "[injection] the handler of @WrapOperation on a comparison gives too few parameters: " +
+                    "$opIndex compared value(s), then $OPERATION_DESC, then ${extras.size} extra(s); " +
+                    "the handler declares ${handlerArgs.size} ($handlerDesc)",
+            )
+        }
+        for (i in operandTypes.indices) {
+            if (handlerArgs[i] != operandTypes[i]) {
+                throw InjectionError(
+                    "[injection] WrapOperation comparison parameter ${i + 1} type mismatch: expected " +
+                        "${operandTypes[i].className}, actual ${handlerArgs[i].className} ($handlerDesc)",
+                )
+            }
+        }
+        if (handlerArgs[opIndex].descriptor != OPERATION_DESC) {
+            throw InjectionError(
+                "[injection] the handler of @WrapOperation on a comparison must take $OPERATION_DESC right " +
+                    "after the compared values: ${handlerDesc}",
+            )
+        }
+        if (handlerRet != Type.BOOLEAN_TYPE) {
+            throw InjectionError(
+                "[injection] the handler of @WrapOperation on a comparison must return boolean: $handlerDesc",
+            )
+        }
+        validateArgTypes(handlerDesc, extras, opIndex + 1, method, owner, locals, "WrapOperation.extras")
+
+        val jumpOpcode = comparison.copyJump(InsnList())
+        val slots = storeArgs(method, operandTypes)
+        val list = InsnList()
+        for (i in operandTypes.indices.reversed()) {
+            list.add(VarInsnNode(Boxing.storeOpcode(operandTypes[i]), slots[i]))
+        }
+        if (instance) list.add(VarInsnNode(Opcodes.ALOAD, 0))
+        for (i in operandTypes.indices) {
+            list.add(VarInsnNode(Boxing.loadOpcode(operandTypes[i]), slots[i]))
+        }
+        OperationSupport.makeComparisonOperation(
+            classNode, list, operandTypes, jumpOpcode, comparison.jumpOnTrue,
+        )
+        val writeBacks = mutableListOf<SugarWriteBack>()
+        if (!emitValues(list, extras, method, locals, writeBacks)) return null
+        list.add(
+            MethodInsnNode(
+                if (instance) Opcodes.INVOKEVIRTUAL else Opcodes.INVOKESTATIC,
+                handlerOwner, handlerMethod, handlerDesc, false,
+            ),
+        )
+        emitWriteBacks(list, writeBacks)
+        list.add(JumpInsnNode(if (comparison.jumpOnTrue) Opcodes.IFNE else Opcodes.IFEQ, jump.label))
+        return list
+    }
+
+    /**
      * **Wraps an operation with an `Operation<R>`** (MixinExtras `@WrapOperation`). The stack at the anchor
      * holds the operation's values (receiver + call args, the field value for a write, or nothing for a
      * static read). The engine stashes them, creates an `Operation` whose bridge re-executes a clone of the

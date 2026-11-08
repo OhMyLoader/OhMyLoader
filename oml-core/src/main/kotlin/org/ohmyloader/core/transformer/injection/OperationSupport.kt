@@ -6,10 +6,13 @@ import org.objectweb.asm.Type
 import org.objectweb.asm.tree.AbstractInsnNode
 import org.objectweb.asm.tree.ClassNode
 import org.objectweb.asm.tree.FieldInsnNode
+import org.objectweb.asm.tree.FrameNode
 import org.objectweb.asm.tree.InsnList
 import org.objectweb.asm.tree.InsnNode
 import org.objectweb.asm.tree.IntInsnNode
 import org.objectweb.asm.tree.InvokeDynamicInsnNode
+import org.objectweb.asm.tree.JumpInsnNode
+import org.objectweb.asm.tree.LabelNode
 import org.objectweb.asm.tree.LdcInsnNode
 import org.objectweb.asm.tree.MethodInsnNode
 import org.objectweb.asm.tree.MethodNode
@@ -196,6 +199,62 @@ internal object OperationSupport {
                     false,
                 ),
                 Type.getMethodType(boxedReturn, OBJECTS),
+            ),
+        )
+    }
+
+    /**
+     * Builds the `Operation<Boolean>` for a **wrapped comparison**: the bridge unpacks the two compared
+     * values, re-runs the comparison and returns the **source-level** boolean (honoring [jumpOnTrue]).
+     * Unlike the call bridges this body branches, so it carries its own two `StackMapTable` frames.
+     */
+    fun makeComparisonOperation(
+        classNode: ClassNode,
+        insns: InsnList,
+        operandTypes: Array<Type>,
+        jumpOpcode: Int,
+        jumpOnTrue: Boolean,
+    ) {
+        val booleanType = Type.getObjectType("java/lang/Boolean")
+        val bridgeName = uniqueName(classNode, "oml\$compare")
+        val bridgeDesc = Type.getMethodDescriptor(booleanType, OBJECTS)
+        val bridge = MethodNode(
+            Opcodes.ASM9,
+            Opcodes.ACC_PRIVATE or Opcodes.ACC_STATIC or Opcodes.ACC_SYNTHETIC,
+            bridgeName,
+            bridgeDesc,
+            null,
+            null,
+        )
+        val ins = bridge.instructions
+        emitCheck(ins, 0, operandTypes)
+        emitUnpack(ins, 0, operandTypes)
+        val onTrue = LabelNode()
+        val end = LabelNode()
+        ins.add(JumpInsnNode(jumpOpcode, onTrue))
+        ins.add(InsnNode(if (jumpOnTrue) Opcodes.ICONST_0 else Opcodes.ICONST_1))
+        ins.add(JumpInsnNode(Opcodes.GOTO, end))
+        ins.add(onTrue)
+        ins.add(FrameNode(Opcodes.F_NEW, 1, arrayOf<Any>(OBJECTS.internalName), 0, emptyArray<Any>()))
+        ins.add(InsnNode(if (jumpOnTrue) Opcodes.ICONST_1 else Opcodes.ICONST_0))
+        ins.add(end)
+        ins.add(
+            FrameNode(
+                Opcodes.F_NEW, 1, arrayOf<Any>(OBJECTS.internalName), 1, arrayOf<Any>(Opcodes.INTEGER),
+            ),
+        )
+        ins.add(MethodInsnNode(Opcodes.INVOKESTATIC, booleanType.internalName, "valueOf", "(Z)Ljava/lang/Boolean;", false))
+        ins.add(InsnNode(Opcodes.ARETURN))
+        classNode.methods.add(bridge)
+
+        insns.add(
+            InvokeDynamicInsnNode(
+                "call",
+                Type.getMethodDescriptor(OPERATION_TYPE),
+                LMF,
+                Type.getMethodType(OBJECT, OBJECTS),
+                Handle(Opcodes.H_INVOKESTATIC, classNode.name, bridgeName, bridgeDesc, false),
+                Type.getMethodType(booleanType, OBJECTS),
             ),
         )
     }

@@ -11,6 +11,7 @@ import org.objectweb.asm.tree.LabelNode
 import org.objectweb.asm.tree.MethodInsnNode
 import org.objectweb.asm.tree.MethodNode
 import org.objectweb.asm.tree.VarInsnNode
+import org.ohmyloader.api.hook.Operation
 import org.ohmyloader.api.inject.InjectionError
 import org.ohmyloader.api.inject.InjectionPoint
 import org.ohmyloader.core.transformer.TransformContext
@@ -255,6 +256,28 @@ class InjectionExpressionTest {
         )
 
         assertEquals(9, (invoke(clazz, "arr") as IntArray)[0])
+    }
+
+    @Test
+    fun `wrapOperation wraps a comparison with an operation`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("cmp", desc = "(I)I") {
+                        atExpression("? > 5") {
+                            wrapOperation(
+                                ExpressionHandlers.OWNER, "invert",
+                                "(IILorg/ohmyloader/api/hook/Operation;)Z",
+                            )
+                        }
+                    }
+                }
+            },
+            compareTarget(),
+        )
+
+        assertEquals(100, invoke(clazz, "cmp", 1), "the operation re-evaluates 1 > 5 and the handler inverts it")
+        assertEquals(0, invoke(clazz, "cmp", 9), "9 > 5 is true, inverted to false")
     }
 
     @Test
@@ -503,5 +526,8 @@ class InjectionExpressionTest {
 
         @JvmStatic
         fun replace(value: IntArray): IntArray = intArrayOf(9)
+
+        @JvmStatic
+        fun invert(a: Int, b: Int, operation: Operation<Boolean>): Boolean = !operation.call(a, b)
     }
 }
