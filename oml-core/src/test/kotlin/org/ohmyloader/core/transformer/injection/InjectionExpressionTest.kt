@@ -161,6 +161,28 @@ class InjectionExpressionTest {
     }
 
     @Test
+    fun `modifyExpressionValue targets a concatenation component`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("greet", desc = "(Ljava/lang/String;)Ljava/lang/String;") {
+                        atExpression("'Hi '") {
+                            modifyExpressionValue(
+                                ExpressionHandlers.OWNER, "hello",
+                                "(Ljava/lang/String;)Ljava/lang/String;",
+                            )
+                        }
+                    }
+                }
+            },
+            concatTarget(),
+        )
+
+        // The captured constant is one part of the concatenation; the compound is rewritten before injection
+        assertEquals("Hello Bob", invoke(clazz, "greet", "Bob"))
+    }
+
+    @Test
     fun `an undeclared identifier fails the transform`() {
         val spec = specOf {
             classTarget(owner) {
@@ -341,5 +363,8 @@ class InjectionExpressionTest {
 
         @JvmStatic
         fun suffix(value: String): String = "$value!"
+
+        @JvmStatic
+        fun hello(@Suppress("UNUSED_PARAMETER") value: String): String = "Hello "
     }
 }

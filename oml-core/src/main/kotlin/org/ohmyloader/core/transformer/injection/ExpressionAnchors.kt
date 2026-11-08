@@ -2,11 +2,14 @@ package org.ohmyloader.core.transformer.injection
 
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.*
+import org.ohmyloader.api.inject.HandlerKind
 import org.ohmyloader.api.inject.InjectionError
 import org.ohmyloader.api.inject.InjectionPoint
+import org.ohmyloader.api.inject.Payload
 import org.ohmyloader.core.expression.ExpressionParserFacade
 import org.ohmyloader.core.expression.ast.expressions.Expression
 import org.ohmyloader.core.expression.flow.ComplexDataException
+import org.ohmyloader.core.expression.flow.ExpressionTarget
 import org.ohmyloader.core.expression.flow.FlowInterpreter
 import org.ohmyloader.core.expression.flow.FlowValue
 import org.ohmyloader.core.expression.flow.expansion.InsnExpander
@@ -30,16 +33,20 @@ internal object ExpressionAnchors {
     /**
      * Resolution result: the captured instructions in method order plus, per instruction, the
      * decorations the match attached (e.g. a comparison's [org.ohmyloader.core.expression.utils.ComparisonInfo]).
+     * [target] keeps the compound-instruction nodes so the engine can expand them lazily at injection.
      */
     internal class Resolution(
         val instructions: List<AbstractInsnNode>,
         val decorations: Map<AbstractInsnNode, Map<String, Any?>>,
+        val target: ExpressionTarget,
     )
 
     fun resolve(
         classNode: ClassNode,
         method: MethodNode,
         point: InjectionPoint.Expression,
+        injector: Any,
+        contextType: ExpressionContext.Type,
     ): Resolution {
         val patterns = point.expressions.map { pattern ->
             try {
@@ -63,13 +70,14 @@ internal object ExpressionAnchors {
 
         val captured = LinkedHashSet<AbstractInsnNode>()
         val decorations = HashMap<AbstractInsnNode, MutableMap<String, Any?>>()
+        val target = ExpressionTarget(method)
         val sink = object : Expression.OutputSink {
             override fun capture(node: FlowValue, expr: Expression, ctx: ExpressionContext) {
-                if (!node.isComplex) {
-                    // A compound instruction (iinc, string concat, …) is represented by the real instruction
-                    // in the method, not by the synthetic node the matcher sees
-                    captured += InsnExpander.getRepresentative(node)
-                }
+                if (node.isComplex) return
+                // Register the injector's interest in this compound instruction now; the engine expands it
+                // lazily at injection and lands on the part this capture referred to
+                val expansion = InsnExpander.prepareExpansion(node, target, injector, ctx)
+                captured += expansion?.compound ?: node.insn
             }
 
             override fun decorate(insn: AbstractInsnNode, key: String, value: Any?) {
@@ -81,7 +89,7 @@ internal object ExpressionAnchors {
             }
         }
         val ctx = ExpressionContext(
-            pool, sink, classNode, method, ExpressionContext.Type.MODIFY_EXPRESSION_VALUE, false,
+            pool, sink, classNode, method, contextType, false,
         )
         for (pattern in patterns) {
             for (flow in flows) {
@@ -101,7 +109,23 @@ internal object ExpressionAnchors {
         val ordered = method.instructions.toArray().filter { it in captured }
         val ordinal = point.ordinal
         val selected = if (ordinal == null) ordered else listOfNotNull(ordered.getOrNull(ordinal))
-        return Resolution(selected, decorations)
+        return Resolution(selected, decorations, target)
+    }
+
+    /** The expression context kind a payload uses: compound expansion and diagnostics depend on it. */
+    fun contextTypeOf(payload: Payload): ExpressionContext.Type = when (payload) {
+        is Payload.ModifyExpressionValue -> ExpressionContext.Type.MODIFY_EXPRESSION_VALUE
+        is Payload.WrapOperation -> ExpressionContext.Type.WRAP_OPERATION
+        is Payload.ModifyVariable -> ExpressionContext.Type.MODIFY_VARIABLE
+        is Payload.HandlerCall -> when (payload.kind) {
+            HandlerKind.INJECT -> ExpressionContext.Type.INJECT
+            HandlerKind.MODIFY_EXPR_VALUE -> ExpressionContext.Type.MODIFY_EXPRESSION_VALUE
+            HandlerKind.WRAP_OPERATION -> ExpressionContext.Type.WRAP_OPERATION
+            HandlerKind.MODIFY_VAR -> ExpressionContext.Type.MODIFY_VARIABLE
+            else -> ExpressionContext.Type.CUSTOM
+        }
+
+        else -> ExpressionContext.Type.CUSTOM
     }
 
     /** The identifier pool the author declared; the default primitives and `length` come from [IdentifierPool]. */

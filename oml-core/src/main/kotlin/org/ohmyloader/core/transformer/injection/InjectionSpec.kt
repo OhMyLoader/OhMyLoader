@@ -5,6 +5,7 @@ import org.objectweb.asm.tree.*
 import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.inject.*
 import org.ohmyloader.core.expression.flow.ExpressionTarget
+import org.ohmyloader.core.expression.flow.expansion.InsnExpander
 import org.ohmyloader.core.expression.utils.ComparisonInfo
 import org.ohmyloader.core.expression.utils.ComplexComparisonInfo
 import org.ohmyloader.core.expression.utils.ExpressionDecorations
@@ -234,6 +235,26 @@ class InjectionSpec internal constructor(
     ): ComparisonInfo? = decorations[anchor]?.get(ExpressionDecorations.COMPARISON_INFO) as? ComparisonInfo
 
     /**
+     * Expands the compound instruction a captured expression belongs to and returns the component this
+     * injector targets. Expansion happens at most once per compound, so a second rule on the same
+     * instruction reuses the rewritten form.
+     */
+    private fun expandExpressionAnchor(
+        point: InjectionPoint,
+        resolution: ExpressionAnchors.Resolution?,
+        anchor: AbstractInsnNode,
+        payload: Payload,
+        frames: MethodFrames,
+    ): AbstractInsnNode {
+        if (point.core !is InjectionPoint.Expression || resolution == null) return anchor
+        val node = resolution.target.getInjectionNode(anchor) ?: return anchor
+        if (!node.hasDecoration(ExpressionDecorations.EXPANSION_INFO)) return anchor
+        val expanded = InsnExpander.doExpansion(node, resolution.target, payload)
+        frames.invalidate()
+        return expanded.currentTarget
+    }
+
+    /**
      * The jump whose branch the comparison feeds: the matched instruction itself for a plain jump, or the
      * `IFxx` after an `lcmp`/`fcmp`/`dcmp` for a complex comparison.
      */
@@ -399,10 +420,14 @@ class InjectionSpec internal constructor(
         var inserted = 0
         for ([point, payload] in points) {
             // Collect all anchors first, then process each: processing doesn't affect the node references of other anchors
+            var expressionResolution: ExpressionAnchors.Resolution? = null
             var expressionDecorations: Map<AbstractInsnNode, Map<String, Any?>> = emptyMap()
             val anchors = when (point) {
                 is InjectionPoint.Expression -> {
-                    val resolution = ExpressionAnchors.resolve(classNode, method, point)
+                    val resolution = ExpressionAnchors.resolve(
+                        classNode, method, point, payload, ExpressionAnchors.contextTypeOf(payload),
+                    )
+                    expressionResolution = resolution
                     expressionDecorations = resolution.decorations
                     resolution.instructions
                 }
@@ -418,8 +443,13 @@ class InjectionSpec internal constructor(
                 continue
             }
             val needsLocals = payload.usesLocals() || payload is Payload.ModifyVariable
-            for (anchor in anchors) {
-                val locals = if (needsLocals) frames.at(anchor, point.after) else null
+            for (rawAnchor in anchors) {
+                // A compound instruction is expanded once, when its match is actually injected: the anchor
+                // becomes the part this capture referred to (e.g. the toString call of a concatenation)
+                val anchor = expandExpressionAnchor(point, expressionResolution, rawAnchor, payload, frames)
+                val effectiveAfter = point.after ||
+                    (point.core is InjectionPoint.Expression && payload is Payload.ModifyExpressionValue)
+                val locals = if (needsLocals) frames.at(anchor, effectiveAfter) else null
                 when (payload) {
                     is Payload.CheckCall -> {
                         if (!point.isMethodHead() && !point.isAfterCallAnchor()) {
