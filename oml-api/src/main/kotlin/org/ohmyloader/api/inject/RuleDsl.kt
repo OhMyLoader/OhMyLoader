@@ -680,6 +680,17 @@ class PayloadBuilder @PublishedApi internal constructor(
     }
 
     /**
+     * **Wrap an operation with an `Operation<R>` callback** (aligned with MixinExtras `@WrapOperation`).
+     *
+     * The anchor must be a call or field access (`beforeCall` / `beforeField`); the handler is shaped
+     * `(receiver?, operands…, Operation<R>, extras…)R` and may re-run the original operation through
+     * [org.ohmyloader.api.hook.Operation.call] with different arguments, or not at all.
+     */
+    fun wrapOperation(owner: String, method: String, desc: String, extras: List<DslValue> = emptyList()) {
+        payload = Payload.WrapOperation(owner, method, desc, extras)
+    }
+
+    /**
      * **Rewrite a local variable** (aligned with Mixin `@ModifyVariable`).
      *
      * The anchor must be [MethodRuleBuilder.afterStore] / [MethodRuleBuilder.beforeLoad];

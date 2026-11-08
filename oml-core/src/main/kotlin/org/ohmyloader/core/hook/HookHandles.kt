@@ -24,3 +24,9 @@ internal const val ARGS = "org/ohmyloader/api/hook/Args"
 
 /** [ARGS]'s type descriptor. */
 internal const val ARGS_DESC = "L$ARGS;"
+
+/** Internal name of `Operation`, the original-operation handle (`@WrapOperation` / `@WrapMethod`). */
+internal const val OPERATION = "org/ohmyloader/api/hook/Operation"
+
+/** [OPERATION]'s type descriptor. */
+internal const val OPERATION_DESC = "L$OPERATION;"

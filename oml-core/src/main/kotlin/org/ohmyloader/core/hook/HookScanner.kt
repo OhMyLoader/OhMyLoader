@@ -174,6 +174,7 @@ object HookScanner {
     private const val MODIFY_EXPRESSION_VALUE_DESC = "Lorg/ohmyloader/api/hook/ModifyExpressionValue;"
     private const val MODIFY_RECEIVER_DESC = "Lorg/ohmyloader/api/hook/ModifyReceiver;"
     private const val WRAP_WITH_CONDITION_DESC = "Lorg/ohmyloader/api/hook/WrapWithCondition;"
+    private const val WRAP_OPERATION_DESC = "Lorg/ohmyloader/api/hook/WrapOperation;"
     private const val BORROWED_DESC = "Lorg/ohmyloader/api/hook/Borrowed;"
     private const val EXTRA_DESC = "Lorg/ohmyloader/api/hook/Extra;"
     private const val REPLACE_DESC = "Lorg/ohmyloader/api/hook/Replace;"
@@ -199,6 +200,7 @@ object HookScanner {
         MODIFY_EXPRESSION_VALUE_DESC to "@ModifyExpressionValue",
         MODIFY_RECEIVER_DESC to "@ModifyReceiver",
         WRAP_WITH_CONDITION_DESC to "@WrapWithCondition",
+        WRAP_OPERATION_DESC to "@WrapOperation",
     )
 
     /** Tail kind of the handler parameter list (`@Inject` uses the first two; the other annotations have no callback handle). */
@@ -625,6 +627,11 @@ object HookScanner {
                 method, anchor, targetInternal, methodNames, methodDesc, mixinClass, modId,
                 where, policy, mergeInto, handlers, rules, problems,
             )
+
+            WRAP_OPERATION_DESC -> parseWrapOperation(
+                method, anchor, targetInternal, methodNames, methodDesc, mixinClass, modId,
+                where, policy, mergeInto, handlers, rules, problems,
+            )
         }
     }
 
@@ -838,6 +845,7 @@ object HookScanner {
             HandlerKind.MODIFY_EXPR_VALUE -> "@ModifyExpressionValue"
             HandlerKind.MODIFY_RECEIVER -> "@ModifyReceiver"
             HandlerKind.WRAP_WITH_CONDITION -> "@WrapWithCondition"
+            HandlerKind.WRAP_OPERATION -> "@WrapOperation"
         }
 
     // ---------- @Inject ----------
@@ -1253,6 +1261,69 @@ object HookScanner {
                 extras = listOf(DslValue.IntVal(id)),
             ),
             policy, emptyList(), "WrapWithCondition",
+        )
+    }
+
+    private fun parseWrapOperation(
+        method: MethodNode,
+        anchor: InjectionPoint,
+        targetInternal: String,
+        methodNames: List<String>,
+        methodDesc: String?,
+        mixinClass: String,
+        modId: String,
+        where: String,
+        policy: Policy,
+        mergeInto: String?,
+        handlers: MutableSet<String>,
+        rules: MutableList<Rule>,
+        problems: MutableList<String>,
+    ) {
+        val core = anchor.core
+        if ((core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess) || anchor.after) {
+            problems += "[$modId] $where —— @WrapOperation's @At must be a call or field access, " +
+                "before the instruction"
+            return
+        }
+        val params = Type.getArgumentTypes(method.desc)
+        if (params.isEmpty() || params.last().descriptor != OPERATION_DESC) {
+            problems += "[$modId] $where —— @WrapOperation handler's last parameter must be " +
+                "$OPERATION_DESC (Operation<R>), currently ${method.desc}"
+            return
+        }
+        val ret = Type.getReturnType(method.desc)
+        if (mergeInto != null && !method.isDeclaredStatic()) {
+            handlers += "${method.name}${method.desc}"
+            rules += Rule(
+                targetInternal, methodNames, methodDesc, anchor,
+                Payload.HandlerCall(
+                    mergeInto, method.name, method.desc, emptyList(),
+                    HandlerVariant.NOTIFY, HandlerKind.WRAP_OPERATION,
+                ),
+                policy, emptyList(), "WrapOperation",
+            )
+            return
+        }
+        val id = HookRegistry.register(
+            modId = modId,
+            mixinClass = mixinClass,
+            handlerMethod = method.name,
+            targetMethod = methodNames.first(),
+            cancelable = false,
+            captureTypes = params.map { it.descriptor },
+            handlerParamCount = params.size,
+            returnType = ret.descriptor,
+        )
+        val kind = HookRegistry.BridgeKind.MODIFY
+        rules += Rule(
+            targetInternal, methodNames, methodDesc, anchor,
+            Payload.WrapOperation(
+                owner = HookRegistry.BRIDGE_CLASS,
+                method = HookRegistry.bridgeMethodName(id, kind),
+                desc = HookRegistry.bridgeDesc(id, kind),
+                extras = listOf(DslValue.IntVal(id)),
+            ),
+            policy, emptyList(), "WrapOperation",
         )
     }
 

@@ -6,6 +6,7 @@ import org.ohmyloader.api.inject.*
 import org.ohmyloader.core.hook.ARGS_DESC
 import org.ohmyloader.core.hook.CALLBACK_INFO_DESC
 import org.ohmyloader.core.hook.CALLBACK_RETURNABLE_DESC
+import org.ohmyloader.core.hook.OPERATION_DESC
 import org.ohmyloader.core.transformer.injection.InjectionVerifier.verifyPayload
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
@@ -447,6 +448,22 @@ internal object InjectionVerifier {
                         }
                     }
 
+                    HandlerKind.WRAP_OPERATION -> {
+                        if (payload.variant != HandlerVariant.NOTIFY) {
+                            problems += "$where — a WrapOperation handler must not call back the handle (variant should be NOTIFY): ${payload.desc}"
+                        }
+                        val core = point.core
+                        if ((core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess) || point.after) {
+                            problems += "$where — the @At of @WrapOperation must be a call or field access, before " +
+                                "the instruction, now ${AnchorResolver.describe(point)}"
+                        }
+                        val last = runCatching { Type.getArgumentTypes(payload.desc).lastOrNull() }.getOrNull()
+                        if (last?.descriptor != OPERATION_DESC) {
+                            problems += "$where — the handler of @WrapOperation must take $OPERATION_DESC as its " +
+                                "last parameter: ${payload.desc}"
+                        }
+                    }
+
                     HandlerKind.REDIRECT -> {
                         if (payload.variant != HandlerVariant.NOTIFY) {
                             problems += "$where — a value-modifying handler must not call back the handle (variant should be NOTIFY): ${payload.desc}"
@@ -674,6 +691,22 @@ internal object InjectionVerifier {
                         "actual ${desc.returnType.className}"
                 }
                 problems += checkHandler(where, "WrapWithCondition", payload.owner, payload.method, payload.desc, loader)
+            }
+
+            is Payload.WrapOperation -> {
+                val core = point.core
+                if ((core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess) || point.after) {
+                    problems += "$where — WrapOperation requires a call or field-access anchor before the " +
+                        "instruction (beforeCall / beforeField), now ${AnchorResolver.describe(point)}"
+                }
+                val desc = runCatching { Type.getMethodType(payload.desc) }.getOrNull()
+                if (desc == null) {
+                    problems += "$where — the handler descriptor of WrapOperation cannot be parsed: ${payload.desc}"
+                } else if (desc.argumentTypes.lastOrNull()?.descriptor != OPERATION_DESC) {
+                    problems += "$where — the handler of WrapOperation must take $OPERATION_DESC as its last " +
+                        "parameter (Operation<R>): ${payload.desc}"
+                }
+                problems += checkHandler(where, "WrapOperation", payload.owner, payload.method, payload.desc, loader)
             }
 
             is Payload.ModifyVariable -> {

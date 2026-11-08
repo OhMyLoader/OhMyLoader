@@ -77,7 +77,8 @@ internal object PayloadEmitter {
             // REDIRECT is even more radical: it rewrites that call instruction in place; the anchor IS the instruction being replaced.
             HandlerKind.MODIFY_ARG, HandlerKind.MODIFY_ARGS, HandlerKind.MODIFY_VAR,
             HandlerKind.MODIFY_CONST, HandlerKind.MODIFY_RETURN, HandlerKind.MODIFY_EXPR_VALUE,
-            HandlerKind.MODIFY_RECEIVER, HandlerKind.WRAP_WITH_CONDITION, HandlerKind.REDIRECT,
+            HandlerKind.MODIFY_RECEIVER, HandlerKind.WRAP_WITH_CONDITION, HandlerKind.WRAP_OPERATION,
+            HandlerKind.REDIRECT,
                 -> error("HandlerCall(${payload.kind}) needs the anchor instruction and is handled directly by the engine, not through emit")
         }
 
@@ -85,7 +86,7 @@ internal object PayloadEmitter {
         // decided by that instruction), so applyToMethod calls emitModify* / emitInPlaceValue directly
         is Payload.ModifyArg, is Payload.ModifyArgs, is Payload.ModifyVariable,
         is Payload.ModifyConstant, is Payload.ModifyExpressionValue, is Payload.ModifyReceiver,
-        is Payload.WrapWithCondition,
+        is Payload.WrapWithCondition, is Payload.WrapOperation,
             ->
             error("${payload.javaClass.simpleName} needs the anchor instruction; the engine calls emitModify*/emitInPlaceValue directly")
 
@@ -929,6 +930,130 @@ internal object PayloadEmitter {
         after.add(FrameNode(Opcodes.F_NEW, endLocals.size, endLocals, 0, emptyArray<Any>()))
         method.instructions.insert(anchor, after)
         frames.invalidate()
+        return list
+    }
+
+    /**
+     * **Wraps an operation with an `Operation<R>`** (MixinExtras `@WrapOperation`). The stack at the anchor
+     * holds the operation's values (receiver + call args, the field value for a write, or nothing for a
+     * static read). The engine stashes them, creates an `Operation` whose bridge re-executes a clone of the
+     * original instruction, and calls `(receiver?, operands…, Operation<R>, extras…)R`. The caller removes
+     * the original instruction: the handler's return value is the operation's result now.
+     */
+    internal fun emitWrapOperation(
+        handlerOwner: String,
+        handlerMethod: String,
+        handlerDesc: String,
+        extras: List<DslValue>,
+        instance: Boolean,
+        classNode: ClassNode,
+        method: MethodNode,
+        owner: String,
+        anchor: AbstractInsnNode,
+        locals: AnchorLocals?,
+    ): InsnList? {
+        val argTypes: Array<Type>
+        val returnType: Type
+        when (anchor) {
+            is MethodInsnNode -> {
+                if (anchor.name == "<init>") {
+                    OmlLog.error(
+                        "Injection",
+                        "WrapOperation cannot wrap a constructor call (the receiver is uninitialized); " +
+                            "target the NEW instead: ${anchor.owner}",
+                    )
+                    return null
+                }
+                argTypes = if (anchor.opcode == Opcodes.INVOKESTATIC) {
+                    Type.getArgumentTypes(anchor.desc)
+                } else {
+                    arrayOf(Type.getObjectType(anchor.owner)) + Type.getArgumentTypes(anchor.desc)
+                }
+                returnType = Type.getReturnType(anchor.desc)
+            }
+
+            is FieldInsnNode -> when (anchor.opcode) {
+                Opcodes.GETFIELD -> {
+                    argTypes = arrayOf(Type.getObjectType(anchor.owner))
+                    returnType = Type.getType(anchor.desc)
+                }
+
+                Opcodes.PUTFIELD -> {
+                    argTypes = arrayOf(Type.getObjectType(anchor.owner), Type.getType(anchor.desc))
+                    returnType = Type.VOID_TYPE
+                }
+
+                Opcodes.GETSTATIC -> {
+                    argTypes = emptyArray()
+                    returnType = Type.getType(anchor.desc)
+                }
+
+                Opcodes.PUTSTATIC -> {
+                    argTypes = arrayOf(Type.getType(anchor.desc))
+                    returnType = Type.VOID_TYPE
+                }
+
+                else -> {
+                    OmlLog.error("Injection", "WrapOperation's anchor is not a field access: ${anchor.owner}.${anchor.name}")
+                    return null
+                }
+            }
+
+            else -> {
+                OmlLog.error("Injection", "WrapOperation's anchor must be a call or field access: ${method.name}")
+                return null
+            }
+        }
+
+        val handlerArgs = Type.getArgumentTypes(handlerDesc)
+        val handlerRet = Type.getReturnType(handlerDesc)
+        val opIndex = argTypes.size
+        if (handlerArgs.size < opIndex + 1 + extras.size) {
+            throw InjectionError(
+                "[injection] the handler of WrapOperation gives too few parameters: the operation has $opIndex " +
+                    "value parameter(s), then Operation<R>, then ${extras.size} extra(s); the handler declares " +
+                    "${handlerArgs.size} ($handlerDesc)",
+            )
+        }
+        for (i in argTypes.indices) {
+            if (handlerArgs[i] != argTypes[i]) {
+                throw InjectionError(
+                    "[injection] WrapOperation value parameter ${i + 1} type mismatch: expected " +
+                        "${argTypes[i].className}, actual ${handlerArgs[i].className} ($handlerDesc)",
+                )
+            }
+        }
+        if (handlerArgs[opIndex].descriptor != OPERATION_DESC) {
+            throw InjectionError(
+                "[injection] the handler of WrapOperation must take $OPERATION_DESC right " +
+                    "after the operation's value parameters: actual ${handlerArgs[opIndex].className} ($handlerDesc)",
+            )
+        }
+        if (handlerRet != returnType) {
+            throw InjectionError(
+                "[injection] the handler return type of WrapOperation must equal the operation's return type: " +
+                    "operation returns ${returnType.className}, handler returns ${handlerRet.className} ($handlerDesc)",
+            )
+        }
+        validateArgTypes(handlerDesc, extras, opIndex + 1, method, owner, locals, "WrapOperation.extras")
+
+        val slots = storeArgs(method, argTypes)
+        val list = InsnList()
+        for (i in argTypes.indices.reversed()) {
+            list.add(VarInsnNode(Boxing.storeOpcode(argTypes[i]), slots[i]))
+        }
+        if (instance) list.add(VarInsnNode(Opcodes.ALOAD, 0))
+        for (i in argTypes.indices) {
+            list.add(VarInsnNode(Boxing.loadOpcode(argTypes[i]), slots[i]))
+        }
+        OperationSupport.makeOperation(classNode, list, argTypes, returnType, anchor)
+        if (!emitValues(list, extras, method, locals)) return null
+        list.add(
+            MethodInsnNode(
+                if (instance) Opcodes.INVOKEVIRTUAL else Opcodes.INVOKESTATIC,
+                handlerOwner, handlerMethod, handlerDesc, false,
+            ),
+        )
         return list
     }
 

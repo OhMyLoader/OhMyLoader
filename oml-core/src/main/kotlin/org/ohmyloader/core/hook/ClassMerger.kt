@@ -87,6 +87,7 @@ internal object ClassMerger {
         "Lorg/ohmyloader/api/hook/ModifyExpressionValue;",
         "Lorg/ohmyloader/api/hook/ModifyReceiver;",
         "Lorg/ohmyloader/api/hook/WrapWithCondition;",
+        "Lorg/ohmyloader/api/hook/WrapOperation;",
     )
 
     /** `@Replace` ledger key: **must include the target class** -- otherwise two mixins overwriting the same-named method in different classes would yield a false conflict. */

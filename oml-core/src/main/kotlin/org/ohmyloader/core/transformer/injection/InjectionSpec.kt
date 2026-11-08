@@ -25,6 +25,7 @@ internal fun Payload.dslValues(): List<DslValue> = when (this) {
     is Payload.ModifyExpressionValue -> extras
     is Payload.ModifyReceiver -> extras
     is Payload.WrapWithCondition -> extras
+    is Payload.WrapOperation -> extras
     is Payload.ModifyVariable -> extras
     // For every HandlerCall form (entry- and value-modifying alike) the values all live in captures:
     // the value-modifying discriminator (which argument / slot) is a **scalar**, carried by index / slot, not a DslValue.
@@ -107,7 +108,7 @@ class InjectionSpec internal constructor(
                 // The dataflow cache hangs on the method, not the rule: several rules hitting the same
                 // method share one MethodFrames, re-analyzed only when a rule actually mutated the list
                 val frames = frames.getOrPut(method) { MethodFrames(context.internalName, method) }
-                hits += applyToMethod(context.internalName, context.node.superName, method, rule.points, frames)
+                hits += applyToMethod(context.internalName, context.node.superName, context.node, method, rule.points, frames)
             }
             reportHits(
                 "${context.internalName} :: ${rule.selector.describe()}",
@@ -230,6 +231,7 @@ class InjectionSpec internal constructor(
     private fun applyToMethod(
         owner: String,
         superName: String?,
+        classNode: ClassNode,
         method: MethodNode,
         points: List<Pair<InjectionPoint, Payload>>,
         frames: MethodFrames,
@@ -408,6 +410,26 @@ class InjectionSpec internal constructor(
                         inserted++
                     }
 
+                    is Payload.WrapOperation -> {
+                        if ((anchor !is MethodInsnNode && anchor !is FieldInsnNode) || point.after) {
+                            OmlLog.error(
+                                "Injection",
+                                "the anchor of WrapOperation must be a call or field access, before the instruction, " +
+                                    "currently ${AnchorResolver.describe(point)}: ${method.name}",
+                            )
+                            continue
+                        }
+                        val list = PayloadEmitter.emitWrapOperation(
+                            payload.owner, payload.method, payload.desc, payload.extras,
+                            instance = false, classNode = classNode, method = method, owner = owner,
+                            anchor = anchor, locals = locals,
+                        ) ?: continue
+                        if (!insertBlock(method, anchor, list, after = false, frames)) continue
+                        method.instructions.remove(anchor)
+                        frames.invalidate()
+                        inserted++
+                    }
+
                     is Payload.HandlerCall -> {
                         // Value-modifying kinds have anchor requirements **completely identical** to their external
                         // static form — only "where the handler lives and how it's called" changes; the anchor
@@ -550,6 +572,26 @@ class InjectionSpec internal constructor(
                                     frames = frames, locals = locals,
                                 ) ?: continue
                                 if (!insertBlock(method, anchor, list, after = false, frames)) continue
+                                inserted++
+                            }
+
+                            HandlerKind.WRAP_OPERATION -> {
+                                if ((anchor !is MethodInsnNode && anchor !is FieldInsnNode) || point.after) {
+                                    OmlLog.error(
+                                        "Injection",
+                                        "the anchor of HandlerCall(WRAP_OPERATION) must be a call or field access, " +
+                                            "before the instruction, currently ${AnchorResolver.describe(point)}: ${method.name}",
+                                    )
+                                    continue
+                                }
+                                val list = PayloadEmitter.emitWrapOperation(
+                                    payload.owner, payload.method, payload.desc, payload.captures,
+                                    instance = true, classNode = classNode, method = method, owner = owner,
+                                    anchor = anchor, locals = locals,
+                                ) ?: continue
+                                if (!insertBlock(method, anchor, list, after = false, frames)) continue
+                                method.instructions.remove(anchor)
+                                frames.invalidate()
                                 inserted++
                             }
 

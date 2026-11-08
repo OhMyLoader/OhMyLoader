@@ -466,6 +466,23 @@ sealed class Payload {
     ) : Payload()
 
     /**
+     * **Wraps an operation with an `Operation<R>` callback** (aligned with MixinExtras `@WrapOperation`).
+     * The anchor must be a method call or a field read/write, before the instruction. The handler is shaped
+     * `(receiver?, operands…, Operation<R>, extras…)R`: the original operation is replaced by this call, and
+     * [org.ohmyloader.api.hook.Operation.call] re-executes it with whatever arguments the handler passes.
+     * Unlike [Redirect], the handler need not re-implement the operation; unlike [ModifyExpressionValue], it
+     * sees the arguments and may run it zero or several times. The engine clones the original instruction
+     * into a private synthetic bridge in the target class and creates the `Operation` via
+     * `LambdaMetafactory`.
+     */
+    data class WrapOperation(
+        val owner: String,
+        val method: String,
+        val desc: String,
+        val extras: List<DslValue> = emptyList(),
+    ) : Payload()
+
+    /**
      * **Rewrites a local variable** (aligned with Mixin `@ModifyVariable`). The anchor must be an [`InjectionPoint.Store`] or
      * [`InjectionPoint.Load`]; the handler is shaped `(T[, captures…])T` and the engine synthesizes `LOAD slot → captures → INVOKESTATIC
      * handler → STORE slot` — no stack juggling needed, because the changed value lives in that one local (contrast [ModifyArg], where the
@@ -591,4 +608,11 @@ enum class HandlerKind {
      * `(receiver?, operands…)Z`. Like [REDIRECT], the receiver is a parameter, not `this`.
      */
     WRAP_WITH_CONDITION,
+
+    /**
+     * `@WrapOperation`: replaces an operation with a handler that receives an
+     * `Operation<R>` and may re-run the original with different arguments,
+     * handler `(receiver?, operands…, Operation<R>)R`.
+     */
+    WRAP_OPERATION,
 }
