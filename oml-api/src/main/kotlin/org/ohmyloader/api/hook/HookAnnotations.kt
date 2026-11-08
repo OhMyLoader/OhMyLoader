@@ -83,6 +83,13 @@ annotation class At(
         /** A conditional branch (`IFEQ`…`IF_ACMPNE`, `IFNULL`/`IFNONNULL`); used with [WrapBranch]. */
         const val JUMP = "JUMP"
 
+        /**
+         * A **value-flow expression match** (see [Expression]): the handler's `@Expression` pattern is
+         * matched against the target method. Valid on the value-consuming injectors
+         * (`@ModifyExpressionValue`, `@WrapOperation`, `@WrapBranch`, …).
+         */
+        const val EXPRESSION = "EXPRESSION"
+
         const val CONSTANT = "CONSTANT"
 
         /** After a local variable is **written** (used with [ModifyVariable]). */
@@ -446,6 +453,32 @@ annotation class WrapMethod(
     val require: Int = -1,
     val expect: Int = -1,
     val allow: Int = -1,
+)
+
+/**
+ * Declares the **expression** a handler is attached to (aligned with MixinExtras' `@Expression`):
+ * a Java-like pattern matched against the target method's reconstructed value flow. Use it together
+ * with `@At("EXPRESSION")` on the injector; [value] holds one or more alternative patterns (the
+ * first that matches counts). Identifiers used by the pattern must be declared with [Definition].
+ * A pattern is anchored by its *captures*: an explicit `@(…)` marks the part to inject at, and
+ * without one the whole expression is the capture.
+ */
+@Target(AnnotationTarget.FUNCTION)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class Expression(val value: Array<String>)
+
+/**
+ * Declares an identifier used by an [Expression] (aligned with MixinExtras' `@Definition`).
+ * [method] and [field] take the same strings as `@At(target = …)`; [type] takes classes referenced
+ * by `instanceof` / casts / instantiations.
+ */
+@Target(AnnotationTarget.FUNCTION)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class Definition(
+    val id: String,
+    val method: Array<String> = [],
+    val field: Array<String> = [],
+    val type: Array<kotlin.reflect.KClass<*>> = [],
 )
 
 /**

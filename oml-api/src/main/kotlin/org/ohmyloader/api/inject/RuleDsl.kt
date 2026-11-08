@@ -456,6 +456,24 @@ class MethodRuleBuilder @PublishedApi internal constructor(
     }
 
     /**
+     * An **expression anchor** (see [InjectionPoint.Expression]): [expression] is a Java-like pattern
+     * matched against the target method's value flow, with the identifiers it uses declared in
+     * [definitions]. [after] places the block after the captured instruction — value-modifying payloads
+     * need that; the annotation front end decides it automatically from the injector.
+     */
+    fun atExpression(
+        expression: String,
+        ordinal: Int? = null,
+        definitions: List<InjectionPoint.Expression.Definition> = emptyList(),
+        after: Boolean = false,
+        block: PayloadBuilder.() -> Unit,
+    ) {
+        points += at(
+            InjectionPoint.Expression(listOf(expression), ordinal, definitions, after),
+        ) to payloadOf(block)
+    }
+
+    /**
      * Before a constant-loading instruction (aligned with Mixin `CONSTANT`).
      *
      * The type of [value] decides which constant kind to match (`Int`/`Long`/

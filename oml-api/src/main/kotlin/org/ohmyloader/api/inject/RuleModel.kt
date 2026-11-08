@@ -227,6 +227,31 @@ sealed class InjectionPoint {
     ) : InjectionPoint()
 
     /**
+     * An **expression anchor** (aligned with MixinExtras' `@Expression`): a Java-like pattern matched
+     * against the target method's reconstructed value flow. [expressions] are alternatives — the first
+     * one that matches counts; [definitions] declare the identifiers the pattern uses; [ordinal]
+     * selects the Nth captured instruction in method order. The pattern is parsed and matched by the
+     * engine when the target class loads.
+     *
+     * [after] places the injection block after the captured instruction (what value-modifying
+     * payloads need); it is decided by the front end from the injector annotation.
+     */
+    data class Expression(
+        val expressions: List<String>,
+        val ordinal: Int? = null,
+        val definitions: List<Definition> = emptyList(),
+        override val after: Boolean = false,
+    ) : InjectionPoint() {
+        /** One `@Definition`: the identifier plus the members/types it stands for (At-style strings). */
+        data class Definition(
+            val id: String,
+            val methods: List<String> = emptyList(),
+            val fields: List<String> = emptyList(),
+            val types: List<String> = emptyList(),
+        )
+    }
+
+    /**
      * Before a constant-loading instruction (aligned with Mixin `CONSTANT`). The type of [value]
      * picks the kind: `Int` / `Long` / `Float` / `Double` / `String` / `org.objectweb.asm.Type`,
      * or `null` (matches `ACONST_NULL`).

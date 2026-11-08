@@ -179,6 +179,8 @@ object HookScanner {
     private const val WRAP_METHOD_DESC = "Lorg/ohmyloader/api/hook/WrapMethod;"
     private const val LOCAL_DESC = "Lorg/ohmyloader/api/hook/Local;"
     private const val SHARE_DESC = "Lorg/ohmyloader/api/hook/Share;"
+    private const val EXPRESSION_DESC = "Lorg/ohmyloader/api/hook/Expression;"
+    private const val DEFINITION_DESC = "Lorg/ohmyloader/api/hook/Definition;"
     private const val BORROWED_DESC = "Lorg/ohmyloader/api/hook/Borrowed;"
     private const val EXTRA_DESC = "Lorg/ohmyloader/api/hook/Extra;"
     private const val REPLACE_DESC = "Lorg/ohmyloader/api/hook/Replace;"
@@ -471,9 +473,10 @@ object HookScanner {
             val parsed = if (atNode == null) {
                 if (isReturnValue) InjectionPoint.Return(null) else null
             } else {
-                AtParser.parse(atNode)
+                parseAnchor(atNode, method, where, modId, shortName, problems)
             }
             if (parsed == null) {
+                if (atNode != null && isExpressionAt(atNode)) return
                 problems += if (atNode == null) {
                     "[$modId] $where —— $shortName is missing at = @At(…)"
                 } else {
@@ -511,9 +514,9 @@ object HookScanner {
             problems += "[$modId] $where —— $shortName is missing at = @At(…)"
             return
         }
-        val point = AtParser.parse(atNode)
+        val point = parseAnchor(atNode, method, where, modId, shortName, problems)
         if (point == null) {
-            problems += "[$modId] $where —— $shortName's ${unrecognizedAt(atNode)}"
+            if (!isExpressionAt(atNode)) problems += "[$modId] $where —— $shortName's ${unrecognizedAt(atNode)}"
             return
         }
 
@@ -799,16 +802,20 @@ object HookScanner {
                 }
 
             HandlerKind.MODIFY_EXPR_VALUE ->
-                if (anchor.core !is InjectionPoint.Call && anchor.core !is InjectionPoint.FieldAccess &&
+                if (anchor.core !is InjectionPoint.Expression &&
+                    anchor.core !is InjectionPoint.Call && anchor.core !is InjectionPoint.FieldAccess &&
                     anchor.core !is InjectionPoint.Constant
                 ) {
                     problems += "[$modId] $where —— ${kind.annotationName}'s @At must be a value-producing" +
-                        " expression (INVOKE / FIELD / CONSTANT)"
+                        " expression (INVOKE / FIELD / CONSTANT / EXPRESSION)"
                     return
                 }
 
             HandlerKind.MODIFY_RECEIVER ->
-                if ((anchor.core !is InjectionPoint.Call && anchor.core !is InjectionPoint.FieldAccess) || anchor.after) {
+                if ((anchor.core !is InjectionPoint.Expression &&
+                        anchor.core !is InjectionPoint.Call && anchor.core !is InjectionPoint.FieldAccess) ||
+                    anchor.after
+                ) {
                     problems += "[$modId] $where —— ${kind.annotationName}'s @At must be an instance call (INVOKE) or " +
                         "field access (FIELD), before the instruction"
                     return
@@ -1255,7 +1262,9 @@ object HookScanner {
         problems: MutableList<String>,
     ) {
         val core = anchor.core
-        if ((core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess) || anchor.after) {
+        if ((core !is InjectionPoint.Expression &&
+                core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess) || anchor.after
+        ) {
             problems += "[$modId] $where —— @ModifyReceiver's @At must be an instance call (INVOKE) or field access " +
                 "(FIELD), before the instruction (not INVOKE_ASSIGN / after)"
             return
@@ -1310,7 +1319,9 @@ object HookScanner {
         problems: MutableList<String>,
     ) {
         val core = anchor.core
-        if ((core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess) || anchor.after) {
+        if ((core !is InjectionPoint.Expression &&
+                core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess) || anchor.after
+        ) {
             problems += "[$modId] $where —— @WrapWithCondition's @At must be a call or field write, " +
                 "before the instruction"
             return
@@ -1379,8 +1390,8 @@ object HookScanner {
         problems: MutableList<String>,
     ) {
         val core = anchor.core
-        if (core !is InjectionPoint.Jump || anchor.after) {
-            problems += "[$modId] $where —— @WrapBranch's @At must be a conditional jump (JUMP), " +
+        if ((core !is InjectionPoint.Jump && core !is InjectionPoint.Expression) || anchor.after) {
+            problems += "[$modId] $where —— @WrapBranch's @At must be a conditional jump (JUMP / EXPRESSION), " +
                 "before the instruction"
             return
         }
@@ -1523,7 +1534,8 @@ object HookScanner {
         problems: MutableList<String>,
     ) {
         val core = anchor.core
-        if ((core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess &&
+        if ((core !is InjectionPoint.Expression &&
+                core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess &&
                 core !is InjectionPoint.NewInstance && core !is InjectionPoint.TypeCheck &&
                 core !is InjectionPoint.ArrayAccess && core !is InjectionPoint.ArrayCreate) || anchor.after
         ) {
@@ -1755,6 +1767,7 @@ object HookScanner {
         is InjectionPoint.Call -> if (point.after) point else point.copy(after = true)
         is InjectionPoint.FieldAccess -> if (point.after) point else point.copy(after = true)
         is InjectionPoint.Constant -> if (point.after) point else point.copy(after = true)
+        is InjectionPoint.Expression -> if (point.after) point else point.copy(after = true)
         else -> point
     }
 
@@ -2010,6 +2023,65 @@ object HookScanner {
     }
 
     // ---------- annotation retrieval ----------
+
+    /** Whether this `@At` names the expression anchor. */
+    private fun isExpressionAt(atNode: AnnotationNode): Boolean =
+        ((annotationValue(atNode, "value") as? String) ?: "")
+            .substringBefore(':').trim().equals("EXPRESSION", ignoreCase = true)
+
+    /**
+     * `@At` → injection point. The expression anchor is special: its pattern lives on the handler
+     * (`@Expression`), not in the `@At`, so the front-end assembles it here and validates the pattern
+     * by parsing it now — a malformed expression must fail the startup check, not the class load.
+     */
+    private fun parseAnchor(
+        atNode: AnnotationNode,
+        method: MethodNode,
+        where: String,
+        modId: String,
+        shortName: String,
+        problems: MutableList<String>,
+    ): InjectionPoint? {
+        if (!isExpressionAt(atNode)) return AtParser.parse(atNode)
+
+        val patterns = method.visibleAnnotations.orEmpty()
+            .filter { it.desc == EXPRESSION_DESC }
+            .flatMap { stringArray(annotationValue(it, "value")) }
+            .filter { it.isNotBlank() }
+        if (patterns.isEmpty()) {
+            problems += "[$modId] $where —— $shortName's @At(EXPRESSION) needs an @Expression(\"…\") on the handler"
+            return null
+        }
+        for (pattern in patterns) {
+            try {
+                org.ohmyloader.core.expression.ExpressionParserFacade.parse(pattern)
+            } catch (failure: RuntimeException) {
+                problems += "[$modId] $where —— @Expression pattern cannot be parsed: ${failure.message}"
+                return null
+            }
+        }
+        val definitions = method.visibleAnnotations.orEmpty()
+            .filter { it.desc == DEFINITION_DESC }
+            .map { node ->
+                val types = (annotationValue(node, "type") as? List<*>).orEmpty()
+                    .filterIsInstance<org.objectweb.asm.Type>()
+                    .map { it.descriptor }
+                InjectionPoint.Expression.Definition(
+                    id = (annotationValue(node, "id") as? String).orEmpty(),
+                    methods = stringArray(annotationValue(node, "method")),
+                    fields = stringArray(annotationValue(node, "field")),
+                    types = types,
+                )
+            }
+        for (definition in definitions) {
+            if (definition.id.isBlank()) {
+                problems += "[$modId] $where —— @Definition needs a non-empty id (the identifier the expression uses)"
+                return null
+            }
+        }
+        val ordinal = (annotationValue(atNode, "ordinal") as? Int)?.takeIf { it >= 0 }
+        return InjectionPoint.Expression(patterns, ordinal, definitions)
+    }
 
     /**
      * Diagnostic text for an unrecognized `@At`: the value plus, when written, the target — a legacy

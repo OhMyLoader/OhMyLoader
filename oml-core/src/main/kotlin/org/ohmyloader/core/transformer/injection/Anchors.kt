@@ -141,6 +141,11 @@ internal object AnchorResolver {
 
         is InjectionPoint.Jump -> jumps(method, point)
 
+        is InjectionPoint.Expression ->
+            throw org.ohmyloader.api.inject.InjectionError(
+                "[injection] expression anchors are not supported as @Slice bounds yet",
+            )
+
         is InjectionPoint.Constant -> constants(method, point)
 
         is InjectionPoint.Store -> varAccesses(
@@ -580,6 +585,9 @@ internal object AnchorResolver {
 
         is InjectionPoint.Jump -> "JUMP(${point.opcode?.let(::jumpName) ?: "any"})" +
             (point.ordinal?.let { "[$it]" } ?: "")
+
+        is InjectionPoint.Expression -> "EXPRESSION(" +
+            point.expressions.joinToString(" | ") + ")" + (point.ordinal?.let { "[$it]" } ?: "")
 
         is InjectionPoint.Store -> varAnchor(
             "STORE",

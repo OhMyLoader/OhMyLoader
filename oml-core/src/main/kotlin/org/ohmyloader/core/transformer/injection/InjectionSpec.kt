@@ -375,7 +375,10 @@ class InjectionSpec internal constructor(
         var inserted = 0
         for ([point, payload] in points) {
             // Collect all anchors first, then process each: processing doesn't affect the node references of other anchors
-            val anchors = AnchorResolver.resolve(point, method, owner, superName, frames)
+            val anchors = when (point) {
+                is InjectionPoint.Expression -> ExpressionAnchors.resolve(classNode, method, point)
+                else -> AnchorResolver.resolve(point, method, owner, superName, frames)
+            }
             if (anchors.isEmpty()) {
                 OmlLog.error(
                     "Injection",

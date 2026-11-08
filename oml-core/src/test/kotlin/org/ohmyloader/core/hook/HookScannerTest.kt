@@ -1213,6 +1213,73 @@ class HookScannerTest {
     }
 
     @Test
+    fun `expression anchor reads the pattern and definitions`() {
+        newBridge()
+        val expression = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Expression;").apply {
+            values = mutableListOf<Any?>("value", listOf("max(?, 3)"))
+        }
+        val definition = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Definition;").apply {
+            values = mutableListOf<Any?>("id", "max", "method", listOf("Ljava/lang/Math;max(II)I"))
+        }
+        val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyExpressionValue;").apply {
+            values = mutableListOf<Any?>("method", "runTick", "at", atNode("EXPRESSION"))
+        }
+        val method = MethodNode(Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h", "(I)I", null, null).apply {
+            instructions.add(InsnNode(Opcodes.IRETURN))
+            visibleAnnotations = listOf(modify, expression, definition)
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        val rule = parsed.rules[0]
+        val point = rule.anchor as InjectionPoint.Expression
+        assertEquals(listOf("max(?, 3)"), point.expressions)
+        assertTrue(point.after, "ModifyExpressionValue lands after the producing instruction")
+        assertEquals(1, point.definitions.size)
+        assertEquals("max", point.definitions[0].id)
+        assertEquals(listOf("Ljava/lang/Math;max(II)I"), point.definitions[0].methods)
+        assertIs<Payload.ModifyExpressionValue>(rule.payload)
+    }
+
+    @Test
+    fun `an expression anchor without a pattern is reported`() {
+        newBridge()
+        val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyExpressionValue;").apply {
+            values = mutableListOf<Any?>("method", "runTick", "at", atNode("EXPRESSION"))
+        }
+        val method = MethodNode(Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h", "(I)I", null, null).apply {
+            instructions.add(InsnNode(Opcodes.IRETURN))
+            visibleAnnotations = listOf(modify)
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(
+            parsed.problems.any { it.contains("needs an @Expression") },
+            parsed.problems.toString(),
+        )
+        assertEquals(0, parsed.rules.size)
+    }
+
+    @Test
+    fun `a malformed expression pattern is reported at scan time`() {
+        newBridge()
+        val expression = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Expression;").apply {
+            values = mutableListOf<Any?>("value", listOf("max(?, "))
+        }
+        val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyExpressionValue;").apply {
+            values = mutableListOf<Any?>("method", "runTick", "at", atNode("EXPRESSION"))
+        }
+        val method = MethodNode(Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h", "(I)I", null, null).apply {
+            instructions.add(InsnNode(Opcodes.IRETURN))
+            visibleAnnotations = listOf(modify, expression)
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(
+            parsed.problems.any { it.contains("cannot be parsed") },
+            parsed.problems.toString(),
+        )
+        assertEquals(0, parsed.rules.size)
+    }
+
+    @Test
     fun `merged wrapBranch calls the handler directly`() {
         newBridge()
         val method = MethodNode(Opcodes.ACC_PUBLIC, "h", "(II)Z", null, null).apply {

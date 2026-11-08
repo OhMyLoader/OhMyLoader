@@ -148,6 +148,7 @@ internal object InjectionVerifier {
             is InjectionPoint.FieldAccess -> point.ordinal
             is InjectionPoint.NewInstance -> point.ordinal
             is InjectionPoint.Jump -> point.ordinal
+            is InjectionPoint.Expression -> point.ordinal
             is InjectionPoint.Constant -> point.ordinal
             is InjectionPoint.Store -> point.ordinal
             is InjectionPoint.Load -> point.ordinal
@@ -191,6 +192,24 @@ internal object InjectionVerifier {
                 if (jumpOpcode != null && !AnchorResolver.isConditionalJump(jumpOpcode)) {
                     problems += "$where — JUMP opcode must be a conditional branch " +
                         "(IFEQ…IF_ACMPNE, IFNULL/IFNONNULL), actual $jumpOpcode"
+                }
+            }
+
+            is InjectionPoint.Expression -> {
+                if (point.expressions.isEmpty()) {
+                    problems += "$where — the expression anchor carries no pattern"
+                }
+                for (pattern in point.expressions) {
+                    try {
+                        org.ohmyloader.core.expression.ExpressionParserFacade.parse(pattern)
+                    } catch (failure: RuntimeException) {
+                        problems += "$where — @Expression pattern cannot be parsed: ${failure.message}"
+                    }
+                }
+                for (definition in point.definitions) {
+                    if (definition.id.isBlank()) {
+                        problems += "$where — @Definition needs a non-empty id"
+                    }
                 }
             }
 
@@ -252,9 +271,10 @@ internal object InjectionVerifier {
         return problems
     }
 
-    /** Expression anchors that produce a value: calls / field reads / constant loads. */
+    /** Expression anchors that produce a value: expression / calls / field reads / constant loads. */
     private fun isExpressionAnchor(core: InjectionPoint): Boolean =
-        core is InjectionPoint.Call || core is InjectionPoint.FieldAccess || core is InjectionPoint.Constant
+        core is InjectionPoint.Expression || core is InjectionPoint.Call ||
+            core is InjectionPoint.FieldAccess || core is InjectionPoint.Constant
 
     /**
      * Shape check for merged (instance) value-modifying handlers. [valueOffset] is always 0: after the
@@ -468,7 +488,8 @@ internal object InjectionVerifier {
                         val core = point.core
                         if (!isExpressionAnchor(core)) {
                             problems += "$where — the @At of @ModifyExpressionValue must **produce a value** " +
-                                "expression (INVOKE / FIELD / CONSTANT), currently ${AnchorResolver.describe(point)}"
+                                "expression (INVOKE / FIELD / CONSTANT / EXPRESSION), currently " +
+                                AnchorResolver.describe(point)
                         } else if (!point.after) {
                             problems += "$where — @ModifyExpressionValue takes the value the expression **produces**, " +
                                 "so the anchor must be after it (when the value is not yet on the stack there is nothing to change): " +
@@ -482,7 +503,7 @@ internal object InjectionVerifier {
                             problems += "$where — a value-modifying handler must not call back the handle (variant should be NOTIFY): ${payload.desc}"
                         }
                         val core = point.core
-                        if ((core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess) || point.after) {
+                        if ((core !is InjectionPoint.Expression && core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess) || point.after) {
                             problems += "$where — the @At of @ModifyReceiver must be an instance call (INVOKE) or field " +
                                 "access (FIELD), before the instruction, now ${AnchorResolver.describe(point)}"
                         }
@@ -494,7 +515,7 @@ internal object InjectionVerifier {
                             problems += "$where — a WrapWithCondition handler must not call back the handle (variant should be NOTIFY): ${payload.desc}"
                         }
                         val core = point.core
-                        if ((core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess) || point.after) {
+                        if ((core !is InjectionPoint.Expression && core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess) || point.after) {
                             problems += "$where — the @At of @WrapWithCondition must be a call or field write, " +
                                 "before the instruction, now ${AnchorResolver.describe(point)}"
                         }
@@ -508,7 +529,7 @@ internal object InjectionVerifier {
                             problems += "$where — a WrapBranch handler must not call back the handle (variant should be NOTIFY): ${payload.desc}"
                         }
                         val core = point.core
-                        if (core !is InjectionPoint.Jump || point.after) {
+                        if ((core !is InjectionPoint.Jump && core !is InjectionPoint.Expression) || point.after) {
                             problems += "$where — the @At of @WrapBranch must be a conditional jump (JUMP), " +
                                 "before the instruction, now ${AnchorResolver.describe(point)}"
                         }
@@ -523,7 +544,7 @@ internal object InjectionVerifier {
                             problems += "$where — a WrapOperation handler must not call back the handle (variant should be NOTIFY): ${payload.desc}"
                         }
                         val core = point.core
-                        if ((core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess &&
+                        if ((core !is InjectionPoint.Expression && core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess &&
                                 core !is InjectionPoint.NewInstance && core !is InjectionPoint.TypeCheck &&
                                 core !is InjectionPoint.ArrayAccess && core !is InjectionPoint.ArrayCreate) ||
                             point.after
@@ -722,7 +743,7 @@ internal object InjectionVerifier {
                 val core = point.core
                 if (!isExpressionAnchor(core)) {
                     problems += "$where — ModifyExpressionValue requires an expression anchor that **produces a value**" +
-                        " (afterCall / afterField / afterConstant), now ${AnchorResolver.describe(point)}"
+                        " (afterCall / afterField / afterConstant / EXPRESSION), now ${AnchorResolver.describe(point)}"
                 } else if (!point.after) {
                     problems += "$where — ModifyExpressionValue changes the value the expression **produces**, " +
                         "so the anchor must come after it (at beforeXxx the value is not yet on the stack): now ${
@@ -747,7 +768,7 @@ internal object InjectionVerifier {
 
             is Payload.ModifyReceiver -> {
                 val core = point.core
-                if ((core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess) || point.after) {
+                if ((core !is InjectionPoint.Expression && core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess) || point.after) {
                     problems += "$where — ModifyReceiver requires an instance call or field access anchor before the " +
                         "instruction (beforeCall / beforeField), now ${AnchorResolver.describe(point)}"
                 }
@@ -765,7 +786,7 @@ internal object InjectionVerifier {
 
             is Payload.WrapWithCondition -> {
                 val core = point.core
-                if ((core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess) || point.after) {
+                if ((core !is InjectionPoint.Expression && core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess) || point.after) {
                     problems += "$where — WrapWithCondition requires a call or field-write anchor before the " +
                         "instruction (beforeCall / beforeField), now ${AnchorResolver.describe(point)}"
                 }
@@ -781,7 +802,7 @@ internal object InjectionVerifier {
 
             is Payload.WrapBranch -> {
                 val core = point.core
-                if (core !is InjectionPoint.Jump || point.after) {
+                if ((core !is InjectionPoint.Jump && core !is InjectionPoint.Expression) || point.after) {
                     problems += "$where — WrapBranch requires a conditional-jump anchor before the " +
                         "instruction (atJump / @At(JUMP)), now ${AnchorResolver.describe(point)}"
                 }
@@ -794,7 +815,7 @@ internal object InjectionVerifier {
 
             is Payload.WrapOperation -> {
                 val core = point.core
-                if ((core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess &&
+                if ((core !is InjectionPoint.Expression && core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess &&
                         core !is InjectionPoint.NewInstance && core !is InjectionPoint.TypeCheck &&
                         core !is InjectionPoint.ArrayAccess && core !is InjectionPoint.ArrayCreate) ||
                     point.after

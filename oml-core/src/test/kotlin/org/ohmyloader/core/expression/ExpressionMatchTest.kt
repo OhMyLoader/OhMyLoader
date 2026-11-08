@@ -135,6 +135,39 @@ class ExpressionMatchTest {
         assertEquals(Type.INT_TYPE, sink.decorations[ExpressionDecorations.SIMPLE_EXPRESSION_TYPE])
     }
 
+    @Test
+    fun `every matching call occurrence is captured`() {
+        val method = method("calc", "(I)I") {
+            add(VarInsnNode(Opcodes.ILOAD, 0))
+            add(InsnNode(Opcodes.ICONST_3))
+            add(MethodInsnNode(Opcodes.INVOKESTATIC, "java/lang/Math", "max", "(II)I", false))
+            add(InsnNode(Opcodes.ICONST_4))
+            add(MethodInsnNode(Opcodes.INVOKESTATIC, "java/lang/Math", "max", "(II)I", false))
+            add(InsnNode(Opcodes.IRETURN))
+        }
+        val pool = IdentifierPool().apply {
+            addMember("max", SimpleMemberDefinition { insn ->
+                insn is MethodInsnNode && insn.name == "max"
+            })
+        }
+        val classNode = ClassNode(Opcodes.ASM9).apply {
+            version = Opcodes.V17
+            access = Opcodes.ACC_PUBLIC
+            name = owner
+            superName = "java/lang/Object"
+        }
+        val sink = Sink()
+        val ctx = ExpressionContext(
+            pool, sink, classNode, method, ExpressionContext.Type.MODIFY_EXPRESSION_VALUE, false,
+        )
+        val expression = ExpressionParserFacade.parse("max(?, ?)")
+        for (flow in FlowInterpreter.analyze(classNode, method, null)) {
+            expression.matches(flow, ctx)
+        }
+
+        assertEquals(2, sink.captures.size)
+    }
+
     // ---------- fixtures ----------
 
     /** The target class's own members, the way the engine will populate the pool. */

@@ -108,6 +108,11 @@ internal object MissDiagnosis {
             is InjectionPoint.Jump ->
                 "$where did not hit$inMethods: the method's conditional branches are " + jumpHint(methods)
 
+            is InjectionPoint.Expression ->
+                "$where did not hit in any matched method: no value flow matched the pattern. " +
+                    "Check the @Definition identifiers (an undeclared one is reported separately) and " +
+                    "remember that only values that really exist — a cast, a call, a comparison — can match."
+
             is InjectionPoint.Store ->
                 "$where did not hit$inMethods: the only **writes** to locals are " + varHint(methods, store = true)
 
