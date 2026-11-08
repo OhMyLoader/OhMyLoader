@@ -4,6 +4,8 @@ import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.*
 import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.inject.*
+import org.ohmyloader.core.expression.utils.ComparisonInfo
+import org.ohmyloader.core.expression.utils.ExpressionDecorations
 import org.ohmyloader.core.hook.LOCAL_REF
 import org.ohmyloader.core.hook.LOCAL_REF_DESC
 import org.ohmyloader.core.hook.LOCAL_REFS
@@ -223,6 +225,12 @@ class InjectionSpec internal constructor(
         anchor is MethodInsnNode || anchor is FieldInsnNode || anchor is TypeInsnNode ||
             anchor is InsnNode || anchor is IntInsnNode || anchor is MultiANewArrayInsnNode
 
+    /** The comparison decoration an expression match attached to [anchor], if any. */
+    private fun comparisonDecoration(
+        decorations: Map<AbstractInsnNode, Map<String, Any?>>,
+        anchor: AbstractInsnNode,
+    ): ComparisonInfo? = decorations[anchor]?.get(ExpressionDecorations.COMPARISON_INFO) as? ComparisonInfo
+
     private fun org.ohmyloader.api.inject.MethodRule.isWholeMethodWrap(): Boolean =
         points.any { (_, payload) ->
             payload is Payload.WrapMethod ||
@@ -375,8 +383,14 @@ class InjectionSpec internal constructor(
         var inserted = 0
         for ([point, payload] in points) {
             // Collect all anchors first, then process each: processing doesn't affect the node references of other anchors
+            var expressionDecorations: Map<AbstractInsnNode, Map<String, Any?>> = emptyMap()
             val anchors = when (point) {
-                is InjectionPoint.Expression -> ExpressionAnchors.resolve(classNode, method, point)
+                is InjectionPoint.Expression -> {
+                    val resolution = ExpressionAnchors.resolve(classNode, method, point)
+                    expressionDecorations = resolution.decorations
+                    resolution.instructions
+                }
+
                 else -> AnchorResolver.resolve(point, method, owner, superName, frames)
             }
             if (anchors.isEmpty()) {
@@ -692,6 +706,18 @@ class InjectionSpec internal constructor(
                             }
 
                             HandlerKind.MODIFY_EXPR_VALUE -> {
+                                // A comparison match carries a ComparisonInfo: its boolean value does not exist
+                                // yet and is materialized around the jump before the handler runs
+                                val comparison = comparisonDecoration(expressionDecorations, anchor)
+                                if (comparison != null && anchor is JumpInsnNode) {
+                                    val list = PayloadEmitter.emitModifiedComparison(
+                                        payload.owner, payload.method, payload.desc, payload.captures,
+                                        instance = true, comparison, method, owner, anchor, locals, frames,
+                                    ) ?: continue
+                                    if (!insertBlock(method, anchor, list, after = true, frames, knownShares)) continue
+                                    inserted++
+                                    continue
+                                }
                                 // The expression value: its type and whether it is on the stack are both determined by that instruction
                                 val value = ProducedValue.requireReadable(
                                     "@ModifyExpressionValue", point, anchor, method,
@@ -900,6 +926,17 @@ class InjectionSpec internal constructor(
                     }
 
                     is Payload.ModifyExpressionValue -> {
+                        // A comparison match: materialize the boolean, let the handler rewrite it, then branch
+                        val comparison = comparisonDecoration(expressionDecorations, anchor)
+                        if (comparison != null && anchor is JumpInsnNode) {
+                            val list = PayloadEmitter.emitModifiedComparison(
+                                payload.owner, payload.method, payload.desc, payload.extras,
+                                instance = false, comparison, method, owner, anchor, locals, frames,
+                            ) ?: continue
+                            if (!insertBlock(method, anchor, list, after = true, frames, knownShares)) continue
+                            inserted++
+                            continue
+                        }
                         val value = ProducedValue.requireReadable("ModifyExpressionValue", point, anchor, method)
                         val list = PayloadEmitter.emitInPlaceValue(
                             "ModifyExpressionValue", payload.owner, payload.method, payload.desc, payload.extras,

@@ -5,6 +5,8 @@ import org.objectweb.asm.Type
 import org.objectweb.asm.tree.*
 import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.inject.*
+import org.ohmyloader.core.expression.utils.ComparisonInfo
+import org.ohmyloader.core.expression.utils.ComplexComparisonInfo
 import org.ohmyloader.core.hook.*
 import org.ohmyloader.core.transformer.injection.PayloadEmitter.emitCancelableReturn
 import org.ohmyloader.core.transformer.injection.PayloadEmitter.emitValue
@@ -1105,6 +1107,83 @@ internal object PayloadEmitter {
 
     private val Type.isReference: Boolean
         get() = sort == Type.OBJECT || sort == Type.ARRAY
+
+    /**
+     * Materializes the **boolean value of a comparison** around its jump so a value-modifying handler can
+     * rewrite it (MixinExtras' comparison handling). The original jump is retargeted to a local label; both
+     * paths push the source-level comparison result (1 = the matched comparison holds, honoring
+     * [ComparisonInfo.jumpOnTrue]); the handler rewrites the boolean, and the final conditional jump goes
+     * to the original target. Straight-line from each label on, so the two new frames are derived from the
+     * pre-jump dataflow state.
+     */
+    internal fun emitModifiedComparison(
+        handlerOwner: String,
+        handlerMethod: String,
+        handlerDesc: String,
+        extras: List<DslValue>,
+        instance: Boolean,
+        comparison: ComparisonInfo,
+        method: MethodNode,
+        owner: String,
+        jump: JumpInsnNode,
+        locals: AnchorLocals?,
+        frames: MethodFrames,
+    ): InsnList? {
+        if (comparison is ComplexComparisonInfo) {
+            OmlLog.error(
+                "Injection",
+                "injection skipped: @ModifyExpressionValue on a complex comparison (lcmp/fcmp/dcmp) is not " +
+                    "supported yet: ${method.name}${method.desc}",
+            )
+            return null
+        }
+        val handlerArgs = Type.getArgumentTypes(handlerDesc)
+        val handlerRet = Type.getReturnType(handlerDesc)
+        if (handlerRet != Type.BOOLEAN_TYPE || handlerArgs.firstOrNull() != Type.BOOLEAN_TYPE) {
+            throw InjectionError(
+                "[injection] the handler of @ModifyExpressionValue on a comparison must be shaped " +
+                    "(boolean, extras…)boolean, actual $handlerDesc",
+            )
+        }
+        validateArgTypes(handlerDesc, extras, 1, method, owner, locals, "ModifyExpressionValue.extras")
+
+        val frameLocals = frames.frameLocalsAt(jump, after = false) ?: run {
+            OmlLog.error(
+                "Injection",
+                "injection skipped: the local state before the comparison jump cannot be derived " +
+                    "(dataflow failed): ${method.name}",
+            )
+            return null
+        }
+        val originalTarget = jump.label
+        val taken = LabelNode()
+        val end = LabelNode()
+        jump.label = taken
+
+        val list = InsnList()
+        list.add(InsnNode(if (comparison.jumpOnTrue) Opcodes.ICONST_0 else Opcodes.ICONST_1))
+        list.add(JumpInsnNode(Opcodes.GOTO, end))
+        list.add(taken)
+        list.add(FrameNode(Opcodes.F_NEW, frameLocals.size, frameLocals, 0, emptyArray<Any>()))
+        list.add(InsnNode(if (comparison.jumpOnTrue) Opcodes.ICONST_1 else Opcodes.ICONST_0))
+        list.add(end)
+        list.add(
+            FrameNode(
+                Opcodes.F_NEW, frameLocals.size, frameLocals, 1, arrayOf<Any>(Opcodes.INTEGER),
+            ),
+        )
+        val writeBacks = mutableListOf<SugarWriteBack>()
+        if (!emitValues(list, extras, method, locals, writeBacks)) return null
+        list.add(
+            MethodInsnNode(
+                if (instance) Opcodes.INVOKEVIRTUAL else Opcodes.INVOKESTATIC,
+                handlerOwner, handlerMethod, handlerDesc, false,
+            ),
+        )
+        emitWriteBacks(list, writeBacks)
+        list.add(JumpInsnNode(if (comparison.jumpOnTrue) Opcodes.IFNE else Opcodes.IFEQ, originalTarget))
+        return list
+    }
 
     /**
      * **Wraps an operation with an `Operation<R>`** (MixinExtras `@WrapOperation`). The stack at the anchor

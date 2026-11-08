@@ -26,11 +26,20 @@ import org.ohmyloader.core.hook.AtParser
  */
 internal object ExpressionAnchors {
 
+    /**
+     * Resolution result: the captured instructions in method order plus, per instruction, the
+     * decorations the match attached (e.g. a comparison's [org.ohmyloader.core.expression.utils.ComparisonInfo]).
+     */
+    internal class Resolution(
+        val instructions: List<AbstractInsnNode>,
+        val decorations: Map<AbstractInsnNode, Map<String, Any?>>,
+    )
+
     fun resolve(
         classNode: ClassNode,
         method: MethodNode,
         point: InjectionPoint.Expression,
-    ): List<AbstractInsnNode> {
+    ): Resolution {
         val patterns = point.expressions.map { pattern ->
             try {
                 ExpressionParserFacade.parse(pattern)
@@ -52,15 +61,18 @@ internal object ExpressionAnchors {
         }
 
         val captured = LinkedHashSet<AbstractInsnNode>()
+        val decorations = HashMap<AbstractInsnNode, MutableMap<String, Any?>>()
         val sink = object : Expression.OutputSink {
             override fun capture(node: FlowValue, expr: Expression, ctx: ExpressionContext) {
                 if (!node.isComplex) captured += node.insn
             }
 
             override fun decorate(insn: AbstractInsnNode, key: String, value: Any?) {
+                decorations.getOrPut(insn) { HashMap() }[key] = value
             }
 
             override fun decorateInjectorSpecific(insn: AbstractInsnNode, key: String, value: Any?) {
+                decorations.getOrPut(insn) { HashMap() }[key] = value
             }
         }
         val ctx = ExpressionContext(
@@ -83,7 +95,8 @@ internal object ExpressionAnchors {
 
         val ordered = method.instructions.toArray().filter { it in captured }
         val ordinal = point.ordinal
-        return if (ordinal == null) ordered else listOfNotNull(ordered.getOrNull(ordinal))
+        val selected = if (ordinal == null) ordered else listOfNotNull(ordered.getOrNull(ordinal))
+        return Resolution(selected, decorations)
     }
 
     /** The identifier pool the author declared; the default primitives and `length` come from [IdentifierPool]. */

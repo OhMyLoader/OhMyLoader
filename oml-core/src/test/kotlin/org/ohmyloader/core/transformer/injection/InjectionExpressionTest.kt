@@ -101,6 +101,26 @@ class InjectionExpressionTest {
     }
 
     @Test
+    fun `modifyExpressionValue rewrites the comparison result`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("cmp", desc = "(I)I") {
+                        atExpression("? > 5") {
+                            modifyExpressionValue(ExpressionHandlers.OWNER, "negate", "(Z)Z")
+                        }
+                    }
+                }
+            },
+            compareTarget(),
+        )
+
+        // The handler sees the source-level result ("x > 5") and flips it
+        assertEquals(100, invoke(clazz, "cmp", 1), "false flipped to true takes the 100 path")
+        assertEquals(0, invoke(clazz, "cmp", 9), "true flipped to false takes the 0 path")
+    }
+
+    @Test
     fun `an undeclared identifier fails the transform`() {
         val spec = specOf {
             classTarget(owner) {
@@ -230,5 +250,8 @@ class InjectionExpressionTest {
 
         @JvmStatic
         fun deny(a: Int, b: Int): Boolean = false
+
+        @JvmStatic
+        fun negate(value: Boolean): Boolean = !value
     }
 }
