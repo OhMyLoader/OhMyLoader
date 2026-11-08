@@ -16,6 +16,7 @@ import org.ohmyloader.core.hook.LOCAL_REF
 import org.ohmyloader.core.hook.LOCAL_REF_DESC
 import org.ohmyloader.core.hook.LOCAL_REFS
 import org.ohmyloader.core.transformer.TransformContext
+import java.util.IdentityHashMap
 
 /**
  * All the [DslValue]s carried by a payload (the actual/supplementary arguments the engine pushes on the stack).
@@ -95,6 +96,10 @@ class InjectionSpec internal constructor(
     fun transform(context: TransformContext): Boolean {
         val classRules = ruleSet.classes[context.internalName] ?: return false
         var changed = false
+
+        // Before any mutation: two rules that would both replace the same instruction cannot both run,
+        // and after the first one does the second silently misses. Name both instead.
+        reportExclusiveConflicts(context, classRules)
 
         // One dataflow cache per method node, shared by every rule touching that method (see MethodFrames)
         val frameCache = HashMap<MethodNode, MethodFrames>()
@@ -230,6 +235,103 @@ class InjectionSpec internal constructor(
     private fun isWrapOperationAnchor(anchor: AbstractInsnNode): Boolean =
         anchor is MethodInsnNode || anchor is FieldInsnNode || anchor is TypeInsnNode ||
             anchor is InsnNode || anchor is IntInsnNode || anchor is MultiANewArrayInsnNode
+
+    /** The instruction-producing payloads that *replace* what they anchor on, so only one rule can own a site. */
+    private enum class Exclusive { INSTRUCTION, WHOLE_METHOD }
+
+    private fun exclusiveKind(payload: Payload): Exclusive? = when (payload) {
+        is Payload.Redirect, is Payload.WrapOperation, is Payload.WrapBranch -> Exclusive.INSTRUCTION
+        is Payload.WrapMethod -> Exclusive.WHOLE_METHOD
+        is Payload.HandlerCall -> when (payload.kind) {
+            HandlerKind.REDIRECT, HandlerKind.WRAP_OPERATION, HandlerKind.WRAP_BRANCH -> Exclusive.INSTRUCTION
+            HandlerKind.WRAP_METHOD -> Exclusive.WHOLE_METHOD
+            else -> null
+        }
+
+        else -> null
+    }
+
+    private fun claimLabel(rule: org.ohmyloader.api.inject.MethodRule, payload: Payload): String {
+        fun owner(owner: String, method: String) = "${owner.replace('/', '.')}.$method"
+        val what = when (payload) {
+            is Payload.Redirect -> "Redirect → ${owner(payload.handlerOwner, payload.handlerMethod)}"
+            is Payload.WrapOperation -> "WrapOperation → ${owner(payload.owner, payload.method)}"
+            is Payload.WrapBranch -> "WrapBranch → ${owner(payload.owner, payload.method)}"
+            is Payload.WrapMethod -> "WrapMethod → ${owner(payload.owner, payload.method)}"
+            is Payload.HandlerCall -> "${payload.kind} → ${owner(payload.owner, payload.method)}"
+            else -> payload.javaClass.simpleName
+        }
+        return "$what   [rule: ${rule.selector.describe()}]"
+    }
+
+    /**
+     * Reports two rules that would both replace the same instruction (or the same whole method body).
+     * Resolution runs on the **untouched** method: once the first rule replaces the instruction, the second
+     * rule's anchor no longer exists, so without this pass the loser only shows up as a hit-count miss.
+     * Only exclusive payloads are tracked; notification-style payloads may legally stack.
+     */
+    private fun reportExclusiveConflicts(context: TransformContext, classRules: ClassRules) {
+        val byInstruction = IdentityHashMap<MethodNode, MutableMap<AbstractInsnNode, MutableList<String>>>()
+        val byMethod = HashMap<MethodNode, MutableList<String>>()
+        val frames = HashMap<MethodNode, MethodFrames>()
+        val conflicts = mutableListOf<String>()
+        for (rule in classRules.methods) {
+            val named = context.node.methods.filter {
+                it.instructions.size() > 0 && rule.selector.matches(it.name, it.desc)
+            }
+            for (method in named) {
+                for ((point, payload) in rule.points) {
+                    when (exclusiveKind(payload)) {
+                        Exclusive.INSTRUCTION -> {
+                            val anchors = when (point) {
+                                is InjectionPoint.Expression -> ExpressionAnchors.resolve(
+                                    context.node, method, point, payload,
+                                    ExpressionAnchors.contextTypeOf(payload),
+                                ).instructions
+
+                                else -> AnchorResolver.resolve(
+                                    point, context.node, method, context.internalName, context.node.superName,
+                                    frames.getOrPut(method) { MethodFrames(context.internalName, method) },
+                                )
+                            }
+                            val claim = claimLabel(rule, payload)
+                            val claims = byInstruction.getOrPut(method) { IdentityHashMap() }
+                            for (anchor in anchors) {
+                                val list = claims.getOrPut(anchor) { mutableListOf() }
+                                if (list.isNotEmpty()) {
+                                    conflicts += "${context.internalName}.${method.name}${method.desc} " +
+                                        "at ${AnchorResolver.describe(point)}:\n" +
+                                        (list + claim).joinToString("\n") { "    - $it" }
+                                }
+                                list += claim
+                            }
+                        }
+
+                        Exclusive.WHOLE_METHOD -> {
+                            val claim = claimLabel(rule, payload)
+                            val list = byMethod.getOrPut(method) { mutableListOf() }
+                            if (list.isNotEmpty()) {
+                                conflicts += "${context.internalName}.${method.name}${method.desc} " +
+                                    "(whole method body):\n" +
+                                    (list + claim).joinToString("\n") { "    - $it" }
+                            }
+                            list += claim
+                        }
+
+                        null -> Unit
+                    }
+                }
+            }
+        }
+        if (conflicts.isNotEmpty()) {
+            throw InjectionError(
+                "[injection] conflicting exclusive injections — two rules cannot both replace/own the same " +
+                    "instruction or method body: only the first would run and the second would silently miss. " +
+                    "Combine them into one handler, or anchor the second rule on the first handler's call:\n" +
+                    conflicts.joinToString("\n"),
+            )
+        }
+    }
 
     /** The comparison decoration an expression match attached to [anchor], if any. */
     private fun comparisonDecoration(
