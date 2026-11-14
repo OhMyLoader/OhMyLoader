@@ -1802,10 +1802,21 @@ object HookScanner {
     ): InjectionPoint? {
         val params = Type.getArgumentTypes(method.desc)
         val ret = Type.getReturnType(method.desc)
-        if (ret == Type.VOID_TYPE || params.isEmpty() || params[0] != ret) {
+        val coerceParam = method.visibleParameterAnnotations?.getOrNull(0)
+            ?.any { it.desc == COERCE_DESC } == true
+        val coerceReturn = method.visibleAnnotations.orEmpty().any { it.desc == COERCE_DESC }
+        if (ret == Type.VOID_TYPE || params.isEmpty()) {
             problems += "$where —— $shortName's handler must be shaped (T[, captures…])T (T is the type of the local variable being modified," +
                 " the return value is the new value), currently ${method.desc}"
             return null
+        }
+        if (params[0] != ret) {
+            val bothReferences = params[0].sort in OBJECT_SORTS && ret.sort in OBJECT_SORTS
+            if ((!coerceParam && !coerceReturn) || !bothReferences) {
+                problems += "$where —— $shortName's handler must be shaped (T[, captures…])T, or use " +
+                    "@Coerce on a reference parameter/return: currently ${method.desc}"
+                return null
+            }
         }
 
         val index = declaredInt(annotation, "index")
@@ -1886,6 +1897,9 @@ object HookScanner {
         val kind = HookRegistry.BridgeKind.MODIFY
         val bridgeName = HookRegistry.bridgeMethodName(id, kind)
         val bridgeDesc = HookRegistry.bridgeDesc(id, kind)
+        val coerceParam = method.visibleParameterAnnotations?.getOrNull(0)
+            ?.any { it.desc == COERCE_DESC } == true
+        val coerceReturn = method.visibleAnnotations.orEmpty().any { it.desc == COERCE_DESC }
 
         rules += Rule(
             targetInternal, methodNames, methodDesc, anchor,
@@ -1896,6 +1910,8 @@ object HookScanner {
                 extras = captures.map { DslValue.Local(type = it.type, ordinal = it.ordinal, strict = it.strict) } +
                     split.bindings +
                     DslValue.IntVal(id),
+                coerceParam = coerceParam,
+                coerceReturn = coerceReturn,
             ),
             policy, captures, "ModifyVariable",
         )

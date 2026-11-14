@@ -832,8 +832,15 @@ class PayloadBuilder @PublishedApi internal constructor(
      * the handler is shaped `(T[, extras…])T`, where `T` is that local variable's
      * type.
      */
-    fun modifyVariable(owner: String, method: String, desc: String, extras: List<DslValue> = emptyList()) {
-        payload = Payload.ModifyVariable(owner, method, desc, extras)
+    fun modifyVariable(
+        owner: String,
+        method: String,
+        desc: String,
+        extras: List<DslValue> = emptyList(),
+        coerceParam: Boolean = false,
+        coerceReturn: Boolean = false,
+    ) {
+        payload = Payload.ModifyVariable(owner, method, desc, extras, coerceParam, coerceReturn)
     }
 
 }

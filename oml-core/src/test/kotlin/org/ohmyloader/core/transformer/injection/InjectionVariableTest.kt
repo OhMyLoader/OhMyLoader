@@ -214,6 +214,26 @@ class InjectionVariableTest {
         assertEquals(2, astores.size, "one extra write-back besides the original ASTORE 1")
     }
 
+    @Test
+    fun `coerce lets an Object handler rewrite a String local`() {
+        val spec = specOf {
+            classTarget(owner) {
+                method("tag", desc = "(I)Ljava/lang/String;") {
+                    require(1)
+                    afterStore(index = 1, type = "Ljava/lang/String;") {
+                        modifyVariable(
+                            VarHandlers.OWNER, "exclaimAny", "(Ljava/lang/Object;)Ljava/lang/Object;",
+                            coerceParam = true, coerceReturn = true,
+                        )
+                    }
+                }
+            }
+        }
+        val clazz = define(spec, tagTarget())
+
+        assertEquals("t!7", invokeStatic(clazz, "tag", 7), "the write-back must stay typed as String")
+    }
+
     // ---------- argsOnly ----------
 
     @Test

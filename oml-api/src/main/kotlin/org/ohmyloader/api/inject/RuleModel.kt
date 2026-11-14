@@ -704,6 +704,10 @@ sealed class Payload {
         val method: String,
         val desc: String,
         val extras: List<DslValue> = emptyList(),
+        /** The value parameter may be a reference supertype of the local (`@Coerce`). */
+        val coerceParam: Boolean = false,
+        /** The returned reference supertype is cast back to the local's type (`@Coerce`). */
+        val coerceReturn: Boolean = false,
     ) : Payload()
 
     /**
