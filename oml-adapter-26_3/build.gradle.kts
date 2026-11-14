@@ -16,6 +16,8 @@ dependencies {
     // module's SnapshotEventBridge uses.
     implementation(project(":oml-adapter-common"))
     compileOnly(files("libs/26.3-client.jar"))
+    // The pagination rules rewrite method bodies directly (raw ASM)
+    compileOnly(libs.bundles.asm)
     // `Commands.dispatcher` hands back a Brigadier dispatcher; the game supplies brigadier at run time.
     compileOnly(libs.brigadier)
 
