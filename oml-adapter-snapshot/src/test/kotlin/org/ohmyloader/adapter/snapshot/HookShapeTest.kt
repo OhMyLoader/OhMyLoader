@@ -13,7 +13,7 @@ import java.util.jar.JarFile
 import kotlin.test.*
 
 /**
- * **Anti-drift shape assertions**: every hook this adapter declares is checked against the *real* `26.4-snapshot-5-client.jar` bytecode, so the
+ * **Anti-drift shape assertions**: every hook this adapter declares is checked against the *real* `26.4-snapshot-8-client.jar` bytecode, so the
  * day Mojang renames or reshapes an anchor, this build fails instead of the game silently doing one thing less at launch.
  * The assertions are **derived from the live rule sets** (`MinecraftHookTransformer.rules` / `ServerHookTransformer.rules` / `NetworkPayloadTransformer.rules`), not a
  * hand-copied list: the rule declarations are the single source of truth, and this test walks them — every targeted class, method
@@ -24,7 +24,7 @@ import kotlin.test.*
 class HookShapeTest {
 
     private val clientJar: File =
-        File(System.getProperty("oml.clientJar", "libs/26.4-snapshot-5-client.jar"))
+        File(System.getProperty("oml.clientJar", "libs/26.4-snapshot-8-client.jar"))
 
     /** Client and server transformers instantiate cleanly without any game class on the classpath: rules are pure data. */
     private val ruleSets = listOf(

@@ -17,6 +17,7 @@ internal val v26_3HookShapes = HookShapes(
     freezeCallOwner = "net/minecraft/core/registries/BuiltInRegistries",
     freezeHandlerOwner = "org/ohmyloader/adapter/common/EventBridge",
     freezeHandlerMethod = "onRegistryFreeze",
+    commandHandover = CommandHandover.COMMANDS_INSTANCE,
 )
 
 /**

@@ -230,28 +230,53 @@ class MinecraftHookTransformer(private val idPrefix: String, private val shapes:
         // Mod commands: the SERVER half lives in the server transformer; the integrated server on
         // this side builds its own dispatcher and needs the same registration (shared classes,
         // same deliberate duplication as the freeze rule).
-        classTarget("net/minecraft/commands/Commands") {
-            method(
-                "performPrefixedCommand",
-                desc = "(Lnet/minecraft/commands/CommandSourceStack;Ljava/lang/String;)V",
-            ) {
-                atHead {
-                    call(
-                        "org/ohmyloader/adapter/common/EventBridge",
-                        "onCommandsReady",
-                        "(Lnet/minecraft/commands/Commands;)V",
-                        args = listOf(DslValue.This),
-                    )
+        when (shapes.commandHandover) {
+            CommandHandover.COMMANDS_INSTANCE -> {
+                classTarget("net/minecraft/commands/Commands") {
+                    method(
+                        "performPrefixedCommand",
+                        desc = "(Lnet/minecraft/commands/CommandSourceStack;Ljava/lang/String;)V",
+                    ) {
+                        atHead {
+                            call(
+                                "org/ohmyloader/adapter/v26_3/V26_3EventBridge",
+                                "onCommandsReady",
+                                "(Lnet/minecraft/commands/Commands;)V",
+                                args = listOf(DslValue.This),
+                            )
+                        }
+                    }
+                }
+                classTarget("net/minecraft/server/MinecraftServer") {
+                    method("getCommands", desc = "()Lnet/minecraft/commands/Commands;") {
+                        atTail {
+                            transformReturn(
+                                owner = "org/ohmyloader/adapter/v26_3/V26_3EventBridge", "onCommandsReadyReturn",
+                                desc = "(Lnet/minecraft/commands/Commands;)Lnet/minecraft/commands/Commands;",
+                            )
+                        }
+                    }
                 }
             }
-        }
-        classTarget("net/minecraft/server/MinecraftServer") {
-            method("getCommands", desc = "()Lnet/minecraft/commands/Commands;") {
-                atTail {
-                    transformReturn(
-                        owner = "org/ohmyloader/adapter/common/EventBridge", "onCommandsReadyReturn",
-                        desc = "(Lnet/minecraft/commands/Commands;)Lnet/minecraft/commands/Commands;",
-                    )
+            CommandHandover.PARSE_BOX -> {
+                // The dispatcher only leaves the Commands constructor as a constructor argument and
+                // through the fromFullTree builds; ParseBox.fromFullTree receives the finished
+                // dispatcher (vanilla registered) exactly once per construction, before its tree
+                // snapshot is taken — so mod commands registered at its head are part of the tree.
+                classTarget("net/minecraft/commands/ParseBox") {
+                    method(
+                        "fromFullTree",
+                        desc = "(Lcom/mojang/brigadier/CommandDispatcher;)Lnet/minecraft/commands/ParseBox;",
+                    ) {
+                        atHead {
+                            call(
+                                "org/ohmyloader/adapter/common/EventBridge",
+                                "onDispatcherReady",
+                                "(Lcom/mojang/brigadier/CommandDispatcher;)V",
+                                args = listOf(DslValue.Arg(0)),
+                            )
+                        }
+                    }
                 }
             }
         }

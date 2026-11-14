@@ -9,13 +9,20 @@ plugins {
 // MinecraftHookTransformer / ServerHookTransformer operate directly on ASM instructions
 // (node types are needed when reusing the core injection executor)
 dependencies {
-    // The thin entry point references the shared implementation only; game classes are not
-    // named here anymore, so no game jar is on the compile classpath.
+    // The thin entry point references the shared implementation only; the one game class named
+    // here is the command handover: V26_3EventBridge unwraps the dispatcher from the Commands
+    // instance (26.3 keeps it on `getDispatcher`), a member the shared layer must not name
+    // because its bytecode ships into snapshot installs too — the same layering the snapshot
+    // module's SnapshotEventBridge uses.
     implementation(project(":oml-adapter-common"))
+    compileOnly(files("libs/26.3-client.jar"))
+    // `Commands.dispatcher` hands back a Brigadier dispatcher; the game supplies brigadier at run time.
+    compileOnly(libs.brigadier)
 
     // HookShapeTest walks the live rule sets and reads the real game jar with ASM.
     testImplementation(kotlin("test"))
     testImplementation(libs.bundles.asm)
+    testImplementation(files("libs/26.3-client.jar"))
 }
 tasks.withType<Test>().configureEach {
     // The codec tests call FFM restricted methods (oml-native downcalls via NativeManager); JDK 25+

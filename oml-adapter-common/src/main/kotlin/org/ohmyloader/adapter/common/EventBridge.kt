@@ -41,16 +41,15 @@ import java.lang.reflect.Field
  * registry freeze point content has to materialize before.
  */
 object EventBridge {
-    /** [Commands handover] Registers the mod commands into a freshly built dispatcher (see the hook). */
+    /**
+     * [Commands handover] Registers the mod commands into a freshly built dispatcher (see the hook).
+     * Takes the dispatcher itself — not the `Commands` wrapper — because the snapshot line keeps the
+     * dispatcher private to the `CommandBox` hierarchy; the 26.3-shaped unwrap lives in the 26.3
+     * adapter, whose bytecode ships only into 26.3 installs.
+     */
     @JvmStatic
-    fun onCommandsReady(commands: net.minecraft.commands.Commands) = OMLCommandBridge.register(commands)
-
-    /** Return-transform half of [onCommandsReady]: observes and passes the Commands instance through. */
-    @JvmStatic
-    fun onCommandsReadyReturn(commands: net.minecraft.commands.Commands): net.minecraft.commands.Commands {
-        OMLCommandBridge.register(commands)
-        return commands
-    }
+    fun onDispatcherReady(dispatcher: com.mojang.brigadier.CommandDispatcher<net.minecraft.commands.CommandSourceStack>) =
+        OMLCommandBridge.register(dispatcher)
 
 
     private val contentRegistry = MinecraftContentRegistry

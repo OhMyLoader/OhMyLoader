@@ -1,6 +1,5 @@
 package org.ohmyloader.api26_3
 
-import net.minecraft.commands.arguments.blocks.BlockStateParser
 import net.minecraft.core.Holder
 import net.minecraft.core.Registry
 import net.minecraft.core.particles.ParticleType
@@ -25,6 +24,7 @@ import net.minecraft.world.item.crafting.RecipeHolder
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.world.level.block.state.properties.Property
 import net.minecraft.world.level.gamerules.GameRule
 import net.minecraft.world.level.gamerules.GameRules
 
@@ -94,24 +94,27 @@ object OMLRegistries {
         location(id)?.let { ResourceKey.create(ClockTimeMarkers.ROOT_ID, it) }
 
     /**
-     * Assembles `id[facing=east,powered=false]` and hands it to the game's own block-state argument: an
-     * unregistered block, an unknown property or a value the property does not allow all fail here, which
-     * is the same rejection `/setblock` gives a player.
+     * Assembles `id[facing=east,powered=false]` by hand from the registry and the state machine: an
+     * unregistered block, an unknown property or a value the property does not allow all fail here,
+     * which is the same rejection `/setblock` gives a player. The game's own block-state argument
+     * (`BlockStateParser.parseForBlock`) would do this in one call, but its lookup parameter changed
+     * type between the 26.3 stable jar and the tracked snapshot (`HolderLookup` -> `HolderGetter`),
+     * so one compiled call site cannot resolve on both lines — the hand assembly uses only members
+     * the two jars declare identically.
      */
     fun blockState(blockId: String, properties: Map<String, String> = emptyMap()): BlockState? {
-        val spec = buildString {
-            append(blockId)
-            if (properties.isNotEmpty()) {
-                append('[')
-                properties.entries.joinTo(this, separator = ",") { "${it.key}=${it.value}" }
-                append(']')
-            }
+        val block = BuiltInRegistries.BLOCK.byId(blockId) ?: return null
+        var state: BlockState = block.defaultBlockState()
+        for ((name, raw) in properties) {
+            val property = state.properties.firstOrNull { it.name == name } ?: return null
+            val value = property.getValue(raw).orElse(null) ?: return null
+            // `Comparable` is contravariant (`Comparable<in T>`), so `Comparable<Any>` satisfies the
+            // `T : Comparable<T>` bounds of both `Property` and `trySetValue` — the erased call is
+            // (Property, Comparable) for every property, exactly what the dynamic set needs.
+            @Suppress("UNCHECKED_CAST")
+            state = state.trySetValue(property as Property<Comparable<Any>>, value as Comparable<Any>)
         }
-        return runCatching {
-            // `Registry` is itself a `HolderLookup.RegistryLookup`, so the built-in table is what the
-            // parser wants — no registry-access round trip.
-            BlockStateParser.parseForBlock(BuiltInRegistries.BLOCK, spec, false).blockState()
-        }.getOrNull()
+        return state
     }
 
     /** The rule's value spelled the way the game spells it, or null for an unregistered id. */

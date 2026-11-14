@@ -5,7 +5,7 @@ import org.ohmyloader.api.inject.DslValue
 import org.ohmyloader.core.spi.IAdapter
 import org.ohmyloader.core.transformer.IClassTransformer
 
-/** The anchor shapes the 26.4-snapshot-5 jar has — the facts the shared hook declarations branch on. */
+/** The anchor shapes the 26.4-snapshot-8 jar has — the facts the shared hook declarations branch on. */
 internal val snapshotHookShapes = HookShapes(
     hudExtractDesc = "(Lnet/minecraft/client/gui/GuiGraphicsExtractor;)V",
     onHudRenderDesc = "(Lnet/minecraft/client/gui/GuiGraphicsExtractor;)V",
@@ -17,25 +17,28 @@ internal val snapshotHookShapes = HookShapes(
     freezeCallOwner = "net/minecraft/core/registries/BuiltinRegistryBuilder",
     freezeHandlerOwner = "org/ohmyloader/adapter/snapshot/SnapshotEventBridge",
     freezeHandlerMethod = "onRegistryFreeze",
+    commandHandover = CommandHandover.PARSE_BOX,
 )
 
 /**
- * 26.4-snapshot-5 adapter entry point, exposed to the core through META-INF/services for ServiceLoader.
+ * 26.4-snapshot-8 adapter entry point, exposed to the core through META-INF/services for ServiceLoader.
  * 26.x jars ship readable class and member names (Mojang stopped publishing the official mappings
  * with this line and does not need to), so every anchor is read from the live jar and asserted by
- * [HookShapeTest]. 26.4-snapshot-5 shape facts that change what a rule must do: the registry
+ * [HookShapeTest]. 26.4-snapshot-8 shape facts that change what a rule must do: the registry
  * bootstrap moved onto `BuiltinRegistryBuilder`, whose `freeze()` is a private **instance** method
  * (the redirect handler is [SnapshotEventBridge.onRegistryFreeze], receiving the builder); the Hud
  * extraction pass dropped its `DeltaTracker` parameter; the creative-tab button pass dropped its
- * two int coordinates and clamps through `Math.clamp(JII)I` instead of `Mth.clamp(III)I`.
+ * two int coordinates and clamps through `Math.clamp(JII)I` instead of `Mth.clamp(III)I`; the
+ * command dispatcher left the `Commands` instance for the `CommandBox` hierarchy, so registration
+ * anchors on `ParseBox.fromFullTree` and the bridge receives the dispatcher itself.
  */
 class OMLAdapterSnapshot : IAdapter {
-    override val versionId = "26.4-snapshot-5"
+    override val versionId = "26.4-snapshot-8"
 
     override val mainClass = "net.minecraft.client.main.Main"
 
     /**
-     * 26.4-snapshot-5 ships one unified jar: `net.minecraft.server.Main`, `MinecraftServer` and
+     * 26.4-snapshot-8 ships one unified jar: `net.minecraft.server.Main`, `MinecraftServer` and
      * `DedicatedServer` all live inside the client jar, so the client jar alone carries the dedicated
      * server and the installer has no separate server jar to look for.
      */

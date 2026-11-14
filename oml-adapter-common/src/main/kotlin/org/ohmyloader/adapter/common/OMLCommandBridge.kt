@@ -1,6 +1,7 @@
 package org.ohmyloader.adapter.common
 
 import com.mojang.brigadier.Command
+import com.mojang.brigadier.CommandDispatcher
 import com.mojang.brigadier.arguments.BoolArgumentType
 import com.mojang.brigadier.arguments.DoubleArgumentType
 import com.mojang.brigadier.arguments.IntegerArgumentType
@@ -10,8 +11,10 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder
 import com.mojang.brigadier.builder.RequiredArgumentBuilder
 import com.mojang.brigadier.context.CommandContext
 import net.minecraft.commands.CommandSourceStack
-import net.minecraft.commands.Commands
 import net.minecraft.network.chat.Component
+import net.minecraft.server.permissions.Permission
+import net.minecraft.server.permissions.PermissionCheck
+import net.minecraft.server.permissions.PermissionLevel
 import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.command.OMLArgumentType
 import org.ohmyloader.api.command.OMLCommandDeclaration
@@ -30,10 +33,14 @@ object OMLCommandBridge {
 
     private val registered = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Any, Boolean>())
 
+    /**
+     * The dispatcher itself is the dedup key, not the `Commands` wrapper: the 26.3 line hands the
+     * wrapper over and the bridge unwraps it (in the 26.3 adapter, shared bytecode must not name
+     * `getDispatcher`), while the snapshot line hands the dispatcher over directly.
+     */
     @JvmStatic
-    fun register(commands: Any) {
-        if (!registered.add(commands)) return
-        val dispatcher = (commands as Commands).dispatcher
+    fun register(dispatcher: CommandDispatcher<CommandSourceStack>) {
+        if (!registered.add(dispatcher)) return
         for ((modId, root) in CommandDeclarations.entries) {
             try {
                 dispatcher.register(build(modId, root, emptyList()) as LiteralArgumentBuilder<CommandSourceStack>)
@@ -147,15 +154,11 @@ object OMLCommandBridge {
             OMLArgumentType.BOOLEAN -> BoolArgumentType.bool()
         }
 
-    private fun permissionCheck(level: Int): net.minecraft.server.permissions.PermissionCheck =
-        when (level) {
-            0 -> Commands.LEVEL_ALL
-            1 -> Commands.LEVEL_MODERATORS
-            2 -> Commands.LEVEL_GAMEMASTERS
-            3 -> Commands.LEVEL_ADMINS
-            4 -> Commands.LEVEL_OWNERS
-            else -> throw IllegalArgumentException(
-                "command permission level $level is outside 0..4 (0 = everyone, 1-4 = vanilla op levels)",
-            )
-        }
+    /**
+     * The vanilla `LEVEL_*` checks are exactly `Require(HasCommandLevel(...))` (26.3's `Commands`
+     * static init builds them this way), and that construction is the one shape both tracked jars
+     * share — the constants themselves were dropped from `Commands` in the snapshot line.
+     */
+    private fun permissionCheck(level: Int): PermissionCheck =
+        PermissionCheck.Require(Permission.HasCommandLevel(PermissionLevel.entries[level]))
 }

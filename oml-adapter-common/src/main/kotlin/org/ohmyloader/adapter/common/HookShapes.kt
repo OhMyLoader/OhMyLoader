@@ -3,11 +3,33 @@ package org.ohmyloader.adapter.common
 import org.ohmyloader.api.inject.DslValue
 
 /**
+ * How this line exposes the finished command dispatcher to the bridge — the fact the command
+ * registration rules branch on (see [HookShapes.commandHandover]).
+ */
+enum class CommandHandover {
+    /**
+     * The dispatcher is a field on the `Commands` instance behind `getDispatcher()`, so the
+     * handover hooks sit on `performPrefixedCommand` and `MinecraftServer.getCommands` and name the
+     * 26.3 adapter's Commands-shaped handlers (`V26_3EventBridge`) — reading the field from shared
+     * bytecode would put a snapshot-unresolvable reference into the layer every install ships.
+     */
+    COMMANDS_INSTANCE,
+
+    /**
+     * The dispatcher is private to the `CommandBox` hierarchy and only leaves the `Commands`
+     * constructor through the caller consumer and the `SuggestionBox` / `ParseBox.fromFullTree`
+     * builds, so the handover hook sits on `ParseBox.fromFullTree` — every `Commands` construction
+     * funnels through it with the finished dispatcher (vanilla included) as its first argument.
+     */
+    PARSE_BOX,
+}
+
+/**
  * The anchor shapes the shared hook declarations branch on: the game lines this repository tracks
- * (the 26.3 stable line and the tracked 26.4 snapshot) differ in exactly these three sites — the
- * Hud extraction pass, the creative-tab sprite bound and the registry freeze. Each adapter passes
- * the facts for its own versionId, so when the snapshot line drifts again only the snapshot
- * adapter's facts move.
+ * (the 26.3 stable line and the tracked 26.4 snapshot) differ in exactly these four sites — the
+ * Hud extraction pass, the creative-tab sprite bound, the registry freeze and the command
+ * dispatcher handover. Each adapter passes the facts for its own versionId, so when the snapshot
+ * line drifts again only the snapshot adapter's facts move.
  */
 data class HookShapes(
     /** `Hud.extractRenderState`: the method descriptor as this line's jar declares it. */
@@ -35,4 +57,6 @@ data class HookShapes(
     val freezeHandlerOwner: String,
     /** The redirect handler's name; on the instance form the builder arrives as the first parameter. */
     val freezeHandlerMethod: String,
+    /** How the finished command dispatcher reaches [EventBridge] / the version bridge. */
+    val commandHandover: CommandHandover,
 )

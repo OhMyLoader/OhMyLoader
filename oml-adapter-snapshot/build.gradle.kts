@@ -1,5 +1,5 @@
 // The SNAPSHOT adapter: a working clone of the current stable adapter, kept tracking the latest
-// snapshot (26.4-snapshot-5) so the eventual official 26.4 adapter is a small diff instead of a
+// snapshot (26.4-snapshot-8) so the eventual official 26.4 adapter is a small diff instead of a
 // rewrite. It IS bundled in the installer under the stable alias `snapshot` — the installer
 // resolves the alias to the manifest's latest snapshot at install time — so a snapshot player
 // installs and launches the same way a 26.3 one does; this module exists to absorb the churn
@@ -20,8 +20,8 @@ dependencies {
     // the redirect folds the receiver into the static handler descriptor, so the parameter type
     // has to be BuiltinRegistryBuilder exactly (see SnapshotEventBridge).
     implementation(project(":oml-adapter-common"))
-    compileOnly(files("libs/26.4-snapshot-5-client.jar"))
-    testImplementation(files("libs/26.4-snapshot-5-client.jar"))
+    compileOnly(files("libs/26.4-snapshot-8-client.jar"))
+    testImplementation(files("libs/26.4-snapshot-8-client.jar"))
 
     // HookShapeTest walks the live rule sets and reads the real game jar with ASM.
     testImplementation(kotlin("test"))
@@ -67,5 +67,5 @@ omlAdapter {
     // The only per-version fact left to declare: which game line this driver targets. 26.x jars are not
     // obfuscated — Mojang stopped publishing the official mappings with this line (the version JSON has
     // no `downloads.client_mappings`) and does not need to, since class and member names ship readable.
-    versionId = "26.4-snapshot-5"
+    versionId = "26.4-snapshot-8"
 }

@@ -448,11 +448,11 @@ class InstallerContractTest {
         }
 
         assertTrue(
-            loggedFor("oml-adapter-snapshot").any { it.contains("26.4-snapshot-2") },
+            loggedFor("oml-adapter-snapshot").any { it.contains("26.4-snapshot-8") },
             "the snapshot install must state the adapter's verification scope",
         )
         assertTrue(
-            loggedFor("oml-adapter-26_3").none { it.contains("26.4-snapshot-2") },
+            loggedFor("oml-adapter-26_3").none { it.contains("26.4-snapshot-8") },
             "a stable-adapter install must not carry the snapshot notice",
         )
     }

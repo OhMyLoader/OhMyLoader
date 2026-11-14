@@ -26,34 +26,59 @@ class ServerHookTransformer(private val idPrefix: String, private val shapes: Ho
                 }
             }
         }
-        // Mod commands join the Brigadier dispatcher, which is rebuilt per resource load — the
-        // constructor tail cannot pass `this` (self-check: uninit `this`) and nothing guarantees
-        // the dispatcher is assigned at ConstructorHead, so registration is lazy at the two
-        // points that hand the built Commands instance out. Both rules exist in BOTH
-        // transformers (shared bootstrap code, same deliberate duplication as the freeze rule);
-        // the identity dedup makes a double handover register exactly once.
-        classTarget("net/minecraft/commands/Commands") {
-            method(
-                "performPrefixedCommand",
-                desc = "(Lnet/minecraft/commands/CommandSourceStack;Ljava/lang/String;)V",
-            ) {
-                atHead {
-                    call(
-                        "org/ohmyloader/adapter/common/EventBridge",
-                        "onCommandsReady",
-                        "(Lnet/minecraft/commands/Commands;)V",
-                        args = listOf(DslValue.This),
-                    )
+        // Mod commands join the Brigadier dispatcher, which is rebuilt per resource load. Both rules
+        // exist in BOTH transformers (shared bootstrap code, same deliberate duplication as the
+        // freeze rule); the identity dedup makes a double handover register exactly once.
+        when (shapes.commandHandover) {
+            CommandHandover.COMMANDS_INSTANCE -> {
+                // The constructor tail cannot pass `this` (self-check: uninit `this`) and nothing
+                // guarantees the dispatcher is assigned at ConstructorHead, so registration is lazy
+                // at the two points that hand the built Commands instance out.
+                classTarget("net/minecraft/commands/Commands") {
+                    method(
+                        "performPrefixedCommand",
+                        desc = "(Lnet/minecraft/commands/CommandSourceStack;Ljava/lang/String;)V",
+                    ) {
+                        atHead {
+                            call(
+                                "org/ohmyloader/adapter/v26_3/V26_3EventBridge",
+                                "onCommandsReady",
+                                "(Lnet/minecraft/commands/Commands;)V",
+                                args = listOf(DslValue.This),
+                            )
+                        }
+                    }
+                }
+                classTarget("net/minecraft/server/MinecraftServer") {
+                    method("getCommands", desc = "()Lnet/minecraft/commands/Commands;") {
+                        atTail {
+                            transformReturn(
+                                owner = "org/ohmyloader/adapter/v26_3/V26_3EventBridge", "onCommandsReadyReturn",
+                                desc = "(Lnet/minecraft/commands/Commands;)Lnet/minecraft/commands/Commands;",
+                            )
+                        }
+                    }
                 }
             }
-        }
-        classTarget("net/minecraft/server/MinecraftServer") {
-            method("getCommands", desc = "()Lnet/minecraft/commands/Commands;") {
-                atTail {
-                    transformReturn(
-                        owner = "org/ohmyloader/adapter/common/EventBridge", "onCommandsReadyReturn",
-                        desc = "(Lnet/minecraft/commands/Commands;)Lnet/minecraft/commands/Commands;",
-                    )
+            CommandHandover.PARSE_BOX -> {
+                // The dispatcher only leaves the Commands constructor as a constructor argument and
+                // through the fromFullTree builds; ParseBox.fromFullTree receives the finished
+                // dispatcher (vanilla registered) exactly once per construction, before its tree
+                // snapshot is taken — so mod commands registered at its head are part of the tree.
+                classTarget("net/minecraft/commands/ParseBox") {
+                    method(
+                        "fromFullTree",
+                        desc = "(Lcom/mojang/brigadier/CommandDispatcher;)Lnet/minecraft/commands/ParseBox;",
+                    ) {
+                        atHead {
+                            call(
+                                "org/ohmyloader/adapter/common/EventBridge",
+                                "onDispatcherReady",
+                                "(Lcom/mojang/brigadier/CommandDispatcher;)V",
+                                args = listOf(DslValue.Arg(0)),
+                            )
+                        }
+                    }
                 }
             }
         }
