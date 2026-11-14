@@ -45,3 +45,12 @@ tasks.processResources {
         expand(stamped)
     }
 }
+
+// Hot-path numbers are machine-relative, so this is on demand and never part of `build`/`check`.
+// It still exits non-zero when a scenario's result or handler-hit check fails.
+tasks.register<JavaExec>("injectionBenchmark") {
+    group = "verification"
+    description = "Measures per-call overhead and allocation of the injection bridge."
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("org.ohmyloader.core.benchmark.InjectionBenchmark")
+}

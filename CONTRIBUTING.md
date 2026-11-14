@@ -39,6 +39,9 @@ java -jar dist/oml-installer-*.jar --target standard --dir /tmp/oml-smoke \
 
 # Publish every module locally for the plugin and test mod:
 ./gradlew publishToMavenLocal
+
+# Measure the injection bridge's per-call overhead and allocation (on demand; not part of build):
+./gradlew :oml-core:injectionBenchmark
 ```
 
 `./gradlew build` runs the tests that do not launch the game. `HookShapeTest` reads the real 26.3 client
