@@ -331,6 +331,32 @@ class InjectionWrapOperationTest {
         assertTrue(failure.message!!.contains("constructed type"), failure.message)
     }
 
+    @Test
+    fun `wrapOperation coerces a reference argument and return`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("echo", desc = "(Ljava/lang/String;)Ljava/lang/String;") {
+                        beforeCall(
+                            owner = Ops.OWNER, name = "echo",
+                            desc = "(Ljava/lang/String;)Ljava/lang/String;",
+                        ) {
+                            wrapOperation(
+                                WrapOpHandlers.OWNER, "coerceEcho",
+                                "(Ljava/lang/Object;Lorg/ohmyloader/api/hook/Operation;)Ljava/lang/Object;",
+                                coerceParams = setOf(0),
+                                coerceReturn = true,
+                            )
+                        }
+                    }
+                }
+            },
+            targetWithEcho(),
+        )
+
+        assertEquals("ABC", invoke(clazz, "echo", "abc"))
+    }
+
     // ---------- fixtures ----------
 
     private val OPERATION_DESC = "Lorg/ohmyloader/api/hook/Operation;"
@@ -403,6 +429,15 @@ class InjectionWrapOperationTest {
             add(VarInsnNode(Opcodes.ALOAD, 1))
             add(FieldInsnNode(Opcodes.GETFIELD, Receiver.OWNER, "stored", "I"))
             add(InsnNode(Opcodes.IRETURN))
+        },
+    )
+
+    /** `static String echo(String value) { return Ops.echo(value); }` */
+    private fun targetWithEcho(): ClassNode = classNode(
+        methodNode("echo", "(Ljava/lang/String;)Ljava/lang/String;") {
+            add(VarInsnNode(Opcodes.ALOAD, 0))
+            add(MethodInsnNode(Opcodes.INVOKESTATIC, Ops.OWNER, "echo", "(Ljava/lang/String;)Ljava/lang/String;", false))
+            add(InsnNode(Opcodes.ARETURN))
         },
     )
 
@@ -489,6 +524,9 @@ class InjectionWrapOperationTest {
         fun label(value: Int): String = "label$value"
 
         @JvmStatic
+        fun echo(value: String): String = value
+
+        @JvmStatic
         fun wide(value: Int): Long = value.toLong()
     }
 
@@ -522,6 +560,10 @@ class InjectionWrapOperationTest {
 
         @JvmStatic
         fun factory(value: Int): Receiver = Receiver(value + 1)
+
+        @JvmStatic
+        fun coerceEcho(value: Any?, operation: Operation<String>): Any? =
+            operation.call((value as String).uppercase())
 
         @Suppress("UNUSED_PARAMETER")
         @JvmStatic

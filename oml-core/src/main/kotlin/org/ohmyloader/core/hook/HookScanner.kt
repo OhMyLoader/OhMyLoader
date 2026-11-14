@@ -1728,7 +1728,18 @@ object HookScanner {
             }
         }
         val ret = Type.getReturnType(method.desc)
+        val operationIndex = normal.size - 1
+        val coerceParams = (0 until operationIndex).filterTo(mutableSetOf()) { i ->
+            method.visibleParameterAnnotations?.getOrNull(i)
+                ?.any { it.desc == COERCE_DESC } == true
+        }
+        val coerceReturn = method.visibleAnnotations.orEmpty().any { it.desc == COERCE_DESC }
         if (mergeInto != null && !method.isDeclaredStatic()) {
+            if (coerceParams.isNotEmpty() || coerceReturn) {
+                problems += "[$modId] $where —— @Coerce is not supported on merged @WrapOperation handlers yet: " +
+                    "make the handler static"
+                return
+            }
             handlers += "${method.name}${method.desc}"
             rules += Rule(
                 targetInternal, methodNames, methodDesc, anchor,
@@ -1758,6 +1769,8 @@ object HookScanner {
                 method = HookRegistry.bridgeMethodName(id, kind),
                 desc = HookRegistry.bridgeDesc(id, kind),
                 extras = split.bindings + DslValue.IntVal(id),
+                coerceParams = coerceParams,
+                coerceReturn = coerceReturn,
             ),
             policy, emptyList(), "WrapOperation",
         )

@@ -1283,6 +1283,32 @@ class HookScannerTest {
     }
 
     @Test
+    fun `coerce marks the WrapOperation handler`() {
+        newBridge()
+        val wrap = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/WrapOperation;").apply {
+            values = mutableListOf<Any?>(
+                "method", "runTick",
+                "at", atNode("INVOKE", target = "Lnet/minecraft/Foo;bar(Ljava/lang/String;)Ljava/lang/String;"),
+            )
+        }
+        val coerce = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Coerce;")
+        val method = MethodNode(
+            Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h",
+            "(Ljava/lang/Object;Lorg/ohmyloader/api/hook/Operation;)Ljava/lang/Object;", null, null,
+        ).apply {
+            instructions.add(InsnNode(Opcodes.ACONST_NULL))
+            instructions.add(InsnNode(Opcodes.ARETURN))
+            visibleAnnotations = listOf(wrap, coerce)
+            visibleParameterAnnotations = arrayOf(mutableListOf(coerce), mutableListOf())
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        val payload = parsed.rules[0].payload as Payload.WrapOperation
+        assertEquals(setOf(0), payload.coerceParams)
+        assertTrue(payload.coerceReturn)
+    }
+
+    @Test
     fun `wrapBranch parses a boolean handler`() {
         newBridge()
         val node = injectClass(

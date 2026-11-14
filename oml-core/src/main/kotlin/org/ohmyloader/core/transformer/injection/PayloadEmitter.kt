@@ -1382,6 +1382,8 @@ internal object PayloadEmitter {
         locals: AnchorLocals?,
         frames: MethodFrames,
         operandTypesOverride: Array<Type>? = null,
+        coerceParams: Set<Int> = emptySet(),
+        coerceReturn: Boolean = false,
     ): InsnList? {
         val argTypes: Array<Type>
         val returnType: Type
@@ -1536,10 +1538,13 @@ internal object PayloadEmitter {
         }
         for (i in argTypes.indices) {
             if (handlerArgs[i] != argTypes[i]) {
-                throw InjectionError(
-                    "[injection] WrapOperation value parameter ${i + 1} type mismatch: expected " +
-                        "${argTypes[i].className}, actual ${handlerArgs[i].className} ($handlerDesc)",
-                )
+                val coerced = i in coerceParams && isRefType(argTypes[i]) && isRefType(handlerArgs[i])
+                if (!coerced) {
+                    throw InjectionError(
+                        "[injection] WrapOperation value parameter ${i + 1} type mismatch: expected " +
+                            "${argTypes[i].className}, actual ${handlerArgs[i].className} ($handlerDesc)",
+                    )
+                }
             }
         }
         if (handlerArgs[opIndex].descriptor != OPERATION_DESC) {
@@ -1548,10 +1553,11 @@ internal object PayloadEmitter {
                     "after the operation's value parameters: actual ${handlerArgs[opIndex].className} ($handlerDesc)",
             )
         }
-        if (handlerRet != returnType) {
+        if (handlerRet != returnType && !(coerceReturn && isRefType(handlerRet) && isRefType(returnType))) {
             throw InjectionError(
-                "[injection] the handler return type of WrapOperation must equal the operation's return type: " +
-                    "operation returns ${returnType.className}, handler returns ${handlerRet.className} ($handlerDesc)",
+                "[injection] the handler return type of WrapOperation must equal the operation's return type" +
+                    " (or, with @Coerce, be a reference supertype of it): operation returns " +
+                    "${returnType.className}, handler returns ${handlerRet.className} ($handlerDesc)",
             )
         }
         validateArgTypes(handlerDesc, extras, opIndex + 1, method, owner, locals, "WrapOperation.extras")
@@ -1576,6 +1582,9 @@ internal object PayloadEmitter {
             ),
         )
         emitWriteBacks(list, writeBacks)
+        if (coerceReturn && handlerRet != returnType) {
+            list.add(TypeInsnNode(Opcodes.CHECKCAST, returnType.internalName))
+        }
         if (!emitCancelChecks(list, cancelChecks, method, returnType, frames, anchor)) return null
         return list
     }
@@ -1702,6 +1711,8 @@ internal object PayloadEmitter {
         owner: String,
         newInsn: TypeInsnNode,
         locals: AnchorLocals?,
+        coerceParams: Set<Int> = emptySet(),
+        coerceReturn: Boolean = false,
     ): WrapNewEdit? {
         val next = nextReal(newInsn)
         if (next == null || next.opcode != Opcodes.DUP) {
@@ -1732,10 +1743,13 @@ internal object PayloadEmitter {
         }
         for (i in argTypes.indices) {
             if (handlerArgs[i] != argTypes[i]) {
-                throw InjectionError(
-                    "[injection] WrapOperation(NEW) constructor argument ${i + 1} type mismatch: expected " +
-                        "${argTypes[i].className}, actual ${handlerArgs[i].className} ($handlerDesc)",
-                )
+                val coerced = i in coerceParams && isRefType(argTypes[i]) && isRefType(handlerArgs[i])
+                if (!coerced) {
+                    throw InjectionError(
+                        "[injection] WrapOperation(NEW) constructor argument ${i + 1} type mismatch: expected " +
+                            "${argTypes[i].className}, actual ${handlerArgs[i].className} ($handlerDesc)",
+                    )
+                }
             }
         }
         if (handlerArgs[opIndex].descriptor != OPERATION_DESC) {
@@ -1744,10 +1758,11 @@ internal object PayloadEmitter {
                     "constructor arguments: actual ${handlerArgs[opIndex].className} ($handlerDesc)",
             )
         }
-        if (handlerRet != returnType) {
+        if (handlerRet != returnType && !(coerceReturn && isRefType(handlerRet))) {
             throw InjectionError(
-                "[injection] the handler return type of WrapOperation(NEW) must equal the constructed type: " +
-                    "expected ${returnType.className}, actual ${handlerRet.className} ($handlerDesc)",
+                "[injection] the handler return type of WrapOperation(NEW) must equal the constructed type " +
+                    "${returnType.className} (or a reference supertype with @Coerce), actual " +
+                    "${handlerRet.className} ($handlerDesc)",
             )
         }
         validateArgTypes(handlerDesc, extras, opIndex + 1, method, owner, locals, "WrapOperation(NEW).extras")
@@ -1775,6 +1790,9 @@ internal object PayloadEmitter {
             ),
         )
         emitWriteBacks(list, writeBacks)
+        if (coerceReturn && handlerRet != returnType) {
+            list.add(TypeInsnNode(Opcodes.CHECKCAST, returnType.internalName))
+        }
         // [null, null, result] → [result]: duplicate the result below the two nulls, then drop them.
         list.add(InsnNode(Opcodes.DUP_X2))
         list.add(InsnNode(Opcodes.POP))

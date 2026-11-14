@@ -825,8 +825,15 @@ class PayloadBuilder @PublishedApi internal constructor(
      * `(receiver?, operands…, Operation<R>, extras…)R` and may re-run the original operation through
      * [org.ohmyloader.api.hook.Operation.call] with different arguments, or not at all.
      */
-    fun wrapOperation(owner: String, method: String, desc: String, extras: List<DslValue> = emptyList()) {
-        payload = Payload.WrapOperation(owner, method, desc, extras)
+    fun wrapOperation(
+        owner: String,
+        method: String,
+        desc: String,
+        extras: List<DslValue> = emptyList(),
+        coerceParams: Set<Int> = emptySet(),
+        coerceReturn: Boolean = false,
+    ) {
+        payload = Payload.WrapOperation(owner, method, desc, extras, coerceParams, coerceReturn)
     }
 
     /**

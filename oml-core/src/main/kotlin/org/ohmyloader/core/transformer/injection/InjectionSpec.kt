@@ -889,6 +889,13 @@ class InjectionSpec internal constructor(
                         val comparison = comparisonDecoration(expressionDecorations, anchor)
                         val comparisonJump = comparison?.let { resolveComparisonJump(it, anchor, method) }
                         if (comparison != null && comparisonJump != null) {
+                            if (payload.coerceParams.isNotEmpty() || payload.coerceReturn) {
+                                OmlLog.error(
+                                    "Injection",
+                                    "@Coerce is not supported on a comparison wrapped by WrapOperation: ${method.name}",
+                                )
+                                continue
+                            }
                             if (comparison is ComplexComparisonInfo) {
                                 if (nextReal(anchor) !== comparisonJump) {
                                     OmlLog.error(
@@ -925,6 +932,7 @@ class InjectionSpec internal constructor(
                                 payload.owner, payload.method, payload.desc, payload.extras,
                                 instance = false, classNode = classNode, method = method, owner = owner,
                                 newInsn = anchor, locals = locals,
+                                coerceParams = payload.coerceParams, coerceReturn = payload.coerceReturn,
                             ) ?: continue
                             if (!insertBlock(method, edit.initInsn, edit.block, after = false, frames, knownShares)) continue
                             method.instructions.remove(edit.initInsn)
@@ -946,6 +954,7 @@ class InjectionSpec internal constructor(
                             instance = false, classNode = classNode, method = method, owner = owner,
                             anchor = anchor, locals = locals, frames = frames,
                             operandTypesOverride = expressionOperationArgs(point, expressionDecorations, anchor),
+                            coerceParams = payload.coerceParams, coerceReturn = payload.coerceReturn,
                         ) ?: continue
                         if (!insertBlock(method, anchor, list, after = false, frames, knownShares)) continue
                         method.instructions.remove(anchor)
