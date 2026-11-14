@@ -708,7 +708,12 @@ object OMLCore {
                 val instance = modInstance(mod)
                 if (instance is OMLRegistryInitializer) {
                     val config = org.ohmyloader.core.config.OMLConfigImpl(mod.id, File(gameDir, "config"))
-                    instance.onDeclareRegistries(ModContext(mod.id, mod.name, mod.version, config))
+                    org.ohmyloader.api.RegistrationPhase.enter(mod.id)
+                    try {
+                        instance.onDeclareRegistries(ModContext(mod.id, mod.name, mod.version, config))
+                    } finally {
+                        org.ohmyloader.api.RegistrationPhase.exit()
+                    }
                 }
             } catch (t: Throwable) {
                 initFailures[mod.id] = t
