@@ -763,6 +763,52 @@ class InjectionExpressionTest {
     }
 
     @Test
+    fun `wrapBranch boxes coerced comparison operands`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("cmp", desc = "(I)I") {
+                        atExpression("? > 5") {
+                            wrapBranch(
+                                ExpressionHandlers.OWNER, "denyBoxed", "(Ljava/lang/Object;Ljava/lang/Object;)Z",
+                                coerceParams = setOf(0, 1),
+                            )
+                        }
+                    }
+                }
+            },
+            compareTarget(),
+        )
+
+        assertEquals(100, invoke(clazz, "cmp", 9), "the boxed operands reach the handler; false falls through")
+    }
+
+    @Test
+    fun `wrapOperation boxes coerced comparison operands`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("cmp", desc = "(I)I") {
+                        atExpression("? > 5") {
+                            wrapOperation(
+                                ExpressionHandlers.OWNER, "invertCoerced",
+                                "(Ljava/lang/Object;Ljava/lang/Object;" +
+                                    "Lorg/ohmyloader/api/hook/Operation;)Ljava/lang/Object;",
+                                coerceParams = setOf(0, 1),
+                                coerceReturn = true,
+                            )
+                        }
+                    }
+                }
+            },
+            compareTarget(),
+        )
+
+        assertEquals(100, invoke(clazz, "cmp", 1), "1 > 5 is false, inverted to true")
+        assertEquals(0, invoke(clazz, "cmp", 9), "9 > 5 is true, inverted to false")
+    }
+
+    @Test
     fun `an expression bounds the slice window`() {
         val definition = InjectionPoint.Expression.Definition(
             "max", methods = listOf("Ljava/lang/Math;max(II)I"),
@@ -1213,5 +1259,13 @@ class InjectionExpressionTest {
 
         @JvmStatic
         fun coerceBoxedInt(value: Any?): Int = (value as Int) + 1
+
+        @Suppress("UNUSED_PARAMETER")
+        @JvmStatic
+        fun denyBoxed(a: Any?, b: Any?): Boolean = false
+
+        @JvmStatic
+        fun invertCoerced(a: Any?, b: Any?, operation: Operation<Boolean>): Any? =
+            !operation.call(a as Int, b as Int)
     }
 }

@@ -157,6 +157,8 @@ internal object PayloadEmitter {
         method: MethodNode,
         owner: String,
         locals: AnchorLocals?,
+        coerceParam: Boolean = false,
+        coerceReturn: Boolean = false,
     ): InsnList? {
         if (payload.variant != HandlerVariant.NOTIFY) {
             throw InjectionError(
@@ -165,6 +167,7 @@ internal object PayloadEmitter {
         }
         return emitInPlaceValue(
             rule, payload.owner, payload.method, payload.desc, payload.captures, true, value, method, owner, locals,
+            coerceParam, coerceReturn,
         )
     }
 
@@ -761,10 +764,34 @@ internal object PayloadEmitter {
         owner: String,
         invoke: MethodInsnNode,
         locals: AnchorLocals?,
+        coerceParams: Set<Int> = emptySet(),
+        coerceReturn: Boolean = false,
     ): InsnList {
         val targetArgs = Type.getArgumentTypes(invoke.desc)
+        val handlerArgs = Type.getArgumentTypes(handlerDesc)
+        val handlerRet = Type.getReturnType(handlerDesc)
+        val callRet = Type.getReturnType(invoke.desc)
         // Parameter list = original receiver + original args + captures…, so captures start at 1 + args.size
         validateArgTypes(handlerDesc, extras, 1 + targetArgs.size, method, owner, locals, "REDIRECT.captures")
+        val pushed = arrayOf(Type.getObjectType(invoke.owner)) + targetArgs
+        for (i in pushed.indices) {
+            if (handlerArgs[i] != pushed[i]) {
+                val coerced = i in coerceParams && isRefType(handlerArgs[i])
+                if (!coerced) {
+                    throw InjectionError(
+                        "[injection] Redirect handler parameter ${i + 1} type mismatch: expected " +
+                            "${pushed[i].className}, actual ${handlerArgs[i].className} ($handlerDesc)",
+                    )
+                }
+            }
+        }
+        val unboxReturn = coerceReturn && isRefType(handlerRet) && !isRefType(callRet)
+        if (handlerRet != callRet && !(coerceReturn && isRefType(handlerRet))) {
+            throw InjectionError(
+                "[injection] Redirect handler return type must equal the call's (or be a reference type with " +
+                    "@Coerce): call returns ${callRet.className}, handler returns ${handlerRet.className} ($handlerDesc)",
+            )
+        }
 
         val slots = storeArgs(method, targetArgs)
         val receiverSlot = allocLocalSlot(method)
@@ -781,11 +808,114 @@ internal object PayloadEmitter {
         list.add(VarInsnNode(Opcodes.ALOAD, receiverSlot))
         for (i in targetArgs.indices) {
             list.add(VarInsnNode(Boxing.loadOpcode(targetArgs[i]), slots[i]))
+            if ((1 + i) in coerceParams && !isRefType(targetArgs[i]) && isRefType(handlerArgs[1 + i])) {
+                val box = Boxing.box(targetArgs[i])
+                    ?: throw IllegalStateException("no boxing type for ${targetArgs[i].className}")
+                list.add(MethodInsnNode(Opcodes.INVOKESTATIC, box.owner, box.name, box.desc, false))
+            }
         }
         val writeBacks = mutableListOf<SugarWriteBack>()
         for (value in extras) emitValue(list, value, method, locals, writeBacks)
         list.add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, handlerOwner, handlerMethod, handlerDesc, false))
         emitWriteBacks(list, writeBacks)
+        if (unboxReturn) {
+            val unbox = Boxing.unbox(callRet)
+                ?: throw IllegalStateException("no unboxing type for ${callRet.className}")
+            list.add(TypeInsnNode(Opcodes.CHECKCAST, unbox.owner))
+            list.add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, unbox.owner, unbox.name, unbox.desc, false))
+        } else if (coerceReturn && handlerRet != callRet) {
+            list.add(TypeInsnNode(Opcodes.CHECKCAST, callRet.internalName))
+        }
+        return list
+    }
+
+    /**
+     * The **static-handler** Redirect with `@Coerce`: the pushed call values are stashed, reloaded with
+     * boxing where a primitive argument meets a reference parameter, and the handler's return is cast or
+     * unboxed back to the call's return type.
+     */
+    internal fun emitRedirectStatic(
+        handlerOwner: String,
+        handlerMethod: String,
+        handlerDesc: String,
+        extras: List<DslValue>,
+        method: MethodNode,
+        owner: String,
+        invoke: MethodInsnNode,
+        locals: AnchorLocals?,
+        coerceParams: Set<Int>,
+        coerceReturn: Boolean,
+    ): InsnList? {
+        val callArgs = Type.getArgumentTypes(invoke.desc)
+        val pushed = if (invoke.opcode == Opcodes.INVOKESTATIC) {
+            callArgs
+        } else {
+            arrayOf(Type.getObjectType(invoke.owner)) + callArgs
+        }
+        val handlerArgs = Type.getArgumentTypes(handlerDesc)
+        val handlerRet = Type.getReturnType(handlerDesc)
+        val callRet = Type.getReturnType(invoke.desc)
+        if (handlerArgs.size != pushed.size + extras.size) {
+            throw InjectionError(
+                "[injection] Redirect handler's parameter count must equal the call's values plus extras: " +
+                    "expected ${pushed.size + extras.size}, actual ${handlerArgs.size} ($handlerDesc)",
+            )
+        }
+        for (i in pushed.indices) {
+            if (handlerArgs[i] != pushed[i]) {
+                val coerced = i in coerceParams && isRefType(handlerArgs[i])
+                if (!coerced) {
+                    throw InjectionError(
+                        "[injection] Redirect handler parameter ${i + 1} type mismatch: expected " +
+                            "${pushed[i].className}, actual ${handlerArgs[i].className} ($handlerDesc)",
+                    )
+                }
+            }
+        }
+        for (i in extras.indices) {
+            val actual = stackTypeOf(extras[i], method, owner, locals) ?: continue
+            val want = handlerArgs[pushed.size + i]
+            val problem = mismatch(actual, want)
+            if (problem != null) {
+                throw InjectionError(
+                    "[injection] Redirect extras argument ${i + 1} type mismatch: expected ${want.className}, " +
+                        "actual ${actual.className} ($problem; ${extras[i]})",
+                )
+            }
+        }
+        val unboxReturn = coerceReturn && isRefType(handlerRet) && !isRefType(callRet)
+        if (handlerRet != callRet && !(coerceReturn && isRefType(handlerRet))) {
+            throw InjectionError(
+                "[injection] Redirect handler return type must equal the call's (or be a reference type with " +
+                    "@Coerce): call returns ${callRet.className}, handler returns ${handlerRet.className} ($handlerDesc)",
+            )
+        }
+
+        val slots = storeArgs(method, pushed)
+        val list = InsnList()
+        for (i in pushed.indices.reversed()) {
+            list.add(VarInsnNode(Boxing.storeOpcode(pushed[i]), slots[i]))
+        }
+        for (i in pushed.indices) {
+            list.add(VarInsnNode(Boxing.loadOpcode(pushed[i]), slots[i]))
+            if (i in coerceParams && !isRefType(pushed[i]) && isRefType(handlerArgs[i])) {
+                val box = Boxing.box(pushed[i])
+                    ?: throw IllegalStateException("no boxing type for ${pushed[i].className}")
+                list.add(MethodInsnNode(Opcodes.INVOKESTATIC, box.owner, box.name, box.desc, false))
+            }
+        }
+        val writeBacks = mutableListOf<SugarWriteBack>()
+        if (!emitValues(list, extras, method, locals, writeBacks)) return null
+        list.add(MethodInsnNode(Opcodes.INVOKESTATIC, handlerOwner, handlerMethod, handlerDesc, false))
+        emitWriteBacks(list, writeBacks)
+        if (unboxReturn) {
+            val unbox = Boxing.unbox(callRet)
+                ?: throw IllegalStateException("no unboxing type for ${callRet.className}")
+            list.add(TypeInsnNode(Opcodes.CHECKCAST, unbox.owner))
+            list.add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, unbox.owner, unbox.name, unbox.desc, false))
+        } else if (coerceReturn && handlerRet != callRet) {
+            list.add(TypeInsnNode(Opcodes.CHECKCAST, callRet.internalName))
+        }
         return list
     }
 
@@ -873,8 +1003,7 @@ internal object PayloadEmitter {
         }
         for (i in operandTypes.indices) {
             if (handlerArgs[1 + i] != operandTypes[i]) {
-                val coerced = (1 + i) in coerceParams &&
-                    isRefType(operandTypes[i]) && isRefType(handlerArgs[1 + i])
+                val coerced = (1 + i) in coerceParams && isRefType(handlerArgs[1 + i])
                 if (!coerced) {
                     throw InjectionError(
                         "[injection] ModifyReceiver operand ${i + 1} type mismatch: expected ${operandTypes[i].className}, " +
@@ -900,6 +1029,11 @@ internal object PayloadEmitter {
         list.add(VarInsnNode(Opcodes.ALOAD, receiverSlot))
         for (i in operandTypes.indices) {
             list.add(VarInsnNode(Boxing.loadOpcode(operandTypes[i]), slots[i]))
+            if ((1 + i) in coerceParams && !isRefType(operandTypes[i]) && isRefType(handlerArgs[1 + i])) {
+                val box = Boxing.box(operandTypes[i])
+                    ?: throw IllegalStateException("no boxing type for ${operandTypes[i].className}")
+                list.add(MethodInsnNode(Opcodes.INVOKESTATIC, box.owner, box.name, box.desc, false))
+            }
         }
         val writeBacks = mutableListOf<SugarWriteBack>()
         if (!emitValues(list, extras, method, locals, writeBacks)) return null
@@ -942,6 +1076,8 @@ internal object PayloadEmitter {
         anchor: AbstractInsnNode,
         frames: MethodFrames,
         locals: AnchorLocals?,
+        coerceParams: Set<Int> = emptySet(),
+        coerceReturn: Boolean = false,
     ): InsnList? {
         val valueTypes: Array<Type>
         when (anchor) {
@@ -1039,15 +1175,21 @@ internal object PayloadEmitter {
         }
         for (i in valueTypes.indices) {
             if (handlerArgs[i] != valueTypes[i]) {
-                throw InjectionError(
-                    "[injection] WrapWithCondition value parameter ${i + 1} type mismatch: expected " +
-                        "${valueTypes[i].className}, actual ${handlerArgs[i].className} ($handlerDesc)",
-                )
+                val coerced = i in coerceParams && isRefType(handlerArgs[i])
+                if (!coerced) {
+                    throw InjectionError(
+                        "[injection] WrapWithCondition value parameter ${i + 1} type mismatch: expected " +
+                            "${valueTypes[i].className}, actual ${handlerArgs[i].className} ($handlerDesc)",
+                    )
+                }
             }
         }
-        if (Type.getReturnType(handlerDesc) != Type.BOOLEAN_TYPE) {
+        val handlerRet = Type.getReturnType(handlerDesc)
+        val unboxReturn = coerceReturn && isRefType(handlerRet)
+        if (handlerRet != Type.BOOLEAN_TYPE && !unboxReturn) {
             throw InjectionError(
-                "[injection] the handler of WrapWithCondition must return boolean: ${handlerDesc}",
+                "[injection] the handler of WrapWithCondition must return boolean (or a reference type with " +
+                    "@Coerce): $handlerDesc",
             )
         }
         validateArgTypes(handlerDesc, extras, valueTypes.size, method, owner, locals, "WrapWithCondition.extras")
@@ -1072,6 +1214,11 @@ internal object PayloadEmitter {
         if (instance) list.add(VarInsnNode(Opcodes.ALOAD, 0))
         for (i in valueTypes.indices) {
             list.add(VarInsnNode(Boxing.loadOpcode(valueTypes[i]), slots[i]))
+            if (i in coerceParams && !isRefType(valueTypes[i]) && isRefType(handlerArgs[i])) {
+                val box = Boxing.box(valueTypes[i])
+                    ?: throw IllegalStateException("no boxing type for ${valueTypes[i].className}")
+                list.add(MethodInsnNode(Opcodes.INVOKESTATIC, box.owner, box.name, box.desc, false))
+            }
         }
         val writeBacks = mutableListOf<SugarWriteBack>()
         if (!emitValues(list, extras, method, locals, writeBacks)) return null
@@ -1082,6 +1229,12 @@ internal object PayloadEmitter {
             ),
         )
         emitWriteBacks(list, writeBacks)
+        if (unboxReturn) {
+            val unbox = Boxing.unbox(Type.BOOLEAN_TYPE)
+                ?: throw IllegalStateException("no unboxing type for boolean")
+            list.add(TypeInsnNode(Opcodes.CHECKCAST, unbox.owner))
+            list.add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, unbox.owner, unbox.name, unbox.desc, false))
+        }
         val skip = LabelNode()
         list.add(JumpInsnNode(Opcodes.IFEQ, skip))
         // True: reload the operands and let the original instruction run.
@@ -1153,6 +1306,8 @@ internal object PayloadEmitter {
         jump: JumpInsnNode,
         locals: AnchorLocals?,
         operandTypesOverride: Array<Type>? = null,
+        coerceParams: Set<Int> = emptySet(),
+        coerceReturn: Boolean = false,
     ): InsnList? {
         val operandTypes = operandTypesOverride ?: jumpOperandTypes(jump.opcode) ?: run {
             OmlLog.error(
@@ -1163,10 +1318,11 @@ internal object PayloadEmitter {
         }
         val handlerArgs = Type.getArgumentTypes(handlerDesc)
         val handlerRet = Type.getReturnType(handlerDesc)
-        if (handlerRet != Type.BOOLEAN_TYPE) {
+        val unboxReturn = coerceReturn && isRefType(handlerRet)
+        if (handlerRet != Type.BOOLEAN_TYPE && !unboxReturn) {
             throw InjectionError(
-                "[injection] the handler of WrapBranch must return boolean (whether the branch is taken): " +
-                    handlerDesc,
+                "[injection] the handler of WrapBranch must return boolean (or a reference type with " +
+                    "@Coerce), actual $handlerDesc",
             )
         }
         if (handlerArgs.size < operandTypes.size + extras.size) {
@@ -1184,7 +1340,7 @@ internal object PayloadEmitter {
             } else {
                 if (want == Type.INT_TYPE) actual.isIntFamily else actual.isReference
             }
-            if (!ok) {
+            if (!ok && !(i in coerceParams && actual.isReference)) {
                 throw InjectionError(
                     "[injection] WrapBranch operand ${i + 1} type mismatch: the compared value is " +
                         "${want.className}, but the handler declares ${actual.className} ($handlerDesc)",
@@ -1194,14 +1350,19 @@ internal object PayloadEmitter {
         validateArgTypes(handlerDesc, extras, operandTypes.size, method, owner, locals, "WrapBranch.extras")
 
         val list = InsnList()
-        if (instance) {
+        if (instance || coerceParams.isNotEmpty() || unboxReturn) {
             val slots = storeArgs(method, operandTypes)
             for (i in operandTypes.indices.reversed()) {
                 list.add(VarInsnNode(Boxing.storeOpcode(operandTypes[i]), slots[i]))
             }
-            list.add(VarInsnNode(Opcodes.ALOAD, 0))
+            if (instance) list.add(VarInsnNode(Opcodes.ALOAD, 0))
             for (i in operandTypes.indices) {
                 list.add(VarInsnNode(Boxing.loadOpcode(operandTypes[i]), slots[i]))
+                if (i in coerceParams && !isRefType(operandTypes[i]) && isRefType(handlerArgs[i])) {
+                    val box = Boxing.box(operandTypes[i])
+                        ?: throw IllegalStateException("no boxing type for ${operandTypes[i].className}")
+                    list.add(MethodInsnNode(Opcodes.INVOKESTATIC, box.owner, box.name, box.desc, false))
+                }
             }
         }
         val writeBacks = mutableListOf<SugarWriteBack>()
@@ -1213,6 +1374,12 @@ internal object PayloadEmitter {
             ),
         )
         emitWriteBacks(list, writeBacks)
+        if (unboxReturn) {
+            val unbox = Boxing.unbox(Type.BOOLEAN_TYPE)
+                ?: throw IllegalStateException("no unboxing type for boolean")
+            list.add(TypeInsnNode(Opcodes.CHECKCAST, unbox.owner))
+            list.add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, unbox.owner, unbox.name, unbox.desc, false))
+        }
         list.add(JumpInsnNode(Opcodes.IFNE, jump.label))
         return list
     }
@@ -1332,6 +1499,8 @@ internal object PayloadEmitter {
         jump: JumpInsnNode,
         locals: AnchorLocals?,
         cmpOpcode: Int = 0,
+        coerceParams: Set<Int> = emptySet(),
+        coerceReturn: Boolean = false,
     ): InsnList? {
         // The matcher's "any int-like" placeholder is an int on the stack
         val input = if (comparison.input.descriptor == "Lint-like;") Type.INT_TYPE else comparison.input
@@ -1348,10 +1517,13 @@ internal object PayloadEmitter {
         }
         for (i in operandTypes.indices) {
             if (handlerArgs[i] != operandTypes[i]) {
-                throw InjectionError(
-                    "[injection] WrapOperation comparison parameter ${i + 1} type mismatch: expected " +
-                        "${operandTypes[i].className}, actual ${handlerArgs[i].className} ($handlerDesc)",
-                )
+                val coerced = i in coerceParams && isRefType(handlerArgs[i])
+                if (!coerced) {
+                    throw InjectionError(
+                        "[injection] WrapOperation comparison parameter ${i + 1} type mismatch: expected " +
+                            "${operandTypes[i].className}, actual ${handlerArgs[i].className} ($handlerDesc)",
+                    )
+                }
             }
         }
         if (handlerArgs[opIndex].descriptor != OPERATION_DESC) {
@@ -1360,9 +1532,11 @@ internal object PayloadEmitter {
                     "after the compared values: ${handlerDesc}",
             )
         }
-        if (handlerRet != Type.BOOLEAN_TYPE) {
+        val unboxReturn = coerceReturn && isRefType(handlerRet)
+        if (handlerRet != Type.BOOLEAN_TYPE && !unboxReturn) {
             throw InjectionError(
-                "[injection] the handler of @WrapOperation on a comparison must return boolean: $handlerDesc",
+                "[injection] the handler of @WrapOperation on a comparison must return boolean (or a " +
+                    "reference type with @Coerce): $handlerDesc",
             )
         }
         validateArgTypes(handlerDesc, extras, opIndex + 1, method, owner, locals, "WrapOperation.extras")
@@ -1376,6 +1550,11 @@ internal object PayloadEmitter {
         if (instance) list.add(VarInsnNode(Opcodes.ALOAD, 0))
         for (i in operandTypes.indices) {
             list.add(VarInsnNode(Boxing.loadOpcode(operandTypes[i]), slots[i]))
+            if (i in coerceParams && !isRefType(operandTypes[i]) && isRefType(handlerArgs[i])) {
+                val box = Boxing.box(operandTypes[i])
+                    ?: throw IllegalStateException("no boxing type for ${operandTypes[i].className}")
+                list.add(MethodInsnNode(Opcodes.INVOKESTATIC, box.owner, box.name, box.desc, false))
+            }
         }
         OperationSupport.makeComparisonOperation(
             classNode, list, operandTypes, cmpOpcode, jumpOpcode, comparison.jumpOnTrue,
@@ -1389,6 +1568,12 @@ internal object PayloadEmitter {
             ),
         )
         emitWriteBacks(list, writeBacks)
+        if (unboxReturn) {
+            val unbox = Boxing.unbox(Type.BOOLEAN_TYPE)
+                ?: throw IllegalStateException("no unboxing type for boolean")
+            list.add(TypeInsnNode(Opcodes.CHECKCAST, unbox.owner))
+            list.add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, unbox.owner, unbox.name, unbox.desc, false))
+        }
         list.add(JumpInsnNode(if (comparison.jumpOnTrue) Opcodes.IFNE else Opcodes.IFEQ, jump.label))
         return list
     }
@@ -1569,7 +1754,7 @@ internal object PayloadEmitter {
         }
         for (i in argTypes.indices) {
             if (handlerArgs[i] != argTypes[i]) {
-                val coerced = i in coerceParams && isRefType(argTypes[i]) && isRefType(handlerArgs[i])
+                val coerced = i in coerceParams && isRefType(handlerArgs[i])
                 if (!coerced) {
                     throw InjectionError(
                         "[injection] WrapOperation value parameter ${i + 1} type mismatch: expected " +
@@ -1584,13 +1769,14 @@ internal object PayloadEmitter {
                     "after the operation's value parameters: actual ${handlerArgs[opIndex].className} ($handlerDesc)",
             )
         }
-        if (handlerRet != returnType && !(coerceReturn && isRefType(handlerRet) && isRefType(returnType))) {
+        if (handlerRet != returnType && !(coerceReturn && isRefType(handlerRet))) {
             throw InjectionError(
                 "[injection] the handler return type of WrapOperation must equal the operation's return type" +
-                    " (or, with @Coerce, be a reference supertype of it): operation returns " +
+                    " (or, with @Coerce, be a reference type to coerce it): operation returns " +
                     "${returnType.className}, handler returns ${handlerRet.className} ($handlerDesc)",
             )
         }
+        val unboxReturn = coerceReturn && isRefType(handlerRet) && !isRefType(returnType)
         validateArgTypes(handlerDesc, extras, opIndex + 1, method, owner, locals, "WrapOperation.extras")
 
         val slots = storeArgs(method, argTypes)
@@ -1601,6 +1787,11 @@ internal object PayloadEmitter {
         if (instance) list.add(VarInsnNode(Opcodes.ALOAD, 0))
         for (i in argTypes.indices) {
             list.add(VarInsnNode(Boxing.loadOpcode(argTypes[i]), slots[i]))
+            if (i in coerceParams && !isRefType(argTypes[i]) && isRefType(handlerArgs[i])) {
+                val box = Boxing.box(argTypes[i])
+                    ?: throw IllegalStateException("no boxing type for ${argTypes[i].className}")
+                list.add(MethodInsnNode(Opcodes.INVOKESTATIC, box.owner, box.name, box.desc, false))
+            }
         }
         OperationSupport.makeOperation(classNode, list, argTypes, returnType, anchor)
         val writeBacks = mutableListOf<SugarWriteBack>()
@@ -1613,7 +1804,12 @@ internal object PayloadEmitter {
             ),
         )
         emitWriteBacks(list, writeBacks)
-        if (coerceReturn && handlerRet != returnType) {
+        if (unboxReturn) {
+            val unbox = Boxing.unbox(returnType)
+                ?: throw IllegalStateException("no unboxing type for ${returnType.className}")
+            list.add(TypeInsnNode(Opcodes.CHECKCAST, unbox.owner))
+            list.add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, unbox.owner, unbox.name, unbox.desc, false))
+        } else if (coerceReturn && handlerRet != returnType) {
             list.add(TypeInsnNode(Opcodes.CHECKCAST, returnType.internalName))
         }
         if (!emitCancelChecks(list, cancelChecks, method, returnType, frames, anchor)) return null
@@ -1774,7 +1970,7 @@ internal object PayloadEmitter {
         }
         for (i in argTypes.indices) {
             if (handlerArgs[i] != argTypes[i]) {
-                val coerced = i in coerceParams && isRefType(argTypes[i]) && isRefType(handlerArgs[i])
+                val coerced = i in coerceParams && isRefType(handlerArgs[i])
                 if (!coerced) {
                     throw InjectionError(
                         "[injection] WrapOperation(NEW) constructor argument ${i + 1} type mismatch: expected " +
@@ -1807,6 +2003,11 @@ internal object PayloadEmitter {
         if (instance) list.add(VarInsnNode(Opcodes.ALOAD, 0))
         for (i in argTypes.indices) {
             list.add(VarInsnNode(Boxing.loadOpcode(argTypes[i]), slots[i]))
+            if (i in coerceParams && !isRefType(argTypes[i]) && isRefType(handlerArgs[i])) {
+                val box = Boxing.box(argTypes[i])
+                    ?: throw IllegalStateException("no boxing type for ${argTypes[i].className}")
+                list.add(MethodInsnNode(Opcodes.INVOKESTATIC, box.owner, box.name, box.desc, false))
+            }
         }
         OperationSupport.makeOperation(
             classNode, list, argTypes, returnType, init,
@@ -1879,7 +2080,7 @@ internal object PayloadEmitter {
         }
         for (i in argTypes.indices) {
             if (handlerArgs[i] != argTypes[i]) {
-                val coerced = i in coerceParams && isRefType(argTypes[i]) && isRefType(handlerArgs[i])
+                val coerced = i in coerceParams && isRefType(handlerArgs[i])
                 if (!coerced) {
                     throw InjectionError(
                         "[injection] Redirect(NEW) constructor argument ${i + 1} type mismatch: expected " +
@@ -1905,6 +2106,11 @@ internal object PayloadEmitter {
         }
         for (i in argTypes.indices) {
             list.add(VarInsnNode(Boxing.loadOpcode(argTypes[i]), slots[i]))
+            if (i in coerceParams && !isRefType(argTypes[i]) && isRefType(handlerArgs[i])) {
+                val box = Boxing.box(argTypes[i])
+                    ?: throw IllegalStateException("no boxing type for ${argTypes[i].className}")
+                list.add(MethodInsnNode(Opcodes.INVOKESTATIC, box.owner, box.name, box.desc, false))
+            }
         }
         val writeBacks = mutableListOf<SugarWriteBack>()
         if (!emitValues(list, extras, method, locals, writeBacks)) return null
@@ -1940,6 +2146,8 @@ internal object PayloadEmitter {
         newInsn: TypeInsnNode,
         frames: MethodFrames,
         locals: AnchorLocals?,
+        coerceParams: Set<Int> = emptySet(),
+        coerceReturn: Boolean = false,
     ): WrapNewEdit? {
         val next = nextReal(newInsn)
         if (next == null || next.opcode != Opcodes.DUP) {
@@ -1968,15 +2176,20 @@ internal object PayloadEmitter {
         }
         for (i in argTypes.indices) {
             if (handlerArgs[i] != argTypes[i]) {
-                throw InjectionError(
-                    "[injection] WrapWithCondition(NEW) constructor argument ${i + 1} type mismatch: expected " +
-                        "${argTypes[i].className}, actual ${handlerArgs[i].className} ($handlerDesc)",
-                )
+                val coerced = i in coerceParams && isRefType(handlerArgs[i])
+                if (!coerced) {
+                    throw InjectionError(
+                        "[injection] WrapWithCondition(NEW) constructor argument ${i + 1} type mismatch: expected " +
+                            "${argTypes[i].className}, actual ${handlerArgs[i].className} ($handlerDesc)",
+                    )
+                }
             }
         }
-        if (handlerRet != Type.BOOLEAN_TYPE) {
+        val unboxReturn = coerceReturn && isRefType(handlerRet)
+        if (handlerRet != Type.BOOLEAN_TYPE && !unboxReturn) {
             throw InjectionError(
-                "[injection] the handler of WrapWithCondition(NEW) must return boolean: $handlerDesc",
+                "[injection] the handler of WrapWithCondition(NEW) must return boolean (or a reference type " +
+                    "with @Coerce): $handlerDesc",
             )
         }
         validateArgTypes(handlerDesc, extras, argTypes.size, method, owner, locals, "WrapWithCondition(NEW).extras")
@@ -1999,6 +2212,11 @@ internal object PayloadEmitter {
         if (instance) list.add(VarInsnNode(Opcodes.ALOAD, 0))
         for (i in argTypes.indices) {
             list.add(VarInsnNode(Boxing.loadOpcode(argTypes[i]), slots[i]))
+            if (i in coerceParams && !isRefType(argTypes[i]) && isRefType(handlerArgs[i])) {
+                val box = Boxing.box(argTypes[i])
+                    ?: throw IllegalStateException("no boxing type for ${argTypes[i].className}")
+                list.add(MethodInsnNode(Opcodes.INVOKESTATIC, box.owner, box.name, box.desc, false))
+            }
         }
         val writeBacks = mutableListOf<SugarWriteBack>()
         if (!emitValues(list, extras, method, locals, writeBacks)) return null
@@ -2009,6 +2227,12 @@ internal object PayloadEmitter {
             ),
         )
         emitWriteBacks(list, writeBacks)
+        if (unboxReturn) {
+            val unbox = Boxing.unbox(Type.BOOLEAN_TYPE)
+                ?: throw IllegalStateException("no unboxing type for boolean")
+            list.add(TypeInsnNode(Opcodes.CHECKCAST, unbox.owner))
+            list.add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, unbox.owner, unbox.name, unbox.desc, false))
+        }
         val skip = LabelNode()
         val merge = LabelNode()
         list.add(JumpInsnNode(Opcodes.IFEQ, skip))
@@ -2105,6 +2329,8 @@ internal object PayloadEmitter {
             owner = owner,
             invoke = invoke,
             locals = locals,
+            coerceParam = payload.coerceParams.isNotEmpty(),
+            coerceReturn = payload.coerceReturn,
         )
     }
 
@@ -2340,6 +2566,8 @@ internal object PayloadEmitter {
             owner = owner,
             access = access,
             locals = locals,
+            coerceParam = payload.coerceParams.isNotEmpty(),
+            coerceReturn = payload.coerceReturn,
         )
     }
 

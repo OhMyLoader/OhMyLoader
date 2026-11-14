@@ -127,6 +127,31 @@ class InjectionModifyReceiverTest {
         assertEquals("ABCdef", invoke(clazz, "target", "abc", "def"))
     }
 
+    @Test
+    fun `modifyReceiver boxes a coerced primitive operand`() {
+        ReceiverSink.clear()
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("target", desc = "(I)I") {
+                        beforeCall(owner = Receiver.OWNER, name = "record", desc = "(I)V") {
+                            modifyReceiver(
+                                ModifyReceiverHandlers.OWNER, "boxedSwap",
+                                "(L${Receiver.OWNER};Ljava/lang/Object;)L${Receiver.OWNER};",
+                                coerceParams = setOf(1),
+                            )
+                        }
+                    }
+                }
+            },
+            targetWithCall(),
+        )
+
+        invoke(clazz, "target", 7)
+
+        assertEquals(listOf("b:7"), ReceiverSink.calls, "the boxed operand reaches the original call unchanged")
+    }
+
     // ---------- fixtures ----------
 
     private fun classNode(vararg methods: MethodNode): ClassNode =
@@ -248,5 +273,9 @@ class InjectionModifyReceiverTest {
 
         @JvmStatic
         fun upperReceiver(receiver: Any?, value: String): Any? = (receiver as String).uppercase()
+
+        @Suppress("UNUSED_PARAMETER")
+        @JvmStatic
+        fun boxedSwap(receiver: Receiver, value: Any?): Receiver = swapped
     }
 }

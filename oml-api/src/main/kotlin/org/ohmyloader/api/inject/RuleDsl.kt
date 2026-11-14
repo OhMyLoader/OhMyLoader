@@ -308,14 +308,28 @@ class MethodRuleBuilder @PublishedApi internal constructor(
      * [org.ohmyloader.api.hook.Operation.call] with different arguments, or not at all. Applied after the
      * method's ordinary injection rules.
      */
-    fun wrapMethod(owner: String, method: String, desc: String, extras: List<DslValue> = emptyList()) {
-        points += InjectionPoint.Head to Payload.WrapMethod(owner, method, desc, extras)
+    fun wrapMethod(
+        owner: String,
+        method: String,
+        desc: String,
+        extras: List<DslValue> = emptyList(),
+        coerceParams: Set<Int> = emptySet(),
+        coerceReturn: Boolean = false,
+    ) {
+        points += InjectionPoint.Head to Payload.WrapMethod(owner, method, desc, extras, coerceParams, coerceReturn)
     }
 
     /** The merged form of [wrapMethod]: the handler moves into the target class, so `this` is the target. */
-    fun mergedWrapMethod(method: String, desc: String, captures: List<DslValue> = emptyList()) {
+    fun mergedWrapMethod(
+        method: String,
+        desc: String,
+        captures: List<DslValue> = emptyList(),
+        coerceParams: Set<Int> = emptySet(),
+        coerceReturn: Boolean = false,
+    ) {
         points += InjectionPoint.Head to Payload.HandlerCall(
             targetInternal, method, desc, captures, HandlerVariant.NOTIFY, HandlerKind.WRAP_METHOD,
+            coerceParams = coerceParams, coerceReturn = coerceReturn,
         )
     }
 
@@ -612,7 +626,12 @@ class PayloadBuilder @PublishedApi internal constructor(
         kind: HandlerKind = HandlerKind.INJECT,
         index: Int = 0,
         slot: Int? = null,
-    ) = handlerCall(targetInternal, method, desc, captures, variant, kind, index, slot)
+        coerceParams: Set<Int> = emptySet(),
+        coerceReturn: Boolean = false,
+    ) = handlerCall(
+        targetInternal, method, desc, captures, variant, kind, index, slot,
+        coerceParams, coerceReturn,
+    )
 
     internal fun build(): Payload =
         payload ?: error("no payload defined at the injection point (write at least one of call/raw)")
@@ -688,8 +707,12 @@ class PayloadBuilder @PublishedApi internal constructor(
         kind: HandlerKind = HandlerKind.INJECT,
         index: Int = 0,
         slot: Int? = null,
+        coerceParams: Set<Int> = emptySet(),
+        coerceReturn: Boolean = false,
     ) {
-        payload = Payload.HandlerCall(owner, method, desc, captures, variant, kind, index, slot)
+        payload = Payload.HandlerCall(
+            owner, method, desc, captures, variant, kind, index, slot, coerceParams, coerceReturn,
+        )
     }
 
     /** Escape hatch: hand-build instructions (receiver is `InsnList`; parameters are the target method and the owning class's internal name, usable to synthesize frames). */
@@ -810,8 +833,11 @@ class PayloadBuilder @PublishedApi internal constructor(
      * is shaped `(receiver?, operands…, extras…)Z` — false skips the original instruction, true runs it
      * unchanged. A non-void call is accepted only when its result is immediately discarded (`POP`/`POP2`).
      */
-    fun wrapWithCondition(owner: String, method: String, desc: String, extras: List<DslValue> = emptyList()) {
-        payload = Payload.WrapWithCondition(owner, method, desc, extras)
+    fun wrapWithCondition(
+        owner: String, method: String, desc: String, extras: List<DslValue> = emptyList(),
+        coerceParams: Set<Int> = emptySet(), coerceReturn: Boolean = false,
+    ) {
+        payload = Payload.WrapWithCondition(owner, method, desc, extras, coerceParams, coerceReturn)
     }
 
     /**
@@ -821,8 +847,11 @@ class PayloadBuilder @PublishedApi internal constructor(
      * stack form: `(I)` for `IFEQ`-family, `(II)` for `IF_ICMP*`, `(Object, Object)` for `IF_ACMP*`,
      * `(Object)` for `IFNULL`/`IFNONNULL`.
      */
-    fun wrapBranch(owner: String, method: String, desc: String, extras: List<DslValue> = emptyList()) {
-        payload = Payload.WrapBranch(owner, method, desc, extras)
+    fun wrapBranch(
+        owner: String, method: String, desc: String, extras: List<DslValue> = emptyList(),
+        coerceParams: Set<Int> = emptySet(), coerceReturn: Boolean = false,
+    ) {
+        payload = Payload.WrapBranch(owner, method, desc, extras, coerceParams, coerceReturn)
     }
 
     /**

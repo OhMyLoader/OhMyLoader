@@ -66,6 +66,29 @@ class HookPipelineTest {
     }
 
     @Test
+    fun `coerce applies to a merged handler`() {
+        val targetClass = javaClass.classLoader.loadClass("omltest.pipeline.CoerceFixtures\$Target")
+        val mixinClass = javaClass.classLoader.loadClass("omltest.pipeline.CoerceFixtures\$Mixin")
+        val jar = jarOf(targetClass, mixinClass)
+        val mod = ModContainer(
+            id = "coerce_mod", name = "Coerce Mod", version = "0.1.0",
+            entryClass = "omltest.pipeline.CoerceFixtures", file = jar,
+        )
+
+        HookRegistry.installClassLoader(javaClass.classLoader)
+        val transformer = HookScanner.createTransformer(listOf(mod))
+        assertNotNull(transformer)
+        val targetName = "omltest/pipeline/CoerceFixtures\$Target"
+        assertTrue(transformer.appliesTo(targetName))
+        val node = classNodeOf(targetClass)
+        assertTrue(transformer.transform(TransformContext(targetName, node)))
+
+        val clazz = define(node)
+        val instance = clazz.getDeclaredConstructor().newInstance()
+        assertEquals("orig!", clazz.getMethod("tag").invoke(instance))
+    }
+
+    @Test
     fun `implements adds the interface to the target class`() {
         val targetClass = javaClass.classLoader.loadClass("omltest.pipeline.ImplementsFixtures\$Target")
         val mixinClass = javaClass.classLoader.loadClass("omltest.pipeline.ImplementsFixtures\$Mixin")

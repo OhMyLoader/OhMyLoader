@@ -42,6 +42,27 @@ class InjectionWrapMethodTest {
     }
 
     @Test
+    fun `wrapMethod boxes coerced primitive parameters and return`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("target", desc = "(I)I") {
+                        wrapMethod(
+                            WrapMethodHandlers.OWNER, "coerceAddOne",
+                            "(Ljava/lang/Object;$OPERATION_DESC)Ljava/lang/Object;",
+                            coerceParams = setOf(0),
+                            coerceReturn = true,
+                        )
+                    }
+                }
+            },
+            targetWithStaticInt(),
+        )
+
+        assertEquals(11, invoke(clazz, "target", 5), "the parameter is boxed and the result unboxed")
+    }
+
+    @Test
     fun `wrapMethod can pass different arguments to the original body`() {
         val clazz = define(
             specOf {
@@ -211,6 +232,10 @@ class InjectionWrapMethodTest {
 
         @JvmStatic
         fun addOne(value: Int, operation: Operation<Int>): Int = operation.call(value) + 1
+
+        @JvmStatic
+        fun coerceAddOne(value: Any?, operation: Operation<Int>): Any? =
+            operation.call(value as Int) + 1
 
         @JvmStatic
         fun bumpArg(value: Int, operation: Operation<Int>): Int = operation.call(value + 1)

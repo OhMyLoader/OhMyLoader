@@ -645,6 +645,8 @@ sealed class Payload {
         val method: String,
         val desc: String,
         val extras: List<DslValue> = emptyList(),
+        val coerceParams: Set<Int> = emptySet(),
+        val coerceReturn: Boolean = false,
     ) : Payload()
 
     /**
@@ -663,6 +665,8 @@ sealed class Payload {
         val method: String,
         val desc: String,
         val extras: List<DslValue> = emptyList(),
+        val coerceParams: Set<Int> = emptySet(),
+        val coerceReturn: Boolean = false,
     ) : Payload()
 
     /**
@@ -699,6 +703,8 @@ sealed class Payload {
         val method: String,
         val desc: String,
         val extras: List<DslValue> = emptyList(),
+        val coerceParams: Set<Int> = emptySet(),
+        val coerceReturn: Boolean = false,
     ) : Payload()
 
     /**
@@ -753,6 +759,10 @@ sealed class Payload {
         val index: Int = 0,
         /** [HandlerKind.MODIFY_VAR]: the slot to rewrite; `null` = let the engine find by type (aligned with Mixin's `ordinal`). */
         val slot: Int? = null,
+        /** Positions of value parameters that may be reference types (`@Coerce`). */
+        val coerceParams: Set<Int> = emptySet(),
+        /** The handler may return a reference type that is cast back (`@Coerce`). */
+        val coerceReturn: Boolean = false,
     ) : Payload()
 
     /**

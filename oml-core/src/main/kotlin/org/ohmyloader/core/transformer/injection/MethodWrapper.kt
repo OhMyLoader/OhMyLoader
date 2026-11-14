@@ -7,6 +7,7 @@ import org.objectweb.asm.tree.InsnList
 import org.objectweb.asm.tree.InsnNode
 import org.objectweb.asm.tree.MethodInsnNode
 import org.objectweb.asm.tree.MethodNode
+import org.objectweb.asm.tree.TypeInsnNode
 import org.objectweb.asm.tree.VarInsnNode
 import org.ohmyloader.api.inject.DslValue
 import org.ohmyloader.api.inject.InjectionError
@@ -39,6 +40,8 @@ internal object MethodWrapper {
         handlerDesc: String,
         extras: List<DslValue>,
         instance: Boolean,
+        coerceParams: Set<Int> = emptySet(),
+        coerceReturn: Boolean = false,
     ): Boolean {
         if (method.name == "<init>" || method.name == "<clinit>") {
             throw InjectionError(
@@ -73,10 +76,14 @@ internal object MethodWrapper {
         }
         for (i in argTypes.indices) {
             if (handlerArgs[i] != argTypes[i]) {
-                throw InjectionError(
-                    "[injection] WrapMethod parameter ${i + 1} type mismatch: the target takes " +
-                        "${argTypes[i].className}, the handler takes ${handlerArgs[i].className} ($handlerDesc)",
-                )
+                val coerced = i in coerceParams &&
+                    (handlerArgs[i].sort == Type.OBJECT || handlerArgs[i].sort == Type.ARRAY)
+                if (!coerced) {
+                    throw InjectionError(
+                        "[injection] WrapMethod parameter ${i + 1} type mismatch: the target takes " +
+                            "${argTypes[i].className}, the handler takes ${handlerArgs[i].className} ($handlerDesc)",
+                    )
+                }
             }
         }
         if (handlerArgs[opIndex].descriptor != OPERATION_DESC) {
@@ -85,10 +92,16 @@ internal object MethodWrapper {
                     "parameters: actual ${handlerArgs[opIndex].className} ($handlerDesc)",
             )
         }
-        if (handlerRet != returnType) {
+        val unboxReturn = coerceReturn && returnType != Type.VOID_TYPE &&
+            (handlerRet.sort == Type.OBJECT || handlerRet.sort == Type.ARRAY) &&
+            returnType.sort != Type.OBJECT && returnType.sort != Type.ARRAY
+        if (handlerRet != returnType &&
+            !(coerceReturn && (handlerRet.sort == Type.OBJECT || handlerRet.sort == Type.ARRAY))
+        ) {
             throw InjectionError(
-                "[injection] the handler return type of WrapMethod must equal the method's return type: " +
-                    "method returns ${returnType.className}, handler returns ${handlerRet.className} ($handlerDesc)",
+                "[injection] the handler return type of WrapMethod must equal the method's return type " +
+                    "(or be a reference type with @Coerce): method returns ${returnType.className}, " +
+                    "handler returns ${handlerRet.className} ($handlerDesc)",
             )
         }
 
@@ -119,9 +132,15 @@ internal object MethodWrapper {
         // Handler parameters: the merged form's `this`, then the target method's parameters.
         if (instance) body.add(VarInsnNode(Opcodes.ALOAD, 0))
         var slot = if (isStatic) 0 else 1
-        for (type in argTypes) {
+        for ((i, type) in argTypes.withIndex()) {
             body.add(VarInsnNode(Boxing.loadOpcode(type), slot))
             slot += type.size
+            if (i in coerceParams && type.sort != Type.OBJECT && type.sort != Type.ARRAY &&
+                (handlerArgs[i].sort == Type.OBJECT || handlerArgs[i].sort == Type.ARRAY)
+            ) {
+                val box = Boxing.box(type) ?: throw IllegalStateException("no boxing type for ${type.className}")
+                body.add(MethodInsnNode(Opcodes.INVOKESTATIC, box.owner, box.name, box.desc, false))
+            }
         }
         // The Operation factory captures `this` for an instance method.
         if (!isStatic) body.add(VarInsnNode(Opcodes.ALOAD, 0))
@@ -144,6 +163,14 @@ internal object MethodWrapper {
             ),
         )
         PayloadEmitter.emitWriteBacks(body, writeBacks)
+        if (unboxReturn) {
+            val unbox = Boxing.unbox(returnType)
+                ?: throw IllegalStateException("no unboxing type for ${returnType.className}")
+            body.add(TypeInsnNode(Opcodes.CHECKCAST, unbox.owner))
+            body.add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, unbox.owner, unbox.name, unbox.desc, false))
+        } else if (coerceReturn && handlerRet != returnType) {
+            body.add(TypeInsnNode(Opcodes.CHECKCAST, returnType.internalName))
+        }
         body.add(
             if (returnType == Type.VOID_TYPE) InsnNode(Opcodes.RETURN)
             else InsnNode(Boxing.returnOpcode(returnType)),

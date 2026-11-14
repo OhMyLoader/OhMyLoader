@@ -772,6 +772,11 @@ object HookScanner {
             return
         }
         val split = trailingSugar(method, mixinClass, where, modId, problems) ?: return
+        val coerceParams = (0 until split.normal.size).filterTo(mutableSetOf()) { i ->
+            method.visibleParameterAnnotations?.getOrNull(i)
+                ?.any { it.desc == COERCE_DESC } == true
+        }
+        val coerceReturn = method.visibleAnnotations.orEmpty().any { it.desc == COERCE_DESC }
         if (call != null) {
             val callRet = Type.getReturnType(callDesc).descriptor
             val handlerRet = Type.getReturnType(method.desc).descriptor
@@ -784,10 +789,27 @@ object HookScanner {
             }
             val want = listOf(Type.getObjectType(callOwner).descriptor) +
                 Type.getArgumentTypes(callDesc).map { it.descriptor }
-            if (split.normal.map { it.descriptor } != want || handlerRet != callRet) {
+            val paramsOk = if (coerceParams.isEmpty() && !coerceReturn) {
+                split.normal.map { it.descriptor } == want
+            } else {
+                split.normal.map { it.descriptor }.let { actual ->
+                    actual.size == want.size && want.indices.all { i ->
+                        actual[i] == want[i] ||
+                            (i in coerceParams && isReferenceDescriptor(want[i]) &&
+                                isReferenceDescriptor(actual[i]))
+                    }
+                }
+            }
+            val retOk = if (coerceReturn) {
+                isReferenceDescriptor(handlerRet) && isReferenceDescriptor(callRet)
+            } else {
+                handlerRet == callRet
+            }
+            if (!paramsOk || !retOk) {
                 problems += "[$modId] $where —— the instance @Redirect handler's non-sugar parameter list must " +
                     "equal the replaced call's receiver + its arguments, and the return type must equal the " +
-                    "replaced call's return type: expected ${want.joinToString("")}, actual ${method.desc}"
+                    "replaced call's return type (reference supertypes allowed with @Coerce): expected " +
+                    "${want.joinToString("")}, actual ${method.desc}"
                 return
             }
         }
@@ -802,6 +824,8 @@ object HookScanner {
                 desc = method.desc,
                 captures = split.bindings,
                 kind = HandlerKind.REDIRECT,
+                coerceParams = coerceParams,
+                coerceReturn = coerceReturn,
             ),
             Policy(), emptyList(), "Redirect",
         )
@@ -895,6 +919,11 @@ object HookScanner {
         val handlerDesc = method.desc
         val handlerIndex = if (kind == HandlerKind.MODIFY_ARG) declaredInt(annotation, "index") ?: -1 else 0
         val slot = if (kind == HandlerKind.MODIFY_VAR) declaredInt(annotation, "index") else null
+        val coerceParams = (0 until normal.size).filterTo(mutableSetOf()) { i ->
+            method.visibleParameterAnnotations?.getOrNull(i)
+                ?.any { it.desc == COERCE_DESC } == true
+        }
+        val coerceReturn = method.visibleAnnotations.orEmpty().any { it.desc == COERCE_DESC }
         handlers += "${method.name}${method.desc}"
         rules += Rule(
             targetInternal, methodNames, methodDesc, anchor,
@@ -906,6 +935,8 @@ object HookScanner {
                 kind = kind,
                 index = handlerIndex,
                 slot = slot,
+                coerceParams = coerceParams,
+                coerceReturn = coerceReturn,
             ),
             Policy(), emptyList(), kind.annotationName.removePrefix("@"),
         )
@@ -920,7 +951,7 @@ object HookScanner {
             // The value param's type must equal the return type (after modification it is put back on the stack) --
             // whether it is actually the target's type is only known at emission time once the anchor
             // instruction / target method is available (see ProducedValue)
-            if (ret == Type.VOID_TYPE || normal[0] != ret) {
+            if (ret == Type.VOID_TYPE || (normal[0] != ret && coerceParams.isEmpty() && !coerceReturn)) {
                 problems += "[$modId] $where —— ${kind.annotationName}'s handler must be shaped (T…)T" +
                     " (T = the value's type, put back on the stack after the change), currently ${method.desc}"
             }
@@ -1491,16 +1522,28 @@ object HookScanner {
             return
         }
         val ret = Type.getReturnType(method.desc)
-        if (ret != Type.BOOLEAN_TYPE) {
+        val coerceReturn = method.visibleAnnotations.orEmpty().any { it.desc == COERCE_DESC }
+        if (ret != Type.BOOLEAN_TYPE &&
+            !(coerceReturn && isReferenceDescriptor(ret.descriptor))
+        ) {
             problems += "[$modId] $where —— @WrapWithCondition handler must return boolean " +
                 "(whether the original operation runs), currently ${method.desc}"
             return
         }
         val split = trailingSugar(method, mixinClass, where, modId, problems) ?: return
         val normal = split.normal
+        val coerceParams = (0 until normal.size).filterTo(mutableSetOf()) { i ->
+            method.visibleParameterAnnotations?.getOrNull(i)
+                ?.any { it.desc == COERCE_DESC } == true
+        }
         if (core is InjectionPoint.NewInstance && core.owner != null && core.desc != null) {
             val ctorArgs = Type.getArgumentTypes(core.desc).map { it.descriptor }
-            if (normal.map { it.descriptor } != ctorArgs) {
+            val paramsOk = normal.size == ctorArgs.size && ctorArgs.indices.all { i ->
+                normal[i].descriptor == ctorArgs[i] ||
+                    (i in coerceParams && isReferenceDescriptor(ctorArgs[i]) &&
+                        isReferenceDescriptor(normal[i].descriptor))
+            }
+            if (!paramsOk) {
                 problems += "[$modId] $where —— @WrapWithCondition on NEW handler's non-sugar parameter " +
                     "list must equal the constructor's arguments: expected " +
                     "(${ctorArgs.joinToString("")})Z, actual ${method.desc}"
@@ -1514,6 +1557,8 @@ object HookScanner {
                 Payload.HandlerCall(
                     mergeInto, method.name, method.desc, split.bindings,
                     HandlerVariant.NOTIFY, HandlerKind.WRAP_WITH_CONDITION,
+                    coerceParams = coerceParams,
+                    coerceReturn = coerceReturn,
                 ),
                 policy, emptyList(), "WrapWithCondition",
             )
@@ -1537,6 +1582,8 @@ object HookScanner {
                 method = HookRegistry.bridgeMethodName(id, kind),
                 desc = HookRegistry.bridgeDesc(id, kind),
                 extras = split.bindings + DslValue.IntVal(id),
+                coerceParams = coerceParams,
+                coerceReturn = coerceReturn,
             ),
             policy, emptyList(), "WrapWithCondition",
         )
@@ -1569,7 +1616,10 @@ object HookScanner {
             return
         }
         val ret = Type.getReturnType(method.desc)
-        if (ret != Type.BOOLEAN_TYPE) {
+        val coerceReturn = method.visibleAnnotations.orEmpty().any { it.desc == COERCE_DESC }
+        if (ret != Type.BOOLEAN_TYPE &&
+            !(coerceReturn && isReferenceDescriptor(ret.descriptor))
+        ) {
             problems += "[$modId] $where —— @WrapBranch handler must return boolean " +
                 "(whether the branch is taken), currently ${method.desc}"
             return
@@ -1582,6 +1632,10 @@ object HookScanner {
                 "currently ${method.desc}"
             return
         }
+        val coerceParams = (0 until normal.size).filterTo(mutableSetOf()) { i ->
+            method.visibleParameterAnnotations?.getOrNull(i)
+                ?.any { it.desc == COERCE_DESC } == true
+        }
         if (mergeInto != null && !method.isDeclaredStatic()) {
             handlers += "${method.name}${method.desc}"
             rules += Rule(
@@ -1589,6 +1643,8 @@ object HookScanner {
                 Payload.HandlerCall(
                     mergeInto, method.name, method.desc, split.bindings,
                     HandlerVariant.NOTIFY, HandlerKind.WRAP_BRANCH,
+                    coerceParams = coerceParams,
+                    coerceReturn = coerceReturn,
                 ),
                 policy, emptyList(), "WrapBranch",
             )
@@ -1612,6 +1668,8 @@ object HookScanner {
                 method = HookRegistry.bridgeMethodName(id, kind),
                 desc = HookRegistry.bridgeDesc(id, kind),
                 extras = split.bindings + DslValue.IntVal(id),
+                coerceParams = coerceParams,
+                coerceReturn = coerceReturn,
             ),
             policy, emptyList(), "WrapBranch",
         )
@@ -1639,18 +1697,28 @@ object HookScanner {
             return
         }
         val ret = Type.getReturnType(method.desc)
+        val operationIndex = normal.size - 1
+        val coerceParams = (0 until operationIndex).filterTo(mutableSetOf()) { i ->
+            method.visibleParameterAnnotations?.getOrNull(i)
+                ?.any { it.desc == COERCE_DESC } == true
+        }
+        val coerceReturn = method.visibleAnnotations.orEmpty().any { it.desc == COERCE_DESC }
         if (methodDesc != null) {
             val targetParams = Type.getArgumentTypes(methodDesc)
             val targetRet = Type.getReturnType(methodDesc)
-            if (normal.size != targetParams.size + 1 ||
-                normal.dropLast(1).take(targetParams.size) != targetParams.toList()
-            ) {
+            val paramsOk = normal.size == targetParams.size + 1 && targetParams.indices.all { i ->
+                normal[i] == targetParams[i] ||
+                    (i in coerceParams && isReferenceDescriptor(normal[i].descriptor))
+            }
+            val retOk = ret == targetRet ||
+                (coerceReturn && isReferenceDescriptor(ret.descriptor))
+            if (!paramsOk) {
                 problems += "[$modId] $where —— @WrapMethod handler must be shaped " +
-                    "(params…, Operation<R>)R matching the target descriptor: target $methodDesc, " +
-                    "handler ${method.desc}"
+                    "(params…, Operation<R>)R matching the target descriptor (reference types allowed with " +
+                    "@Coerce): target $methodDesc, handler ${method.desc}"
                 return
             }
-            if (ret != targetRet) {
+            if (!retOk) {
                 problems += "[$modId] $where —— @WrapMethod handler return type must equal the method's: " +
                     "target returns ${targetRet.className}, handler returns ${ret.className}"
                 return
@@ -1663,6 +1731,8 @@ object HookScanner {
                 Payload.HandlerCall(
                     mergeInto, method.name, method.desc, split.bindings,
                     HandlerVariant.NOTIFY, HandlerKind.WRAP_METHOD,
+                    coerceParams = coerceParams,
+                    coerceReturn = coerceReturn,
                 ),
                 policy, emptyList(), "WrapMethod",
             )
@@ -1686,6 +1756,8 @@ object HookScanner {
                 method = HookRegistry.bridgeMethodName(id, kind),
                 desc = HookRegistry.bridgeDesc(id, kind),
                 extras = split.bindings + DslValue.IntVal(id),
+                coerceParams = coerceParams,
+                coerceReturn = coerceReturn,
             ),
             policy, emptyList(), "WrapMethod",
         )
@@ -1742,17 +1814,14 @@ object HookScanner {
         }
         val coerceReturn = method.visibleAnnotations.orEmpty().any { it.desc == COERCE_DESC }
         if (mergeInto != null && !method.isDeclaredStatic()) {
-            if (coerceParams.isNotEmpty() || coerceReturn) {
-                problems += "[$modId] $where —— @Coerce is not supported on merged @WrapOperation handlers yet: " +
-                    "make the handler static"
-                return
-            }
             handlers += "${method.name}${method.desc}"
             rules += Rule(
                 targetInternal, methodNames, methodDesc, anchor,
                 Payload.HandlerCall(
                     mergeInto, method.name, method.desc, split.bindings,
                     HandlerVariant.NOTIFY, HandlerKind.WRAP_OPERATION,
+                    coerceParams = coerceParams,
+                    coerceReturn = coerceReturn,
                 ),
                 policy, emptyList(), "WrapOperation",
             )

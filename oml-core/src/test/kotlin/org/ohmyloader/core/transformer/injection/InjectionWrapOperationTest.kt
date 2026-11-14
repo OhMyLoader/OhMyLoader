@@ -357,6 +357,29 @@ class InjectionWrapOperationTest {
         assertEquals("ABC", invoke(clazz, "echo", "abc"))
     }
 
+    @Test
+    fun `wrapOperation boxes and unboxes coerced primitive values`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("target", desc = "(I)I") {
+                        beforeCall(owner = Ops.OWNER, name = "times2", desc = "(I)I") {
+                            wrapOperation(
+                                WrapOpHandlers.OWNER, "coerceTimes",
+                                "(Ljava/lang/Object;Lorg/ohmyloader/api/hook/Operation;)Ljava/lang/Object;",
+                                coerceParams = setOf(0),
+                                coerceReturn = true,
+                            )
+                        }
+                    }
+                }
+            },
+            targetWithStaticCall(),
+        )
+
+        assertEquals(11, invoke(clazz, "target", 5), "times2(5) = 10 arrives boxed, unboxes to 11")
+    }
+
     // ---------- fixtures ----------
 
     private val OPERATION_DESC = "Lorg/ohmyloader/api/hook/Operation;"
@@ -564,6 +587,10 @@ class InjectionWrapOperationTest {
         @JvmStatic
         fun coerceEcho(value: Any?, operation: Operation<String>): Any? =
             operation.call((value as String).uppercase())
+
+        @JvmStatic
+        fun coerceTimes(value: Any?, operation: Operation<Int>): Any? =
+            operation.call(value as Int) + 1
 
         @Suppress("UNUSED_PARAMETER")
         @JvmStatic

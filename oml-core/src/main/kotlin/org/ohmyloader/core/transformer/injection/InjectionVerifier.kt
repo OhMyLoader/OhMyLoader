@@ -342,11 +342,14 @@ internal object InjectionVerifier {
         desc: String,
         extrasCount: Int,
         opcode: Int?,
+        coerceParams: Set<Int> = emptySet(),
+        coerceReturn: Boolean = false,
     ): List<String> {
         val type = runCatching { Type.getMethodType(desc) }.getOrNull()
             ?: return listOf("$where — handler descriptor of $annotation cannot be parsed: $desc")
         val problems = mutableListOf<String>()
-        if (type.returnType != Type.BOOLEAN_TYPE) {
+        val refReturn = type.returnType.sort == Type.OBJECT || type.returnType.sort == Type.ARRAY
+        if (type.returnType != Type.BOOLEAN_TYPE && !(coerceReturn && refReturn)) {
             problems += "$where — the handler of $annotation must return boolean " +
                 "(whether the branch is taken): $desc"
         }
@@ -369,7 +372,9 @@ internal object InjectionVerifier {
             } else {
                 actual.sort == Type.OBJECT || actual.sort == Type.ARRAY
             }
-            if (!ok) {
+            val coerced = i in coerceParams &&
+                (actual.sort == Type.OBJECT || actual.sort == Type.ARRAY)
+            if (!ok && !coerced) {
                 problems += "$where — operand ${i + 1} of $annotation must be " +
                     "${if (expected[i].sort == Type.INT) "an int" else "a reference"}, " +
                     "actual ${actual.className} ($desc)"
@@ -544,6 +549,7 @@ internal object InjectionVerifier {
                         problems += branchShapeProblems(
                             where, "@WrapBranch", payload.desc, payload.captures.size,
                             (core as? InjectionPoint.Jump)?.opcode,
+                            payload.coerceParams, payload.coerceReturn,
                         )
                     }
 
@@ -817,6 +823,7 @@ internal object InjectionVerifier {
                 problems += branchShapeProblems(
                     where, "WrapBranch", payload.desc, payload.extras.size,
                     (core as? InjectionPoint.Jump)?.opcode,
+                    payload.coerceParams, payload.coerceReturn,
                 )
                 problems += checkHandler(where, "WrapBranch", payload.owner, payload.method, payload.desc, loader)
             }

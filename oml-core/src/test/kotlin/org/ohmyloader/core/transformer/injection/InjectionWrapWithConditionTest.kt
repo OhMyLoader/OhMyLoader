@@ -275,6 +275,30 @@ class InjectionWrapWithConditionTest {
         assertTrue(invoke(clazz, "make") is WrapReceiver)
     }
 
+    @Test
+    fun `a coerced Object handler gates a primitive argument`() {
+        WrapSink.clear()
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("target", desc = "(I)I") {
+                        beforeCall(owner = WrapSink.OWNER, name = "record", desc = "(I)V") {
+                            wrapWithCondition(
+                                WrapConditionHandlers.OWNER, "denyBoxed", "(Ljava/lang/Object;)Z",
+                                coerceParams = setOf(0),
+                            )
+                        }
+                    }
+                }
+            },
+            targetWithStaticCall(),
+        )
+
+        invoke(clazz, "target", 9)
+
+        assertEquals(emptyList(), WrapSink.calls, "the int argument is boxed for the handler and the call is skipped")
+    }
+
     // ---------- fixtures ----------
 
     private fun classNode(vararg methods: MethodNode): ClassNode =
@@ -445,6 +469,10 @@ class InjectionWrapWithConditionTest {
 
         @JvmStatic
         fun denyNone(): Boolean = false
+
+        @Suppress("UNUSED_PARAMETER")
+        @JvmStatic
+        fun denyBoxed(value: Any?): Boolean = false
 
         @JvmStatic
         fun allowNone(): Boolean = true

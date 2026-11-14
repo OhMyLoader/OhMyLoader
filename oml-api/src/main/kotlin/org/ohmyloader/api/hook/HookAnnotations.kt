@@ -152,11 +152,12 @@ annotation class Mutable
  * Allows a handler parameter or return type to differ from the value's actual type (aligned with
  * MixinExtras' `@Coerce`): annotate the parameter to accept a reference **supertype** of the value,
  * and annotate the handler method to coerce the returned reference back to the value's type.
- * Reference coercion covers `@ModifyExpressionValue`, `@ModifyReturnValue`, `@ModifyArg`
- * (single-argument mode), `@ModifyConstant`, `@ModifyVariable`, `@ModifyReceiver`, `@Redirect` and
- * `@WrapOperation` (standard and `NEW` anchors; by parameter position). Primitive boxing/unboxing is
- * implemented on `@ModifyExpressionValue`, `@ModifyReturnValue`, `@ModifyArg` (single-argument mode),
- * `@ModifyConstant` and `@ModifyVariable`; comparison wraps and merged handlers are not covered yet.
+ * Reference coercion and primitive boxing/unboxing cover every value/operation injector, static and
+ * merged: `@ModifyExpressionValue`, `@ModifyReturnValue`, `@ModifyArg` (single-argument mode),
+ * `@ModifyConstant`, `@ModifyVariable`, `@ModifyReceiver`, `@Redirect`, `@WrapOperation`
+ * (standard, `NEW` and comparison anchors), `@WrapWithCondition`, `@WrapBranch` and `@WrapMethod`.
+ * `@Inject` captures and `@ModifyArgs` stay exact: captures are copies and the argument list is an
+ * untyped `Args` handle.
  */
 @Target(AnnotationTarget.VALUE_PARAMETER, AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
