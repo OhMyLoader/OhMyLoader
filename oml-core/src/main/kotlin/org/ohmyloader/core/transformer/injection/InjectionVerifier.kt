@@ -850,11 +850,13 @@ internal object InjectionVerifier {
 
             is Payload.WrapMethod -> {
                 val desc = runCatching { Type.getMethodType(payload.desc) }.getOrNull()
+                // The WrapMethod bridge is the MODIFY form: (captures..., id) — the id travels as an
+                // extra pushed before the call, so Operation is the last parameter *before* it.
                 if (desc == null) {
                     problems += "$where — the handler descriptor of WrapMethod cannot be parsed: ${payload.desc}"
-                } else if (desc.argumentTypes.lastOrNull()?.descriptor != OPERATION_DESC) {
-                    problems += "$where — the handler of WrapMethod must take $OPERATION_DESC as its last " +
-                        "parameter (Operation<R>): ${payload.desc}"
+                } else if (desc.argumentTypes.dropLast(1).lastOrNull()?.descriptor != OPERATION_DESC) {
+                    problems += "$where — the handler of WrapMethod must take $OPERATION_DESC right after " +
+                        "the method parameters (Operation<R>): ${payload.desc}"
                 }
                 problems += checkHandler(where, "WrapMethod", payload.owner, payload.method, payload.desc, loader)
             }

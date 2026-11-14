@@ -27,3 +27,19 @@ annotation class Mod(
 fun interface OMLModInitializer {
     fun onInitialize(context: ModContext)
 }
+
+/**
+ * The registry-declaration phase: at the game's registry freeze point — before the vanilla
+ * registries are frozen and before content-pack materialization — every [Mod] class implementing
+ * this interface is instantiated and its [onDeclareRegistries] is called, once per launch. This is
+ * the only moment a mod may register into the vanilla registries (blocks, items, block entity
+ * types, menus, creative tabs, …) by direct game-API calls; [onInitialize] runs after game
+ * initialization, when the registries are already frozen.
+ *
+ * Game classes are reachable here: mod code runs on the game class loader. Registration failures
+ * are logged per mod and do not abort the launch, but a mod that failed here will misbehave at
+ * runtime (missing blocks, unresolvable menus), so treat the log as the gate.
+ */
+interface OMLRegistryInitializer {
+    fun onDeclareRegistries(context: ModContext)
+}

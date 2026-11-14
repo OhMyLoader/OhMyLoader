@@ -2,6 +2,7 @@ package org.ohmyloader.core
 
 import org.ohmyloader.api.ModContext
 import org.ohmyloader.api.OMLModInitializer
+import org.ohmyloader.api.OMLRegistryInitializer
 import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.client.OMLKeyBindingProvider
 import org.ohmyloader.api.client.OMLKeyBindingRegistry
@@ -686,6 +687,36 @@ object OMLCore {
         Class.forName(mod.entryClass, true, primaryLoader).getDeclaredConstructor().newInstance()
     }
 
+    /** The registry-declare phase is entered exactly once: the freeze hook sits in bootstrap static-init. */
+    private val registryPhaseEntered = AtomicBoolean(false)
+
+    /**
+     * [Hook injection point] The call injected by the adapter's registry-freeze handler, before
+     * content packs materialize: the one moment mod code may register into the vanilla registries
+     * (see [org.ohmyloader.api.OMLRegistryInitializer]). Mod entries are instantiated here and
+     * cached in [modInstances] — the same instance [initMods] later hands
+     * [OMLModInitializer.onInitialize] to, so [org.ohmyloader.api.OMLRegistryInitializer.onDeclareRegistries]
+     * always runs first. A failing mod is logged and recorded in [initFailures] (surfaced by
+     * `/oml mods`) but does not abort the freeze — the game must still start.
+     */
+    @JvmStatic
+    fun runRegistryDeclarePhase() {
+        if (!registryPhaseEntered.compareAndSet(false, true)) return
+        OmlLog.info("OMLCore", "entering mod registry-declare phase (${loadedMods.size} mod(s))")
+        for (mod in loadedMods) {
+            try {
+                val instance = modInstance(mod)
+                if (instance is OMLRegistryInitializer) {
+                    val config = org.ohmyloader.core.config.OMLConfigImpl(mod.id, File(gameDir, "config"))
+                    instance.onDeclareRegistries(ModContext(mod.id, mod.name, mod.version, config))
+                }
+            } catch (t: Throwable) {
+                initFailures[mod.id] = t
+                OmlLog.error("OMLCore", "Mod [${mod.id}] registry declaration failed", t)
+            }
+        }
+    }
+
     private fun initMods() {
         // The order was computed (and the graph validated) in start(), before the main loader was built
         val ordered = loadedMods
@@ -719,10 +750,11 @@ object OMLCore {
     }
 
     /**
-     * Mods whose [OMLModInitializer.onInitialize] threw, by id — surfaced by the `/oml mods` command.
+     * Mods whose [org.ohmyloader.api.OMLRegistryInitializer.onDeclareRegistries] or
+     * [OMLModInitializer.onInitialize] threw, by id — surfaced by the `/oml mods` command.
      *
-     * Thread contract: written only during mod initialization, read-only afterwards (the `/oml`
-     * executor reads it). No reader may mutate it.
+     * Thread contract: written only during the registry-declare phase and mod initialization,
+     * read-only afterwards (the `/oml` executor reads it). No reader may mutate it.
      */
     val initFailures = LinkedHashMap<String, Throwable>()
 

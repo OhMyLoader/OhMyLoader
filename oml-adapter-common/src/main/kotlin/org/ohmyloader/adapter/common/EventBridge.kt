@@ -419,6 +419,11 @@ object EventBridge {
      */
     @JvmStatic
     fun onRegistryFreeze() {
+        // Mod registry declarations must land before the freeze: this hook fires exactly once per
+        // launch at the bootstrap static-init site, after the vanilla tables are built but before
+        // they are sealed. OML's own content packs materialize after the mods, so pack material
+        // can reference (and append to) what a mod registered.
+        OMLCore.runRegistryDeclarePhase()
         contentRegistry.materializeAll()
         val loader = OMLCore.gameClassLoader()
         Class.forName("net.minecraft.core.registries.BuiltInRegistries", true, loader)
