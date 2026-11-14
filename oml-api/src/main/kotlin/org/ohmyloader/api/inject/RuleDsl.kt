@@ -225,12 +225,22 @@ class MethodRuleBuilder @PublishedApi internal constructor(
     private var allowMax: Int? = null
     private var expectCount: Int? = null
     private var optionalRule = false
+    private var priorityValue = MethodRule.DEFAULT_PRIORITY
 
     /** The currently active search windows (pushed by [within], outer first): each is a `from to to` pair (null = unbounded). */
     private val pendingSlices = mutableListOf<Pair<InjectionPoint?, InjectionPoint?>>()
 
     internal fun build(): MethodRule =
-        MethodRule(selector, points.toList(), requireMin, expectCount, optionalRule, allowMax)
+        MethodRule(selector, points.toList(), requireMin, expectCount, optionalRule, allowMax, priorityValue)
+
+    /**
+     * Orders this rule against other **stacking** payloads at the same site: a higher value applies
+     * first (default [MethodRule.DEFAULT_PRIORITY]). Exclusive payloads cannot share a site, so their
+     * relative priority is never observable and conflicts still fail.
+     */
+    fun priority(n: Int) {
+        priorityValue = n
+    }
 
     /**
      * Wraps the block's injection points in a **search window**: search [inner]

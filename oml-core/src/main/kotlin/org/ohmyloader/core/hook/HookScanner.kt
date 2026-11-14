@@ -55,6 +55,8 @@ object HookScanner {
         val kind: String,
         /** Non-null when the rule targets a synthetic lambda method instead of the named method itself. */
         val lambda: LambdaSelector? = null,
+        /** Higher applies first among stacking payloads at a shared site; see [MethodRule.priority]. */
+        val priority: Int = MethodRule.DEFAULT_PRIORITY,
     )
 
     /**
@@ -131,6 +133,7 @@ object HookScanner {
                 classTarget(rule.targetInternal) {
                     val configure: MethodRuleBuilder.() -> Unit = {
                         for (anchor in rule.anchors) point(anchor, rule.payload)
+                        priority(rule.priority)
                         rule.policy.require?.let { require(it) }
                         rule.policy.allow?.let { allow(it) }
                         rule.policy.expect?.let { expect(it) }
@@ -490,11 +493,14 @@ object HookScanner {
         } else {
             emptyList()
         }
+        val priority = (annotationValue(annotation, "priority") as? Int) ?: MethodRule.DEFAULT_PRIORITY
         if (extras.isEmpty()) {
+            val start = rules.size
             parseSingleInjection(
                 method, annotation, declaredTarget, mixinClass, modId, slices,
                 mergeInto, handlers, rules, problems, lambda, lambdaScan,
             )
+            for (i in start until rules.size) rules[i] = rules[i].copy(priority = priority)
             return
         }
         val where = "$mixinClass.${method.name}"
@@ -534,7 +540,7 @@ object HookScanner {
             rules.subList(start, rules.size).clear()
             return
         }
-        val merged = first.copy(anchors = produced.flatMap { it.anchors })
+        val merged = first.copy(anchors = produced.flatMap { it.anchors }, priority = priority)
         rules.subList(start, rules.size).clear()
         rules += merged
     }

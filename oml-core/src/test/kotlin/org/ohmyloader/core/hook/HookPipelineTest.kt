@@ -372,6 +372,42 @@ fun `a void ModifyArgs handler calls the bridge generated for its kind`() {
     }
 
     @Test
+    fun `a higher priority handler runs first at a shared anchor`() {
+        val targetClass = javaClass.classLoader.loadClass("omltest.pipeline.PriorityFixture\$Target")
+        val mixinClass = javaClass.classLoader.loadClass("omltest.pipeline.PriorityFixture\$Mixin")
+        val recorder = javaClass.classLoader.loadClass("omltest.pipeline.PriorityFixture\$Recorder")
+        @Suppress("UNCHECKED_CAST")
+        val order = recorder.getField("order").get(null) as MutableList<String>
+        order.clear()
+        val jar = jarOf(targetClass, mixinClass)
+        val mod = ModContainer(
+            id = "priority_mod", name = "Priority Mod", version = "0.1.0",
+            entryClass = "omltest.pipeline.PriorityFixture", file = jar,
+        )
+
+        HookRegistry.installClassLoader(javaClass.classLoader)
+        val transformer = HookScanner.createTransformer(listOf(mod))
+        assertNotNull(transformer)
+        val targetName = "omltest/pipeline/PriorityFixture\$Target"
+        assertTrue(transformer.appliesTo(targetName))
+        val node = classNodeOf(targetClass)
+        assertTrue(transformer.transform(TransformContext(targetName, node)))
+
+        val writer = ClassWriter(ClassWriter.COMPUTE_MAXS)
+        node.accept(writer)
+        val bytes = writer.toByteArray()
+        val clazz = object : ClassLoader(HookRegistry.bridgeClass!!.classLoader) {
+            fun define(): Class<*> = defineClass(targetName.replace('/', '.'), bytes, 0, bytes.size)
+        }.define()
+        val instance = clazz.getDeclaredConstructor().newInstance()
+        assertEquals(6, clazz.getMethod("tick", Int::class.javaPrimitiveType).invoke(instance, 5))
+        assertEquals(
+            listOf("high", "low"), order,
+            "priority 2000 was declared second and must still apply (and run) first",
+        )
+    }
+
+    @Test
     fun `one handler injects at every anchor and require counts them together`() {
         val targetClass = javaClass.classLoader.loadClass("omltest.pipeline.MultiAnchorFixture\$Target")
         val mixinClass = javaClass.classLoader.loadClass("omltest.pipeline.MultiAnchorFixture\$Mixin")

@@ -200,6 +200,20 @@ internal class MethodFrames(private val owner: String, private val method: Metho
     private var failure: String? = null
 
     /**
+     * The last instruction an earlier rule inserted **after** an anchor. Inserting after it (instead of
+     * immediately after the anchor) keeps the run order equal to the application order — without this,
+     * each later block lands closer to the anchor and runs earlier than the block applied before it.
+     */
+    private val afterTails = HashMap<AbstractInsnNode, AbstractInsnNode>()
+
+    fun afterTail(anchor: AbstractInsnNode): AbstractInsnNode? = afterTails[anchor]
+
+    /** [tail] is captured **before** insertion: moving an InsnList into the method empties the source. */
+    fun recordAfter(anchor: AbstractInsnNode, tail: AbstractInsnNode?) {
+        afterTails[anchor] = tail ?: afterTails[anchor] ?: anchor
+    }
+
+    /**
      * Takes the local-variable snapshot at an injection point.
      *
      * [after] = the injection block is inserted **after** the anchor, in which case the frame of the successor

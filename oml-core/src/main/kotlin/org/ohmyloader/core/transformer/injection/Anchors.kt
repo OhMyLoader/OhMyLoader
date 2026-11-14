@@ -277,6 +277,13 @@ internal object AnchorResolver {
         return node
     }
 
+    /**
+     * The head instruction to insert before. Callers cache it **before** any rule mutates the method:
+     * resolving HEAD again would return the previously injected callback, which reverses the run order
+     * of several HEAD rules relative to their application (and priority) order.
+     */
+    internal fun headAnchor(method: MethodNode): AbstractInsnNode? = firstRealInstruction(method)
+
     private fun returns(method: MethodNode): List<AbstractInsnNode> {
         // Count only the target method's **own** return instructions. Using the IRETURN..RETURN range would
         // also count unreachable IRETURNs in `V` methods — Mixin instead derives the single opcode from the return type.

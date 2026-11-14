@@ -393,6 +393,21 @@ class HookScannerTest {
     }
 
     @Test
+    fun `priority is carried from the annotation to the rule`() {
+        val parsed = HookScanner.parseMixinClass(
+            injectClass(
+                handler(
+                    "h", "(Lorg/ohmyloader/api/hook/HookContext;)V",
+                    at = "HEAD", priority = 2000,
+                ),
+                hooked = true,
+            ),
+            "m",
+        )
+        assertEquals(2000, parsed.rules.single().priority)
+    }
+
+    @Test
     fun `writing only ats drops the ModifyReturnValue default RETURN`() {
         val annotation = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyReturnValue;").apply {
             values = mutableListOf<Any?>(
@@ -2569,6 +2584,7 @@ class HookScannerTest {
         atTarget: String = "",
         ats: List<AnnotationNode> = emptyList(),
         cancelable: Boolean = false,
+        priority: Int = Int.MIN_VALUE,
         locals: String? = null,
         // Int.MIN_VALUE = "this field is not written" (so the test can pass negatives to verify the checks)
         require: Int = Int.MIN_VALUE,
@@ -2582,6 +2598,7 @@ class HookScannerTest {
             "cancelable", cancelable,
         )
         if (ats.isNotEmpty()) pairs.addAll(listOf("ats", ats))
+        if (priority != Int.MIN_VALUE) pairs.addAll(listOf("priority", priority))
         if (locals != null) pairs.addAll(listOf("locals", listOf("Lorg/ohmyloader/api/hook/LocalCapture;", locals)))
         if (require != Int.MIN_VALUE) pairs.addAll(listOf("require", require))
         if (expect != Int.MIN_VALUE) pairs.addAll(listOf("expect", expect))

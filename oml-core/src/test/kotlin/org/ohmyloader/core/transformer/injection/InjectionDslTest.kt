@@ -1,5 +1,6 @@
 package org.ohmyloader.core.transformer.injection
 
+import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.*
 import org.ohmyloader.api.inject.DslValue
@@ -14,7 +15,10 @@ class InjectionDslTest {
 
     private fun classNode(name: String, vararg methods: MethodNode): ClassNode =
         ClassNode(Opcodes.ASM9).apply {
+            version = Opcodes.V17
+            access = Opcodes.ACC_PUBLIC
             this.name = name
+            superName = "java/lang/Object"
             this.methods.addAll(methods)
         }
 
@@ -474,5 +478,112 @@ class InjectionDslTest {
 
         assertEquals(listOf("a/Src", "a/Other"), rules.merges.map { it.sourceInternal })
         assertEquals(listOf("a/B", "a/B"), rules.merges.map { it.targetInternal })
+    }
+
+    @Test
+    fun `a higher priority applies first at a shared site`() {
+        PriorityHandlers.order.clear()
+        val rules = injection {
+            classTarget("a/Priority") {
+                method("m", desc = "()V") {
+                    priority(1000)
+                    atHead { call(PriorityHandlers.OWNER, "low", "()V") }
+                }
+                method("m", desc = "()V") {
+                    priority(2000)
+                    atHead { call(PriorityHandlers.OWNER, "high", "()V") }
+                }
+            }
+        }
+        assertEquals(
+            listOf(1000, 2000), rules.classes["a/Priority"]!!.methods.map { it.priority },
+            "the builder must carry priority into the compiled rule",
+        )
+        val spec = InjectionSpec(rules)
+        val cls = classNode(
+            "a/Priority",
+            methodNode("m", "()V", isStatic = true) { add(InsnNode(Opcodes.RETURN)) },
+        )
+
+        assertTrue(spec.transform(TransformContext("a/Priority", cls)))
+        val emitted = cls.methods.first { it.name == "m" }.instructions.toArray()
+            .filterIsInstance<MethodInsnNode>().map { it.name }
+        assertEquals(listOf("high", "low"), emitted, "the transformed body must call high first")
+        val writer = ClassWriter(ClassWriter.COMPUTE_MAXS)
+        cls.accept(writer)
+        val bytes = writer.toByteArray()
+        val defined = object : ClassLoader(InjectionDslTest::class.java.classLoader) {
+            fun define(): Class<*> = defineClass("a.Priority", bytes, 0, bytes.size)
+        }.define()
+        defined.methods.first { it.name == "m" }.invoke(null)
+
+        assertEquals(
+            listOf("high", "low"), PriorityHandlers.order,
+            "the 2000-priority rule was declared second and must still apply first",
+        )
+    }
+
+    @Test
+    fun `priority orders after anchors by application order`() {
+        PriorityHandlers.order.clear()
+        val spec = spec {
+            classTarget("a/PriorityAfter") {
+                method("m", desc = "()V") {
+                    priority(1000)
+                    afterCall(owner = PriorityHandlers.OWNER, name = "sink", desc = "()V") {
+                        call(PriorityHandlers.OWNER, "low", "()V")
+                    }
+                }
+                method("m", desc = "()V") {
+                    priority(2000)
+                    afterCall(owner = PriorityHandlers.OWNER, name = "sink", desc = "()V") {
+                        call(PriorityHandlers.OWNER, "high", "()V")
+                    }
+                }
+            }
+        }
+        val cls = classNode(
+            "a/PriorityAfter",
+            methodNode("m", "()V", isStatic = true) {
+                add(MethodInsnNode(Opcodes.INVOKESTATIC, PriorityHandlers.OWNER, "sink", "()V", false))
+                add(InsnNode(Opcodes.RETURN))
+            },
+        )
+
+        assertTrue(spec.transform(TransformContext("a/PriorityAfter", cls)))
+        val emitted = cls.methods.first { it.name == "m" }.instructions.toArray()
+            .filterIsInstance<MethodInsnNode>().map { it.name }
+        assertEquals(
+            listOf("sink", "high", "low"), emitted,
+            "a later applied block must land after the earlier one, not closer to the anchor",
+        )
+
+        val writer = ClassWriter(ClassWriter.COMPUTE_MAXS)
+        cls.accept(writer)
+        val bytes = writer.toByteArray()
+        val defined = object : ClassLoader(InjectionDslTest::class.java.classLoader) {
+            fun define(): Class<*> = defineClass("a.PriorityAfter", bytes, 0, bytes.size)
+        }.define()
+        defined.methods.first { it.name == "m" }.invoke(null)
+        assertEquals(listOf("high", "low"), PriorityHandlers.order)
+    }
+
+    object PriorityHandlers {
+        val OWNER: String = PriorityHandlers::class.java.name.replace('.', '/')
+        val order = mutableListOf<String>()
+
+        @JvmStatic
+        fun sink() {
+        }
+
+        @JvmStatic
+        fun high() {
+            order += "high"
+        }
+
+        @JvmStatic
+        fun low() {
+            order += "low"
+        }
     }
 }

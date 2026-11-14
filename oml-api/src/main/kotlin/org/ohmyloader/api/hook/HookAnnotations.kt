@@ -63,6 +63,8 @@ annotation class Merged(val target: String)
  * Injector annotations take one `at`; their `ats` property adds anchors to the **same** handler. All anchors share
  * the handler, payload and match-count policy (hits sum across them); each anchor is parsed separately, and a set
  * whose anchors would need different injection forms is refused at startup rather than half-applied.
+ * Every injector also takes `priority`: a **higher** value applies first at a shared site (default 1000), which
+ * orders stacking payloads; exclusive payloads still cannot share one site.
  */
 @Target(AnnotationTarget.ANNOTATION_CLASS)
 @Retention(AnnotationRetention.RUNTIME)
@@ -226,6 +228,7 @@ annotation class Inject(
     val cancelable: Boolean = false,
     val locals: LocalCapture = LocalCapture.NO_CAPTURE,
     val slice: Slice = Slice(),
+    val priority: Int = 1000,
     val require: Int = -1,
     val expect: Int = -1,
     val allow: Int = -1,
@@ -256,6 +259,7 @@ annotation class Redirect(
     val methods: Array<String> = [],
     val desc: String = "",
     val slice: Slice = Slice(),
+    val priority: Int = 1000,
     val require: Int = -1,
     val expect: Int = -1,
     val allow: Int = -1,
@@ -282,6 +286,7 @@ annotation class ModifyArg(
     val desc: String = "",
     val index: Int = -1,
     val slice: Slice = Slice(),
+    val priority: Int = 1000,
     val require: Int = -1,
     val expect: Int = -1,
     val allow: Int = -1,
@@ -304,6 +309,7 @@ annotation class ModifyArgs(
     val methods: Array<String> = [],
     val desc: String = "",
     val slice: Slice = Slice(),
+    val priority: Int = 1000,
     val require: Int = -1,
     val expect: Int = -1,
     val allow: Int = -1,
@@ -327,6 +333,7 @@ annotation class ModifyConstant(
     val desc: String = "",
     val constant: Constant = Constant(),
     val slice: Slice = Slice(),
+    val priority: Int = 1000,
     val require: Int = -1,
     val expect: Int = -1,
     val allow: Int = -1,
@@ -356,6 +363,7 @@ annotation class ModifyVariable(
     val name: Array<String> = [],
     val argsOnly: Boolean = false,
     val slice: Slice = Slice(),
+    val priority: Int = 1000,
     val require: Int = -1,
     val expect: Int = -1,
     val allow: Int = -1,
@@ -381,6 +389,7 @@ annotation class ModifyReturnValue(
     val methods: Array<String> = [],
     val desc: String = "",
     val slice: Slice = Slice(),
+    val priority: Int = 1000,
     val require: Int = -1,
     val expect: Int = -1,
     val allow: Int = -1,
@@ -405,6 +414,7 @@ annotation class ModifyExpressionValue(
     val methods: Array<String> = [],
     val desc: String = "",
     val slice: Slice = Slice(),
+    val priority: Int = 1000,
     val require: Int = -1,
     val expect: Int = -1,
     val allow: Int = -1,
@@ -429,6 +439,7 @@ annotation class ModifyReceiver(
     val methods: Array<String> = [],
     val desc: String = "",
     val slice: Slice = Slice(),
+    val priority: Int = 1000,
     val require: Int = -1,
     val expect: Int = -1,
     val allow: Int = -1,
@@ -452,6 +463,7 @@ annotation class WrapWithCondition(
     val methods: Array<String> = [],
     val desc: String = "",
     val slice: Slice = Slice(),
+    val priority: Int = 1000,
     val require: Int = -1,
     val expect: Int = -1,
     val allow: Int = -1,
@@ -480,6 +492,7 @@ annotation class WrapBranch(
     val methods: Array<String> = [],
     val desc: String = "",
     val slice: Slice = Slice(),
+    val priority: Int = 1000,
     val require: Int = -1,
     val expect: Int = -1,
     val allow: Int = -1,
@@ -503,6 +516,7 @@ annotation class WrapOperation(
     val methods: Array<String> = [],
     val desc: String = "",
     val slice: Slice = Slice(),
+    val priority: Int = 1000,
     val require: Int = -1,
     val expect: Int = -1,
     val allow: Int = -1,
@@ -523,6 +537,7 @@ annotation class WrapMethod(
     val method: String = "",
     val methods: Array<String> = [],
     val desc: String = "",
+    val priority: Int = 1000,
     val require: Int = -1,
     val expect: Int = -1,
     val allow: Int = -1,

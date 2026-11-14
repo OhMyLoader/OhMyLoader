@@ -102,6 +102,13 @@ class InjectionSpec internal constructor(
         // One dataflow cache per method node, shared by every rule touching that method (see MethodFrames)
         val frameCache = HashMap<MethodNode, MethodFrames>()
 
+        // Captured before any rule mutates the body: resolving HEAD later would return the callback
+        // injected by the previous rule, reversing the run order of several HEAD rules (and priorities).
+        val headAnchors = HashMap<MethodNode, AbstractInsnNode?>()
+        for (method in context.node.methods) {
+            if (method.instructions.size() > 0) headAnchors[method] = AnchorResolver.headAnchor(method)
+        }
+
         // Before any mutation: two rules that would both replace the same instruction cannot both run,
         // and after the first one does the second silently misses. Name both instead.
         reportExclusiveConflicts(context, classRules, frameCache)
@@ -123,7 +130,11 @@ class InjectionSpec internal constructor(
         // One shared-ref state per method, reused by every rule touching that method.
         val shareStates = HashMap<MethodNode, ShareState>()
         // Whole-method wraps run last: their body move must see every ordinary injection already applied.
-        for (rule in classRules.methods.sortedBy { if (it.isWholeMethodWrap()) 1 else 0 }) {
+        // Within each group a higher priority applies first, so stacked payloads follow an explicit
+        // order rather than jar/declaration order; the sort is stable for equal priorities.
+        for (rule in classRules.methods.sortedWith(
+            compareBy({ if (it.isWholeMethodWrap()) 1 else 0 }, { -it.priority }),
+        )) {
             val named = targetMethods(context.node, rule.selector)
             // Abstract/native methods have no instruction body (`instructions.size() == 0`), so injection has nothing to target
             val injectable = named.filter { it.instructions.size() > 0 }
@@ -137,6 +148,7 @@ class InjectionSpec internal constructor(
                     context.internalName, context.node.superName, context.node, method, prepared.points, frames,
                     prepared.knownShares,
                     shareStates[method]?.slots?.isNotEmpty() == true,
+                    headAnchors,
                 )
             }
             reportHits(
@@ -585,8 +597,15 @@ class InjectionSpec internal constructor(
                 return false
             }
         }
-        if (after) method.instructions.insert(anchor, block)
-        else method.instructions.insertBefore(anchor, block)
+        if (after) {
+            // Land after the previous block at this anchor so application order stays the run order.
+            val blockTail = block.last
+            val previous = frames?.afterTail(anchor)
+            if (previous != null) method.instructions.insert(previous, block) else method.instructions.insert(anchor, block)
+            frames?.recordAfter(anchor, blockTail)
+        } else {
+            method.instructions.insertBefore(anchor, block)
+        }
         // The table is addressed by instruction index — every mutation must drop it (see MethodFrames.invalidate)
         frames?.invalidate()
         return true
@@ -701,6 +720,7 @@ class InjectionSpec internal constructor(
         frames: MethodFrames,
         knownShares: Map<Int, Any>,
         hasShares: Boolean,
+        headAnchors: Map<MethodNode, AbstractInsnNode?>,
     ): Int {
         var inserted = 0
         for ([point, payload] in points) {
@@ -719,7 +739,11 @@ class InjectionSpec internal constructor(
                     resolution.instructions
                 }
 
-                else -> AnchorResolver.resolve(point, classNode, method, owner, superName, frames)
+                else -> {
+                    val resolved = AnchorResolver.resolve(point, classNode, method, owner, superName, frames)
+                    // Plain HEAD only: a sliced window still resolves against the live body.
+                    if (point is InjectionPoint.Head) listOfNotNull(headAnchors[method]) else resolved
+                }
             }
             if (anchors.isEmpty()) {
                 OmlLog.error(

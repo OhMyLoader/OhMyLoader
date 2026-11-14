@@ -21,7 +21,16 @@ class MethodRule(
     val optional: Boolean = false,
     /** **Upper** bound on hits; exceeding it fails hard. */
     val allow: Int? = null,
-)
+    /**
+     * A **higher** value applies first where several stacking payloads share a site, so cross-mod
+     * handler order is explicit instead of jar order. Exclusive payloads never share a site.
+     */
+    val priority: Int = DEFAULT_PRIORITY,
+) {
+    companion object {
+        const val DEFAULT_PRIORITY: Int = 1000
+    }
+}
 
 /** All rules on one target class: method-body injection + access-flag rewriting. */
 class ClassRules(
