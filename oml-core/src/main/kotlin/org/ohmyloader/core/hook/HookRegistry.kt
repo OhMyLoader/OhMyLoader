@@ -300,7 +300,10 @@ object HookRegistry {
         val handler = handlers[id] ?: throw IllegalStateException("unknown hook handler id $id ($name)")
         val kind = BridgeKind.entries[kindOrdinal]
         val target = try {
-            directCallSite(handler, kind, type)
+            when (kind) {
+                BridgeKind.CANCELABLE, BridgeKind.RETURNABLE -> directHandleReadback(handler, kind, type)
+                else -> directCallSite(handler, kind, type)
+            }
         } catch (_: Throwable) {
             // Private/odd handler shapes or an unresolvable class path: keep the reflective semantics
             reflectiveCallSite(handler, kind, type)
@@ -308,26 +311,36 @@ object HookRegistry {
         return ConstantCallSite(target)
     }
 
-    /** Direct `MethodHandle` binding for the kinds whose result needs no per-call read-back. */
-    private fun directCallSite(handler: Handler, kind: BridgeKind, bridgeType: MethodType): MethodHandle {
+    /** Bind the handler (static, or an instance bound to its receiver) with private access where allowed. */
+    private fun handlerHandle(handler: Handler): MethodHandle {
         val resolved = resolvedCall(handler)
         val method = resolved.method
         val owner = method.declaringClass
         val privateLookup = MethodHandles.privateLookupIn(owner, MethodHandles.lookup())
         val methodType = methodTypeOf(method)
-        var handle = if (Modifier.isStatic(method.modifiers)) {
+        return if (Modifier.isStatic(method.modifiers)) {
             privateLookup.findStatic(owner, method.name, methodType)
         } else {
             privateLookup.findVirtual(owner, method.name, methodType).bindTo(resolved.receiver)
         }
+    }
+
+    /** Handler exceptions are reported and swallowed: the same isolation the reflective entry points provide. */
+    private fun isolate(handle: MethodHandle, handler: Handler): MethodHandle {
+        val report = MethodHandles.insertArguments(REPORT_NOTIFY_FAILURE, 0, handler.id)
+        val recovery = MethodHandles.dropArguments(report, 1, handle.type().parameterList())
+        return MethodHandles.catchException(handle, Throwable::class.java, recovery)
+    }
+
+    /** Direct `MethodHandle` binding for the kinds whose result needs no per-call read-back. */
+    private fun directCallSite(handler: Handler, kind: BridgeKind, bridgeType: MethodType): MethodHandle {
+        var handle = handlerHandle(handler)
         return when (kind) {
             BridgeKind.NOTIFY -> {
                 // Not cancelable: one immutable context per handler is enough, and `cancel()` throws anyway
                 val context = HookContext(handler.targetMethod, false)
                 handle = MethodHandles.insertArguments(handle, handle.type().parameterCount() - 1, context)
-                val report = MethodHandles.insertArguments(REPORT_NOTIFY_FAILURE, 0, handler.id)
-                val recovery = MethodHandles.dropArguments(report, 1, handle.type().parameterList())
-                handle = MethodHandles.catchException(handle, Throwable::class.java, recovery)
+                handle = isolate(handle, handler)
                 MethodHandles.dropArguments(handle, handle.type().parameterCount(), Integer.TYPE).asType(bridgeType)
             }
 
@@ -337,9 +350,97 @@ object HookRegistry {
 
             BridgeKind.MIRROR -> handle.asType(bridgeType)
 
-            // These read state back from a per-call context/handle; the reflective entry points keep that
-            else -> throw UnsupportedOperationException("no direct handle for $kind")
+            else -> throw UnsupportedOperationException("no plain handle for $kind")
         }
+    }
+
+    /**
+     * CANCELABLE / RETURNABLE read a per-call context (or the engine's handle) **after** the handler returns, which
+     * a plain handle chain cannot express. The stub below is generated with the exact bridge descriptor: it creates
+     * the context, invokes the pre-bound (and exception-isolated) handler handle natively, then reads the result.
+     */
+    private fun directHandleReadback(handler: Handler, kind: BridgeKind, bridgeType: MethodType): MethodHandle {
+        val isolated = isolate(handlerHandle(handler), handler)
+        val cw = ClassWriter(ClassWriter.COMPUTE_MAXS)
+        val internal = "$REGISTRY\$Direct${fallbackCounter.incrementAndGet()}"
+        cw.visit(
+            Opcodes.V1_8, Opcodes.ACC_PUBLIC or Opcodes.ACC_FINAL or Opcodes.ACC_SYNTHETIC,
+            internal, null, "java/lang/Object", null,
+        )
+        cw.visitField(
+            Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "HANDLER", "Ljava/lang/invoke/MethodHandle;", null, null,
+        ).visitEnd()
+        val desc = bridgeType.toMethodDescriptorString()
+        val mv = cw.visitMethod(Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "invoke", desc, null, null)
+        mv.visitCode()
+        val argTypes = Type.getArgumentTypes(desc)
+        val captureCount = handler.captureTypes.size
+        val captureSlots = argTypes.take(captureCount).sumOf { it.size }
+        val captureDesc = argTypes.take(captureCount).joinToString("") { it.descriptor }
+        fun loadField() = mv.visitFieldInsn(
+            Opcodes.GETSTATIC, internal, "HANDLER", "Ljava/lang/invoke/MethodHandle;",
+        )
+        fun loadCaptures() {
+            var slot = 0
+            for (i in 0 until captureCount) {
+                mv.visitVarInsn(argTypes[i].getOpcode(Opcodes.ILOAD), slot)
+                slot += argTypes[i].size
+            }
+        }
+        when (kind) {
+            BridgeKind.CANCELABLE -> {
+                val contextSlot = captureSlots + 1
+                mv.visitTypeInsn(Opcodes.NEW, "org/ohmyloader/api/hook/HookContext")
+                mv.visitInsn(Opcodes.DUP)
+                mv.visitLdcInsn(handler.targetMethod)
+                mv.visitInsn(Opcodes.ICONST_1)
+                mv.visitMethodInsn(
+                    Opcodes.INVOKESPECIAL, "org/ohmyloader/api/hook/HookContext", "<init>",
+                    "(Ljava/lang/String;Z)V", false,
+                )
+                mv.visitVarInsn(Opcodes.ASTORE, contextSlot)
+                loadField()
+                loadCaptures()
+                mv.visitVarInsn(Opcodes.ALOAD, contextSlot)
+                mv.visitMethodInsn(
+                    Opcodes.INVOKEVIRTUAL, "java/lang/invoke/MethodHandle", "invokeExact",
+                    "(${captureDesc}Lorg/ohmyloader/api/hook/HookContext;)V", false,
+                )
+                mv.visitVarInsn(Opcodes.ALOAD, contextSlot)
+                mv.visitMethodInsn(
+                    Opcodes.INVOKEVIRTUAL, "org/ohmyloader/api/hook/HookContext", "getCanceled", "()Z", false,
+                )
+                mv.visitInsn(Opcodes.IRETURN)
+            }
+
+            BridgeKind.RETURNABLE -> {
+                val idSlot = captureSlots
+                val callbackSlot = captureSlots + 1
+                loadField()
+                loadCaptures()
+                mv.visitVarInsn(Opcodes.ALOAD, callbackSlot)
+                mv.visitMethodInsn(
+                    Opcodes.INVOKEVIRTUAL, "java/lang/invoke/MethodHandle", "invokeExact",
+                    "(${captureDesc}Lorg/ohmyloader/api/hook/HookValue;)V", false,
+                )
+                mv.visitVarInsn(Opcodes.ILOAD, idSlot)
+                mv.visitVarInsn(Opcodes.ALOAD, callbackSlot)
+                mv.visitMethodInsn(
+                    Opcodes.INVOKESTATIC, REGISTRY, "checkReturnable",
+                    "(ILorg/ohmyloader/api/hook/HookValue;)V", false,
+                )
+                mv.visitInsn(Opcodes.RETURN)
+            }
+
+            else -> throw UnsupportedOperationException("no read-back stub for $kind")
+        }
+        mv.visitMaxs(0, 0)
+        mv.visitEnd()
+        cw.visitEnd()
+        val lookup = MethodHandles.lookup()
+        val defined = lookup.defineClass(cw.toByteArray())
+        defined.getDeclaredField("HANDLER").apply { isAccessible = true }.set(null, isolated)
+        return lookup.findStatic(defined, "invoke", bridgeType)
     }
 
     /**
@@ -505,19 +606,23 @@ object HookRegistry {
         try {
             val call = resolvedCall(handler)
             call.method.invoke(call.receiver, *(captures + callback))
-            if (callback.canceled && callback.returnValue == null) {
-                // Canceled without setting a value: the engine will use the zero value for the return type
-                // (0/false/null), and this is almost always a mistake
-                OmlLog.warn(
-                    "Mixin",
-                    "a Mixin handler canceled a non-void target but did not set a return value, will return the zero value " +
-                        "(mod=${handler.modId}, ${handler.mixinClass}.${handler.handlerMethod} → " +
-                        "${handler.targetMethod}); use ci.setReturnValue(v)",
-                )
-            }
+            checkReturnable(handler.id, callback)
         } catch (t: Throwable) {
             reportHandlerFailure(handler, t)
         }
+    }
+
+    /** Warn on "canceled without a return value": the engine would return the zero value (0/false/null). */
+    @JvmStatic
+    fun checkReturnable(handlerId: Int, callback: HookValue<*>) {
+        if (!callback.canceled || callback.returnValue != null) return
+        val handler = handlers[handlerId] ?: return
+        OmlLog.warn(
+            "Mixin",
+            "a Mixin handler canceled a non-void target but did not set a return value, will return the zero value " +
+                "(mod=${handler.modId}, ${handler.mixinClass}.${handler.handlerMethod} → " +
+                "${handler.targetMethod}); use ci.setReturnValue(v)",
+        )
     }
 
     /**
