@@ -1498,6 +1498,7 @@ internal object PayloadEmitter {
         owner: String,
         jump: JumpInsnNode,
         locals: AnchorLocals?,
+        frames: MethodFrames,
         cmpOpcode: Int = 0,
         coerceParams: Set<Int> = emptySet(),
         coerceReturn: Boolean = false,
@@ -1560,7 +1561,8 @@ internal object PayloadEmitter {
             classNode, list, operandTypes, cmpOpcode, jumpOpcode, comparison.jumpOnTrue,
         )
         val writeBacks = mutableListOf<SugarWriteBack>()
-        if (!emitValues(list, extras, method, locals, writeBacks)) return null
+        val cancelChecks = mutableListOf<CancelCheck>()
+        if (!emitValues(list, extras, method, locals, writeBacks, cancelChecks)) return null
         list.add(
             MethodInsnNode(
                 if (instance) Opcodes.INVOKEVIRTUAL else Opcodes.INVOKESTATIC,
@@ -1574,6 +1576,9 @@ internal object PayloadEmitter {
             list.add(TypeInsnNode(Opcodes.CHECKCAST, unbox.owner))
             list.add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, unbox.owner, unbox.name, unbox.desc, false))
         }
+        // A cancelled comparison skips the branch entirely: the handler's boolean is dropped and the
+        // target method returns the handle's value.
+        if (!emitCancelChecks(list, cancelChecks, method, Type.BOOLEAN_TYPE, frames, jump)) return null
         list.add(JumpInsnNode(if (comparison.jumpOnTrue) Opcodes.IFNE else Opcodes.IFEQ, jump.label))
         return list
     }
@@ -1938,6 +1943,7 @@ internal object PayloadEmitter {
         owner: String,
         newInsn: TypeInsnNode,
         locals: AnchorLocals?,
+        frames: MethodFrames,
         coerceParams: Set<Int> = emptySet(),
         coerceReturn: Boolean = false,
     ): WrapNewEdit? {
@@ -2014,7 +2020,8 @@ internal object PayloadEmitter {
             prefix = listOf(TypeInsnNode(Opcodes.NEW, newInsn.desc), InsnNode(Opcodes.DUP)),
         )
         val writeBacks = mutableListOf<SugarWriteBack>()
-        if (!emitValues(list, extras, method, locals, writeBacks)) return null
+        val cancelChecks = mutableListOf<CancelCheck>()
+        if (!emitValues(list, extras, method, locals, writeBacks, cancelChecks)) return null
         list.add(
             MethodInsnNode(
                 if (instance) Opcodes.INVOKEVIRTUAL else Opcodes.INVOKESTATIC,
@@ -2030,6 +2037,8 @@ internal object PayloadEmitter {
         list.add(InsnNode(Opcodes.POP))
         list.add(InsnNode(Opcodes.POP))
         list.add(InsnNode(Opcodes.POP))
+        // A cancelled NEW drops the constructed reference and returns the handle's value from the target.
+        if (!emitCancelChecks(list, cancelChecks, method, returnType, frames, init)) return null
         return WrapNewEdit(newInsn, init, list)
     }
 
@@ -3107,8 +3116,7 @@ internal object PayloadEmitter {
                 if (cancelChecks == null) {
                     OmlLog.error(
                         "Injection",
-                        "@Cancellable is only supported on @WrapOperation with a plain call, field, type-check " +
-                            "or array anchor: ${method.name}${method.desc}",
+                        "@Cancellable is only supported on @WrapOperation handlers: ${method.name}${method.desc}",
                     )
                     return false
                 }

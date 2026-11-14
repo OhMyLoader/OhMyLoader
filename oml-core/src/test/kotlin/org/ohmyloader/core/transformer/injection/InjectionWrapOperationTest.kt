@@ -182,6 +182,53 @@ class InjectionWrapOperationTest {
     }
 
     @Test
+    fun `cancellable HookValue stops a wrapped NEW`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("make", desc = "(I)L${Receiver.OWNER};") {
+                        beforeNew(owner = Receiver.OWNER, desc = "(I)V") {
+                            wrapOperation(
+                                WrapOpHandlers.OWNER, "cancelConstruct",
+                                "(I$OPERATION_DESC$HOOK_VALUE_DESC)L${Receiver.OWNER};",
+                                extras = listOf(DslValue.CancelableHandle(HOOK_VALUE_DESC)),
+                            )
+                        }
+                    }
+                }
+            },
+            targetWithInstantiation(),
+        )
+
+        val made = invoke(clazz, "make", 5) as Receiver
+        assertEquals(77, made.factor, "cancel() returns the handle's value instead of the constructed object")
+    }
+
+    @Test
+    fun `cancellable HookContext stops a wrapped NEW in a void target`() {
+        Ops.recordedReceiver = null
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("sink", desc = "(I)V") {
+                        beforeNew(owner = Receiver.OWNER, desc = "(I)V") {
+                            wrapOperation(
+                                WrapOpHandlers.OWNER, "skipConstructVoid",
+                                "(I$OPERATION_DESC$HOOK_CONTEXT_DESC)L${Receiver.OWNER};",
+                                extras = listOf(DslValue.CancelableHandle(HOOK_CONTEXT_DESC)),
+                            )
+                        }
+                    }
+                }
+            },
+            targetWithSunkInstantiation(),
+        )
+
+        invoke(clazz, "sink", 5)
+        assertEquals(null, Ops.recordedReceiver, "cancel() returns from the void target before the object is used")
+    }
+
+    @Test
     fun `cancellable HookValue returns a value from a non-void target`() {
         val clazz = define(
             specOf {
@@ -502,6 +549,18 @@ class InjectionWrapOperationTest {
         },
     )
 
+    /** `static void sink(int seed) { Ops.recordReceiver(new Receiver(seed)); }` */
+    private fun targetWithSunkInstantiation(): ClassNode = classNode(
+        methodNode("sink", "(I)V") {
+            add(TypeInsnNode(Opcodes.NEW, Receiver.OWNER))
+            add(InsnNode(Opcodes.DUP))
+            add(VarInsnNode(Opcodes.ILOAD, 0))
+            add(MethodInsnNode(Opcodes.INVOKESPECIAL, Receiver.OWNER, "<init>", "(I)V", false))
+            add(MethodInsnNode(Opcodes.INVOKESTATIC, Ops.OWNER, "recordReceiver", "(L${Receiver.OWNER};)V", false))
+            add(InsnNode(Opcodes.RETURN))
+        },
+    )
+
     private fun define(spec: InjectionSpec, node: ClassNode): Class<*> {
         assertTrue(spec.transform(TransformContext(owner, node)), "injection should happen")
         val writer = ClassWriter(ClassWriter.COMPUTE_MAXS)
@@ -536,8 +595,16 @@ class InjectionWrapOperationTest {
         var recorded: Int? = null
 
         @JvmStatic
+        var recordedReceiver: Receiver? = null
+
+        @JvmStatic
         fun record(value: Int) {
             recorded = value
+        }
+
+        @JvmStatic
+        fun recordReceiver(receiver: Receiver) {
+            recordedReceiver = receiver
         }
 
         @JvmStatic
@@ -620,6 +687,20 @@ class InjectionWrapOperationTest {
         fun cancelWithWide(value: Int, operation: Operation<Long>, hook: HookValue<Long>): Long {
             hook.setReturnValue(123L)
             return 0L
+        }
+
+        @Suppress("UNUSED_PARAMETER")
+        @JvmStatic
+        fun cancelConstruct(value: Int, operation: Operation<Receiver>, hook: HookValue<Receiver>): Receiver {
+            hook.setReturnValue(Receiver(77))
+            return Receiver(-1)
+        }
+
+        @Suppress("UNUSED_PARAMETER")
+        @JvmStatic
+        fun skipConstructVoid(value: Int, operation: Operation<Receiver>, hook: HookContext): Receiver {
+            hook.cancel()
+            return Receiver(-1)
         }
     }
 }

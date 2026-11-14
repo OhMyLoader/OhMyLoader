@@ -956,7 +956,7 @@ class InjectionSpec internal constructor(
                                 val list = PayloadEmitter.emitWrapComparison(
                                     payload.owner, payload.method, payload.desc, payload.extras,
                                     instance = false, comparison, classNode, method, owner, comparisonJump, locals,
-                                    cmpOpcode = anchor.opcode,
+                                    frames, cmpOpcode = anchor.opcode,
                                     coerceParams = payload.coerceParams, coerceReturn = payload.coerceReturn,
                                 ) ?: continue
                                 if (!insertBlock(method, anchor, list, after = false, frames, knownShares)) continue
@@ -969,6 +969,7 @@ class InjectionSpec internal constructor(
                             val list = PayloadEmitter.emitWrapComparison(
                                 payload.owner, payload.method, payload.desc, payload.extras,
                                 instance = false, comparison, classNode, method, owner, comparisonJump, locals,
+                                frames,
                                 coerceParams = payload.coerceParams, coerceReturn = payload.coerceReturn,
                             ) ?: continue
                             if (!insertBlock(method, comparisonJump, list, after = false, frames, knownShares)) continue
@@ -981,7 +982,7 @@ class InjectionSpec internal constructor(
                             val edit = PayloadEmitter.emitWrapNewOperation(
                                 payload.owner, payload.method, payload.desc, payload.extras,
                                 instance = false, classNode = classNode, method = method, owner = owner,
-                                newInsn = anchor, locals = locals,
+                                newInsn = anchor, locals = locals, frames = frames,
                                 coerceParams = payload.coerceParams, coerceReturn = payload.coerceReturn,
                             ) ?: continue
                             if (!insertBlock(method, edit.initInsn, edit.block, after = false, frames, knownShares)) continue
@@ -1367,7 +1368,7 @@ class InjectionSpec internal constructor(
                                         val list = PayloadEmitter.emitWrapComparison(
                                             payload.owner, payload.method, payload.desc, payload.captures,
                                             instance = true, comparison, classNode, method, owner, comparisonJump,
-                                            locals, cmpOpcode = anchor.opcode,
+                                            locals, frames, cmpOpcode = anchor.opcode,
                                             coerceParams = payload.coerceParams, coerceReturn = payload.coerceReturn,
                                             ) ?: continue
                                         if (!insertBlock(method, anchor, list, after = false, frames, knownShares)) continue
@@ -1379,7 +1380,8 @@ class InjectionSpec internal constructor(
                                     }
                                     val list = PayloadEmitter.emitWrapComparison(
                                         payload.owner, payload.method, payload.desc, payload.captures,
-                                        instance = true, comparison, classNode, method, owner, comparisonJump, locals,
+                                        instance = true, comparison, classNode, method, owner, comparisonJump,
+                                        locals, frames,
                                         coerceParams = payload.coerceParams, coerceReturn = payload.coerceReturn,
                                             ) ?: continue
                                     if (!insertBlock(method, comparisonJump, list, after = false, frames, knownShares)) continue
@@ -1392,7 +1394,7 @@ class InjectionSpec internal constructor(
                                     val edit = PayloadEmitter.emitWrapNewOperation(
                                         payload.owner, payload.method, payload.desc, payload.captures,
                                         instance = true, classNode = classNode, method = method, owner = owner,
-                                        newInsn = anchor, locals = locals,
+                                        newInsn = anchor, locals = locals, frames = frames,
                                         coerceParams = payload.coerceParams, coerceReturn = payload.coerceReturn,
                                     ) ?: continue
                                     if (!insertBlock(method, edit.initInsn, edit.block, after = false, frames, knownShares)) continue

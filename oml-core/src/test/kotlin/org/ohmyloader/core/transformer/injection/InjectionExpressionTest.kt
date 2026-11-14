@@ -12,8 +12,11 @@ import org.objectweb.asm.tree.MethodInsnNode
 import org.objectweb.asm.tree.MethodNode
 import org.objectweb.asm.tree.VarInsnNode
 import org.ohmyloader.api.hook.Args
+import org.ohmyloader.api.hook.HookContext
+import org.ohmyloader.api.hook.HookValue
 import org.ohmyloader.api.hook.Operation
 import org.ohmyloader.api.inject.Anchor
+import org.ohmyloader.api.inject.DslValue
 import org.ohmyloader.api.inject.InjectionError
 import org.ohmyloader.api.inject.InjectionPoint
 import org.ohmyloader.api.inject.Payload
@@ -282,6 +285,53 @@ class InjectionExpressionTest {
 
         assertEquals(100, invoke(clazz, "cmp", 1), "the operation re-evaluates 1 > 5 and the handler inverts it")
         assertEquals(0, invoke(clazz, "cmp", 9), "9 > 5 is true, inverted to false")
+    }
+
+    @Test
+    fun `a cancelled comparison returns the handle's value`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("cmp", desc = "(I)I") {
+                        atExpression("? > 5") {
+                            wrapOperation(
+                                ExpressionHandlers.OWNER, "cancelComparison",
+                                "(IILorg/ohmyloader/api/hook/Operation;Lorg/ohmyloader/api/hook/HookValue;)Z",
+                                extras = listOf(DslValue.CancelableHandle("Lorg/ohmyloader/api/hook/HookValue;")),
+                            )
+                        }
+                    }
+                }
+            },
+            compareTarget(),
+        )
+
+        assertEquals(77, invoke(clazz, "cmp", 1), "cancel() returns 77 before the branch is taken")
+        assertEquals(77, invoke(clazz, "cmp", 9), "the branch value does not matter once cancelled")
+    }
+
+    @Test
+    fun `a cancelled comparison returns from a void target`() {
+        VoidSink.clear()
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("cmp", desc = "(I)V") {
+                        atExpression("? > 5") {
+                            wrapOperation(
+                                ExpressionHandlers.OWNER, "cancelComparisonVoid",
+                                "(IILorg/ohmyloader/api/hook/Operation;Lorg/ohmyloader/api/hook/HookContext;)Z",
+                                extras = listOf(DslValue.CancelableHandle("Lorg/ohmyloader/api/hook/HookContext;")),
+                            )
+                        }
+                    }
+                }
+            },
+            voidCompareTarget(),
+        )
+
+        invoke(clazz, "cmp", 9)
+        assertTrue(VoidSink.hits.isEmpty(), "cancel() returns from the void target before the branch runs its body")
     }
 
     @Test
@@ -1153,6 +1203,24 @@ class InjectionExpressionTest {
         },
     )
 
+    /** `static void cmp(int x) { if (x > 5) VoidSink.mark(); }` */
+    private fun voidCompareTarget(): ClassNode = classNode(
+        methodNode("cmp", "(I)V") {
+            val end = LabelNode()
+            add(VarInsnNode(Opcodes.ILOAD, 0))
+            add(InsnNode(Opcodes.ICONST_5))
+            add(JumpInsnNode(Opcodes.IF_ICMPLE, end))
+            add(MethodInsnNode(Opcodes.INVOKESTATIC, VoidSink.OWNER, "mark", "()V", false))
+            add(end)
+            add(
+                org.objectweb.asm.tree.FrameNode(
+                    Opcodes.F_NEW, 1, arrayOf<Any>(Opcodes.INTEGER), 0, emptyArray<Any>(),
+                ),
+            )
+            add(InsnNode(Opcodes.RETURN))
+        },
+    )
+
     private fun classNode(vararg methods: MethodNode): ClassNode =
         ClassNode(Opcodes.ASM9).apply {
             version = Opcodes.V17
@@ -1267,5 +1335,32 @@ class InjectionExpressionTest {
         @JvmStatic
         fun invertCoerced(a: Any?, b: Any?, operation: Operation<Boolean>): Any? =
             !operation.call(a as Int, b as Int)
+
+        @Suppress("UNUSED_PARAMETER")
+        @JvmStatic
+        fun cancelComparison(a: Int, b: Int, operation: Operation<Boolean>, hook: HookValue<Int>): Boolean {
+            hook.setReturnValue(77)
+            return false
+        }
+
+        @Suppress("UNUSED_PARAMETER")
+        @JvmStatic
+        fun cancelComparisonVoid(a: Int, b: Int, operation: Operation<Boolean>, hook: HookContext): Boolean {
+            hook.cancel()
+            return false
+        }
+    }
+
+    object VoidSink {
+        val OWNER: String = VoidSink::class.java.name.replace('.', '/')
+
+        val hits = mutableListOf<Unit>()
+
+        fun clear() = hits.clear()
+
+        @JvmStatic
+        fun mark() {
+            hits += Unit
+        }
     }
 }
