@@ -1569,6 +1569,53 @@ class HookScannerTest {
     }
 
     @Test
+    fun `redirect accepts a NEW anchor`() {
+        newBridge()
+        val redirect = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Redirect;").apply {
+            values = mutableListOf<Any?>(
+                "method", "runTick",
+                "at", atNode("NEW", target = "Lnet/minecraft/Foo;(I)V"),
+            )
+        }
+        val method = MethodNode(
+            Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h", "(I)Lnet/minecraft/Foo;", null, null,
+        ).apply {
+            instructions.add(InsnNode(Opcodes.ARETURN))
+            visibleAnnotations = listOf(redirect)
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        assertEquals(
+            InjectionPoint.NewInstance("net/minecraft/Foo", "(I)V"),
+            parsed.rules[0].anchor,
+        )
+        assertNotNull((parsed.rules[0].payload as Payload.Redirect).desc)
+    }
+
+    @Test
+    fun `redirect on NEW reports a handler shape mismatch`() {
+        newBridge()
+        val redirect = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Redirect;").apply {
+            values = mutableListOf<Any?>(
+                "method", "runTick",
+                "at", atNode("NEW", target = "Lnet/minecraft/Foo;(I)V"),
+            )
+        }
+        val method = MethodNode(
+            Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h", "(J)Lnet/minecraft/Foo;", null, null,
+        ).apply {
+            instructions.add(InsnNode(Opcodes.ARETURN))
+            visibleAnnotations = listOf(redirect)
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(
+            parsed.problems.any { it.contains("constructor's arguments") },
+            parsed.problems.toString(),
+        )
+        assertEquals(0, parsed.rules.size)
+    }
+
+    @Test
     fun `wrapMethod parses a whole-method Operation handler`() {
         newBridge()
         val node = injectClass(

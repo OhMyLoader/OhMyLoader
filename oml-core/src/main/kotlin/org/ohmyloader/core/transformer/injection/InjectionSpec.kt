@@ -1409,6 +1409,26 @@ class InjectionSpec internal constructor(
                     }
 
                     is Payload.Redirect -> {
+                        if (anchor is TypeInsnNode && anchor.opcode == Opcodes.NEW) {
+                            val handlerDesc = payload.desc
+                            if (handlerDesc == null) {
+                                OmlLog.error(
+                                    "Injection",
+                                    "Redirect on NEW needs the handler descriptor: ${method.name}",
+                                )
+                                continue
+                            }
+                            val edit = PayloadEmitter.emitRedirectNew(
+                                payload.handlerOwner, payload.handlerMethod, handlerDesc, payload.extras,
+                                method, owner, anchor, locals,
+                            ) ?: continue
+                            if (!insertBlock(method, edit.initInsn, edit.block, after = false, frames, knownShares)) continue
+                            method.instructions.remove(edit.initInsn)
+                            method.instructions.set(edit.newInsn, InsnNode(Opcodes.ACONST_NULL))
+                            frames.invalidate()
+                            inserted++
+                            continue
+                        }
                         // Redirect: replace the entire **single** matched call instruction with a static handler
                         // (descriptor identical to the original call, i.e. the handler is a static mirror of the original method)
                         if (anchor !is MethodInsnNode) {

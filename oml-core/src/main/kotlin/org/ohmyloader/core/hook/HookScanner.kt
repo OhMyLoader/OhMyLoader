@@ -733,8 +733,13 @@ object HookScanner {
         val call = point.core as? InjectionPoint.Call
         val expression = point.core is InjectionPoint.Expression
         if (!expression && call == null) {
-            problems += "[$modId] $where —— @Redirect's @At must be a method call (INVOKE / INVOKE_ASSIGN) " +
-                "or an @Expression"
+            problems += if (point.core is InjectionPoint.NewInstance) {
+                "[$modId] $where —— an instance handler cannot redirect a NEW construction: " +
+                    "make the handler static (the static bridge path handles @At(\"NEW\"))"
+            } else {
+                "[$modId] $where —— @Redirect's @At must be a method call (INVOKE / INVOKE_ASSIGN) " +
+                    "or an @Expression"
+            }
             return
         }
         // Cross-module attributes are not smart-converted ⇒ collect them into local variables, used in several spots below
@@ -1145,10 +1150,11 @@ object HookScanner {
         problems: MutableList<String>,
     ) {
         val call = point as? InjectionPoint.Call
+        val new = point as? InjectionPoint.NewInstance
         val expression = point.core is InjectionPoint.Expression
-        if (!expression && call == null) {
-            problems += "[$modId] $where —— @Redirect's @At must be a method call (INVOKE / INVOKE_ASSIGN) " +
-                "or an @Expression"
+        if (!expression && call == null && new == null) {
+            problems += "[$modId] $where —— @Redirect's @At must be a method call (INVOKE / INVOKE_ASSIGN), " +
+                "a NEW, or an @Expression"
             return
         }
         if (call != null && (call.owner == null || call.name == null || call.desc == null)) {
@@ -1175,10 +1181,20 @@ object HookScanner {
                 return
             }
         }
-        // With an @Expression the captured call is only known at injection time, so the engine validates the
-        // handler shape and the bridge descriptor against the actual instruction.
+        if (new != null && new.owner != null && new.desc != null) {
+            val ctorArgs = Type.getArgumentTypes(new.desc).map { it.descriptor }
+            val constructed = "L${new.owner};"
+            if (handlerParams != ctorArgs || handlerRet != constructed) {
+                problems += "[$modId] $where —— @Redirect on NEW handler's non-sugar parameter list must equal " +
+                    "the constructor's arguments and return the constructed type: expected " +
+                    "(${ctorArgs.joinToString("")})$constructed, actual ${method.desc}"
+                return
+            }
+        }
+        // With an @Expression or an unqualified NEW the target is only known at injection time, so the
+        // engine validates the handler shape and the bridge descriptor against the actual instruction.
         val payload: Payload
-        if (split.bindings.isEmpty() && !expression) {
+        if (call != null && split.bindings.isEmpty()) {
             val id = HookRegistry.register(
                 modId = modId,
                 mixinClass = mixinClass,

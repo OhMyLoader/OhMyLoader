@@ -18,6 +18,7 @@ import org.ohmyloader.api.inject.DslValue
 import org.ohmyloader.core.transformer.TransformContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
@@ -292,6 +293,44 @@ class InjectionWrapOperationTest {
         assertEquals(null, Ops.recorded, "cancel() returns from the void target before the wrapped call")
     }
 
+    @Test
+    fun `redirect replaces an instantiation with a factory`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("make", desc = "(I)L${Receiver.OWNER};") {
+                        beforeNew(owner = Receiver.OWNER, desc = "(I)V") {
+                            redirect(WrapOpHandlers.OWNER, "factory", "(I)L${Receiver.OWNER};")
+                        }
+                    }
+                }
+            },
+            targetWithInstantiation(),
+        )
+
+        val made = invoke(clazz, "make", 5) as Receiver
+        assertEquals(6, made.factor, "the factory supplies the instance; the original constructor does not run")
+    }
+
+    @Test
+    fun `redirect on NEW rejects a handler returning another type`() {
+        val spec = specOf {
+            classTarget(owner) {
+                method("make", desc = "(I)L${Receiver.OWNER};") {
+                    beforeNew(owner = Receiver.OWNER, desc = "(I)V") {
+                        redirect(WrapOpHandlers.OWNER, "factory", "(I)Ljava/lang/String;")
+                    }
+                    require(1)
+                }
+            }
+        }
+
+        val failure = assertFailsWith<org.ohmyloader.api.inject.InjectionError> {
+            spec.transform(TransformContext(owner, targetWithInstantiation()))
+        }
+        assertTrue(failure.message!!.contains("constructed type"), failure.message)
+    }
+
     // ---------- fixtures ----------
 
     private val OPERATION_DESC = "Lorg/ohmyloader/api/hook/Operation;"
@@ -480,6 +519,9 @@ class InjectionWrapOperationTest {
         @Suppress("UNUSED_PARAMETER")
         @JvmStatic
         fun substitute(value: Int, operation: Operation<Receiver>): Receiver = Receiver(99)
+
+        @JvmStatic
+        fun factory(value: Int): Receiver = Receiver(value + 1)
 
         @Suppress("UNUSED_PARAMETER")
         @JvmStatic

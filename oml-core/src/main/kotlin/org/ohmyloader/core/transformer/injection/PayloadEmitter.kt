@@ -1686,6 +1686,86 @@ internal object PayloadEmitter {
         return WrapNewEdit(newInsn, init, list)
     }
 
+    /**
+     * **Redirects an instantiation** (`@Redirect` on `@At("NEW")`): the constructor call is replaced by a
+     * static factory `(args…, extras…)T` returning the constructed type. The NEW is neutralized to
+     * `ACONST_NULL`, so the two references `NEW; DUP` left behind are ordinary nulls; the block stores the
+     * constructor arguments, calls the handler, and `DUP_X2` + three `POP`s keep only the returned object.
+     *
+     * Only the standard `NEW; DUP; args; <init>` shape is accepted, mirroring [emitWrapNewOperation].
+     */
+    internal fun emitRedirectNew(
+        handlerOwner: String,
+        handlerMethod: String,
+        handlerDesc: String,
+        extras: List<DslValue>,
+        method: MethodNode,
+        owner: String,
+        newInsn: TypeInsnNode,
+        locals: AnchorLocals?,
+    ): WrapNewEdit? {
+        val next = nextReal(newInsn)
+        if (next == null || next.opcode != Opcodes.DUP) {
+            OmlLog.error(
+                "Injection",
+                "Redirect on NEW requires the standard NEW; DUP; args; <init> shape: ${method.name}",
+            )
+            return null
+        }
+        val init = findInit(newInsn) ?: run {
+            OmlLog.error(
+                "Injection",
+                "Redirect on NEW could not pair it with an <init> of ${newInsn.desc}: ${method.name}",
+            )
+            return null
+        }
+        val argTypes = Type.getArgumentTypes(init.desc)
+        val constructed = Type.getObjectType(newInsn.desc)
+        val handlerArgs = Type.getArgumentTypes(handlerDesc)
+        val handlerRet = Type.getReturnType(handlerDesc)
+        if (handlerArgs.size != argTypes.size + extras.size) {
+            throw InjectionError(
+                "[injection] the handler of Redirect(NEW) must declare the constructor's " +
+                    "${argTypes.size} argument(s) plus ${extras.size} extra(s): actual $handlerDesc",
+            )
+        }
+        for (i in argTypes.indices) {
+            if (handlerArgs[i] != argTypes[i]) {
+                throw InjectionError(
+                    "[injection] Redirect(NEW) constructor argument ${i + 1} type mismatch: expected " +
+                        "${argTypes[i].className}, actual ${handlerArgs[i].className} ($handlerDesc)",
+                )
+            }
+        }
+        if (handlerRet != constructed) {
+            throw InjectionError(
+                "[injection] the handler of Redirect(NEW) must return the constructed type " +
+                    "${constructed.className}, actual ${handlerRet.className} ($handlerDesc)",
+            )
+        }
+        validateArgTypes(handlerDesc, extras, argTypes.size, method, owner, locals, "Redirect(NEW).extras")
+
+        val slots = storeArgs(method, argTypes)
+        val list = InsnList()
+        // The stack here is [null, null, args…] (NEW was neutralized and DUP left the second null).
+        for (i in argTypes.indices.reversed()) {
+            list.add(VarInsnNode(Boxing.storeOpcode(argTypes[i]), slots[i]))
+        }
+        for (i in argTypes.indices) {
+            list.add(VarInsnNode(Boxing.loadOpcode(argTypes[i]), slots[i]))
+        }
+        val writeBacks = mutableListOf<SugarWriteBack>()
+        if (!emitValues(list, extras, method, locals, writeBacks)) return null
+        list.add(MethodInsnNode(Opcodes.INVOKESTATIC, handlerOwner, handlerMethod, handlerDesc, false))
+        emitWriteBacks(list, writeBacks)
+        // [null, null, result] → [result]: duplicate the result below the two nulls, then drop them.
+        list.add(InsnNode(Opcodes.DUP_X2))
+        list.add(InsnNode(Opcodes.POP))
+        list.add(InsnNode(Opcodes.POP))
+        list.add(InsnNode(Opcodes.POP))
+        return WrapNewEdit(newInsn, init, list)
+    }
+
     /** The next executable instruction (skipping labels, line numbers and stack frames). */
     private fun nextReal(insn: AbstractInsnNode): AbstractInsnNode? {
         var node = insn.next

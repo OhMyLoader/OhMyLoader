@@ -198,6 +198,9 @@ annotation class Inject(
  * startup; a missing one is an explicit startup-stage problem, not a silent no-op. The sole
  * exception is `@At("EXPRESSION")`: the captured call is only known at weaving time, so the
  * engine validates the handler shape against it there.
+ * With `@At("NEW")` (write the constructor descriptor in `target`) the handler is a static factory
+ * `(constructor args…)T` returning the constructed type; the standard `NEW; DUP; args; <init>`
+ * shape is required.
  * An exception thrown by the handler is **not isolated**: this annotation replaces real behavior,
  * and swallowing the exception would mean the call silently never happened.
  */
