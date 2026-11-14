@@ -47,7 +47,8 @@ object HookScanner {
         val targetInternal: String,
         val methodNames: List<String>,
         val methodDesc: String?,
-        val anchor: InjectionPoint,
+        /** One rule may carry several anchors (`@At` + `ats`); the policy covers their total hits. */
+        val anchors: List<InjectionPoint>,
         val payload: Payload,
         val policy: Policy,
         val captures: List<Capture>,
@@ -129,7 +130,7 @@ object HookScanner {
             for (rule in rules) {
                 classTarget(rule.targetInternal) {
                     val configure: MethodRuleBuilder.() -> Unit = {
-                        point(rule.anchor, rule.payload)
+                        for (anchor in rule.anchors) point(anchor, rule.payload)
                         rule.policy.require?.let { require(it) }
                         rule.policy.allow?.let { allow(it) }
                         rule.policy.expect?.let { expect(it) }
@@ -214,6 +215,13 @@ object HookScanner {
     private const val DEFINITION_DESC = "Lorg/ohmyloader/api/hook/Definition;"
     private const val DEFINITIONS_DESC = "Lorg/ohmyloader/api/hook/Definitions;"
     private const val LAMBDA_DESC = "Lorg/ohmyloader/api/hook/Lambda;"
+
+    /** Injectors that declare `ats`: `@WrapMethod` / `@ModifyConstant` have no anchor list to extend. */
+    private val MULTI_ANCHOR_ANNOTATIONS = setOf(
+        INJECT_DESC, REDIRECT_DESC, MODIFY_ARG_DESC, MODIFY_ARGS_DESC,
+        MODIFY_VARIABLE_DESC, MODIFY_RETURN_VALUE_DESC, MODIFY_EXPRESSION_VALUE_DESC,
+        MODIFY_RECEIVER_DESC, WRAP_WITH_CONDITION_DESC, WRAP_BRANCH_DESC, WRAP_OPERATION_DESC,
+    )
     private const val BORROWED_DESC = "Lorg/ohmyloader/api/hook/Borrowed;"
     private const val EXTRA_DESC = "Lorg/ohmyloader/api/hook/Extra;"
     private const val REPLACE_DESC = "Lorg/ohmyloader/api/hook/Replace;"
@@ -458,8 +466,112 @@ object HookScanner {
         return values.filterIsInstance<Type>().map { it.internalName }
     }
 
-    /** Parse one injection annotation → one rule, or several problems. */
+    /**
+ * Parse one injection annotation. Several anchors (`at` + `ats`) run the single-anchor path once per
+ * anchor and merge the produced rules into one, so the policy covers the total hits and a failed
+ * anchor aborts the whole annotation instead of half-injecting.
+ */
     private fun parseInjection(
+        method: MethodNode,
+        annotation: AnnotationNode,
+        declaredTarget: String,
+        mixinClass: String,
+        modId: String,
+        slices: Map<String, AnnotationNode>,
+        mergeInto: String?,
+        handlers: MutableSet<String>,
+        rules: MutableList<Rule>,
+        problems: MutableList<String>,
+        lambda: LambdaSelector?,
+        lambdaScan: LambdaScan?,
+    ) {
+        val extras = if (annotation.desc in MULTI_ANCHOR_ANNOTATIONS) {
+            (annotationValue(annotation, "ats") as? List<*>).orEmpty().filterIsInstance<AnnotationNode>()
+        } else {
+            emptyList()
+        }
+        if (extras.isEmpty()) {
+            parseSingleInjection(
+                method, annotation, declaredTarget, mixinClass, modId, slices,
+                mergeInto, handlers, rules, problems, lambda, lambdaScan,
+            )
+            return
+        }
+        val where = "$mixinClass.${method.name}"
+        val shortName = INJECTION_ANNOTATIONS[annotation.desc] ?: return
+        val primary = annotationValue(annotation, "at") as? AnnotationNode
+        val anchors = listOfNotNull(primary) + extras
+        val start = rules.size
+        for (anchor in anchors) {
+            val before = rules.size
+            parseSingleInjection(
+                method, annotation.withAnchor(anchor), declaredTarget, mixinClass, modId, slices,
+                mergeInto, handlers, rules, problems, lambda, lambdaScan,
+            )
+            if (rules.size != before + 1) {
+                rules.subList(start, rules.size).clear()
+                return
+            }
+        }
+        val produced = rules.subList(start, rules.size).toList()
+        val first = produced.first()
+        // The first anchor's payload is reused at every anchor. Injectors that pick an anchor-dependent
+        // payload (a cancelable @Inject mixes return/notify forms) would silently inject the wrong form,
+        // so refuse a mixed set instead of picking one.
+        val uniform = produced.all { next ->
+            next.targetInternal == first.targetInternal &&
+                next.methodNames == first.methodNames &&
+                next.methodDesc == first.methodDesc &&
+                next.policy == first.policy &&
+                next.captures == first.captures &&
+                next.kind == first.kind &&
+                next.lambda == first.lambda &&
+                next.payload::class == first.payload::class
+        }
+        if (!uniform) {
+            problems += "[$modId] $where —— the anchors of $shortName select different injection forms; " +
+                "one handler cannot apply the same payload at every anchor — split the handler"
+            rules.subList(start, rules.size).clear()
+            return
+        }
+        val merged = first.copy(anchors = produced.flatMap { it.anchors })
+        rules.subList(start, rules.size).clear()
+        rules += merged
+    }
+
+    /** A copy with `at` replaced by [anchor] and `ats` removed, so the single-anchor path runs once per anchor. */
+    private fun AnnotationNode.withAnchor(anchor: AnnotationNode): AnnotationNode {
+        val copy = AnnotationNode(Opcodes.ASM9, desc)
+        val out = mutableListOf<Any?>()
+        var sawAt = false
+        val values = this.values.orEmpty()
+        var i = 0
+        while (i + 1 < values.size) {
+            when (values[i]) {
+                "ats" -> Unit
+                "at" -> {
+                    out += "at"
+                    out += anchor
+                    sawAt = true
+                }
+
+                else -> {
+                    out += values[i]
+                    out += values[i + 1]
+                }
+            }
+            i += 2
+        }
+        if (!sawAt) {
+            out += "at"
+            out += anchor
+        }
+        copy.values = out
+        return copy
+    }
+
+    /** Parse one injection annotation → one rule, or several problems. */
+    private fun parseSingleInjection(
         method: MethodNode,
         annotation: AnnotationNode,
         declaredTarget: String,
@@ -850,7 +962,7 @@ object HookScanner {
         // handler shape and rejects static calls there.
         handlers += "${method.name}${method.desc}"
         rules += Rule(
-            targetInternal, methodNames, methodDesc, anchor,
+            targetInternal, methodNames, methodDesc, listOf(anchor),
             Payload.HandlerCall(
                 owner = mergeInto,
                 method = method.name,
@@ -959,7 +1071,7 @@ object HookScanner {
         val coerceReturn = method.visibleAnnotations.orEmpty().any { it.desc == COERCE_DESC }
         handlers += "${method.name}${method.desc}"
         rules += Rule(
-            targetInternal, methodNames, methodDesc, anchor,
+            targetInternal, methodNames, methodDesc, listOf(anchor),
             Payload.HandlerCall(
                 owner = mergeInto,
                 method = method.name,
@@ -1199,7 +1311,7 @@ object HookScanner {
             val desc = "(${captureTypes.joinToString("")}$handleDesc)V"
             val args = captureValues
             rules += Rule(
-                targetInternal, methodNames, methodDesc, anchor,
+                targetInternal, methodNames, methodDesc, listOf(anchor),
                 Payload.HandlerCall(mergeInto, method.name, desc, args, variant, HandlerKind.INJECT),
                 policy, captures, "Inject",
             )
@@ -1236,7 +1348,7 @@ object HookScanner {
 
             else -> Payload.StaticCall(HookRegistry.BRIDGE_CLASS, bridgeName, bridgeDesc, args)
         }
-        rules += Rule(targetInternal, methodNames, methodDesc, anchor, payload, policy, captures, "Inject")
+        rules += Rule(targetInternal, methodNames, methodDesc, listOf(anchor), payload, policy, captures, "Inject")
     }
 
     // ---------- @Redirect ----------
@@ -1379,7 +1491,7 @@ object HookScanner {
             )
         }
         rules += Rule(
-            targetInternal, methodNames, methodDesc, anchor, payload, policy, emptyList(), "Redirect",
+            targetInternal, methodNames, methodDesc, listOf(anchor), payload, policy, emptyList(), "Redirect",
         )
     }
 
@@ -1431,7 +1543,7 @@ object HookScanner {
             returnType = ret.descriptor,
         )
         rules += Rule(
-            targetInternal, methodNames, methodDesc, anchor,
+            targetInternal, methodNames, methodDesc, listOf(anchor),
             Payload.ModifyArg(
                 owner = HookRegistry.BRIDGE_CLASS,
                 method = bridgeName,
@@ -1476,7 +1588,7 @@ object HookScanner {
             returnType = "V",
         )
         rules += Rule(
-            targetInternal, methodNames, methodDesc, anchor,
+            targetInternal, methodNames, methodDesc, listOf(anchor),
             Payload.ModifyArgs(
                 owner = HookRegistry.BRIDGE_CLASS,
                 method = bridgeName,
@@ -1539,7 +1651,7 @@ object HookScanner {
         )
         val kind = HookRegistry.BridgeKind.MODIFY
         rules += Rule(
-            targetInternal, methodNames, methodDesc, anchor,
+            targetInternal, methodNames, methodDesc, listOf(anchor),
             Payload.ModifyReceiver(
                 owner = HookRegistry.BRIDGE_CLASS,
                 method = HookRegistry.bridgeMethodName(id, kind),
@@ -1608,7 +1720,7 @@ object HookScanner {
         if (mergeInto != null && !method.isDeclaredStatic()) {
             handlers += "${method.name}${method.desc}"
             rules += Rule(
-                targetInternal, methodNames, methodDesc, anchor,
+                targetInternal, methodNames, methodDesc, listOf(anchor),
                 Payload.HandlerCall(
                     mergeInto, method.name, method.desc, split.bindings,
                     HandlerVariant.NOTIFY, HandlerKind.WRAP_WITH_CONDITION,
@@ -1631,7 +1743,7 @@ object HookScanner {
         )
         val kind = HookRegistry.BridgeKind.MODIFY
         rules += Rule(
-            targetInternal, methodNames, methodDesc, anchor,
+            targetInternal, methodNames, methodDesc, listOf(anchor),
             Payload.WrapWithCondition(
                 owner = HookRegistry.BRIDGE_CLASS,
                 method = HookRegistry.bridgeMethodName(id, kind),
@@ -1694,7 +1806,7 @@ object HookScanner {
         if (mergeInto != null && !method.isDeclaredStatic()) {
             handlers += "${method.name}${method.desc}"
             rules += Rule(
-                targetInternal, methodNames, methodDesc, anchor,
+                targetInternal, methodNames, methodDesc, listOf(anchor),
                 Payload.HandlerCall(
                     mergeInto, method.name, method.desc, split.bindings,
                     HandlerVariant.NOTIFY, HandlerKind.WRAP_BRANCH,
@@ -1717,7 +1829,7 @@ object HookScanner {
         )
         val kind = HookRegistry.BridgeKind.MODIFY
         rules += Rule(
-            targetInternal, methodNames, methodDesc, anchor,
+            targetInternal, methodNames, methodDesc, listOf(anchor),
             Payload.WrapBranch(
                 owner = HookRegistry.BRIDGE_CLASS,
                 method = HookRegistry.bridgeMethodName(id, kind),
@@ -1782,7 +1894,7 @@ object HookScanner {
         if (mergeInto != null && !method.isDeclaredStatic()) {
             handlers += "${method.name}${method.desc}"
             rules += Rule(
-                targetInternal, methodNames, methodDesc, InjectionPoint.Head,
+                targetInternal, methodNames, methodDesc, listOf(InjectionPoint.Head),
                 Payload.HandlerCall(
                     mergeInto, method.name, method.desc, split.bindings,
                     HandlerVariant.NOTIFY, HandlerKind.WRAP_METHOD,
@@ -1805,7 +1917,7 @@ object HookScanner {
         )
         val kind = HookRegistry.BridgeKind.MODIFY
         rules += Rule(
-            targetInternal, methodNames, methodDesc, InjectionPoint.Head,
+            targetInternal, methodNames, methodDesc, listOf(InjectionPoint.Head),
             Payload.WrapMethod(
                 owner = HookRegistry.BRIDGE_CLASS,
                 method = HookRegistry.bridgeMethodName(id, kind),
@@ -1871,7 +1983,7 @@ object HookScanner {
         if (mergeInto != null && !method.isDeclaredStatic()) {
             handlers += "${method.name}${method.desc}"
             rules += Rule(
-                targetInternal, methodNames, methodDesc, anchor,
+                targetInternal, methodNames, methodDesc, listOf(anchor),
                 Payload.HandlerCall(
                     mergeInto, method.name, method.desc, split.bindings,
                     HandlerVariant.NOTIFY, HandlerKind.WRAP_OPERATION,
@@ -1894,7 +2006,7 @@ object HookScanner {
         )
         val kind = HookRegistry.BridgeKind.MODIFY
         rules += Rule(
-            targetInternal, methodNames, methodDesc, anchor,
+            targetInternal, methodNames, methodDesc, listOf(anchor),
             Payload.WrapOperation(
                 owner = HookRegistry.BRIDGE_CLASS,
                 method = HookRegistry.bridgeMethodName(id, kind),
@@ -1953,7 +2065,7 @@ object HookScanner {
             returnType = ret.descriptor,
         )
         rules += Rule(
-            targetInternal, methodNames, methodDesc, anchor,
+            targetInternal, methodNames, methodDesc, listOf(anchor),
             Payload.ModifyConstant(
                 owner = HookRegistry.BRIDGE_CLASS,
                 method = bridgeName,
@@ -2085,7 +2197,7 @@ object HookScanner {
         val coerceReturn = method.visibleAnnotations.orEmpty().any { it.desc == COERCE_DESC }
 
         rules += Rule(
-            targetInternal, methodNames, methodDesc, anchor,
+            targetInternal, methodNames, methodDesc, listOf(anchor),
             Payload.ModifyVariable(
                 owner = HookRegistry.BRIDGE_CLASS,
                 method = bridgeName,
@@ -2159,7 +2271,7 @@ object HookScanner {
             returnType = ret.descriptor,
         )
         rules += Rule(
-            targetInternal, methodNames, methodDesc, anchor,
+            targetInternal, methodNames, methodDesc, listOf(anchor),
             Payload.TransformReturn(
                 owner = HookRegistry.BRIDGE_CLASS,
                 method = bridgeName,
@@ -2216,7 +2328,7 @@ object HookScanner {
             returnType = ret.descriptor,
         )
         rules += Rule(
-            targetInternal, methodNames, methodDesc, anchor,
+            targetInternal, methodNames, methodDesc, listOf(anchor),
             Payload.ModifyExpressionValue(
                 owner = HookRegistry.BRIDGE_CLASS,
                 method = bridgeName,

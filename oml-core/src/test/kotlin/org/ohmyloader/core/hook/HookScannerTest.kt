@@ -185,7 +185,7 @@ class HookScannerTest {
         val rule = parsed.rules.single()
         assertEquals(listOf("runTick"), rule.methodNames)
         assertEquals("(Z)V", rule.methodDesc)
-        assertIs<InjectionPoint.Head>(rule.anchor)
+        assertIs<InjectionPoint.Head>(rule.anchors.single())
         assertIs<Payload.StaticCall>(rule.payload)
     }
 
@@ -374,6 +374,58 @@ class HookScannerTest {
     }
 
     @Test
+    fun `ats merges several anchors into one rule`() {
+        val parsed = HookScanner.parseMixinClass(
+            injectClass(
+                handler(
+                    "h", "(Lorg/ohmyloader/api/hook/HookContext;)V",
+                    at = "HEAD", ats = listOf(atNode("RETURN")),
+                ),
+                hooked = true,
+            ),
+            "m",
+        )
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        val rule = parsed.rules.single()
+        assertEquals(2, rule.anchors.size, "one rule carries every anchor so the policy counts their total")
+        assertIs<InjectionPoint.Head>(rule.anchors[0].core)
+        assertIs<InjectionPoint.Return>(rule.anchors[1].core)
+    }
+
+    @Test
+    fun `writing only ats drops the ModifyReturnValue default RETURN`() {
+        val annotation = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyReturnValue;").apply {
+            values = mutableListOf<Any?>(
+                "method", "runTick", "desc", "(Z)Z",
+                "ats", listOf(atNode("HEAD")),
+            )
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(annotated("h", "(Z)Z", annotation)), "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        assertIs<InjectionPoint.Head>(parsed.rules.single().anchors.single().core)
+    }
+
+    @Test
+    fun `anchors that select different injection forms are refused`() {
+        val parsed = HookScanner.parseMixinClass(
+            injectClass(
+                handler(
+                    "h", "(Lorg/ohmyloader/api/hook/HookValue;)V",
+                    targetDesc = "(I)I", at = "HEAD", ats = listOf(atNode("RETURN")),
+                    cancelable = true,
+                ),
+                hooked = true,
+            ),
+            "m",
+        )
+        assertTrue(parsed.rules.isEmpty())
+        assertTrue(
+            parsed.problems.any { it.contains("different injection forms") },
+            parsed.problems.toString(),
+        )
+    }
+
+    @Test
     fun `a merged handler cannot cancel after a call`() {
         val parsed = HookScanner.parseMixinClass(
             asMerged(
@@ -442,7 +494,7 @@ class HookScannerTest {
         assertEquals(emptyList(), parsed.problems)
         val rule = parsed.rules.single()
         assertIs<Payload.Redirect>(rule.payload)
-        assertIs<InjectionPoint.Call>(rule.anchor)
+        assertIs<InjectionPoint.Call>(rule.anchors.single())
         assertEquals("Redirect", rule.kind)
     }
 
@@ -553,7 +605,7 @@ class HookScannerTest {
 
         assertEquals(emptyList(), parsed.problems)
         // A constant can only be changed "after it is read" ⇒ after = true
-        assertEquals(InjectionPoint.Constant(42, null, after = true), parsed.rules.single().anchor)
+        assertEquals(InjectionPoint.Constant(42, null, after = true), parsed.rules.single().anchors.single())
         assertIs<Payload.ModifyConstant>(parsed.rules.single().payload)
     }
 
@@ -571,7 +623,7 @@ class HookScannerTest {
         )
 
         assertEquals(emptyList(), parsed.problems)
-        assertEquals(InjectionPoint.Constant(stringClass, null, after = true), parsed.rules.single().anchor)
+        assertEquals(InjectionPoint.Constant(stringClass, null, after = true), parsed.rules.single().anchors.single())
         assertIs<Payload.ModifyConstant>(parsed.rules.single().payload)
     }
 
@@ -636,7 +688,7 @@ class HookScannerTest {
         // from @ModifyVariable, ordinal from @At ("which access") — matching Mixin's division of labor
         assertEquals(
             InjectionPoint.Store(index = 4, type = "I", localOrdinal = null, ordinal = 1),
-            rule.anchor,
+            rule.anchors.single(),
         )
         val payload = rule.payload as Payload.ModifyVariable
         // The bridge is shaped (T, id)T: the value first, id following right after
@@ -661,7 +713,7 @@ class HookScannerTest {
         assertEquals(emptyList(), parsed.problems)
         assertEquals(
             InjectionPoint.Load(index = null, type = "Ljava/lang/String;", localOrdinal = 1, argsOnly = true),
-            parsed.rules.single().anchor,
+            parsed.rules.single().anchors.single(),
         )
     }
 
@@ -745,7 +797,7 @@ class HookScannerTest {
 
         assertEquals(emptyList(), parsed.problems, parsed.problems.toString())
         val rule = parsed.rules.single()
-        assertIs<InjectionPoint.Return>(rule.anchor.core)
+        assertIs<InjectionPoint.Return>(rule.anchors.single().core)
         val payload = rule.payload
         assertIs<Payload.HandlerCall>(payload)
         assertEquals(HandlerKind.MODIFY_RETURN, payload.kind)
@@ -774,10 +826,10 @@ class HookScannerTest {
         val rule = parsed.rules.single()
         // `core` is a custom getter (it strips off Sliced); captured into a local only so there is a smart
         // cast
-        val core = rule.anchor.core
+        val core = rule.anchors.single().core
         assertIs<InjectionPoint.Call>(core)
         assertEquals("getProxy", core.name)
-        assertTrue(rule.anchor.after, "anchor must land after the expression: ${rule.anchor}")
+        assertTrue(rule.anchors.single().after, "anchor must land after the expression: ${rule.anchors.single()}")
         val payload = rule.payload
         assertIs<Payload.HandlerCall>(payload)
         assertEquals(HandlerKind.MODIFY_EXPR_VALUE, payload.kind)
@@ -858,7 +910,7 @@ class HookScannerTest {
         assertEquals(emptyList(), parsed.problems, parsed.problems.toString())
         val rule = parsed.rules.single()
         assertIs<Payload.ModifyExpressionValue>(rule.payload)
-        assertTrue(rule.anchor.after, "static form likewise lands after the expression output: ${rule.anchor}")
+        assertTrue(rule.anchors.single().after, "static form likewise lands after the expression output: ${rule.anchors.single()}")
     }
 
     // ---------- Class merging ----------
@@ -1025,7 +1077,7 @@ class HookScannerTest {
         )
         val parsed = HookScanner.parseMixinClass(node, "m")
 
-        val anchor = parsed.rules.single().anchor
+        val anchor = parsed.rules.single().anchors.single()
         assertIs<InjectionPoint.Sliced>(anchor)
         assertIs<InjectionPoint.Return>(anchor.inner)
         assertIs<InjectionPoint.Head>(anchor.from)
@@ -1490,7 +1542,7 @@ class HookScannerTest {
         val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
         assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
         val rule = parsed.rules[0]
-        val point = rule.anchor as InjectionPoint.Expression
+        val point = rule.anchors.single() as InjectionPoint.Expression
         assertEquals(listOf("max(?, 3)"), point.expressions)
         assertTrue(point.after, "ModifyExpressionValue lands after the producing instruction")
         assertEquals(1, point.definitions.size)
@@ -1517,7 +1569,7 @@ class HookScannerTest {
         }
         val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
         assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
-        assertIs<InjectionPoint.Expression>(parsed.rules[0].anchor.core)
+        assertIs<InjectionPoint.Expression>(parsed.rules[0].anchors.single().core)
         val payload = parsed.rules[0].payload as Payload.Redirect
         assertNotNull(payload.desc, "an expression anchor registers a bridge so the engine can check the call")
         val handler = HookRegistry.handler(1)!!
@@ -1543,7 +1595,7 @@ class HookScannerTest {
         }
         val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
         assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
-        assertIs<InjectionPoint.Expression>(parsed.rules[0].anchor.core)
+        assertIs<InjectionPoint.Expression>(parsed.rules[0].anchors.single().core)
         assertIs<Payload.ModifyArg>(parsed.rules[0].payload)
     }
 
@@ -1568,7 +1620,7 @@ class HookScannerTest {
         }
         val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
         assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
-        assertIs<InjectionPoint.Expression>(parsed.rules[0].anchor.core)
+        assertIs<InjectionPoint.Expression>(parsed.rules[0].anchors.single().core)
         assertIs<Payload.ModifyArgs>(parsed.rules[0].payload)
     }
 
@@ -1638,7 +1690,7 @@ class HookScannerTest {
         }
         val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
         assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
-        val point = parsed.rules[0].anchor as InjectionPoint.Expression
+        val point = parsed.rules[0].anchors.single() as InjectionPoint.Expression
         val declared = point.definitions.single().locals.single()
         assertEquals(1, declared.index)
         assertTrue(declared.print)
@@ -1739,7 +1791,7 @@ class HookScannerTest {
         }
         val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
         assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
-        val point = parsed.rules[0].anchor as InjectionPoint.Expression
+        val point = parsed.rules[0].anchors.single() as InjectionPoint.Expression
         assertEquals(listOf("max(?, 3)"), point.expressions)
     }
 
@@ -1833,7 +1885,7 @@ class HookScannerTest {
         }
         val parsed = HookScanner.parseMixinClass(asMerged(mixinClass(method)), "m")
         assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
-        assertIs<InjectionPoint.Expression>(parsed.rules[0].anchor.core)
+        assertIs<InjectionPoint.Expression>(parsed.rules[0].anchors.single().core)
         val payload = parsed.rules[0].payload as Payload.HandlerCall
         assertEquals(HandlerKind.MODIFY_RETURN, payload.kind)
     }
@@ -1857,7 +1909,7 @@ class HookScannerTest {
         assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
         assertEquals(
             InjectionPoint.NewInstance("net/minecraft/Foo", "(I)V"),
-            parsed.rules[0].anchor,
+            parsed.rules[0].anchors.single(),
         )
         assertNotNull((parsed.rules[0].payload as Payload.Redirect).desc)
     }
@@ -1950,7 +2002,7 @@ class HookScannerTest {
         assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
         assertEquals(
             InjectionPoint.ArrayCreate(Opcodes.NEWARRAY, atype = 10),
-            parsed.rules[0].anchor,
+            parsed.rules[0].anchors.single(),
         )
         assertIs<Payload.WrapWithCondition>(parsed.rules[0].payload)
     }
@@ -1975,7 +2027,7 @@ class HookScannerTest {
         assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
         assertEquals(
             InjectionPoint.NewInstance("net/minecraft/Foo", "()V"),
-            parsed.rules[0].anchor,
+            parsed.rules[0].anchors.single(),
         )
         assertIs<Payload.WrapWithCondition>(parsed.rules[0].payload)
     }
@@ -2515,6 +2567,7 @@ class HookScannerTest {
         targetDesc: String = "(Z)V",
         at: String = "HEAD",
         atTarget: String = "",
+        ats: List<AnnotationNode> = emptyList(),
         cancelable: Boolean = false,
         locals: String? = null,
         // Int.MIN_VALUE = "this field is not written" (so the test can pass negatives to verify the checks)
@@ -2528,6 +2581,7 @@ class HookScannerTest {
             "at", atNode(at, target = atTarget),
             "cancelable", cancelable,
         )
+        if (ats.isNotEmpty()) pairs.addAll(listOf("ats", ats))
         if (locals != null) pairs.addAll(listOf("locals", listOf("Lorg/ohmyloader/api/hook/LocalCapture;", locals)))
         if (require != Int.MIN_VALUE) pairs.addAll(listOf("require", require))
         if (expect != Int.MIN_VALUE) pairs.addAll(listOf("expect", expect))

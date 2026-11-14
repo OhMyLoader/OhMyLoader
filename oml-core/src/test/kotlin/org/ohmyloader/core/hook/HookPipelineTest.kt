@@ -371,6 +371,39 @@ fun `a void ModifyArgs handler calls the bridge generated for its kind`() {
         return jar
     }
 
+    @Test
+    fun `one handler injects at every anchor and require counts them together`() {
+        val targetClass = javaClass.classLoader.loadClass("omltest.pipeline.MultiAnchorFixture\$Target")
+        val mixinClass = javaClass.classLoader.loadClass("omltest.pipeline.MultiAnchorFixture\$Mixin")
+        val recorder = javaClass.classLoader.loadClass("omltest.pipeline.MultiAnchorFixture\$Recorder")
+        val hits = recorder.getField("hits").get(null) as java.util.concurrent.atomic.AtomicInteger
+        hits.set(0)
+        val jar = jarOf(targetClass, mixinClass)
+        val mod = ModContainer(
+            id = "multi_anchor_mod", name = "Multi Anchor Mod", version = "0.1.0",
+            entryClass = "omltest.pipeline.MultiAnchorFixture", file = jar,
+        )
+
+        HookRegistry.installClassLoader(javaClass.classLoader)
+        val transformer = HookScanner.createTransformer(listOf(mod))
+        assertNotNull(transformer)
+        val targetName = "omltest/pipeline/MultiAnchorFixture\$Target"
+        assertTrue(transformer.appliesTo(targetName))
+        val node = classNodeOf(targetClass)
+        // require = 2 throws unless the head and the return are one rule whose hits are summed.
+        assertTrue(transformer.transform(TransformContext(targetName, node)))
+
+        val writer = ClassWriter(ClassWriter.COMPUTE_MAXS)
+        node.accept(writer)
+        val bytes = writer.toByteArray()
+        val clazz = object : ClassLoader(HookRegistry.bridgeClass!!.classLoader) {
+            fun define(): Class<*> = defineClass(targetName.replace('/', '.'), bytes, 0, bytes.size)
+        }.define()
+        val instance = clazz.getDeclaredConstructor().newInstance()
+        assertEquals(11, clazz.getMethod("tick", Int::class.javaPrimitiveType).invoke(instance, 5))
+        assertEquals(2, hits.get(), "the handler must run once at HEAD and once at RETURN")
+    }
+
     private fun classNodeOf(clazz: Class<*>): ClassNode =
         ClassNode(Opcodes.ASM9).also { node ->
             ClassReader(clazz.classLoader.getResourceAsStream(clazz.name.replace('.', '/') + ".class")!!
