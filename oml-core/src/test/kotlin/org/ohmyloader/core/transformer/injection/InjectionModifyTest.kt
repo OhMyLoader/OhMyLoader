@@ -234,6 +234,55 @@ class InjectionModifyTest {
         assertEquals(listOf<Any?>(7, "orig!", 100L), CallSink.calls.single())
     }
 
+    @Test
+    fun `modifyArg coerces a primitive argument`() {
+        val spec = specOf {
+            classTarget(owner) {
+                method("target", desc = "(I)I") {
+                    beforeCall(owner = CallSink.OWNER, name = "record") {
+                        modifyArg(
+                            ModifyHandlers.OWNER, "coerceInt", "(Ljava/lang/Object;)Ljava/lang/Object;",
+                            index = 0, coerceParam = true, coerceReturn = true,
+                        )
+                    }
+                }
+            }
+        }
+        val clazz = define(spec, targetWithSinkCall())
+        CallSink.clear()
+
+        invoke(clazz, "target", 7)
+
+        assertEquals(listOf<Any?>(8, "orig", 100L), CallSink.calls.single())
+    }
+
+    @Test
+    fun `modifyConstant coerces a primitive constant`() {
+        val spec = specOf {
+            classTarget(owner) {
+                method("seven", desc = "()I") {
+                    afterConstant(value = 7) {
+                        modifyConstant(
+                            ModifyHandlers.OWNER, "coerceInt", "(Ljava/lang/Object;)Ljava/lang/Object;",
+                            coerceParam = true, coerceReturn = true,
+                        )
+                    }
+                }
+            }
+        }
+        val clazz = define(
+            spec,
+            classNode(
+                methodNode("seven", "()I") {
+                    add(IntInsnNode(Opcodes.BIPUSH, 7))
+                    add(InsnNode(Opcodes.IRETURN))
+                },
+            ),
+        )
+
+        assertEquals(8, invoke(clazz, "seven"))
+    }
+
     // ---------- ModifyConstant ----------
 
     @Test
@@ -607,6 +656,9 @@ object ModifyHandlers {
 
     @JvmStatic
     fun coerceSuffix(value: Any?): Any? = (value as String) + "!"
+
+    @JvmStatic
+    fun coerceInt(value: Any?): Any? = (value as Int) + 1
 
     @JvmStatic
     fun patchString(v: String): String = "patched"

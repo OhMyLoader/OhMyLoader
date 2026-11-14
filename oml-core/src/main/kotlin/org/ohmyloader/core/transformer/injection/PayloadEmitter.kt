@@ -654,22 +654,24 @@ internal object PayloadEmitter {
         val valueReference = targetArgs[index].sort == Type.OBJECT || targetArgs[index].sort == Type.ARRAY
         val returnCoerced = coerceReturn && handlerRet != targetArgs[index] && valueReference &&
             (handlerRet.sort == Type.OBJECT || handlerRet.sort == Type.ARRAY)
-        if (handlerRet != targetArgs[index] && !returnCoerced) {
+        val unboxReturn = coerceReturn && !valueReference && handlerRet != targetArgs[index] &&
+            (handlerRet.sort == Type.OBJECT || handlerRet.sort == Type.ARRAY)
+        if (handlerRet != targetArgs[index] && !returnCoerced && !unboxReturn) {
             throw InjectionError(
                 "[injection] the handler return type of ModifyArg must equal the type of the modified argument" +
-                    (if (coerceReturn) " (or, with @Coerce, be a reference supertype of it)" else "") + ": " +
+                    (if (coerceReturn) " (or, with @Coerce, be a reference type to coerce it)" else "") + ": " +
                     "${invoke.owner}.${invoke.name}${invoke.desc} argument ${index + 1} is " +
                     "${targetArgs[index].className}, handler returns ${handlerRet.className} ($handlerDesc)",
             )
         }
         if (singleArgMode) {
-            val paramCoerced = coerceParam && handlerArgs[0] != targetArgs[index] && valueReference &&
+            val paramCoerced = coerceParam && handlerArgs[0] != targetArgs[index] &&
                 (handlerArgs[0].sort == Type.OBJECT || handlerArgs[0].sort == Type.ARRAY)
             if (handlerArgs[0] != targetArgs[index] && !paramCoerced) {
                 throw InjectionError(
                     "[injection] the handler parameter type of ModifyArg's single-argument mode must equal the type " +
                         "of the modified argument" +
-                        (if (coerceParam) " (or, with @Coerce, be a reference supertype of it)" else "") + ": " +
+                        (if (coerceParam) " (or, with @Coerce, be a reference type to coerce it)" else "") + ": " +
                         "expected ${targetArgs[index].className}, actual ${handlerArgs[0].className} ($handlerDesc)",
                 )
             }
@@ -691,6 +693,8 @@ internal object PayloadEmitter {
             }
         }
         validateArgTypes(handlerDesc, extras, argCount, method, owner, locals, "ModifyArg.extras")
+        val boxParam = coerceParam && singleArgMode && !valueReference &&
+            (handlerArgs[0].sort == Type.OBJECT || handlerArgs[0].sort == Type.ARRAY)
 
         val slots = storeArgs(method, targetArgs)
         val list = InsnList()
@@ -708,6 +712,11 @@ internal object PayloadEmitter {
                 list.add(VarInsnNode(Boxing.loadOpcode(targetArgs[i]), slots[i]))
             }
         }
+        if (boxParam) {
+            val box = Boxing.box(targetArgs[index])
+                ?: throw IllegalStateException("no boxing type for ${targetArgs[index].className}")
+            list.add(MethodInsnNode(Opcodes.INVOKESTATIC, box.owner, box.name, box.desc, false))
+        }
         val writeBacks = mutableListOf<SugarWriteBack>()
         for (value in extras) emitValue(list, value, method, locals, writeBacks)
         list.add(
@@ -717,7 +726,14 @@ internal object PayloadEmitter {
             ),
         )
         emitWriteBacks(list, writeBacks)
-        if (returnCoerced) list.add(TypeInsnNode(Opcodes.CHECKCAST, targetArgs[index].internalName))
+        if (unboxReturn) {
+            val unbox = Boxing.unbox(targetArgs[index])
+                ?: throw IllegalStateException("no unboxing type for ${targetArgs[index].className}")
+            list.add(TypeInsnNode(Opcodes.CHECKCAST, unbox.owner))
+            list.add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, unbox.owner, unbox.name, unbox.desc, false))
+        } else if (returnCoerced) {
+            list.add(TypeInsnNode(Opcodes.CHECKCAST, targetArgs[index].internalName))
+        }
         list.add(VarInsnNode(Boxing.storeOpcode(targetArgs[index]), slots[index]))
 
         for (i in targetArgs.indices) {

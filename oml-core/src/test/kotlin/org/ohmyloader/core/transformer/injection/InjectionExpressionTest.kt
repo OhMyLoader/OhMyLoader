@@ -740,6 +740,29 @@ class InjectionExpressionTest {
     }
 
     @Test
+    fun `coerce boxes a primitive ModifyReturnValue`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("calc", desc = "(I)I") {
+                        atReturn {
+                            transformReturn(
+                                ExpressionHandlers.OWNER, "coerceBoxed",
+                                "(Ljava/lang/Object;)Ljava/lang/Object;",
+                                coerceParam = true,
+                                coerceReturn = true,
+                            )
+                        }
+                    }
+                }
+            },
+            maxTarget(),
+        )
+
+        assertEquals(6, invoke(clazz, "calc", 5), "Math.max(5, 3) is boxed and incremented before the return")
+    }
+
+    @Test
     fun `an expression bounds the slice window`() {
         val definition = InjectionPoint.Expression.Definition(
             "max", methods = listOf("Ljava/lang/Math;max(II)I"),

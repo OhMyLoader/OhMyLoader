@@ -1333,13 +1333,10 @@ object HookScanner {
         val coerceParam = method.visibleParameterAnnotations?.getOrNull(0)
             ?.any { it.desc == COERCE_DESC } == true
         val coerceReturn = method.visibleAnnotations.orEmpty().any { it.desc == COERCE_DESC }
-        if (normal[0] != ret) {
-            val bothReferences = normal[0].sort in OBJECT_SORTS && ret.sort in OBJECT_SORTS
-            if ((!coerceParam && !coerceReturn) || !bothReferences) {
-                problems += "[$modId] $where —— @ModifyArg handler must be shaped (T[, sugar…])T, or use " +
-                    "@Coerce on a reference parameter/return: currently ${method.desc}"
-                return
-            }
+        if (normal[0] != ret && !coerceParam && !coerceReturn) {
+            problems += "[$modId] $where —— @ModifyArg handler must be shaped (T[, sugar…])T, or use " +
+                "@Coerce on the parameter/return: currently ${method.desc}"
+            return
         }
         val index = declaredInt(annotation, "index") ?: -1
         val [id, bridgeName, bridgeDesc] = registerValueHandler(
@@ -1811,13 +1808,10 @@ object HookScanner {
         val coerceParam = method.visibleParameterAnnotations?.getOrNull(0)
             ?.any { it.desc == COERCE_DESC } == true
         val coerceReturn = method.visibleAnnotations.orEmpty().any { it.desc == COERCE_DESC }
-        if (normal[0] != ret) {
-            val bothReferences = normal[0].sort in OBJECT_SORTS && ret.sort in OBJECT_SORTS
-            if ((!coerceParam && !coerceReturn) || !bothReferences) {
-                problems += "[$modId] $where —— @ModifyConstant handler must be shaped (T[, sugar…])T, or use " +
-                    "@Coerce on a reference parameter/return: currently ${method.desc}"
-                return
-            }
+        if (normal[0] != ret && !coerceParam && !coerceReturn) {
+            problems += "[$modId] $where —— @ModifyConstant handler must be shaped (T[, sugar…])T, or use " +
+                "@Coerce on the parameter/return: currently ${method.desc}"
+            return
         }
         val constant = annotationValue(annotation, "constant") as? AnnotationNode
         val base = InjectionPoint.Constant(
@@ -1878,13 +1872,10 @@ object HookScanner {
                 " the return value is the new value), currently ${method.desc}"
             return null
         }
-        if (params[0] != ret) {
-            val bothReferences = params[0].sort in OBJECT_SORTS && ret.sort in OBJECT_SORTS
-            if ((!coerceParam && !coerceReturn) || !bothReferences) {
-                problems += "$where —— $shortName's handler must be shaped (T[, captures…])T, or use " +
-                    "@Coerce on a reference parameter/return: currently ${method.desc}"
-                return null
-            }
+        if (params[0] != ret && !coerceParam && !coerceReturn) {
+            problems += "$where —— $shortName's handler must be shaped (T[, captures…])T, or use " +
+                "@Coerce on the parameter/return: currently ${method.desc}"
+            return null
         }
 
         val index = declaredInt(annotation, "index")
@@ -2033,13 +2024,10 @@ object HookScanner {
         val coerceParam = method.visibleParameterAnnotations?.getOrNull(0)
             ?.any { it.desc == COERCE_DESC } == true
         val coerceReturn = method.visibleAnnotations.orEmpty().any { it.desc == COERCE_DESC }
-        if (normal[0] != ret) {
-            val bothReferences = normal[0].sort in OBJECT_SORTS && ret.sort in OBJECT_SORTS
-            if ((!coerceParam && !coerceReturn) || !bothReferences) {
-                problems += "[$modId] $where —— @ModifyReturnValue handler must be shaped (R[, sugar…])R, " +
-                    "or use @Coerce on a reference parameter/return: currently ${method.desc}"
-                return
-            }
+        if (normal[0] != ret && !coerceParam && !coerceReturn) {
+            problems += "[$modId] $where —— @ModifyReturnValue handler must be shaped (R[, sugar…])R, " +
+                "or use @Coerce on the parameter/return: currently ${method.desc}"
+            return
         }
         val [id, bridgeName, bridgeDesc] = registerValueHandler(
             modId, mixinClass, method.name, methodNames.first(),
