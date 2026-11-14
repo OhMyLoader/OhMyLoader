@@ -22,12 +22,12 @@ public final class PriorityFixture {
 
     @Hooked(target = "omltest.pipeline.PriorityFixture$Target")
     public static final class Mixin {
-        @Inject(method = "tick", desc = "(I)I", at = @At(At.HEAD), priority = 1000, require = 1)
+        @Inject(method = "tick", desc = "(I)I", at = {@At(At.HEAD)}, priority = 1000, require = 1)
         public static void low(HookContext context) {
             Recorder.order.add("low");
         }
 
-        @Inject(method = "tick", desc = "(I)I", at = @At(At.HEAD), priority = 2000, require = 1)
+        @Inject(method = "tick", desc = "(I)I", at = {@At(At.HEAD)}, priority = 2000, require = 1)
         public static void high(HookContext context) {
             Recorder.order.add("high");
         }

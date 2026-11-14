@@ -23,7 +23,7 @@ class PipelineMixin {
     @Extra
     private val merged = true
 
-    @Inject(at = At(At.HEAD), method = "tag")
+    @Inject(at = [At(At.HEAD)], method = "tag")
     fun onTag(ci: HookContext) {
         PipelineRecorder.hits.incrementAndGet()
     }

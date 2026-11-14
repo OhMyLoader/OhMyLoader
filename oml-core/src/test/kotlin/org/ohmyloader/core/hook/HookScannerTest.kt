@@ -75,7 +75,7 @@ class HookScannerTest {
 
         // The front-end names the unsupported shift as a problem rather than silently injecting BEFORE.
         val inject = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Inject;").apply {
-            values = mutableListOf<Any?>("method", "runTick", "at", atNode("HEAD", shift = "BY"))
+            values = mutableListOf<Any?>("method", "runTick", "at", atList("HEAD", shift = "BY"))
         }
         val node = mixinClass(annotated("h", "(Lorg/ohmyloader/api/hook/HookContext;)V", inject))
         val parsed = HookScanner.parseMixinClass(node, "m")
@@ -163,7 +163,7 @@ class HookScannerTest {
         // `net.minecraft.Foo.bar(I)V` (no L…; wrapper) produces a target that can never match — reported
         // instead of silently emitting a dead anchor
         val node = injectClass(handler("h", "(Lorg/ohmyloader/api/hook/HookContext;)V"))
-        node.methods[0].visibleAnnotations[0].put("at", atNode("INVOKE", target = "net.minecraft.Foo.bar(I)V"))
+        node.methods[0].visibleAnnotations[0].put("at", atList("INVOKE", target = "net.minecraft.Foo.bar(I)V"))
         val parsed = HookScanner.parseMixinClass(node, "m")
 
         assertTrue(parsed.rules.isEmpty())
@@ -379,7 +379,7 @@ class HookScannerTest {
             injectClass(
                 handler(
                     "h", "(Lorg/ohmyloader/api/hook/HookContext;)V",
-                    at = "HEAD", ats = listOf(atNode("RETURN")),
+                    at = "HEAD", extraAnchors = listOf(atNode("RETURN")),
                 ),
                 hooked = true,
             ),
@@ -408,11 +408,11 @@ class HookScannerTest {
     }
 
     @Test
-    fun `writing only ats drops the ModifyReturnValue default RETURN`() {
+    fun `writing at on ModifyReturnValue drops the default RETURN`() {
         val annotation = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyReturnValue;").apply {
             values = mutableListOf<Any?>(
                 "method", "runTick", "desc", "(Z)Z",
-                "ats", listOf(atNode("HEAD")),
+                "at", listOf(atNode("HEAD")),
             )
         }
         val parsed = HookScanner.parseMixinClass(mixinClass(annotated("h", "(Z)Z", annotation)), "m")
@@ -426,7 +426,7 @@ class HookScannerTest {
             injectClass(
                 handler(
                     "h", "(Lorg/ohmyloader/api/hook/HookValue;)V",
-                    targetDesc = "(I)I", at = "HEAD", ats = listOf(atNode("RETURN")),
+                    targetDesc = "(I)I", at = "HEAD", extraAnchors = listOf(atNode("RETURN")),
                     cancelable = true,
                 ),
                 hooked = true,
@@ -465,7 +465,7 @@ class HookScannerTest {
         // Erase the method value
         (node.methods[0].visibleAnnotations[0].values as MutableList<Any?>).let {
             it.clear()
-            it.addAll(listOf("at", atNode("HEAD")))
+            it.addAll(listOf("at", atList("HEAD")))
         }
         val parsed = HookScanner.parseMixinClass(node, "m")
         assertTrue(parsed.problems.single().contains("must specify a target method name"), parsed.problems.toString())
@@ -479,7 +479,7 @@ class HookScannerTest {
         val redirect = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Redirect;").apply {
             values = mutableListOf<Any?>(
                 "method", "runTick",
-                "at", atNode("INVOKE", target = "Lnet/minecraft/Foo;bar(Ljava/lang/String;)Ljava/lang/String;"),
+                "at", atList("INVOKE", target = "Lnet/minecraft/Foo;bar(Ljava/lang/String;)Ljava/lang/String;"),
             )
         }
         val coerce = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Coerce;")
@@ -566,7 +566,7 @@ class HookScannerTest {
         val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyArg;").apply {
             values = mutableListOf<Any?>(
                 "method", "runTick",
-                "at", atNode("INVOKE", target = "Lnet/minecraft/Foo;bar(Ljava/lang/String;)V"),
+                "at", atList("INVOKE", target = "Lnet/minecraft/Foo;bar(Ljava/lang/String;)V"),
                 "index", 0,
             )
         }
@@ -648,7 +648,7 @@ class HookScannerTest {
     fun `coerce marks the ModifyVariable handler`() {
         newBridge()
         val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyVariable;").apply {
-            values = mutableListOf<Any?>("method", "runTick", "at", atNode("STORE"))
+            values = mutableListOf<Any?>("method", "runTick", "at", atList("STORE"))
         }
         val coerce = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Coerce;")
         val method = MethodNode(
@@ -671,7 +671,7 @@ class HookScannerTest {
     fun `coerce allows a mixed primitive shape on ModifyVariable`() {
         newBridge()
         val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyVariable;").apply {
-            values = mutableListOf<Any?>("method", "runTick", "at", atNode("STORE"), "index", 1)
+            values = mutableListOf<Any?>("method", "runTick", "at", atList("STORE"), "index", 1)
         }
         val coerce = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Coerce;")
         val method = MethodNode(
@@ -794,7 +794,7 @@ class HookScannerTest {
         at: AnnotationNode? = null,
     ): MethodNode {
         val pairs = mutableListOf<Any?>("method", target)
-        if (at != null) pairs.addAll(listOf("at", at))
+        if (at != null) pairs.addAll(listOf("at", listOf(at)))
         return annotated(name, desc, AnnotationNode(Opcodes.ASM9, annotationDesc).apply { values = pairs })
     }
 
@@ -1029,7 +1029,7 @@ class HookScannerTest {
                         AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyArg;").apply {
                             values = mutableListOf<Any?>(
                                 "method", "runTick", "at",
-                                atNode("INVOKE", target = "Lnet/minecraft/client/Minecraft;runTick()V"),
+                                atList("INVOKE", target = "Lnet/minecraft/client/Minecraft;runTick()V"),
                             )
                         },
                     )
@@ -1064,7 +1064,7 @@ class HookScannerTest {
                     AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Redirect;").apply {
                         values = mutableListOf<Any?>(
                             "method", "runTick", "at",
-                            atNode(
+                            atList(
                                 "INVOKE",
                                 target = "Lnet/minecraft/Foo;bar(I)V",
                                 opcode = Opcodes.INVOKESTATIC,
@@ -1102,7 +1102,7 @@ class HookScannerTest {
     @Test
     fun `slice referencing an unknown id is reported`() {
         val node = injectClass(handler("h", "(Lorg/ohmyloader/api/hook/HookContext;)V"))
-        node.methods[0].visibleAnnotations[0].put("at", atNode("HEAD", sliceRef = "missing"))
+        node.methods[0].visibleAnnotations[0].put("at", atList("HEAD", sliceRef = "missing"))
         val parsed = HookScanner.parseMixinClass(node, "m")
         assertTrue(parsed.problems.any { it.contains("found no matching @Slice") }, parsed.problems.toString())
     }
@@ -1324,7 +1324,7 @@ class HookScannerTest {
         val ciDesc = "Lorg/ohmyloader/api/hook/HookContext;"
 
         val inject = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Inject;").apply {
-            values = mutableListOf<Any?>("method", "run", "at", atNode("HEAD"))
+            values = mutableListOf<Any?>("method", "run", "at", atList("HEAD"))
         }
         val node = ClassNode(Opcodes.ASM9).apply {
             name = carrierInternal
@@ -1361,7 +1361,7 @@ class HookScannerTest {
                 AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyReceiver;").apply {
                     values = mutableListOf<Any?>(
                         "method", "runTick",
-                        "at", atNode("INVOKE", target = "Lnet/minecraft/client/Minecraft;runTick(Z)V"),
+                        "at", atList("INVOKE", target = "Lnet/minecraft/client/Minecraft;runTick(Z)V"),
                     )
                 },
             ),
@@ -1381,7 +1381,7 @@ class HookScannerTest {
         val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyReceiver;").apply {
             values = mutableListOf<Any?>(
                 "method", "runTick",
-                "at", atNode("INVOKE", target = "Ljava/lang/String;concat(Ljava/lang/String;)Ljava/lang/String;"),
+                "at", atList("INVOKE", target = "Ljava/lang/String;concat(Ljava/lang/String;)Ljava/lang/String;"),
             )
         }
         val coerce = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Coerce;")
@@ -1411,7 +1411,7 @@ class HookScannerTest {
                 AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/WrapWithCondition;").apply {
                     values = mutableListOf<Any?>(
                         "method", "runTick",
-                        "at", atNode("INVOKE", target = "Lnet/minecraft/client/Minecraft;runTick(Z)V"),
+                        "at", atList("INVOKE", target = "Lnet/minecraft/client/Minecraft;runTick(Z)V"),
                     )
                 },
             ),
@@ -1451,7 +1451,7 @@ class HookScannerTest {
                 AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/WrapOperation;").apply {
                     values = mutableListOf<Any?>(
                         "method", "runTick",
-                        "at", atNode("INVOKE", target = "Lnet/minecraft/client/Minecraft;runTick(Z)V"),
+                        "at", atList("INVOKE", target = "Lnet/minecraft/client/Minecraft;runTick(Z)V"),
                     )
                 },
             ),
@@ -1471,7 +1471,7 @@ class HookScannerTest {
         val wrap = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/WrapOperation;").apply {
             values = mutableListOf<Any?>(
                 "method", "runTick",
-                "at", atNode("INVOKE", target = "Lnet/minecraft/Foo;bar(Ljava/lang/String;)Ljava/lang/String;"),
+                "at", atList("INVOKE", target = "Lnet/minecraft/Foo;bar(Ljava/lang/String;)Ljava/lang/String;"),
             )
         }
         val coerce = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Coerce;")
@@ -1501,7 +1501,7 @@ class HookScannerTest {
                 AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/WrapBranch;").apply {
                     values = mutableListOf<Any?>(
                         "method", "runTick",
-                        "at", atNode("JUMP", target = "IF_ICMPGE"),
+                        "at", atList("JUMP", target = "IF_ICMPGE"),
                     )
                 },
             ),
@@ -1526,7 +1526,7 @@ class HookScannerTest {
                 "h",
                 "(II)Z",
                 AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/WrapBranch;").apply {
-                    values = mutableListOf<Any?>("method", "runTick", "at", atNode("HEAD"))
+                    values = mutableListOf<Any?>("method", "runTick", "at", atList("HEAD"))
                 },
             ),
         )
@@ -1548,7 +1548,7 @@ class HookScannerTest {
             values = mutableListOf<Any?>("id", "max", "method", listOf("Ljava/lang/Math;max(II)I"))
         }
         val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyExpressionValue;").apply {
-            values = mutableListOf<Any?>("method", "runTick", "at", atNode("EXPRESSION"))
+            values = mutableListOf<Any?>("method", "runTick", "at", atList("EXPRESSION"))
         }
         val method = MethodNode(Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h", "(I)I", null, null).apply {
             instructions.add(InsnNode(Opcodes.IRETURN))
@@ -1576,7 +1576,7 @@ class HookScannerTest {
             values = mutableListOf<Any?>("id", "max", "method", listOf("Ljava/lang/Math;max(II)I"))
         }
         val redirect = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Redirect;").apply {
-            values = mutableListOf<Any?>("method", "runTick", "at", atNode("EXPRESSION"))
+            values = mutableListOf<Any?>("method", "runTick", "at", atList("EXPRESSION"))
         }
         val method = MethodNode(Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h", "(II)I", null, null).apply {
             instructions.add(InsnNode(Opcodes.IRETURN))
@@ -1602,7 +1602,7 @@ class HookScannerTest {
             values = mutableListOf<Any?>("id", "max", "method", listOf("Ljava/lang/Math;max(II)I"))
         }
         val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyArg;").apply {
-            values = mutableListOf<Any?>("method", "runTick", "at", atNode("EXPRESSION"), "index", 1)
+            values = mutableListOf<Any?>("method", "runTick", "at", atList("EXPRESSION"), "index", 1)
         }
         val method = MethodNode(Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h", "(I)I", null, null).apply {
             instructions.add(InsnNode(Opcodes.IRETURN))
@@ -1624,7 +1624,7 @@ class HookScannerTest {
             values = mutableListOf<Any?>("id", "max", "method", listOf("Ljava/lang/Math;max(II)I"))
         }
         val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyArgs;").apply {
-            values = mutableListOf<Any?>("method", "runTick", "at", atNode("EXPRESSION"))
+            values = mutableListOf<Any?>("method", "runTick", "at", atList("EXPRESSION"))
         }
         val method = MethodNode(
             Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h",
@@ -1646,7 +1646,7 @@ class HookScannerTest {
             values = mutableListOf<Any?>("value", listOf("max(?, 3)"))
         }
         val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyExpressionValue;").apply {
-            values = mutableListOf<Any?>("method", "runTick", "at", atNode("EXPRESSION"))
+            values = mutableListOf<Any?>("method", "runTick", "at", atList("EXPRESSION"))
         }
         val method = MethodNode(Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h", "(I)I", null, null).apply {
             instructions.add(InsnNode(Opcodes.IRETURN))
@@ -1667,7 +1667,7 @@ class HookScannerTest {
             values = mutableListOf<Any?>("value", listOf("new StringBuilder(?)"))
         }
         val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyExpressionValue;").apply {
-            values = mutableListOf<Any?>("method", "runTick", "at", atNode("EXPRESSION"))
+            values = mutableListOf<Any?>("method", "runTick", "at", atList("EXPRESSION"))
         }
         val method = MethodNode(
             Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h",
@@ -1697,7 +1697,7 @@ class HookScannerTest {
             values = mutableListOf<Any?>("id", "x", "local", listOf(local))
         }
         val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyExpressionValue;").apply {
-            values = mutableListOf<Any?>("method", "runTick", "at", atNode("EXPRESSION"))
+            values = mutableListOf<Any?>("method", "runTick", "at", atList("EXPRESSION"))
         }
         val method = MethodNode(Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h", "(I)I", null, null).apply {
             instructions.add(InsnNode(Opcodes.IRETURN))
@@ -1721,7 +1721,7 @@ class HookScannerTest {
             values = mutableListOf<Any?>("id", "max", "method", listOf("Ljava/lang/Math;max(II)I"))
         }
         val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyExpressionValue;").apply {
-            values = mutableListOf<Any?>("method", "runTick", "at", atNode("EXPRESSION"))
+            values = mutableListOf<Any?>("method", "runTick", "at", atList("EXPRESSION"))
         }
         val coerce = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Coerce;")
         val method = MethodNode(
@@ -1744,7 +1744,7 @@ class HookScannerTest {
     fun `an expression anchor without a pattern is reported`() {
         newBridge()
         val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyExpressionValue;").apply {
-            values = mutableListOf<Any?>("method", "runTick", "at", atNode("EXPRESSION"))
+            values = mutableListOf<Any?>("method", "runTick", "at", atList("EXPRESSION"))
         }
         val method = MethodNode(Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h", "(I)I", null, null).apply {
             instructions.add(InsnNode(Opcodes.IRETURN))
@@ -1765,7 +1765,7 @@ class HookScannerTest {
             values = mutableListOf<Any?>("value", listOf("max(?, "))
         }
         val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyExpressionValue;").apply {
-            values = mutableListOf<Any?>("method", "runTick", "at", atNode("EXPRESSION"))
+            values = mutableListOf<Any?>("method", "runTick", "at", atList("EXPRESSION"))
         }
         val method = MethodNode(Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h", "(I)I", null, null).apply {
             instructions.add(InsnNode(Opcodes.IRETURN))
@@ -1794,7 +1794,7 @@ class HookScannerTest {
         val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyExpressionValue;").apply {
             values = mutableListOf<Any?>(
                 "method", "runTick",
-                "at", atNode("EXPRESSION").put("id", "inner"),
+                "at", listOf(atNode("EXPRESSION").put("id", "inner")),
             )
         }
         val definition = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Definition;").apply {
@@ -1814,7 +1814,7 @@ class HookScannerTest {
     fun `lambda annotation retargets the rule`() {
         newBridge()
         val inject = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Inject;").apply {
-            values = mutableListOf<Any?>("method", "tick", "at", atNode("HEAD"))
+            values = mutableListOf<Any?>("method", "tick", "at", atList("HEAD"))
         }
         val lambda = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Lambda;").apply {
             values = mutableListOf<Any?>(
@@ -1842,7 +1842,7 @@ class HookScannerTest {
     fun `a lambda handler on a merged carrier must be static`() {
         newBridge()
         val inject = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Inject;").apply {
-            values = mutableListOf<Any?>("method", "tick", "at", atNode("HEAD"))
+            values = mutableListOf<Any?>("method", "tick", "at", atList("HEAD"))
         }
         val lambda = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Lambda;").apply {
             values = mutableListOf<Any?>("interfaceType", org.objectweb.asm.Type.getObjectType("java/lang/Runnable"))
@@ -1870,7 +1870,7 @@ class HookScannerTest {
                 AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/WrapBranch;").apply {
                     values = mutableListOf<Any?>(
                         "method", "runTick",
-                        "at", atNode("JUMP", target = "IF_ICMPGE"),
+                        "at", atList("JUMP", target = "IF_ICMPGE"),
                     )
                 },
             )
@@ -1892,7 +1892,7 @@ class HookScannerTest {
             values = mutableListOf<Any?>("id", "max", "method", listOf("Ljava/lang/Math;max(II)I"))
         }
         val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyReturnValue;").apply {
-            values = mutableListOf<Any?>("method", "runTick", "at", atNode("EXPRESSION"))
+            values = mutableListOf<Any?>("method", "runTick", "at", atList("EXPRESSION"))
         }
         val method = MethodNode(Opcodes.ACC_PUBLIC, "h", "(I)I", null, null).apply {
             instructions.add(InsnNode(Opcodes.IRETURN))
@@ -1911,7 +1911,7 @@ class HookScannerTest {
         val redirect = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Redirect;").apply {
             values = mutableListOf<Any?>(
                 "method", "runTick",
-                "at", atNode("NEW", target = "Lnet/minecraft/Foo;(I)V"),
+                "at", atList("NEW", target = "Lnet/minecraft/Foo;(I)V"),
             )
         }
         val method = MethodNode(
@@ -1935,7 +1935,7 @@ class HookScannerTest {
         val redirect = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Redirect;").apply {
             values = mutableListOf<Any?>(
                 "method", "runTick",
-                "at", atNode("NEW", target = "Lnet/minecraft/Foo;(I)V"),
+                "at", atList("NEW", target = "Lnet/minecraft/Foo;(I)V"),
             )
         }
         val method = MethodNode(
@@ -2003,7 +2003,7 @@ class HookScannerTest {
         val wrap = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/WrapWithCondition;").apply {
             values = mutableListOf<Any?>(
                 "method", "runTick",
-                "at", atNode("NEW_ARRAY", target = "[I"),
+                "at", atList("NEW_ARRAY", target = "[I"),
             )
         }
         val method = MethodNode(
@@ -2028,7 +2028,7 @@ class HookScannerTest {
         val wrap = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/WrapWithCondition;").apply {
             values = mutableListOf<Any?>(
                 "method", "runTick",
-                "at", atNode("NEW", target = "Lnet/minecraft/Foo;()V"),
+                "at", atList("NEW", target = "Lnet/minecraft/Foo;()V"),
             )
         }
         val method = MethodNode(
@@ -2053,7 +2053,7 @@ class HookScannerTest {
         val wrap = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/WrapWithCondition;").apply {
             values = mutableListOf<Any?>(
                 "method", "runTick",
-                "at", atNode("NEW", target = "Lnet/minecraft/Foo;()V"),
+                "at", atList("NEW", target = "Lnet/minecraft/Foo;()V"),
             )
         }
         val method = MethodNode(
@@ -2096,7 +2096,7 @@ class HookScannerTest {
     fun `local sugar binds a handler parameter by slot`() {
         newBridge()
         val inject = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Inject;").apply {
-            values = mutableListOf<Any?>("method", "runTick", "at", atNode("HEAD"))
+            values = mutableListOf<Any?>("method", "runTick", "at", atList("HEAD"))
         }
         val local = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Local;").apply {
             values = mutableListOf<Any?>("index", 2, "type", "I")
@@ -2122,7 +2122,7 @@ class HookScannerTest {
     fun `local sugar cannot bind the callback handle`() {
         newBridge()
         val inject = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Inject;").apply {
-            values = mutableListOf<Any?>("method", "runTick", "at", atNode("HEAD"))
+            values = mutableListOf<Any?>("method", "runTick", "at", atList("HEAD"))
         }
         val local = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Local;").apply {
             values = mutableListOf<Any?>("index", 0)
@@ -2148,7 +2148,7 @@ class HookScannerTest {
         val redirect = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Redirect;").apply {
             values = mutableListOf<Any?>(
                 "method", "runTick",
-                "at", atNode("INVOKE", target = "Lnet/minecraft/client/Minecraft;runTick(Z)V"),
+                "at", atList("INVOKE", target = "Lnet/minecraft/client/Minecraft;runTick(Z)V"),
             )
         }
         val local = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Local;").apply {
@@ -2177,7 +2177,7 @@ class HookScannerTest {
     fun `local sugar on a LocalRef parameter produces a mutable binding`() {
         newBridge()
         val inject = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Inject;").apply {
-            values = mutableListOf<Any?>("method", "runTick", "at", atNode("HEAD"))
+            values = mutableListOf<Any?>("method", "runTick", "at", atList("HEAD"))
         }
         val local = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Local;").apply {
             values = mutableListOf<Any?>("index", 1, "type", "I")
@@ -2207,7 +2207,7 @@ class HookScannerTest {
     fun `a LocalRef sugar without index or type is reported`() {
         newBridge()
         val inject = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Inject;").apply {
-            values = mutableListOf<Any?>("method", "runTick", "at", atNode("HEAD"))
+            values = mutableListOf<Any?>("method", "runTick", "at", atList("HEAD"))
         }
         val local = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Local;")
         val method = MethodNode(
@@ -2230,7 +2230,7 @@ class HookScannerTest {
     fun `share sugar produces a shared ref binding`() {
         newBridge()
         val inject = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Inject;").apply {
-            values = mutableListOf<Any?>("method", "runTick", "at", atNode("HEAD"))
+            values = mutableListOf<Any?>("method", "runTick", "at", atList("HEAD"))
         }
         val share = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Share;").apply {
             values = mutableListOf<Any?>("value", "x")
@@ -2259,7 +2259,7 @@ class HookScannerTest {
     fun `share sugar requires a LocalRef parameter`() {
         newBridge()
         val inject = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Inject;").apply {
-            values = mutableListOf<Any?>("method", "runTick", "at", atNode("HEAD"))
+            values = mutableListOf<Any?>("method", "runTick", "at", atList("HEAD"))
         }
         val share = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Share;").apply {
             values = mutableListOf<Any?>("value", "x")
@@ -2286,7 +2286,7 @@ class HookScannerTest {
         val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyArg;").apply {
             values = mutableListOf<Any?>(
                 "method", "runTick",
-                "at", atNode("INVOKE", target = "Lnet/minecraft/client/Minecraft;runTick(Z)V"),
+                "at", atList("INVOKE", target = "Lnet/minecraft/client/Minecraft;runTick(Z)V"),
             )
         }
         val local = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Local;").apply {
@@ -2315,7 +2315,7 @@ class HookScannerTest {
         val wrap = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/WrapOperation;").apply {
             values = mutableListOf<Any?>(
                 "method", "runTick",
-                "at", atNode("INVOKE", target = "Lnet/minecraft/client/Minecraft;runTick(Z)V"),
+                "at", atList("INVOKE", target = "Lnet/minecraft/client/Minecraft;runTick(Z)V"),
             )
         }
         val share = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Share;").apply {
@@ -2353,7 +2353,7 @@ class HookScannerTest {
             values = mutableListOf<Any?>(
                 "method", "runTick",
                 "desc", "(Z)I",
-                "at", atNode("INVOKE", target = "Lnet/minecraft/client/Minecraft;runTick(Z)I"),
+                "at", atList("INVOKE", target = "Lnet/minecraft/client/Minecraft;runTick(Z)I"),
             )
         }
         val handle = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Cancellable;")
@@ -2389,7 +2389,7 @@ class HookScannerTest {
             values = mutableListOf<Any?>(
                 "method", "runTick",
                 "desc", "(Z)V",
-                "at", atNode("INVOKE", target = "Lnet/minecraft/client/Minecraft;runTick(Z)V"),
+                "at", atList("INVOKE", target = "Lnet/minecraft/client/Minecraft;runTick(Z)V"),
             )
         }
         val handle = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Cancellable;")
@@ -2415,7 +2415,7 @@ class HookScannerTest {
     fun `cancellable is rejected on non-WrapOperation handlers`() {
         newBridge()
         val inject = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Inject;").apply {
-            values = mutableListOf<Any?>("method", "runTick", "at", atNode("HEAD"))
+            values = mutableListOf<Any?>("method", "runTick", "at", atList("HEAD"))
         }
         val handle = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Cancellable;")
         val method = MethodNode(
@@ -2440,7 +2440,7 @@ class HookScannerTest {
     fun `typed local ref sugar carries the ref type`() {
         newBridge()
         val inject = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Inject;").apply {
-            values = mutableListOf<Any?>("method", "runTick", "at", atNode("HEAD"))
+            values = mutableListOf<Any?>("method", "runTick", "at", atList("HEAD"))
         }
         val local = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Local;").apply {
             values = mutableListOf<Any?>("index", 1)
@@ -2471,7 +2471,7 @@ class HookScannerTest {
         val redirect = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Redirect;").apply {
             values = mutableListOf<Any?>(
                 "method", "runTick",
-                "at", atNode("INVOKE", target = "Ljava/lang/Integer;toString(I)Ljava/lang/String;"),
+                "at", atList("INVOKE", target = "Ljava/lang/Integer;toString(I)Ljava/lang/String;"),
             )
         }
         val local = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Local;").apply {
@@ -2539,6 +2539,17 @@ class HookScannerTest {
         return AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/At;").apply { values = pairs }
     }
 
+    /** The `at` annotation value is an array; single-anchor tests declare their one At through this. */
+    private fun atList(
+        value: String,
+        target: String = "",
+        args: List<String> = emptyList(),
+        ordinal: Int = -1,
+        opcode: Int = -1,
+        shift: String = "",
+        sliceRef: String = "",
+    ): List<AnnotationNode> = listOf(atNode(value, target, args, ordinal, opcode, shift, sliceRef))
+
     private fun sliceNode(from: String, to: String, toTarget: String = "", id: String = ""): AnnotationNode {
         val pairs = mutableListOf<Any?>("from", atNode(from), "to", atNode(to, target = toTarget))
         if (id.isNotEmpty()) pairs.addAll(listOf("id", id))
@@ -2582,7 +2593,7 @@ class HookScannerTest {
         targetDesc: String = "(Z)V",
         at: String = "HEAD",
         atTarget: String = "",
-        ats: List<AnnotationNode> = emptyList(),
+        extraAnchors: List<AnnotationNode> = emptyList(),
         cancelable: Boolean = false,
         priority: Int = Int.MIN_VALUE,
         locals: String? = null,
@@ -2594,10 +2605,9 @@ class HookScannerTest {
         val pairs = mutableListOf<Any?>(
             "method", injectMethod,
             "desc", targetDesc,
-            "at", atNode(at, target = atTarget),
+            "at", atList(at, target = atTarget) + extraAnchors,
             "cancelable", cancelable,
         )
-        if (ats.isNotEmpty()) pairs.addAll(listOf("ats", ats))
         if (priority != Int.MIN_VALUE) pairs.addAll(listOf("priority", priority))
         if (locals != null) pairs.addAll(listOf("locals", listOf("Lorg/ohmyloader/api/hook/LocalCapture;", locals)))
         if (require != Int.MIN_VALUE) pairs.addAll(listOf("require", require))
@@ -2613,7 +2623,7 @@ class HookScannerTest {
                 "redirect",
                 handlerDesc,
                 AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Redirect;").apply {
-                    values = mutableListOf<Any?>("method", "runTick", "at", atNode(at, target = target))
+                    values = mutableListOf<Any?>("method", "runTick", "at", atList(at, target = target))
                 },
             ),
         )
@@ -2624,7 +2634,7 @@ class HookScannerTest {
         at: AnnotationNode,
         index: Int = -1,
     ): ClassNode {
-        val pairs = mutableListOf<Any?>("method", "runTick", "at", at)
+        val pairs = mutableListOf<Any?>("method", "runTick", "at", listOf(at))
         if (index >= 0) pairs.addAll(listOf("index", index))
         val annotation =
             AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/$annotationName;").apply { values = pairs }
@@ -2655,7 +2665,7 @@ class HookScannerTest {
         locals: String? = null,
         atOrdinal: Int = Int.MIN_VALUE,
     ): ClassNode {
-        val pairs = mutableListOf<Any?>("method", "runTick", "at", atNode(at, ordinal = atOrdinal))
+        val pairs = mutableListOf<Any?>("method", "runTick", "at", atList(at, ordinal = atOrdinal))
         if (index != Int.MIN_VALUE) pairs.addAll(listOf("index", index))
         if (ordinal != Int.MIN_VALUE) pairs.addAll(listOf("ordinal", ordinal))
         if (argsOnly) pairs.addAll(listOf("argsOnly", true))

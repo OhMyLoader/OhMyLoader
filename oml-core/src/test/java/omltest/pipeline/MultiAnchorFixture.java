@@ -24,8 +24,7 @@ public final class MultiAnchorFixture {
         @Inject(
             method = "tick",
             desc = "(I)I",
-            at = @At(At.HEAD),
-            ats = {@At(At.RETURN)},
+            at = {@At(At.HEAD), @At(At.RETURN)},
             require = 2
         )
         public static void onTick(HookContext context) {

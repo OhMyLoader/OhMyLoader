@@ -510,7 +510,13 @@ fun `a void ModifyArgs handler calls the bridge generated for its kind`() {
             Opcodes.ACC_PUBLIC, "onTag", "(Lorg/ohmyloader/api/hook/HookContext;)V", null, null,
         ).apply {
             visitAnnotation("Lorg/ohmyloader/api/hook/Inject;", true).apply {
-                visitEnum("at", "Lorg/ohmyloader/api/hook/At;", "HEAD")
+                visitArray("at").apply {
+                    visitAnnotation("Lorg/ohmyloader/api/hook/At;", true).apply {
+                        visit("value", "HEAD")
+                        visitEnd()
+                    }
+                    visitEnd()
+                }
                 visit("method", "tag")
                 visitEnd()
             }

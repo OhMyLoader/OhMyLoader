@@ -17,7 +17,7 @@ import kotlin.reflect.KClass
  * ```kotlin
  * @Hooked(target = "net.minecraft.world.item.ItemStack")
  * class ItemStackHooks {
- *     @Inject(method = "getTooltipLines", desc = "…", at = At(At.RETURN))
+ *     @Inject(method = "getTooltipLines", desc = "…", at = [At(At.RETURN)])
  *     fun onTooltip(self: ItemStack, lines: List<Component>, ci: HookContext) { … }
  * }
  * ```
@@ -60,9 +60,9 @@ annotation class Merged(val target: String)
  * [target]: `INVOKE`-family `"Lowner/name;member(args)ret"` (package dots allowed), `"member(args)ret"` or `"member"` (unrestricted); `FIELD` `"Lowner/name;field:desc"` / `"field:desc"` / `"field"`; `NEW` `"Lowner/name;"` or `"(args)V"`; `JUMP` the opcode name (`"IF_ICMPGE"`, …).
  * [args] (used by [CONSTANT]) takes `intValue` / `longValue` / `floatValue` / `doubleValue` / `stringValue` / `nullValue`. [ordinal] takes the Nth match (0-based; -1 = all); [opcode] restricts a field access or a jump to an `org.objectweb.asm.Opcodes` value (-1 = any).
  * [shift] is `""` / [SHIFT_BEFORE] / [SHIFT_AFTER] — Mixin's `Shift.BY` is unsupported (arbitrary instruction offsets drift as the target code changes); [slice] selects the window (see [Inject.slice]).
- * Injector annotations take one `at`; their `ats` property adds anchors to the **same** handler. All anchors share
- * the handler, payload and match-count policy (hits sum across them); each anchor is parsed separately, and a set
- * whose anchors would need different injection forms is refused at startup rather than half-applied.
+ * Injector annotations take `at` as an **array**: every anchor shares the handler, payload and match-count policy
+ * (hits sum across them); each anchor is parsed separately, and a set whose anchors would need different injection
+ * forms is refused at startup rather than half-applied.
  * Every injector also takes `priority`: a **higher** value applies first at a shared site (default 1000), which
  * orders stacking payloads; exclusive payloads still cannot share one site.
  */
@@ -219,9 +219,7 @@ enum class LocalCapture {
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
 annotation class Inject(
-    val at: At,
-    /** Extra anchors for the same handler, after [at]; the rule's match-count policy covers all of them. */
-    val ats: Array<At> = [],
+    val at: Array<At>,
     val method: String = "",
     val methods: Array<String> = [],
     val desc: String = "",
@@ -252,9 +250,7 @@ annotation class Inject(
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
 annotation class Redirect(
-    val at: At,
-    /** Extra anchors for the same handler, after [at]; the rule's match-count policy covers all of them. */
-    val ats: Array<At> = [],
+    val at: Array<At>,
     val method: String = "",
     val methods: Array<String> = [],
     val desc: String = "",
@@ -278,9 +274,7 @@ annotation class Redirect(
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
 annotation class ModifyArg(
-    val at: At,
-    /** Extra anchors for the same handler, after [at]; the rule's match-count policy covers all of them. */
-    val ats: Array<At> = [],
+    val at: Array<At>,
     val method: String = "",
     val methods: Array<String> = [],
     val desc: String = "",
@@ -302,9 +296,7 @@ annotation class ModifyArg(
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
 annotation class ModifyArgs(
-    val at: At,
-    /** Extra anchors for the same handler, after [at]; the rule's match-count policy covers all of them. */
-    val ats: Array<At> = [],
+    val at: Array<At>,
     val method: String = "",
     val methods: Array<String> = [],
     val desc: String = "",
@@ -352,9 +344,7 @@ annotation class ModifyConstant(
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
 annotation class ModifyVariable(
-    val at: At,
-    /** Extra anchors for the same handler, after [at]; the rule's match-count policy covers all of them. */
-    val ats: Array<At> = [],
+    val at: Array<At>,
     val method: String = "",
     val methods: Array<String> = [],
     val desc: String = "",
@@ -382,9 +372,7 @@ annotation class ModifyVariable(
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
 annotation class ModifyReturnValue(
-    val at: At = At(At.RETURN),
-    /** Extra anchors for the same handler, after [at]; writing only [ats] drops the default RETURN. */
-    val ats: Array<At> = [],
+    val at: Array<At> = [At(At.RETURN)],
     val method: String = "",
     val methods: Array<String> = [],
     val desc: String = "",
@@ -407,9 +395,7 @@ annotation class ModifyReturnValue(
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
 annotation class ModifyExpressionValue(
-    val at: At,
-    /** Extra anchors for the same handler, after [at]; the rule's match-count policy covers all of them. */
-    val ats: Array<At> = [],
+    val at: Array<At>,
     val method: String = "",
     val methods: Array<String> = [],
     val desc: String = "",
@@ -432,9 +418,7 @@ annotation class ModifyExpressionValue(
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
 annotation class ModifyReceiver(
-    val at: At,
-    /** Extra anchors for the same handler, after [at]; the rule's match-count policy covers all of them. */
-    val ats: Array<At> = [],
+    val at: Array<At>,
     val method: String = "",
     val methods: Array<String> = [],
     val desc: String = "",
@@ -456,9 +440,7 @@ annotation class ModifyReceiver(
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
 annotation class WrapWithCondition(
-    val at: At,
-    /** Extra anchors for the same handler, after [at]; the rule's match-count policy covers all of them. */
-    val ats: Array<At> = [],
+    val at: Array<At>,
     val method: String = "",
     val methods: Array<String> = [],
     val desc: String = "",
@@ -485,9 +467,7 @@ annotation class WrapWithCondition(
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
 annotation class WrapBranch(
-    val at: At,
-    /** Extra anchors for the same handler, after [at]; the rule's match-count policy covers all of them. */
-    val ats: Array<At> = [],
+    val at: Array<At>,
     val method: String = "",
     val methods: Array<String> = [],
     val desc: String = "",
@@ -509,9 +489,7 @@ annotation class WrapBranch(
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
 annotation class WrapOperation(
-    val at: At,
-    /** Extra anchors for the same handler, after [at]; the rule's match-count policy covers all of them. */
-    val ats: Array<At> = [],
+    val at: Array<At>,
     val method: String = "",
     val methods: Array<String> = [],
     val desc: String = "",

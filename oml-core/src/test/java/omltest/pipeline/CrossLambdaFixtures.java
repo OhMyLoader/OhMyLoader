@@ -31,7 +31,7 @@ public final class CrossLambdaFixtures {
     @Hooked(target = "omltest.pipeline.CrossLambdaFixtures$Enclosing")
     public static final class Mixin {
         @Lambda(interfaceType = Supplier.class)
-        @Inject(method = "call", desc = "()Ljava/lang/String;", at = @At(At.HEAD), require = 1)
+        @Inject(method = "call", desc = "()Ljava/lang/String;", at = {@At(At.HEAD)}, require = 1)
         public static void onLambda(HookContext context) {
             Recorder.hits.incrementAndGet();
         }

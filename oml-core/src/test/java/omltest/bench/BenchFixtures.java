@@ -95,7 +95,7 @@ public final class BenchFixtures {
 
     @Hooked(target = "omltest.bench.BenchFixtures$NotifyTarget")
     public static final class NotifyMixin {
-        @Inject(method = "applyAsInt", desc = "(I)I", at = @At(At.HEAD), require = 1)
+        @Inject(method = "applyAsInt", desc = "(I)I", at = {@At(At.HEAD)}, require = 1)
         public static void onCall(HookContext context) {
             Ops.hits++;
         }
@@ -114,7 +114,7 @@ public final class BenchFixtures {
     public static final class ModifyArgMixin {
         @ModifyArg(
             method = "applyAsInt", desc = "(I)I", index = 0, require = 1,
-            at = @At(value = At.INVOKE, target = "Lomltest/bench/BenchFixtures$Ops;times2(I)I")
+            at = {@At(value = At.INVOKE, target = "Lomltest/bench/BenchFixtures$Ops;times2(I)I")}
         )
         public static int onArg(int value) {
             Ops.hits++;
@@ -126,7 +126,7 @@ public final class BenchFixtures {
     public static final class RedirectMixin {
         @Redirect(
             method = "applyAsInt", desc = "(I)I", require = 1,
-            at = @At(value = At.INVOKE, target = "Lomltest/bench/BenchFixtures$Ops;times2(I)I")
+            at = {@At(value = At.INVOKE, target = "Lomltest/bench/BenchFixtures$Ops;times2(I)I")}
         )
         public static int onCall(int value) {
             Ops.hits++;
@@ -138,7 +138,7 @@ public final class BenchFixtures {
     public static final class WrapOperationMixin {
         @WrapOperation(
             method = "applyAsInt", desc = "(I)I", require = 1,
-            at = @At(value = At.INVOKE, target = "Lomltest/bench/BenchFixtures$Ops;times2(I)I")
+            at = {@At(value = At.INVOKE, target = "Lomltest/bench/BenchFixtures$Ops;times2(I)I")}
         )
         public static int onCall(int value, Operation<Integer> operation) {
             Ops.hits++;
@@ -150,7 +150,7 @@ public final class BenchFixtures {
     public static final class ModifyArgsMixin {
         @ModifyArgs(
             method = "applyAsInt", desc = "(I)I", require = 1,
-            at = @At(value = At.INVOKE, target = "Lomltest/bench/BenchFixtures$Ops;times2(I)I")
+            at = {@At(value = At.INVOKE, target = "Lomltest/bench/BenchFixtures$Ops;times2(I)I")}
         )
         public static void onArgs(Args args) {
             Ops.hits++;

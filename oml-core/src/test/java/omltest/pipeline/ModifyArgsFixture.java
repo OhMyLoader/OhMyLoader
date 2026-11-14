@@ -33,7 +33,7 @@ public final class ModifyArgsFixture {
         @ModifyArgs(
             method = "run",
             desc = "(I)V",
-            at = @At(value = At.INVOKE, target = "Lomltest/pipeline/ModifyArgsFixture$Helper;consume(I)V"),
+            at = {@At(value = At.INVOKE, target = "Lomltest/pipeline/ModifyArgsFixture$Helper;consume(I)V")},
             require = 1
         )
         public static void onArgs(Args args) {

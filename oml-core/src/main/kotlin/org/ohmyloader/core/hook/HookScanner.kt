@@ -470,9 +470,9 @@ object HookScanner {
     }
 
     /**
- * Parse one injection annotation. Several anchors (`at` + `ats`) run the single-anchor path once per
- * anchor and merge the produced rules into one, so the policy covers the total hits and a failed
- * anchor aborts the whole annotation instead of half-injecting.
+ * Parse one injection annotation. Several anchors in `at` run the single-anchor path once per anchor
+ * and merge the produced rules into one, so the policy covers the total hits and a failed anchor
+ * aborts the whole annotation instead of half-injecting.
  */
     private fun parseInjection(
         method: MethodNode,
@@ -488,13 +488,15 @@ object HookScanner {
         lambda: LambdaSelector?,
         lambdaScan: LambdaScan?,
     ) {
-        val extras = if (annotation.desc in MULTI_ANCHOR_ANNOTATIONS) {
-            (annotationValue(annotation, "ats") as? List<*>).orEmpty().filterIsInstance<AnnotationNode>()
+        val declarations = if (annotation.desc in MULTI_ANCHOR_ANNOTATIONS) {
+            (annotationValue(annotation, "at") as? List<*>).orEmpty().filterIsInstance<AnnotationNode>()
         } else {
             emptyList()
         }
         val priority = (annotationValue(annotation, "priority") as? Int) ?: MethodRule.DEFAULT_PRIORITY
-        if (extras.isEmpty()) {
+        if (declarations.isEmpty()) {
+            // `@ModifyConstant` / `@WrapMethod` declare no `at`; `@ModifyReturnValue` may leave its
+            // defaulted array unwritten, in which case the single-anchor path supplies RETURN.
             val start = rules.size
             parseSingleInjection(
                 method, annotation, declaredTarget, mixinClass, modId, slices,
@@ -505,8 +507,7 @@ object HookScanner {
         }
         val where = "$mixinClass.${method.name}"
         val shortName = INJECTION_ANNOTATIONS[annotation.desc] ?: return
-        val primary = annotationValue(annotation, "at") as? AnnotationNode
-        val anchors = listOfNotNull(primary) + extras
+        val anchors = declarations
         val start = rules.size
         for (anchor in anchors) {
             val before = rules.size
@@ -545,7 +546,7 @@ object HookScanner {
         rules += merged
     }
 
-    /** A copy with `at` replaced by [anchor] and `ats` removed, so the single-anchor path runs once per anchor. */
+    /** A copy with `at` narrowed to the single [anchor], so the single-anchor path runs once per declaration. */
     private fun AnnotationNode.withAnchor(anchor: AnnotationNode): AnnotationNode {
         val copy = AnnotationNode(Opcodes.ASM9, desc)
         val out = mutableListOf<Any?>()
@@ -554,7 +555,6 @@ object HookScanner {
         var i = 0
         while (i + 1 < values.size) {
             when (values[i]) {
-                "ats" -> Unit
                 "at" -> {
                     out += "at"
                     out += anchor
@@ -683,7 +683,7 @@ object HookScanner {
             if (parsed == null) {
                 if (atNode != null && isExpressionAt(atNode)) return
                 problems += if (atNode == null) {
-                    "[$modId] $where —— $shortName is missing at = @At(…)"
+                    "[$modId] $where —— $shortName is missing at = {@At(…)}"
                 } else {
                     "[$modId] $where —— $shortName's ${unrecognizedAt(atNode)}"
                 }
@@ -716,7 +716,7 @@ object HookScanner {
 
         val atNode = annotationValue(annotation, "at") as? AnnotationNode
         if (atNode == null) {
-            problems += "[$modId] $where —— $shortName is missing at = @At(…)"
+            problems += "[$modId] $where —— $shortName is missing at = {@At(…)}"
             return
         }
         val point = parseAnchor(atNode, method, where, modId, shortName, problems)

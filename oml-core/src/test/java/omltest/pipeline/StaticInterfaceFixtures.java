@@ -23,7 +23,7 @@ public class StaticInterfaceFixtures {
     @Hooked(target = "omltest.pipeline.StaticInterfaceFixtures$StaticFactoryTarget")
     public static class StaticHandlerMixin {
 
-        @Inject(method = "create", desc = "()Ljava/lang/String;", at = @At(value = At.HEAD), cancelable = true, require = 1)
+        @Inject(method = "create", desc = "()Ljava/lang/String;", at = {@At(value = At.HEAD)}, cancelable = true, require = 1)
         public static void onCreate(HookValue<String> cir) {
             StaticInterfaceRecorder.hits.incrementAndGet();
             cir.setReturnValue("bridged");

@@ -38,10 +38,10 @@ public final class CancelAfterCallFixtures {
         @Inject(
             method = "run",
             desc = "(I)V",
-            at = @At(
+            at = {@At(
                 value = At.INVOKE_ASSIGN,
                 target = "Lomltest/pipeline/CancelAfterCallFixtures$GitOps;record(I)V"
-            ),
+            )},
             cancelable = true,
             require = 1
         )
