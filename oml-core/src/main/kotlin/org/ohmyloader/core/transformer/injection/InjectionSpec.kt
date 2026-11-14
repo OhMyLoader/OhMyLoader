@@ -253,38 +253,20 @@ class InjectionSpec internal constructor(
 
     /**
      * The methods a selector targets. A lambda selector names the **enclosing** method; the target is the
-     * implementation method its `LambdaMetafactory` invokedynamic points at (same class only). [ordinal]
-     * picks the Nth distinct implementation in enclosing-method order.
+     * implementation method its `LambdaMetafactory` invokedynamic points at. A **foreign** implementation
+     * (a method reference into another class) was already registered as its own rule against that class
+     * at scan time, so this class has no body to weave and the rule correctly misses nothing here.
      */
     private fun targetMethods(classNode: ClassNode, selector: MethodSelector): List<MethodNode> {
         val lambda = selector.lambda ?: return classNode.methods.filter { selector.matches(it.name, it.desc) }
-        val outers = classNode.methods.filter {
-            it.name in selector.names && (selector.desc == null || selector.desc == it.desc)
-        }
-        val implementations = LinkedHashMap<String, MethodNode>()
-        for (outer in outers) {
-            for (insn in outer.instructions.toArray()) {
-                if (insn !is InvokeDynamicInsnNode) continue
-                if (insn.bsm.owner != LAMBDA_METAFACTORY || insn.bsm.name !in LAMBDA_BSMS) continue
-                if (Type.getReturnType(insn.desc).descriptor != "L${lambda.interfaceInternal};") continue
-                val impl = insn.bsmArgs.getOrNull(1) as? Handle ?: continue
-                if (impl.tag !in LAMBDA_HANDLE_TAGS) continue
-                if (impl.owner != classNode.name) continue
-                val method = classNode.methods.firstOrNull { it.name == impl.name && it.desc == impl.desc } ?: continue
-                implementations.putIfAbsent("${impl.name}${impl.desc}", method)
-            }
-        }
-        return listOfNotNull(implementations.values.toList().getOrNull(lambda.ordinal))
+        val impl = LambdaResolver.implementations(
+            classNode, selector.names, selector.desc, lambda.interfaceInternal,
+        ).getOrNull(lambda.ordinal) ?: return emptyList()
+        if (impl.owner != classNode.name) return emptyList()
+        return listOfNotNull(classNode.methods.firstOrNull { it.name == impl.name && it.desc == impl.desc })
     }
 
-    private companion object {
-        private const val LAMBDA_METAFACTORY = "java/lang/invoke/LambdaMetafactory"
-        private val LAMBDA_BSMS = setOf("metafactory", "altMetafactory")
-        private val LAMBDA_HANDLE_TAGS = setOf(
-            Opcodes.H_INVOKESTATIC, Opcodes.H_INVOKEVIRTUAL, Opcodes.H_INVOKESPECIAL,
-            Opcodes.H_INVOKEINTERFACE, Opcodes.H_NEWINVOKESPECIAL,
-        )
-    }    private fun exclusiveKind(payload: Payload): Exclusive? = when (payload) {
+    private fun exclusiveKind(payload: Payload): Exclusive? = when (payload) {
         is Payload.Redirect, is Payload.WrapOperation, is Payload.WrapBranch -> Exclusive.INSTRUCTION
         is Payload.WrapMethod -> Exclusive.WHOLE_METHOD
         is Payload.HandlerCall -> when (payload.kind) {

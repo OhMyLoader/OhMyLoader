@@ -261,6 +261,9 @@ object OMLCore {
         val modRules = ModRuleSets.load(mods, omlLoader)
         val mixinTransformer = HookScanner.createTransformer(
             mods, modRules.rules, modRules.merges, modRules.problems,
+            // `@Lambda` may reference a method in another class; resolving it now registers that class
+            // as a rule target before any class loads, so load order cannot lose the injection.
+            targetBytes = { internal -> omlLoader.getResourceAsStream("$internal.class")?.use { it.readAllBytes() } },
         )
         if (mixinTransformer != null) {
             omlLoader.registerTransformer(mixinTransformer)

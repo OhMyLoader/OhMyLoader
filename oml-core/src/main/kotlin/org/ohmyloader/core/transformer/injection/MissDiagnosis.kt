@@ -93,12 +93,19 @@ internal object MissDiagnosis {
                     "${org.objectweb.asm.Type.getReturnType(indy.desc).className} → $where"
                 }
         }.distinct()
-        return if (found.isEmpty()) {
-            "Selector did not match: the enclosing method(s) contain no LambdaMetafactory invokedynamic — no lambda to target"
-        } else {
-            "Selector did not match: no lambda for ${lambda.interfaceInternal} (ordinal ${lambda.ordinal}) " +
-                "whose implementation lives in this class; the lambdas found are ${sample(found)}"
+        if (found.isEmpty()) {
+            return "Selector did not match: the enclosing method(s) contain no LambdaMetafactory invokedynamic — no lambda to target"
         }
+        val selected = LambdaResolver.implementations(
+            node, selector.names, selector.desc, lambda.interfaceInternal,
+        ).getOrNull(lambda.ordinal)
+        if (selected != null && selected.owner != node.name) {
+            return "Selector did not match: the lambda's implementation lives in ${selected.owner.replace('/', '.')} " +
+                "(${selected.name}${selected.desc}), another class; the annotation front end registers such a rule " +
+                "against that class at startup, so this rule was never retargeted here"
+        }
+        return "Selector did not match: no lambda for ${lambda.interfaceInternal} (ordinal ${lambda.ordinal}) " +
+            "whose implementation lives in this class; the lambdas found are ${sample(found)}"
     }
 
     // ---------- anchor drift ----------

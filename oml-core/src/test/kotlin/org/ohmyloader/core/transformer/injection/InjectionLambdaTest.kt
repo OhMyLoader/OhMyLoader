@@ -68,6 +68,35 @@ class InjectionLambdaTest {
     }
 
     @Test
+    fun `the resolver lists foreign implementations in call-site order and dedupes repeats`() {
+        val enclosing = "omltest/LambdaEnclosing"
+        val node = ClassNode(Opcodes.ASM9).apply {
+            version = Opcodes.V17
+            access = Opcodes.ACC_PUBLIC
+            name = enclosing
+            superName = "java/lang/Object"
+            methods.add(
+                method("use", "()Ljava/lang/Object;") {
+                    add(supplierIndy("lambda\$use\$0", "(I)Ljava/lang/Integer;", enclosing))
+                    add(supplierIndy("label", "()Ljava/lang/String;", "omltest/LambdaHelper"))
+                    add(supplierIndy("lambda\$use\$0", "(I)Ljava/lang/Integer;", enclosing))
+                    add(InsnNode(Opcodes.ACONST_NULL))
+                    add(InsnNode(Opcodes.ARETURN))
+                },
+            )
+        }
+
+        val impls = LambdaResolver.implementations(
+            node, listOf("use"), null, "java/util/function/Supplier",
+        )
+        assertEquals(
+            listOf(enclosing to "lambda\$use\$0", "omltest/LambdaHelper" to "label"),
+            impls.map { it.owner to it.name },
+            "method-call order, one entry per distinct implementation",
+        )
+    }
+
+    @Test
     fun `a missing lambda is reported`() {
         val spec = specOf {
             classTarget(owner) {
@@ -155,7 +184,11 @@ class InjectionLambdaTest {
                 maxLocals = 2
             }
 
-    private fun supplierIndy(implName: String, implDesc: String): InvokeDynamicInsnNode =
+    private fun supplierIndy(
+        implName: String,
+        implDesc: String,
+        implOwner: String = owner,
+    ): InvokeDynamicInsnNode =
         InvokeDynamicInsnNode(
             "get",
             "(I)Ljava/util/function/Supplier;",
@@ -170,7 +203,7 @@ class InjectionLambdaTest {
                 false,
             ),
             Type.getMethodType("()Ljava/lang/Object;"),
-            Handle(Opcodes.H_INVOKESTATIC, owner, implName, implDesc, false),
+            Handle(Opcodes.H_INVOKESTATIC, implOwner, implName, implDesc, false),
             Type.getMethodType("()Ljava/lang/Object;"),
         )
 

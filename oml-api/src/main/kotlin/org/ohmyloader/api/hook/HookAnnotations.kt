@@ -558,11 +558,12 @@ annotation class DefinitionLocal(
 )
 
 /**
- * Targets the **synthetic method a lambda compiles to** instead of writing its generated name
- * (`lambda$tick$0`). Put it on the handler together with the injector annotation whose `method`
- * names the **enclosing** method: [interfaceType] is the lambda's functional interface and
- * [ordinal] picks the Nth matching lambda. Only lambdas whose implementation lives in the same class
- * are resolvable; a method reference to another class is not a lambda body.
+ * Targets the method a lambda compiles to instead of writing its generated name (`lambda$tick$0`).
+ * Put it on the handler together with the injector annotation whose `method` names the **enclosing**
+ * method: [interfaceType] is the lambda's functional interface and [ordinal] picks the Nth matching
+ * lambda. A method reference into another class resolves to the referenced method; the rule is
+ * registered against that class when the mod is scanned, so the enclosing class need not load first
+ * — and the injection then runs for **every** caller of the referenced method.
  */
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)

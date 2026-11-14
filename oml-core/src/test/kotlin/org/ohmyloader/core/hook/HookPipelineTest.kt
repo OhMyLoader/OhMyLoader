@@ -223,6 +223,49 @@ class HookPipelineTest {
         )
     }
 
+    @Test
+fun `a lambda whose body is another class's method is registered against that class`() {
+        val enclosing = javaClass.classLoader.loadClass("omltest.pipeline.CrossLambdaFixtures\$Enclosing")
+        val helper = javaClass.classLoader.loadClass("omltest.pipeline.CrossLambdaFixtures\$Helper")
+        val mixin = javaClass.classLoader.loadClass("omltest.pipeline.CrossLambdaFixtures\$Mixin")
+        val recorder = javaClass.classLoader.loadClass("omltest.pipeline.CrossLambdaFixtures\$Recorder")
+        val hits = recorder.getField("hits").get(null) as java.util.concurrent.atomic.AtomicInteger
+        hits.set(0)
+        val jar = jarOf(enclosing, helper, mixin)
+        val mod = ModContainer(
+            id = "cross_lambda_mod", name = "Cross Lambda Mod", version = "0.1.0",
+            entryClass = "omltest.pipeline.CrossLambdaFixtures", file = jar,
+        )
+
+        HookRegistry.installClassLoader(javaClass.classLoader)
+        val transformer = HookScanner.createTransformer(
+            listOf(mod),
+            // The game jar is not a test artifact; the fixture's compiled bytes play its part.
+            targetBytes = { internal ->
+                javaClass.classLoader.getResourceAsStream("$internal.class")?.use { it.readAllBytes() }
+            },
+        )
+        assertNotNull(transformer)
+        val helperName = "omltest/pipeline/CrossLambdaFixtures\$Helper"
+        assertTrue(transformer.appliesTo(helperName), "the referenced class must become a rule target")
+        assertTrue(
+            !transformer.appliesTo("omltest/pipeline/CrossLambdaFixtures\$Enclosing"),
+            "the enclosing class must not carry the retargeted lambda rule",
+        )
+
+        // Load order evidence: the referenced class is transformed and used without its enclosing class.
+        val node = classNodeOf(helper)
+        assertTrue(transformer.transform(TransformContext(helperName, node)))
+        val writer = ClassWriter(ClassWriter.COMPUTE_MAXS)
+        node.accept(writer)
+        val bytes = writer.toByteArray()
+        val clazz = object : ClassLoader(HookRegistry.bridgeClass!!.classLoader) {
+            fun define(): Class<*> = defineClass(helperName.replace('/', '.'), bytes, 0, bytes.size)
+        }.define()
+        assertEquals("helper", clazz.getMethod("label").invoke(null))
+        assertEquals(1, hits.get(), "the handler must run inside the referenced method")
+    }
+
     // ---------- the concurrency shape: one transformer, many distinct targets, parallel ----------
 
     @Test

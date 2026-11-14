@@ -16,6 +16,8 @@ import org.ohmyloader.core.mod.ModContainer
 import org.ohmyloader.core.transformer.IClassTransformer
 import org.ohmyloader.core.transformer.injection.AnchorResolver
 import org.ohmyloader.core.transformer.injection.InjectingTransformer
+import org.ohmyloader.core.transformer.injection.LambdaImplementation
+import org.ohmyloader.core.transformer.injection.LambdaScan
 import java.io.File
 import java.util.jar.JarFile
 
@@ -89,10 +91,18 @@ object HookScanner {
         extraMerges: List<ClassMerger.HookClass> = emptyList(),
         /** Problems in the discovery/retrieval phase of those rule sets, folded into the same self-check report. */
         extraProblems: List<String> = emptyList(),
+        /**
+         * Reads a class's bytes by internal name. `@Lambda` uses it to resolve an implementation that
+         * lives in **another** class: the rule is registered against that class here, before any class
+         * loads, so load order cannot make the injection miss. Null disables the cross-class lookup
+         * (same-class lambda bodies resolve lazily from the live class node).
+         */
+        targetBytes: ((String) -> ByteArray?)? = null,
     ): IClassTransformer? {
         val rules = mutableListOf<Rule>()
         val problems = mutableListOf<String>()
         val merges = mutableListOf<ClassMerger.HookClass>()
+        val lambdaScan = targetBytes?.let(::LambdaScan)
         // A jar with several @Mod entry points yields one container per entry, all sharing the same
         // physical file: scanning it once per entry would register every mixin class twice, and the
         // second merge would collide with its own first (@Overwrite ledger / synthesized accessors).
@@ -100,7 +110,7 @@ object HookScanner {
         val seenJars = HashSet<File>()
         for (mod in mods) {
             if (!seenJars.add(mod.file.absoluteFile)) continue
-            val scanned = scanMod(mod)
+            val scanned = scanMod(mod, lambdaScan)
             rules += scanned.rules
             problems += scanned.problems
             merges += scanned.merges
@@ -242,7 +252,7 @@ object HookScanner {
 
     // ---------- scanning ----------
 
-    private fun scanMod(mod: ModContainer): ScanResult {
+    private fun scanMod(mod: ModContainer, lambdaScan: LambdaScan?): ScanResult {
         if (!mod.file.isFile) return ScanResult(emptyList(), emptyList())
         val rules = mutableListOf<Rule>()
         val problems = mutableListOf<String>()
@@ -266,7 +276,7 @@ object HookScanner {
                         // can never be recovered later.
                         val reader = ClassReader(stream)
                         reader.accept(node, ClassReader.SKIP_DEBUG or ClassReader.EXPAND_FRAMES)
-                        val parsed = parseMixinClass(node, mod.id)
+                        val parsed = parseMixinClass(node, mod.id, lambdaScan)
                         rules += parsed.rules
                         problems += parsed.problems
                         merges += parsed.merges
@@ -280,7 +290,11 @@ object HookScanner {
     }
 
     /** Parse the `@Hooked` / `@Merged` declaration on a single class and the injection annotations on its methods; returns an empty table for non-carrier classes. */
-    internal fun parseMixinClass(node: ClassNode, modId: String): ScanResult {
+    internal fun parseMixinClass(
+        node: ClassNode,
+        modId: String,
+        lambdaScan: LambdaScan? = null,
+    ): ScanResult {
         val hooked = node.visibleAnnotations?.find { it.desc == HOOKED_DESC }
         val merged = node.visibleAnnotations?.find { it.desc == MERGED_DESC }
         if (hooked != null && merged != null) {
@@ -343,11 +357,17 @@ object HookScanner {
             for (annotation in annotations) {
                 parseInjection(
                     method, annotation, targetInternal, mixinClass, modId, slices,
-                    mergeInto, handlers, rules, problems,
+                    mergeInto, handlers, rules, problems, lambda, lambdaScan,
                 )
             }
             if (lambda != null) {
-                for (i in start until rules.size) rules[i] = rules[i].copy(lambda = lambda)
+                // A foreign implementation was already retargeted at scan time; attaching the selector
+                // would make the weaver look for that lambda in the referenced class, where it is absent.
+                for (i in start until rules.size) {
+                    if (rules[i].targetInternal == targetInternal) {
+                        rules[i] = rules[i].copy(lambda = lambda)
+                    }
+                }
             }
         }
 
@@ -442,7 +462,7 @@ object HookScanner {
     private fun parseInjection(
         method: MethodNode,
         annotation: AnnotationNode,
-        targetInternal: String,
+        declaredTarget: String,
         mixinClass: String,
         modId: String,
         slices: Map<String, AnnotationNode>,
@@ -450,20 +470,33 @@ object HookScanner {
         handlers: MutableSet<String>,
         rules: MutableList<Rule>,
         problems: MutableList<String>,
+        lambda: LambdaSelector?,
+        lambdaScan: LambdaScan?,
     ) {
         val where = "$mixinClass.${method.name}"
         val shortName = INJECTION_ANNOTATIONS[annotation.desc] ?: return
 
-        // Target method names (union of method / methods)
-        val methodNames = buildList {
+        // The annotation names the **enclosing** method when `@Lambda` is present (union of method / methods).
+        val declaredNames = buildList {
             (annotationValue(annotation, "method") as? String)?.takeIf { it.isNotEmpty() }?.let(::add)
             addAll(stringArray(annotationValue(annotation, "methods")))
         }.distinct()
-        if (methodNames.isEmpty()) {
+        if (declaredNames.isEmpty()) {
             problems += "[$modId] $where —— $shortName must specify a target method name (method = \"…\")"
             return
         }
-        val methodDesc = ((annotationValue(annotation, "desc") as? String) ?: "").takeIf { it.isNotEmpty() }
+        val declaredDesc = ((annotationValue(annotation, "desc") as? String) ?: "").takeIf { it.isNotEmpty() }
+        // A foreign implementation (a method reference into another class) is retargeted here, so the
+        // rule is registered against the referenced class before any class loads. The declared names
+        // have already served their purpose: finding the lambda in the enclosing method.
+        val crossImpl: LambdaImplementation? = lambda?.let { selector ->
+            lambdaScan?.resolve(
+                declaredTarget, declaredNames, declaredDesc, selector.interfaceInternal, selector.ordinal,
+            )
+        }
+        val methodNames = crossImpl?.let { listOf(it.name) } ?: declaredNames
+        val methodDesc = crossImpl?.desc ?: declaredDesc
+        val targetInternal = crossImpl?.owner ?: declaredTarget
         val policy = Policy(
             require = declaredInt(annotation, "require"),
             expect = declaredInt(annotation, "expect"),
