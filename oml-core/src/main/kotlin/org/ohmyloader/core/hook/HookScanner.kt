@@ -1417,10 +1417,10 @@ object HookScanner {
         val core = anchor.core
         if ((core !is InjectionPoint.Expression &&
                 core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess &&
-                core !is InjectionPoint.ArrayCreate) || anchor.after
+                core !is InjectionPoint.ArrayCreate && core !is InjectionPoint.NewInstance) || anchor.after
         ) {
-            problems += "[$modId] $where —— @WrapWithCondition's @At must be a call, field write or " +
-                "array creation, before the instruction"
+            problems += "[$modId] $where —— @WrapWithCondition's @At must be a call, field write, " +
+                "array creation or NEW, before the instruction"
             return
         }
         val ret = Type.getReturnType(method.desc)
@@ -1431,6 +1431,15 @@ object HookScanner {
         }
         val split = trailingSugar(method, mixinClass, where, modId, problems) ?: return
         val normal = split.normal
+        if (core is InjectionPoint.NewInstance && core.owner != null && core.desc != null) {
+            val ctorArgs = Type.getArgumentTypes(core.desc).map { it.descriptor }
+            if (normal.map { it.descriptor } != ctorArgs) {
+                problems += "[$modId] $where —— @WrapWithCondition on NEW handler's non-sugar parameter " +
+                    "list must equal the constructor's arguments: expected " +
+                    "(${ctorArgs.joinToString("")})Z, actual ${method.desc}"
+                return
+            }
+        }
         if (mergeInto != null && !method.isDeclaredStatic()) {
             handlers += "${method.name}${method.desc}"
             rules += Rule(

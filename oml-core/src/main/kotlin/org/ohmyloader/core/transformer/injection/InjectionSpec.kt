@@ -843,6 +843,18 @@ class InjectionSpec internal constructor(
                     }
 
                     is Payload.WrapWithCondition -> {
+                        if (anchor is TypeInsnNode && anchor.opcode == Opcodes.NEW) {
+                            val edit = PayloadEmitter.emitWrapNewCondition(
+                                payload.owner, payload.method, payload.desc, payload.extras,
+                                instance = false, method, owner, anchor, frames, locals,
+                            ) ?: continue
+                            if (!insertBlock(method, edit.initInsn, edit.block, after = false, frames, knownShares)) continue
+                            method.instructions.remove(edit.initInsn)
+                            method.instructions.set(edit.newInsn, InsnNode(Opcodes.ACONST_NULL))
+                            frames.invalidate()
+                            inserted++
+                            continue
+                        }
                         if (anchor !is MethodInsnNode && anchor !is FieldInsnNode && !isArrayCreationAnchor(anchor)) {
                             OmlLog.error(
                                 "Injection",
@@ -1149,6 +1161,23 @@ class InjectionSpec internal constructor(
                             }
 
                             HandlerKind.WRAP_WITH_CONDITION -> {
+                                if (anchor is TypeInsnNode && anchor.opcode == Opcodes.NEW) {
+                                    val edit = PayloadEmitter.emitWrapNewCondition(
+                                        payload.owner, payload.method, payload.desc, payload.captures,
+                                        instance = true, method, owner, anchor, frames, locals,
+                                    ) ?: continue
+                                    if (!insertBlock(
+                                            method, edit.initInsn, edit.block, after = false, frames, knownShares,
+                                        )
+                                    ) {
+                                        continue
+                                    }
+                                    method.instructions.remove(edit.initInsn)
+                                    method.instructions.set(edit.newInsn, InsnNode(Opcodes.ACONST_NULL))
+                                    frames.invalidate()
+                                    inserted++
+                                    continue
+                                }
                                 if (anchor !is MethodInsnNode && anchor !is FieldInsnNode && !isArrayCreationAnchor(anchor)) {
                                     OmlLog.error(
                                         "Injection",

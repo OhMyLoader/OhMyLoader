@@ -1686,6 +1686,55 @@ class HookScannerTest {
     }
 
     @Test
+    fun `wrapWithCondition accepts a NEW anchor`() {
+        newBridge()
+        val wrap = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/WrapWithCondition;").apply {
+            values = mutableListOf<Any?>(
+                "method", "runTick",
+                "at", atNode("NEW", target = "Lnet/minecraft/Foo;()V"),
+            )
+        }
+        val method = MethodNode(
+            Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h", "()Z", null, null,
+        ).apply {
+            instructions.add(InsnNode(Opcodes.ICONST_1))
+            instructions.add(InsnNode(Opcodes.IRETURN))
+            visibleAnnotations = listOf(wrap)
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        assertEquals(
+            InjectionPoint.NewInstance("net/minecraft/Foo", "()V"),
+            parsed.rules[0].anchor,
+        )
+        assertIs<Payload.WrapWithCondition>(parsed.rules[0].payload)
+    }
+
+    @Test
+    fun `wrapWithCondition on NEW reports a handler shape mismatch`() {
+        newBridge()
+        val wrap = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/WrapWithCondition;").apply {
+            values = mutableListOf<Any?>(
+                "method", "runTick",
+                "at", atNode("NEW", target = "Lnet/minecraft/Foo;()V"),
+            )
+        }
+        val method = MethodNode(
+            Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h", "(I)Z", null, null,
+        ).apply {
+            instructions.add(InsnNode(Opcodes.ICONST_1))
+            instructions.add(InsnNode(Opcodes.IRETURN))
+            visibleAnnotations = listOf(wrap)
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(
+            parsed.problems.any { it.contains("constructor's arguments") },
+            parsed.problems.toString(),
+        )
+        assertEquals(0, parsed.rules.size)
+    }
+
+    @Test
     fun `wrapMethod parses a whole-method Operation handler`() {
         newBridge()
         val node = injectClass(

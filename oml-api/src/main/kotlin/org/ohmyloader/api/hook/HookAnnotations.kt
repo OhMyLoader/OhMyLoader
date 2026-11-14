@@ -393,8 +393,9 @@ annotation class ModifyReceiver(
  * Gates an operation on a boolean handler (aligned with MixinExtras' `@WrapWithCondition`): the handler
  * returns whether the original operation runs at all. Handler shape `(receiver?, operands…)Z` — the same
  * value parameters as [Redirect], but returning boolean instead of the operation's result. The anchor must
- * be a method call or a field write, before the instruction. A non-void call is accepted only when its
- * result is immediately discarded (`POP`/`POP2`).
+ * be a method call, a field write, an array creation or a `NEW`, before the instruction. A skipped array
+ * creation or instantiation leaves `null`; a non-void call is accepted only when its result is
+ * immediately discarded (`POP`/`POP2`).
  */
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)

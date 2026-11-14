@@ -1803,6 +1803,128 @@ internal object PayloadEmitter {
         return WrapNewEdit(newInsn, init, list)
     }
 
+    /**
+     * **Gates an instantiation** (`@WrapWithCondition` on `@At("NEW")`): the handler receives the
+     * constructor arguments and decides whether the object is created. The NEW is neutralized to
+     * `ACONST_NULL`, so the two references `NEW; DUP` left behind are ordinary nulls; the skip path
+     * replaces the object with `null`, and `DUP_X2` + three `POP`s keep the surviving result.
+     *
+     * Only the standard `NEW; DUP; args; <init>` shape is accepted.
+     */
+    internal fun emitWrapNewCondition(
+        handlerOwner: String,
+        handlerMethod: String,
+        handlerDesc: String,
+        extras: List<DslValue>,
+        instance: Boolean,
+        method: MethodNode,
+        owner: String,
+        newInsn: TypeInsnNode,
+        frames: MethodFrames,
+        locals: AnchorLocals?,
+    ): WrapNewEdit? {
+        val next = nextReal(newInsn)
+        if (next == null || next.opcode != Opcodes.DUP) {
+            OmlLog.error(
+                "Injection",
+                "WrapWithCondition on NEW requires the standard NEW; DUP; args; <init> shape: ${method.name}",
+            )
+            return null
+        }
+        val init = findInit(newInsn) ?: run {
+            OmlLog.error(
+                "Injection",
+                "WrapWithCondition on NEW could not pair it with an <init> of ${newInsn.desc}: ${method.name}",
+            )
+            return null
+        }
+        val argTypes = Type.getArgumentTypes(init.desc)
+        val constructed = Type.getObjectType(newInsn.desc)
+        val handlerArgs = Type.getArgumentTypes(handlerDesc)
+        val handlerRet = Type.getReturnType(handlerDesc)
+        if (handlerArgs.size != argTypes.size + extras.size) {
+            throw InjectionError(
+                "[injection] the handler of WrapWithCondition(NEW) must declare the constructor's " +
+                    "${argTypes.size} argument(s) plus ${extras.size} extra(s): actual $handlerDesc",
+            )
+        }
+        for (i in argTypes.indices) {
+            if (handlerArgs[i] != argTypes[i]) {
+                throw InjectionError(
+                    "[injection] WrapWithCondition(NEW) constructor argument ${i + 1} type mismatch: expected " +
+                        "${argTypes[i].className}, actual ${handlerArgs[i].className} ($handlerDesc)",
+                )
+            }
+        }
+        if (handlerRet != Type.BOOLEAN_TYPE) {
+            throw InjectionError(
+                "[injection] the handler of WrapWithCondition(NEW) must return boolean: $handlerDesc",
+            )
+        }
+        validateArgTypes(handlerDesc, extras, argTypes.size, method, owner, locals, "WrapWithCondition(NEW).extras")
+
+        val initLocals = frames.frameLocalsAt(init, after = false) ?: run {
+            OmlLog.error(
+                "Injection",
+                "injection skipped: the local state before the gated constructor in " +
+                    "${method.name}${method.desc} cannot be derived (dataflow failed)",
+            )
+            return null
+        }
+
+        val slots = storeArgs(method, argTypes)
+        val list = InsnList()
+        // The stack here is [null, null, args…] (NEW was neutralized and DUP left the second null).
+        for (i in argTypes.indices.reversed()) {
+            list.add(VarInsnNode(Boxing.storeOpcode(argTypes[i]), slots[i]))
+        }
+        if (instance) list.add(VarInsnNode(Opcodes.ALOAD, 0))
+        for (i in argTypes.indices) {
+            list.add(VarInsnNode(Boxing.loadOpcode(argTypes[i]), slots[i]))
+        }
+        val writeBacks = mutableListOf<SugarWriteBack>()
+        if (!emitValues(list, extras, method, locals, writeBacks)) return null
+        list.add(
+            MethodInsnNode(
+                if (instance) Opcodes.INVOKEVIRTUAL else Opcodes.INVOKESTATIC,
+                handlerOwner, handlerMethod, handlerDesc, false,
+            ),
+        )
+        emitWriteBacks(list, writeBacks)
+        val skip = LabelNode()
+        val merge = LabelNode()
+        list.add(JumpInsnNode(Opcodes.IFEQ, skip))
+        // True: construct on top of the two nulls.
+        list.add(TypeInsnNode(Opcodes.NEW, newInsn.desc))
+        list.add(InsnNode(Opcodes.DUP))
+        for (i in argTypes.indices) {
+            list.add(VarInsnNode(Boxing.loadOpcode(argTypes[i]), slots[i]))
+        }
+        list.add(MethodInsnNode(Opcodes.INVOKESPECIAL, newInsn.desc, "<init>", init.desc, false))
+        list.add(JumpInsnNode(Opcodes.GOTO, merge))
+        // Skip: the object slot becomes null.
+        list.add(skip)
+        list.add(
+            FrameNode(
+                Opcodes.F_NEW, initLocals.size, initLocals, 2,
+                arrayOf<Any>(frameType(constructed), frameType(constructed)),
+            ),
+        )
+        list.add(InsnNode(Opcodes.ACONST_NULL))
+        list.add(merge)
+        list.add(
+            FrameNode(
+                Opcodes.F_NEW, initLocals.size, initLocals, 3,
+                arrayOf<Any>(frameType(constructed), frameType(constructed), frameType(constructed)),
+            ),
+        )
+        list.add(InsnNode(Opcodes.DUP_X2))
+        list.add(InsnNode(Opcodes.POP))
+        list.add(InsnNode(Opcodes.POP))
+        list.add(InsnNode(Opcodes.POP))
+        return WrapNewEdit(newInsn, init, list)
+    }
+
     /** The next executable instruction (skipping labels, line numbers and stack frames). */
     private fun nextReal(insn: AbstractInsnNode): AbstractInsnNode? {
         var node = insn.next

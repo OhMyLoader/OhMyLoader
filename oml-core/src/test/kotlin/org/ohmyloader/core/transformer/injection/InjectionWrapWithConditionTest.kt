@@ -239,6 +239,42 @@ class InjectionWrapWithConditionTest {
         assertEquals(4, (invoke(clazz, "array", 4) as IntArray).size)
     }
 
+    @Test
+    fun `a false condition replaces an instantiation with null`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("make", desc = "()L${WrapReceiver.OWNER};") {
+                        beforeNew(owner = WrapReceiver.OWNER, desc = "()V") {
+                            wrapWithCondition(WrapConditionHandlers.OWNER, "denyNone", "()Z")
+                        }
+                    }
+                }
+            },
+            targetWithNew(),
+        )
+
+        assertEquals(null, invoke(clazz, "make"), "the skipped construction leaves null")
+    }
+
+    @Test
+    fun `a true condition constructs the object`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("make", desc = "()L${WrapReceiver.OWNER};") {
+                        beforeNew(owner = WrapReceiver.OWNER, desc = "()V") {
+                            wrapWithCondition(WrapConditionHandlers.OWNER, "allowNone", "()Z")
+                        }
+                    }
+                }
+            },
+            targetWithNew(),
+        )
+
+        assertTrue(invoke(clazz, "make") is WrapReceiver)
+    }
+
     // ---------- fixtures ----------
 
     private fun classNode(vararg methods: MethodNode): ClassNode =
@@ -331,6 +367,16 @@ class InjectionWrapWithConditionTest {
         },
     )
 
+    /** `static WrapReceiver make() { return new WrapReceiver(); }` */
+    private fun targetWithNew(): ClassNode = classNode(
+        methodNode("make", "()L${WrapReceiver.OWNER};") {
+            add(TypeInsnNode(Opcodes.NEW, WrapReceiver.OWNER))
+            add(InsnNode(Opcodes.DUP))
+            add(MethodInsnNode(Opcodes.INVOKESPECIAL, WrapReceiver.OWNER, "<init>", "()V", false))
+            add(InsnNode(Opcodes.ARETURN))
+        },
+    )
+
     /** `static int[] array(int size) { return new int[size]; }` */
     private fun targetWithIntArray(): ClassNode = classNode(
         methodNode("array", "(I)[I") {
@@ -396,6 +442,12 @@ class InjectionWrapWithConditionTest {
 
         @JvmStatic
         fun denyString(value: String): Boolean = false
+
+        @JvmStatic
+        fun denyNone(): Boolean = false
+
+        @JvmStatic
+        fun allowNone(): Boolean = true
     }
 
     object ProduceOps {
