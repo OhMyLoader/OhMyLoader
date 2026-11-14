@@ -836,9 +836,11 @@ object HookScanner {
                 }
 
             HandlerKind.MODIFY_RETURN ->
-                if (anchor.core !is InjectionPoint.Return && anchor.core !is InjectionPoint.FinalReturn) {
+                if (anchor.core !is InjectionPoint.Return && anchor.core !is InjectionPoint.FinalReturn &&
+                    anchor.core !is InjectionPoint.Expression
+                ) {
                     problems += "[$modId] $where —— ${kind.annotationName}'s @At must be RETURN" +
-                        " (every return) or TAIL (the last return)"
+                        " (every return), TAIL (the last return) or an @Expression"
                     return
                 }
 

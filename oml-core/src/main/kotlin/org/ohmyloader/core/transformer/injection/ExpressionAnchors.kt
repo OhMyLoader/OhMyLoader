@@ -203,13 +203,21 @@ internal object ExpressionAnchors {
         is Payload.Redirect -> ExpressionContext.Type.REDIRECT
         is Payload.ModifyArg -> ExpressionContext.Type.MODIFY_ARG
         is Payload.ModifyArgs -> ExpressionContext.Type.MODIFY_ARGS
+        is Payload.ModifyConstant -> ExpressionContext.Type.MODIFY_CONSTANT
+        is Payload.ModifyReceiver -> ExpressionContext.Type.MODIFY_RECEIVER
+        is Payload.WrapWithCondition -> ExpressionContext.Type.WRAP_WITH_CONDITION
+        is Payload.TransformReturn -> ExpressionContext.Type.MODIFY_RETURN_VALUE
         is Payload.HandlerCall -> when (payload.kind) {
             HandlerKind.INJECT -> ExpressionContext.Type.INJECT
             HandlerKind.REDIRECT -> ExpressionContext.Type.REDIRECT
             HandlerKind.MODIFY_ARG -> ExpressionContext.Type.MODIFY_ARG
             HandlerKind.MODIFY_ARGS -> ExpressionContext.Type.MODIFY_ARGS
+            HandlerKind.MODIFY_CONST -> ExpressionContext.Type.MODIFY_CONSTANT
             HandlerKind.MODIFY_EXPR_VALUE -> ExpressionContext.Type.MODIFY_EXPRESSION_VALUE
+            HandlerKind.MODIFY_RECEIVER -> ExpressionContext.Type.MODIFY_RECEIVER
+            HandlerKind.MODIFY_RETURN -> ExpressionContext.Type.MODIFY_RETURN_VALUE
             HandlerKind.WRAP_OPERATION -> ExpressionContext.Type.WRAP_OPERATION
+            HandlerKind.WRAP_WITH_CONDITION -> ExpressionContext.Type.WRAP_WITH_CONDITION
             HandlerKind.MODIFY_VAR -> ExpressionContext.Type.MODIFY_VARIABLE
             else -> ExpressionContext.Type.CUSTOM
         }

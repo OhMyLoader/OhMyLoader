@@ -1501,6 +1501,29 @@ class HookScannerTest {
     }
 
     @Test
+    fun `merged ModifyReturnValue accepts an expression anchor`() {
+        newBridge()
+        val expression = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Expression;").apply {
+            values = mutableListOf<Any?>("value", listOf("max(?, 3)"))
+        }
+        val definition = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Definition;").apply {
+            values = mutableListOf<Any?>("id", "max", "method", listOf("Ljava/lang/Math;max(II)I"))
+        }
+        val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyReturnValue;").apply {
+            values = mutableListOf<Any?>("method", "runTick", "at", atNode("EXPRESSION"))
+        }
+        val method = MethodNode(Opcodes.ACC_PUBLIC, "h", "(I)I", null, null).apply {
+            instructions.add(InsnNode(Opcodes.IRETURN))
+            visibleAnnotations = listOf(modify, expression, definition)
+        }
+        val parsed = HookScanner.parseMixinClass(asMerged(mixinClass(method)), "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        assertIs<InjectionPoint.Expression>(parsed.rules[0].anchor.core)
+        val payload = parsed.rules[0].payload as Payload.HandlerCall
+        assertEquals(HandlerKind.MODIFY_RETURN, payload.kind)
+    }
+
+    @Test
     fun `wrapMethod parses a whole-method Operation handler`() {
         newBridge()
         val node = injectClass(

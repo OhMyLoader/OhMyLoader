@@ -676,8 +676,9 @@ class InjectionSpec internal constructor(
                 // A compound instruction is expanded once, when its match is actually injected: the anchor
                 // becomes the part this capture referred to (e.g. the toString call of a concatenation)
                 val anchor = expandExpressionAnchor(point, expressionResolution, rawAnchor, payload, frames)
-                val effectiveAfter = point.after ||
-                    (point.core is InjectionPoint.Expression && payload is Payload.ModifyExpressionValue)
+                val effectiveAfter = point.after || (point.core is InjectionPoint.Expression &&
+                    (payload is Payload.ModifyExpressionValue || payload is Payload.TransformReturn ||
+                        (payload is Payload.HandlerCall && payload.kind == HandlerKind.MODIFY_RETURN)))
                 val locals = if (needsLocals) frames.at(anchor, effectiveAfter) else null
                 when (payload) {
                     is Payload.CheckCall -> {
@@ -902,6 +903,30 @@ class InjectionSpec internal constructor(
                         inserted++
                     }
 
+                    is Payload.TransformReturn -> {
+                        if (point.core !is InjectionPoint.Expression) {
+                            val list = PayloadEmitter.emit(payload, method, owner, locals) ?: continue
+                            if (!insertBlock(method, anchor, list, point.after, frames, knownShares)) continue
+                            inserted++
+                        } else {
+                            // The expression's value only exists after the captured instruction (and after a
+                            // constructor for NEW captures), so this is the ModifyExpressionValue flow with the
+                            // handler's shape already constrained to the value's type.
+                            val valueAnchor = expressionValueAnchor(
+                                point, expressionResolution, expressionDecorations, anchor, method, frames,
+                            ) ?: continue
+                            val value = expressionValueType(point, expressionDecorations, anchor)
+                                ?: ProducedValue.requireReadable("ModifyReturnValue", point, valueAnchor.first, method)
+                            val list = PayloadEmitter.emitInPlaceValue(
+                                "ModifyReturnValue", payload.owner, payload.method, payload.desc, payload.extras,
+                                instance = false, value = value, method = method, owner = owner, locals = locals,
+                            ) ?: continue
+                            if (valueAnchor.second) list.add(InsnNode(Opcodes.POP))
+                            if (!insertBlock(method, valueAnchor.first, list, after = true, frames, knownShares)) continue
+                            inserted++
+                        }
+                    }
+
                     is Payload.WrapMethod -> {
                         if (hasShares) {
                             throw InjectionError(
@@ -978,29 +1003,50 @@ class InjectionSpec internal constructor(
                             }
 
                             HandlerKind.MODIFY_RETURN -> {
-                                // Return value: the value is consumed by `RETURN` itself, so the anchor is
-                                // right before `RETURN` — the stack top already is the return value, and
-                                // `insertBlock(… point.after = false)` lands exactly there.
-                                val core = point.core
-                                if (core !is InjectionPoint.Return && core !is InjectionPoint.FinalReturn) {
-                                    throw InjectionError(
-                                        "[injection] the anchor of @ModifyReturnValue must be RETURN (every return)" +
-                                            " or TAIL (the last return): currently " +
-                                            AnchorResolver.describe(point),
-                                    )
+                                if (point.core is InjectionPoint.Expression) {
+                                    val valueAnchor = expressionValueAnchor(
+                                        point, expressionResolution, expressionDecorations, anchor, method, frames,
+                                    ) ?: continue
+                                    val value = expressionValueType(point, expressionDecorations, anchor)
+                                        ?: ProducedValue.requireReadable(
+                                            "@ModifyReturnValue", point, valueAnchor.first, method,
+                                        )
+                                    val list = PayloadEmitter.emitInPlaceHandler(
+                                        payload, "@ModifyReturnValue", value, method, owner, locals,
+                                    ) ?: continue
+                                    if (valueAnchor.second) list.add(InsnNode(Opcodes.POP))
+                                    if (!insertBlock(
+                                            method, valueAnchor.first, list, after = true, frames, knownShares,
+                                        )
+                                    ) {
+                                        continue
+                                    }
+                                    inserted++
+                                } else {
+                                    // Return value: the value is consumed by `RETURN` itself, so the anchor is
+                                    // right before `RETURN` — the stack top already is the return value, and
+                                    // `insertBlock(… point.after = false)` lands exactly there.
+                                    val core = point.core
+                                    if (core !is InjectionPoint.Return && core !is InjectionPoint.FinalReturn) {
+                                        throw InjectionError(
+                                            "[injection] the anchor of @ModifyReturnValue must be RETURN (every " +
+                                                "return), TAIL (the last return) or an @Expression: currently " +
+                                                AnchorResolver.describe(point),
+                                        )
+                                    }
+                                    val value = org.objectweb.asm.Type.getReturnType(method.desc)
+                                    if (value == org.objectweb.asm.Type.VOID_TYPE) {
+                                        throw InjectionError(
+                                            "[injection] the target method of @ModifyReturnValue returns void, no return value to modify: " +
+                                                "${method.name}${method.desc} (for entry types use @Inject)",
+                                        )
+                                    }
+                                    val list = PayloadEmitter.emitInPlaceHandler(
+                                        payload, "@ModifyReturnValue", value, method, owner, locals,
+                                    ) ?: continue
+                                    if (!insertBlock(method, anchor, list, point.after, frames, knownShares)) continue
+                                    inserted++
                                 }
-                                val value = org.objectweb.asm.Type.getReturnType(method.desc)
-                                if (value == org.objectweb.asm.Type.VOID_TYPE) {
-                                    throw InjectionError(
-                                        "[injection] the target method of @ModifyReturnValue returns void, no return value to modify: " +
-                                            "${method.name}${method.desc} (for entry types use @Inject)",
-                                    )
-                                }
-                                val list = PayloadEmitter.emitInPlaceHandler(
-                                    payload, "@ModifyReturnValue", value, method, owner, locals,
-                                ) ?: continue
-                                if (!insertBlock(method, anchor, list, point.after, frames, knownShares)) continue
-                                inserted++
                             }
 
                             HandlerKind.MODIFY_EXPR_VALUE -> {

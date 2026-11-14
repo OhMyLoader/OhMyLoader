@@ -412,6 +412,58 @@ class InjectionExpressionTest {
     }
 
     @Test
+    fun `modifyReturnValue rewrites a call captured by an expression`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("calc", desc = "(I)I") {
+                        atExpression(
+                            "max(?, 3)",
+                            definitions = listOf(
+                                InjectionPoint.Expression.Definition(
+                                    "max", methods = listOf("Ljava/lang/Math;max(II)I"),
+                                ),
+                            ),
+                        ) {
+                            transformReturn(ExpressionHandlers.OWNER, "double", "(I)I")
+                        }
+                    }
+                }
+            },
+            maxTarget(),
+        )
+
+        assertEquals(10, invoke(clazz, "calc", 5), "Math.max(5, 3) = 5, rewritten to 10 before the return")
+        assertEquals(6, invoke(clazz, "calc", 2), "Math.max(2, 3) = 3, rewritten to 6 before the return")
+    }
+
+    @Test
+    fun `modifyReturnValue rejects a handler for another value type`() {
+        val spec = specOf {
+            classTarget(owner) {
+                method("calc", desc = "(I)I") {
+                    atExpression(
+                        "max(?, 3)",
+                        definitions = listOf(
+                            InjectionPoint.Expression.Definition(
+                                "max", methods = listOf("Ljava/lang/Math;max(II)I"),
+                            ),
+                        ),
+                    ) {
+                        transformReturn(ExpressionHandlers.OWNER, "negate", "(Z)Z")
+                    }
+                    require(1)
+                }
+            }
+        }
+
+        val failure = assertFailsWith<InjectionError> {
+            spec.transform(TransformContext(owner, maxTarget()))
+        }
+        assertTrue(failure.message!!.contains("value's type"), failure.message)
+    }
+
+    @Test
     fun `an expression bounds the slice window`() {
         val definition = InjectionPoint.Expression.Definition(
             "max", methods = listOf("Ljava/lang/Math;max(II)I"),
