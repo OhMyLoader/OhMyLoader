@@ -550,6 +550,10 @@ sealed class Payload {
         val desc: String,
         val index: Int,
         val extras: List<DslValue> = emptyList(),
+        /** Single-argument mode: the parameter may be a reference supertype of the argument (`@Coerce`). */
+        val coerceParam: Boolean = false,
+        /** The returned reference supertype is cast back to the argument's type (`@Coerce`). */
+        val coerceReturn: Boolean = false,
     ) : Payload()
 
     /**
@@ -580,6 +584,10 @@ sealed class Payload {
         val method: String,
         val desc: String,
         val extras: List<DslValue> = emptyList(),
+        /** The value parameter may be a reference supertype of the constant (`@Coerce`). */
+        val coerceParam: Boolean = false,
+        /** The returned reference supertype is cast back to the constant's type (`@Coerce`). */
+        val coerceReturn: Boolean = false,
     ) : Payload()
 
     /**

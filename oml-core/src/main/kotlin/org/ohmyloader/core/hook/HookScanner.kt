@@ -1279,17 +1279,28 @@ object HookScanner {
         }
         val split = trailingSugar(method, mixinClass, where, modId, problems) ?: return
         val normal = split.normal
-        if (normal.size != 1 || Type.getReturnType(method.desc) != normal[0]) {
+        val ret = Type.getReturnType(method.desc)
+        if (normal.size != 1) {
             problems += "[$modId] $where —— @ModifyArg handler must be shaped (T[, sugar…])T " +
                 "(T is the type of the argument being modified), currently ${method.desc}"
             return
         }
+        val coerceParam = method.visibleParameterAnnotations?.getOrNull(0)
+            ?.any { it.desc == COERCE_DESC } == true
+        val coerceReturn = method.visibleAnnotations.orEmpty().any { it.desc == COERCE_DESC }
+        if (normal[0] != ret) {
+            val bothReferences = normal[0].sort in OBJECT_SORTS && ret.sort in OBJECT_SORTS
+            if ((!coerceParam && !coerceReturn) || !bothReferences) {
+                problems += "[$modId] $where —— @ModifyArg handler must be shaped (T[, sugar…])T, or use " +
+                    "@Coerce on a reference parameter/return: currently ${method.desc}"
+                return
+            }
+        }
         val index = declaredInt(annotation, "index") ?: -1
-        val t = normal[0].descriptor
         val [id, bridgeName, bridgeDesc] = registerValueHandler(
             modId, mixinClass, method.name, methodNames.first(),
-            captureTypes = listOf(t) + split.sugarTypes,
-            returnType = t,
+            captureTypes = listOf(normal[0].descriptor) + split.sugarTypes,
+            returnType = ret.descriptor,
         )
         rules += Rule(
             targetInternal, methodNames, methodDesc, anchor,
@@ -1299,6 +1310,8 @@ object HookScanner {
                 desc = bridgeDesc,
                 index = index,
                 extras = split.bindings + DslValue.IntVal(id),
+                coerceParam = coerceParam,
+                coerceReturn = coerceReturn,
             ),
             policy, emptyList(), "ModifyArg",
         )
@@ -1721,10 +1734,22 @@ object HookScanner {
     ) {
         val split = trailingSugar(method, mixinClass, where, modId, problems) ?: return
         val normal = split.normal
-        if (normal.size != 1 || Type.getReturnType(method.desc) != normal[0]) {
+        val ret = Type.getReturnType(method.desc)
+        if (normal.size != 1) {
             problems += "[$modId] $where —— @ModifyConstant handler must be shaped (T[, sugar…])T " +
                 "(T is the constant type), currently ${method.desc}"
             return
+        }
+        val coerceParam = method.visibleParameterAnnotations?.getOrNull(0)
+            ?.any { it.desc == COERCE_DESC } == true
+        val coerceReturn = method.visibleAnnotations.orEmpty().any { it.desc == COERCE_DESC }
+        if (normal[0] != ret) {
+            val bothReferences = normal[0].sort in OBJECT_SORTS && ret.sort in OBJECT_SORTS
+            if ((!coerceParam && !coerceReturn) || !bothReferences) {
+                problems += "[$modId] $where —— @ModifyConstant handler must be shaped (T[, sugar…])T, or use " +
+                    "@Coerce on a reference parameter/return: currently ${method.desc}"
+                return
+            }
         }
         val constant = annotationValue(annotation, "constant") as? AnnotationNode
         val base = InjectionPoint.Constant(
@@ -1736,11 +1761,10 @@ object HookScanner {
         )
         // `slice` also applies to ModifyConstant (finding the constant within the window)
         val anchor = withSlice(base, null, annotation, slices, method, modId, where, "@ModifyConstant", problems)
-        val t = normal[0].descriptor
         val [id, bridgeName, bridgeDesc] = registerValueHandler(
             modId, mixinClass, method.name, methodNames.first(),
-            captureTypes = listOf(t) + split.sugarTypes,
-            returnType = t,
+            captureTypes = listOf(normal[0].descriptor) + split.sugarTypes,
+            returnType = ret.descriptor,
         )
         rules += Rule(
             targetInternal, methodNames, methodDesc, anchor,
@@ -1749,6 +1773,8 @@ object HookScanner {
                 method = bridgeName,
                 desc = bridgeDesc,
                 extras = split.bindings + DslValue.IntVal(id),
+                coerceParam = coerceParam,
+                coerceReturn = coerceReturn,
             ),
             policy, emptyList(), "ModifyConstant",
         )

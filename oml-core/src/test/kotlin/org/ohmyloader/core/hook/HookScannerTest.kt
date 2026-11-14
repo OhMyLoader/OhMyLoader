@@ -401,6 +401,33 @@ class HookScannerTest {
     }
 
     @Test
+    fun `coerce marks the ModifyArg handler`() {
+        newBridge()
+        val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyArg;").apply {
+            values = mutableListOf<Any?>(
+                "method", "runTick",
+                "at", atNode("INVOKE", target = "Lnet/minecraft/Foo;bar(Ljava/lang/String;)V"),
+                "index", 0,
+            )
+        }
+        val coerce = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Coerce;")
+        val method = MethodNode(
+            Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h",
+            "(Ljava/lang/Object;)Ljava/lang/Object;", null, null,
+        ).apply {
+            instructions.add(InsnNode(Opcodes.ACONST_NULL))
+            instructions.add(InsnNode(Opcodes.ARETURN))
+            visibleAnnotations = listOf(modify, coerce)
+            visibleParameterAnnotations = arrayOf(mutableListOf(coerce))
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        val payload = parsed.rules[0].payload as Payload.ModifyArg
+        assertTrue(payload.coerceParam)
+        assertTrue(payload.coerceReturn)
+    }
+
+    @Test
     fun `modify arg handler shape mismatch is reported`() {
         val parsed = HookScanner.parseMixinClass(
             modifyClass("ModifyArg", "(II)I", at = atNode("INVOKE", target = "Lnet/minecraft/Foo;bar(I)V")), "m",

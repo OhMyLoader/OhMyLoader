@@ -711,8 +711,10 @@ class PayloadBuilder @PublishedApi internal constructor(
         desc: String,
         index: Int,
         extras: List<DslValue> = emptyList(),
+        coerceParam: Boolean = false,
+        coerceReturn: Boolean = false,
     ) {
-        payload = Payload.ModifyArg(owner, method, desc, index, extras)
+        payload = Payload.ModifyArg(owner, method, desc, index, extras, coerceParam, coerceReturn)
     }
 
     /**
@@ -747,8 +749,15 @@ class PayloadBuilder @PublishedApi internal constructor(
      * must equal that constant's type (decided by the anchor instruction; a
      * mismatch errors directly at injection time).
      */
-    fun modifyConstant(owner: String, method: String, desc: String, extras: List<DslValue> = emptyList()) {
-        payload = Payload.ModifyConstant(owner, method, desc, extras)
+    fun modifyConstant(
+        owner: String,
+        method: String,
+        desc: String,
+        extras: List<DslValue> = emptyList(),
+        coerceParam: Boolean = false,
+        coerceReturn: Boolean = false,
+    ) {
+        payload = Payload.ModifyConstant(owner, method, desc, extras, coerceParam, coerceReturn)
     }
 
     /**

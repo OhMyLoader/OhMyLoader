@@ -212,6 +212,28 @@ class InjectionModifyTest {
         assertEquals("77", invoke(clazz, "sb"))
     }
 
+    @Test
+    fun `modifyArg coerces a reference argument`() {
+        val spec = specOf {
+            classTarget(owner) {
+                method("target", desc = "(I)I") {
+                    beforeCall(owner = CallSink.OWNER, name = "record") {
+                        modifyArg(
+                            ModifyHandlers.OWNER, "coerceSuffix", "(Ljava/lang/Object;)Ljava/lang/Object;",
+                            index = 1, coerceParam = true, coerceReturn = true,
+                        )
+                    }
+                }
+            }
+        }
+        val clazz = define(spec, targetWithSinkCall())
+        CallSink.clear()
+
+        invoke(clazz, "target", 7)
+
+        assertEquals(listOf<Any?>(7, "orig!", 100L), CallSink.calls.single())
+    }
+
     // ---------- ModifyConstant ----------
 
     @Test
@@ -313,6 +335,33 @@ class InjectionModifyTest {
         )
 
         assertEquals(Integer::class.java, invoke(clazz, "type"))
+    }
+
+    @Test
+    fun `modifyConstant coerces a reference constant`() {
+        val spec = specOf {
+            classTarget(owner) {
+                method("text", desc = "()Ljava/lang/String;") {
+                    afterConstant(value = "hello") {
+                        modifyConstant(
+                            ModifyHandlers.OWNER, "coerceSuffix", "(Ljava/lang/Object;)Ljava/lang/Object;",
+                            coerceParam = true, coerceReturn = true,
+                        )
+                    }
+                }
+            }
+        }
+        val clazz = define(
+            spec,
+            classNode(
+                methodNode("text", "()Ljava/lang/String;") {
+                    add(LdcInsnNode("hello"))
+                    add(InsnNode(Opcodes.ARETURN))
+                },
+            ),
+        )
+
+        assertEquals("hello!", invoke(clazz, "text"))
     }
 
     // ---------- rule-level validation ----------
@@ -555,6 +604,9 @@ object ModifyHandlers {
     @Suppress("UNUSED_PARAMETER")
     @JvmStatic
     fun otherClass(v: Class<*>): Class<*> = Integer::class.java
+
+    @JvmStatic
+    fun coerceSuffix(value: Any?): Any? = (value as String) + "!"
 
     @JvmStatic
     fun patchString(v: String): String = "patched"

@@ -575,6 +575,8 @@ internal object PayloadEmitter {
         owner = owner,
         invoke = invoke,
         locals = locals,
+        coerceParam = payload.coerceParam,
+        coerceReturn = payload.coerceReturn,
     )
 
     /**
@@ -597,6 +599,8 @@ internal object PayloadEmitter {
         owner: String,
         invoke: MethodInsnNode,
         locals: AnchorLocals?,
+        coerceParam: Boolean = false,
+        coerceReturn: Boolean = false,
     ): InsnList? {
         val targetArgs = Type.getArgumentTypes(invoke.desc)
         if (targetArgs.isEmpty()) {
@@ -621,18 +625,30 @@ internal object PayloadEmitter {
         val singleArgMode = argCount == 1
 
         val index = resolveArgIndex(handlerIndex, handlerDesc, targetArgs, invoke, method)
-
-        if (handlerRet != targetArgs[index]) {
+        if (!singleArgMode && (coerceParam || coerceReturn)) {
             throw InjectionError(
-                "[injection] the handler return type of ModifyArg must equal the type of the modified argument: " +
+                "[injection] @Coerce on ModifyArg is only supported in single-argument mode: ${method.name}${method.desc}",
+            )
+        }
+        val valueReference = targetArgs[index].sort == Type.OBJECT || targetArgs[index].sort == Type.ARRAY
+        val returnCoerced = coerceReturn && handlerRet != targetArgs[index] && valueReference &&
+            (handlerRet.sort == Type.OBJECT || handlerRet.sort == Type.ARRAY)
+        if (handlerRet != targetArgs[index] && !returnCoerced) {
+            throw InjectionError(
+                "[injection] the handler return type of ModifyArg must equal the type of the modified argument" +
+                    (if (coerceReturn) " (or, with @Coerce, be a reference supertype of it)" else "") + ": " +
                     "${invoke.owner}.${invoke.name}${invoke.desc} argument ${index + 1} is " +
                     "${targetArgs[index].className}, handler returns ${handlerRet.className} ($handlerDesc)",
             )
         }
         if (singleArgMode) {
-            if (handlerArgs[0] != targetArgs[index]) {
+            val paramCoerced = coerceParam && handlerArgs[0] != targetArgs[index] && valueReference &&
+                (handlerArgs[0].sort == Type.OBJECT || handlerArgs[0].sort == Type.ARRAY)
+            if (handlerArgs[0] != targetArgs[index] && !paramCoerced) {
                 throw InjectionError(
-                    "[injection] the handler parameter type of ModifyArg's single-argument mode must equal the type of the modified argument: " +
+                    "[injection] the handler parameter type of ModifyArg's single-argument mode must equal the type " +
+                        "of the modified argument" +
+                        (if (coerceParam) " (or, with @Coerce, be a reference supertype of it)" else "") + ": " +
                         "expected ${targetArgs[index].className}, actual ${handlerArgs[0].className} ($handlerDesc)",
                 )
             }
@@ -680,6 +696,7 @@ internal object PayloadEmitter {
             ),
         )
         emitWriteBacks(list, writeBacks)
+        if (returnCoerced) list.add(TypeInsnNode(Opcodes.CHECKCAST, targetArgs[index].internalName))
         list.add(VarInsnNode(Boxing.storeOpcode(targetArgs[index]), slots[index]))
 
         for (i in targetArgs.indices) {
