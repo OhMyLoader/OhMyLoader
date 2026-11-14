@@ -43,6 +43,8 @@ internal object ClassMerger {
          *    `invokevirtual` never to call a private method (would give a `VerifyError`).
          */
         val handlerMethods: Set<String> = emptySet(),
+        /** Interfaces the target should additionally implement (`@Implements`), in declaration order. */
+        val implementedInterfaces: List<String> = emptyList(),
     )
 
     /** The result of one merge (for the startup report and self-check). */
@@ -64,10 +66,12 @@ internal object ClassMerger {
         val invokers: Int = 0,
         /** Number of target constructors that received the mixin constructor body. */
         val constructors: Int = 0,
+        /** Number of interfaces added to the target by `@Implements`. */
+        val interfaces: Int = 0,
     ) {
         val changed: Boolean
             get() = fields > 0 || methods > 0 || overwrites > 0 ||
-                accessors > 0 || invokers > 0 || constructors > 0
+                accessors > 0 || invokers > 0 || constructors > 0 || interfaces > 0
     }
 
     private const val BORROWED_DESC = "Lorg/ohmyloader/api/hook/Borrowed;"
@@ -132,6 +136,14 @@ internal object ClassMerger {
             problems += "$where —— the target declared by the mixin does not match the current class (target is ${mixin.targetInternal})"
             return Result(0, 0, 0, 0, 0, problems)
         }
+        var addedInterfaces = 0
+        for (declared in mixin.implementedInterfaces) {
+            if (declared == target.name) continue
+            if (target.interfaces.none { it == declared }) {
+                target.interfaces.add(declared)
+                addedInterfaces++
+            }
+        }
         if (target.access and Opcodes.ACC_INTERFACE != 0) {
             // An interface target cannot take merged members (no fields, no instance state, no
             // constructors). An **injection-only carrier** mixin — every method static and carrying an
@@ -155,7 +167,7 @@ internal object ClassMerger {
                     " (every method static and @Inject/@Redirect/…-annotated); offenders: ${offenders.joinToString()}"
                 return Result(0, 0, 0, 0, 0, problems)
             }
-            return Result(0, 0, 0, 0, 0, problems)
+            return Result(0, 0, 0, 0, 0, problems, interfaces = addedInterfaces)
         }
         if (mixin.node.access and Opcodes.ACC_INTERFACE != 0) {
             // Interface mixin: the mixin is an interface, so it has no fields/method bodies to merge in;
@@ -166,7 +178,7 @@ internal object ClassMerger {
             if (target.interfaces.none { it == mixin.node.name }) {
                 target.interfaces.add(mixin.node.name)
             }
-            return mergeAccessors(mixin, target, where, problems)
+            return mergeAccessors(mixin, target, where, problems, addedInterfaces)
         }
 
         // ---------- Pass 1: name assignment ----------
@@ -377,6 +389,7 @@ internal object ClassMerger {
         return Result(
             mergedFields.size, mergedMethods.size, overwrites, shadows, renamed, problems,
             constructors = constructors,
+            interfaces = addedInterfaces,
         )
     }
 
@@ -397,6 +410,7 @@ internal object ClassMerger {
         target: ClassNode,
         where: String,
         problems: MutableList<String>,
+        addedInterfaces: Int,
     ): Result {
         var accessors = 0
         var invokers = 0
@@ -598,7 +612,7 @@ internal object ClassMerger {
             invokers++
         }
 
-        return Result(0, 0, 0, 0, 0, problems, accessors, invokers)
+        return Result(0, 0, 0, 0, 0, problems, accessors, invokers, interfaces = addedInterfaces)
     }
 
     /**

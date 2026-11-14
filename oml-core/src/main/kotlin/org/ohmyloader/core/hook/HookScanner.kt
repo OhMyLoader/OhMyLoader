@@ -178,6 +178,7 @@ object HookScanner {
 
     private const val HOOKED_DESC = "Lorg/ohmyloader/api/hook/Hooked;"
     private const val MERGED_DESC = "Lorg/ohmyloader/api/hook/Merged;"
+    private const val IMPLEMENTS_DESC = "Lorg/ohmyloader/api/hook/Implements;"
     private const val INJECT_DESC = "Lorg/ohmyloader/api/hook/Inject;"
     private const val REDIRECT_DESC = "Lorg/ohmyloader/api/hook/Redirect;"
     private const val MODIFY_ARG_DESC = "Lorg/ohmyloader/api/hook/ModifyArg;"
@@ -356,6 +357,9 @@ object HookScanner {
         } else {
             null
         }
+        if (merge == null && node.visibleAnnotations.orEmpty().any { it.desc == IMPLEMENTS_DESC }) {
+            problems += "[$modId] $mixinClass —— @Implements needs a merge carrier (@Merged) or an interface carrier"
+        }
         return ScanResult(rules, problems, listOfNotNull(merge))
     }
 
@@ -371,6 +375,7 @@ object HookScanner {
         // engine synthesizes method bodies in the target class from the signatures. An interface should
         // contain nothing else
         if (node.access and Opcodes.ACC_INTERFACE != 0) {
+            val implemented = implementedInterfaces(node)
             val hasAccessor = node.methods.any { m ->
                 m.visibleAnnotations.orEmpty().any { a -> a.desc in MERGE_ACCESSOR_ANNOTATIONS }
             }
@@ -389,11 +394,13 @@ object HookScanner {
                 problems += "[$modId] $mixinClass.${method.name} —— injection annotations may only be used in class mixins:" +
                     " an interface mixin only does accessor/invoker synthesis"
             }
-            if (!hasAccessor) return null
+            if (!hasAccessor && implemented.isEmpty()) return null
             if (node.fields.isNotEmpty()) {
                 problems += "[$modId] $mixinClass —— an interface mixin cannot declare fields (accessor/invoker are only signature declarations)"
             }
-            return ClassMerger.HookClass(modId, mixinClass, targetInternal, node)
+            return ClassMerger.HookClass(
+                modId, mixinClass, targetInternal, node, implementedInterfaces = implemented,
+            )
         }
 
         // The model is declared by the carrier annotation — mergeCandidates is only called for
@@ -415,7 +422,18 @@ object HookScanner {
         // The instance-injection-handler checks are done in parseInjection (there the annotation name is
         // available, so the message is more precise and not double-reported) --
         // `handlerMethods` is the set of "directly callable handlers" registered there.
-        return ClassMerger.HookClass(modId, mixinClass, targetInternal, node, handlerMethods)
+        return ClassMerger.HookClass(
+            modId, mixinClass, targetInternal, node, handlerMethods,
+            implementedInterfaces = implementedInterfaces(node),
+        )
+    }
+
+    /** `@Implements` → the interfaces the target should implement (annotation values are ASM `Type`s). */
+    private fun implementedInterfaces(node: ClassNode): List<String> {
+        val annotation = node.visibleAnnotations.orEmpty().firstOrNull { it.desc == IMPLEMENTS_DESC }
+            ?: return emptyList()
+        val values = annotationValue(annotation, "value") as? List<*> ?: return emptyList()
+        return values.filterIsInstance<Type>().map { it.internalName }
     }
 
     /** Parse one injection annotation → one rule, or several problems. */

@@ -1616,6 +1616,51 @@ class HookScannerTest {
     }
 
     @Test
+    fun `implements is carried by a merge class`() {
+        newBridge()
+        val iface = org.objectweb.asm.Type.getObjectType("com/example/Extra")
+        val implementsNode = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Implements;").apply {
+            values = mutableListOf<Any?>("value", listOf(iface))
+        }
+        val node = asMerged(mixinClass())
+        node.visibleAnnotations = node.visibleAnnotations + implementsNode
+        val parsed = HookScanner.parseMixinClass(node, "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        assertEquals(listOf("com/example/Extra"), parsed.merges.single().implementedInterfaces)
+    }
+
+    @Test
+    fun `implements is carried by an interface carrier`() {
+        newBridge()
+        val iface = org.objectweb.asm.Type.getObjectType("com/example/Extra")
+        val implementsNode = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Implements;").apply {
+            values = mutableListOf<Any?>("value", listOf(iface))
+        }
+        val node = mixinClass().apply {
+            access = Opcodes.ACC_PUBLIC or Opcodes.ACC_ABSTRACT or Opcodes.ACC_INTERFACE
+            visibleAnnotations = visibleAnnotations + implementsNode
+        }
+        val parsed = HookScanner.parseMixinClass(node, "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        assertEquals(listOf("com/example/Extra"), parsed.merges.single().implementedInterfaces)
+    }
+
+    @Test
+    fun `implements on a hooked class is reported`() {
+        newBridge()
+        val iface = org.objectweb.asm.Type.getObjectType("com/example/Extra")
+        val implementsNode = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Implements;").apply {
+            values = mutableListOf<Any?>("value", listOf(iface))
+        }
+        val node = mixinClass().apply { visibleAnnotations = visibleAnnotations + implementsNode }
+        val parsed = HookScanner.parseMixinClass(node, "m")
+        assertTrue(
+            parsed.problems.any { it.contains("needs a merge carrier") },
+            parsed.problems.toString(),
+        )
+    }
+
+    @Test
     fun `wrapMethod parses a whole-method Operation handler`() {
         newBridge()
         val node = injectClass(

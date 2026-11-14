@@ -66,6 +66,33 @@ class HookPipelineTest {
     }
 
     @Test
+    fun `implements adds the interface to the target class`() {
+        val targetClass = javaClass.classLoader.loadClass("omltest.pipeline.ImplementsFixtures\$Target")
+        val mixinClass = javaClass.classLoader.loadClass("omltest.pipeline.ImplementsFixtures\$Mixin")
+        val iface = javaClass.classLoader.loadClass("omltest.pipeline.ImplementsFixtures\$ExtraInterface")
+        val jar = jarOf(targetClass, mixinClass, iface)
+        val mod = ModContainer(
+            id = "implements_mod", name = "Implements Mod", version = "0.1.0",
+            entryClass = "omltest.pipeline.ImplementsFixtures", file = jar,
+        )
+
+        HookRegistry.installClassLoader(javaClass.classLoader)
+        val transformer = HookScanner.createTransformer(listOf(mod))
+        assertNotNull(transformer)
+        val targetName = "omltest/pipeline/ImplementsFixtures\$Target"
+        assertTrue(transformer.appliesTo(targetName))
+        val node = classNodeOf(targetClass)
+        assertTrue(transformer.transform(TransformContext(targetName, node)))
+
+        val ifaceName = "omltest/pipeline/ImplementsFixtures\$ExtraInterface"
+        assertTrue(ifaceName in node.interfaces, "target interfaces: ${node.interfaces}")
+        val clazz = define(node)
+        val instance = clazz.getDeclaredConstructor().newInstance()
+        assertTrue(iface.isInstance(instance), "the target instance must be an instance of the declared interface")
+        assertEquals("extra", iface.getMethod("extra").invoke(instance), "the interface's default method must run")
+    }
+
+    @Test
     fun `a static handler rides the bridge onto an interface target`() {
         // The fixture is a Java source (Kotlin's companion @JvmStatic delegates do not carry the
         // annotations the scanner reads), referenced by reflection so the Kotlin test compilation

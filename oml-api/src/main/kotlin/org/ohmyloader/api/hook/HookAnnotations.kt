@@ -129,6 +129,17 @@ annotation class Slice(
 )
 
 /**
+ * Declares **additional interfaces the target class should implement** (OML's declarative
+ * counterpart to Mixin's `@Implements`). Use it on a `@Merged` carrier or an interface carrier;
+ * the interfaces' default methods become available on the target class and casts to the interface
+ * succeed. There is no name prefixing: interfaces whose methods collide with target members rely on
+ * the JVM's ordinary resolution.
+ */
+@Target(AnnotationTarget.CLASS)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class Implements(vararg val value: KClass<*>)
+
+/**
  * A constant matcher (aligned with Mixin's `@Constant`), used in [ModifyConstant.constant].
  * **Only fields explicitly written count** (annotation defaults are not written into the
  * bytecode), so `@Constant(intValue = 0)` expresses "match 0" — the same approach Mixin uses.
