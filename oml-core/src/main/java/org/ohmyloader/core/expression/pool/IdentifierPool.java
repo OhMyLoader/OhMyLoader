@@ -9,6 +9,13 @@ import java.util.List;
 import java.util.Map;
 
 public class IdentifierPool {
+    /** Identifiers every expression may use without a `@Definition` (see the constructor). */
+    public static final java.util.Set<String> DEFAULT_MEMBER_IDS = java.util.Set.of("length");
+
+    /** Primitive type identifiers available without a `@Definition`. */
+    public static final java.util.Set<String> DEFAULT_TYPE_IDS =
+            java.util.Set.of("byte", "char", "double", "float", "int", "long", "short");
+
     private final Map<String, List<MemberDefinition>> members = new HashMap<>();
     private final Map<String, List<TypeDefinition>> types = new HashMap<>();
 

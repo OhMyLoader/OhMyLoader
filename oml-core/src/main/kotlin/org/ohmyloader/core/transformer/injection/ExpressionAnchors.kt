@@ -43,6 +43,7 @@ internal object ExpressionAnchors {
         val instructions: List<AbstractInsnNode>,
         val decorations: Map<AbstractInsnNode, Map<String, Any?>>,
         val target: ExpressionTarget,
+        val missHint: String? = null,
     )
 
     /**
@@ -83,6 +84,10 @@ internal object ExpressionAnchors {
         val captured = LinkedHashSet<AbstractInsnNode>()
         val decorations = HashMap<AbstractInsnNode, MutableMap<String, Any?>>()
         val target = ExpressionTarget(method)
+        // The most specific expression that matched its parent but failed on an input: the best clue when
+        // nothing is captured at all, because it names the exact sub-pattern and instruction to look at.
+        var partialExpr: Expression? = null
+        var partialNode: FlowValue? = null
         val sink = object : Expression.OutputSink {
             override fun capture(node: FlowValue, expr: Expression, ctx: ExpressionContext) {
                 if (node.isComplex) return
@@ -119,6 +124,16 @@ internal object ExpressionAnchors {
             override fun decorateInjectorSpecific(insn: AbstractInsnNode, key: String, value: Any?) {
                 decorations.getOrPut(insn) { HashMap() }[key] = value
             }
+
+            override fun reportPartialMatch(node: FlowValue, expr: Expression) {
+                val current = partialExpr
+                if (current == null || expr.src.endIndex - expr.src.startIndex <=
+                    current.src.endIndex - current.src.startIndex
+                ) {
+                    partialExpr = expr
+                    partialNode = node
+                }
+            }
         }
         val ctx = ExpressionContext(
             pool, sink, classNode, method, contextType, false,
@@ -147,7 +162,37 @@ internal object ExpressionAnchors {
         val ordered = method.instructions.toArray().filter { it in captured }
         val ordinal = point.ordinal
         val selected = if (ordinal == null) ordered else listOfNotNull(ordered.getOrNull(ordinal))
-        return Resolution(selected, decorations, target)
+        val hint = when {
+            ordered.isNotEmpty() -> if (selected.isEmpty()) {
+                "@Expression matched ${ordered.size} instruction(s), but ordinal $ordinal is out of range " +
+                    "(the first match is at ${describeInsn(ordered.first())})"
+            } else {
+                null
+            }
+
+            partialExpr != null -> {
+                val node = partialNode
+                val where = if (node == null || node.isComplex) "a merge point" else {
+                    describeInsn(runCatching { node.insn }.getOrNull())
+                }
+                "the closest partial match was \"${partialExpr!!.src}\" against $where, " +
+                    "but at least one of its inputs did not match"
+            }
+
+            else -> null
+        }
+        return Resolution(selected, decorations, target, hint)
+    }
+
+    /** A one-line instruction description for miss diagnostics. */
+    private fun describeInsn(insn: AbstractInsnNode?): String = when (insn) {
+        null -> "an unknown instruction"
+        is MethodInsnNode -> "${insn.owner}.${insn.name}${insn.desc}"
+        is FieldInsnNode -> "${insn.owner}.${insn.name}:${insn.desc}"
+        is InvokeDynamicInsnNode -> "invokedynamic ${insn.name}${insn.desc}"
+        is LdcInsnNode -> "constant ${insn.cst}"
+        is VarInsnNode -> "local slot ${insn.`var`}"
+        else -> "opcode ${insn.opcode}"
     }
 
     /** The expression context kind a payload uses: compound expansion and diagnostics depend on it. */

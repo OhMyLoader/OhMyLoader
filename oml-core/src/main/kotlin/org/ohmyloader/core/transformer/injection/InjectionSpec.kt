@@ -648,6 +648,7 @@ class InjectionSpec internal constructor(
             // Collect all anchors first, then process each: processing doesn't affect the node references of other anchors
             var expressionResolution: ExpressionAnchors.Resolution? = null
             var expressionDecorations: Map<AbstractInsnNode, Map<String, Any?>> = emptyMap()
+            var expressionMiss: String? = null
             val anchors = when (point) {
                 is InjectionPoint.Expression -> {
                     val resolution = ExpressionAnchors.resolve(
@@ -655,6 +656,7 @@ class InjectionSpec internal constructor(
                     )
                     expressionResolution = resolution
                     expressionDecorations = resolution.decorations
+                    expressionMiss = resolution.missHint
                     resolution.instructions
                 }
 
@@ -664,7 +666,8 @@ class InjectionSpec internal constructor(
                 OmlLog.error(
                     "Injection",
                     "anchor not found: ${AnchorResolver.describe(point)} in " +
-                        "${owner.substringAfterLast('/')}.${method.name}${method.desc}",
+                        "${owner.substringAfterLast('/')}.${method.name}${method.desc}" +
+                        (expressionMiss?.let { " — $it" } ?: ""),
                 )
                 continue
             }

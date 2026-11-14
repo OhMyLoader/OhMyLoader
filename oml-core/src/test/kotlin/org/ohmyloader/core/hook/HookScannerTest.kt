@@ -1314,6 +1314,51 @@ class HookScannerTest {
     }
 
     @Test
+    fun `an undeclared expression identifier is reported at scan time`() {
+        newBridge()
+        val expression = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Expression;").apply {
+            values = mutableListOf<Any?>("value", listOf("max(?, 3)"))
+        }
+        val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyExpressionValue;").apply {
+            values = mutableListOf<Any?>("method", "runTick", "at", atNode("EXPRESSION"))
+        }
+        val method = MethodNode(Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h", "(I)I", null, null).apply {
+            instructions.add(InsnNode(Opcodes.IRETURN))
+            visibleAnnotations = listOf(modify, expression)
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(
+            parsed.problems.any { it.contains("undeclared identifier \"max\"") },
+            parsed.problems.toString(),
+        )
+        assertEquals(0, parsed.rules.size)
+    }
+
+    @Test
+    fun `an undeclared expression type is reported at scan time`() {
+        newBridge()
+        val expression = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Expression;").apply {
+            values = mutableListOf<Any?>("value", listOf("new StringBuilder(?)"))
+        }
+        val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyExpressionValue;").apply {
+            values = mutableListOf<Any?>("method", "runTick", "at", atNode("EXPRESSION"))
+        }
+        val method = MethodNode(
+            Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h",
+            "(Ljava/lang/StringBuilder;)Ljava/lang/StringBuilder;", null, null,
+        ).apply {
+            instructions.add(InsnNode(Opcodes.ARETURN))
+            visibleAnnotations = listOf(modify, expression)
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(
+            parsed.problems.any { it.contains("undeclared type \"StringBuilder\"") },
+            parsed.problems.toString(),
+        )
+        assertEquals(0, parsed.rules.size)
+    }
+
+    @Test
     fun `an expression anchor without a pattern is reported`() {
         newBridge()
         val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyExpressionValue;").apply {
@@ -1370,9 +1415,12 @@ class HookScannerTest {
                 "at", atNode("EXPRESSION").put("id", "inner"),
             )
         }
+        val definition = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Definition;").apply {
+            values = mutableListOf<Any?>("id", "max", "method", listOf("Ljava/lang/Math;max(II)I"))
+        }
         val method = MethodNode(Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h", "(I)I", null, null).apply {
             instructions.add(InsnNode(Opcodes.IRETURN))
-            visibleAnnotations = listOf(modify, container)
+            visibleAnnotations = listOf(modify, container, definition)
         }
         val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
         assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())

@@ -2212,6 +2212,33 @@ object HookScanner {
                 return null
             }
         }
+        // Pure syntax check: every identifier a pattern uses must be declared, and this is decidable without
+        // the target class. Catching it here turns a weaving-time IllegalStateException into a startup problem.
+        val memberIds = definitions
+            .filter { it.methods.isNotEmpty() || it.fields.isNotEmpty() || it.locals.isNotEmpty() }
+            .mapTo(mutableSetOf()) { it.id } + org.ohmyloader.core.expression.pool.IdentifierPool.DEFAULT_MEMBER_IDS
+        val typeIds = definitions
+            .filter { it.types.isNotEmpty() }
+            .mapTo(mutableSetOf()) { it.id } + org.ohmyloader.core.expression.pool.IdentifierPool.DEFAULT_TYPE_IDS
+        var undeclared = false
+        for (pattern in patterns) {
+            val used = runCatching {
+                org.ohmyloader.core.expression.ExpressionParserFacade.collectIdentifiers(pattern)
+            }.getOrNull() ?: continue
+            for (id in used.members) {
+                if (id in memberIds) continue
+                undeclared = true
+                problems += "[$modId] $where —— @Expression \"$pattern\" uses undeclared identifier \"$id\": " +
+                    "declare it with @Definition(id = \"$id\", method|field|local = …)"
+            }
+            for (id in used.types) {
+                if (id in typeIds) continue
+                undeclared = true
+                problems += "[$modId] $where —— @Expression \"$pattern\" uses undeclared type \"$id\": " +
+                    "declare it with @Definition(id = \"$id\", type = …)"
+            }
+        }
+        if (undeclared) return null
         val ordinal = (annotationValue(atNode, "ordinal") as? Int)?.takeIf { it >= 0 }
         return InjectionPoint.Expression(patterns, ordinal, definitions)
     }

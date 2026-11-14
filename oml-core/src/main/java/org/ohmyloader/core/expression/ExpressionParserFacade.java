@@ -3,6 +3,7 @@ package org.ohmyloader.core.expression;
 import org.ohmyloader.core.expression.grammar.ExpressionLexer;
 import org.ohmyloader.core.expression.grammar.ExpressionParser;
 import org.ohmyloader.core.expression.grammar.ExpressionParser.*;
+import org.ohmyloader.core.expression.grammar.ExpressionParserBaseVisitor;
 import org.ohmyloader.core.expression.ast.expressions.*;
 import org.ohmyloader.core.expression.ast.identifiers.*;
 import org.antlr.v4.runtime.*;
@@ -11,7 +12,9 @@ import org.antlr.v4.runtime.dfa.DFA;
 
 import java.util.BitSet;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 public class ExpressionParserFacade {
@@ -20,6 +23,132 @@ public class ExpressionParserFacade {
 
     public ExpressionParserFacade(String expression) {
         this.expression = expression;
+    }
+
+    /** The identifiers a pattern uses, split by the pool they must be declared in. */
+    public static final class Identifiers {
+        public final Set<String> members = new LinkedHashSet<>();
+        public final Set<String> types = new LinkedHashSet<>();
+    }
+
+    /**
+     * Collects every identifier a pattern refers to, without needing a target method: the startup check
+     * uses it to report a missing {@code @Definition} before any class is loaded.
+     */
+    public static Identifiers collectIdentifiers(String input) {
+        ExpressionLexer lexer = new ExpressionLexer(CharStreams.fromString(input));
+        setupErrorListeners(lexer, input);
+        ExpressionParser parser = new ExpressionParser(new CommonTokenStream(lexer));
+        setupErrorListeners(parser, input);
+        Identifiers ids = new Identifiers();
+        new ExpressionParserBaseVisitor<Void>() {
+            @Override
+            public Void visitIdentifierExpression(IdentifierExpressionContext ctx) {
+                ids.members.add(ctx.getText());
+                return null;
+            }
+
+            @Override
+            public Void visitIdentifierAssignmentStatement(IdentifierAssignmentStatementContext ctx) {
+                addName(ids.members, ctx.identifier);
+                return visit(ctx.value);
+            }
+
+            @Override
+            public Void visitMemberAssignmentStatement(MemberAssignmentStatementContext ctx) {
+                addName(ids.members, ctx.memberName);
+                return visitChildren(ctx);
+            }
+
+            @Override
+            public Void visitStaticMethodCallExpression(StaticMethodCallExpressionContext ctx) {
+                addName(ids.members, ctx.memberName);
+                return visitChildren(ctx);
+            }
+
+            @Override
+            public Void visitMethodCallExpression(MethodCallExpressionContext ctx) {
+                addName(ids.members, ctx.memberName);
+                return visitChildren(ctx);
+            }
+
+            @Override
+            public Void visitMemberAccessExpression(MemberAccessExpressionContext ctx) {
+                addName(ids.members, ctx.memberName);
+                return visitChildren(ctx);
+            }
+
+            @Override
+            public Void visitSuperCallExpression(SuperCallExpressionContext ctx) {
+                addName(ids.members, ctx.memberName);
+                return visitChildren(ctx);
+            }
+
+            @Override
+            public Void visitBoundMethodReferenceExpression(BoundMethodReferenceExpressionContext ctx) {
+                addName(ids.members, ctx.memberName);
+                return visitChildren(ctx);
+            }
+
+            @Override
+            public Void visitFreeMethodReferenceExpression(FreeMethodReferenceExpressionContext ctx) {
+                addName(ids.members, ctx.memberName);
+                return null;
+            }
+
+            @Override
+            public Void visitClassConstantExpression(ClassConstantExpressionContext ctx) {
+                addName(ids.types, ctx.type);
+                return null;
+            }
+
+            @Override
+            public Void visitCastExpression(CastExpressionContext ctx) {
+                addName(ids.types, ctx.type);
+                return visit(ctx.expr);
+            }
+
+            @Override
+            public Void visitInstanceofExpression(InstanceofExpressionContext ctx) {
+                addName(ids.types, ctx.type);
+                return visit(ctx.expr);
+            }
+
+            @Override
+            public Void visitInstantiationExpression(InstantiationExpressionContext ctx) {
+                addName(ids.types, ctx.type);
+                return visitChildren(ctx);
+            }
+
+            @Override
+            public Void visitNewArrayExpression(NewArrayExpressionContext ctx) {
+                addName(ids.types, ctx.innerType);
+                return visitChildren(ctx);
+            }
+
+            @Override
+            public Void visitArrayLitExpression(ArrayLitExpressionContext ctx) {
+                addName(ids.types, ctx.elementType);
+                return visitChildren(ctx);
+            }
+
+            @Override
+            public Void visitConstructorReferenceExpression(ConstructorReferenceExpressionContext ctx) {
+                addName(ids.types, ctx.type);
+                return null;
+            }
+        }.visit(parser.root());
+        return ids;
+    }
+
+    private static void addName(Set<String> out, NameContext name) {
+        if (name instanceof IdentifierNameContext) {
+            out.add(name.getText());
+        }
+    }
+
+    private static void addName(Set<String> out, NameWithDimsContext name) {
+        addName(out, name.name());
     }
 
     public static Expression parse(String input) {

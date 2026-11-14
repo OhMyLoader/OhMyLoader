@@ -16,6 +16,8 @@ import org.ohmyloader.api.hook.Operation
 import org.ohmyloader.api.inject.Anchor
 import org.ohmyloader.api.inject.InjectionError
 import org.ohmyloader.api.inject.InjectionPoint
+import org.ohmyloader.api.inject.Payload
+import org.ohmyloader.core.expression.point.ExpressionContext
 import org.ohmyloader.core.transformer.TransformContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -480,6 +482,46 @@ class InjectionExpressionTest {
             spec.transform(TransformContext(owner, maxTarget()))
         }
         assertTrue(failure.message!!.contains("require=1"), failure.message)
+    }
+
+    @Test
+    fun `a missing expression reports the closest partial match`() {
+        val node = maxTarget()
+        val method = node.methods.first()
+        val definition = InjectionPoint.Expression.Definition(
+            "max", methods = listOf("Ljava/lang/Math;max(II)I"),
+        )
+        val point = InjectionPoint.Expression(listOf("max(?, 4)"), null, listOf(definition))
+        val resolution = ExpressionAnchors.resolve(
+            node, method, point,
+            Payload.ModifyExpressionValue(ExpressionHandlers.OWNER, "double", "(I)I"),
+            ExpressionContext.Type.MODIFY_EXPRESSION_VALUE,
+        )
+
+        assertTrue(resolution.instructions.isEmpty())
+        val hint = resolution.missHint ?: error("a miss must carry a hint")
+        assertTrue(hint.contains("max(?, 4)"), hint)
+        assertTrue(hint.contains("Math.max"), hint)
+    }
+
+    @Test
+    fun `an out-of-range expression ordinal is reported`() {
+        val node = maxTarget()
+        val method = node.methods.first()
+        val definition = InjectionPoint.Expression.Definition(
+            "max", methods = listOf("Ljava/lang/Math;max(II)I"),
+        )
+        val point = InjectionPoint.Expression(listOf("max(?, 3)"), 3, listOf(definition))
+        val resolution = ExpressionAnchors.resolve(
+            node, method, point,
+            Payload.ModifyExpressionValue(ExpressionHandlers.OWNER, "double", "(I)I"),
+            ExpressionContext.Type.MODIFY_EXPRESSION_VALUE,
+        )
+
+        assertTrue(resolution.instructions.isEmpty())
+        val hint = resolution.missHint ?: error("a miss must carry a hint")
+        assertTrue(hint.contains("ordinal 3"), hint)
+        assertTrue(hint.contains("Math.max"), hint)
     }
 
     // ---------- fixtures ----------
