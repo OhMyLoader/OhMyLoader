@@ -1915,15 +1915,26 @@ object HookScanner {
         val split = trailingSugar(method, mixinClass, where, modId, problems) ?: return
         val normal = split.normal
         val ret = Type.getReturnType(method.desc)
-        if (ret == Type.VOID_TYPE || normal.size != 1 || normal[0] != ret) {
+        if (ret == Type.VOID_TYPE || normal.size != 1) {
             problems += "[$modId] $where —— @ModifyReturnValue handler must be shaped (R[, sugar…])R " +
                 "(R is the return type, put back on the stack after the change), currently ${method.desc}"
             return
         }
+        val coerceParam = method.visibleParameterAnnotations?.getOrNull(0)
+            ?.any { it.desc == COERCE_DESC } == true
+        val coerceReturn = method.visibleAnnotations.orEmpty().any { it.desc == COERCE_DESC }
+        if (normal[0] != ret) {
+            val bothReferences = normal[0].sort in OBJECT_SORTS && ret.sort in OBJECT_SORTS
+            if ((!coerceParam && !coerceReturn) || !bothReferences) {
+                problems += "[$modId] $where —— @ModifyReturnValue handler must be shaped (R[, sugar…])R, " +
+                    "or use @Coerce on a reference parameter/return: currently ${method.desc}"
+                return
+            }
+        }
         val [id, bridgeName, bridgeDesc] = registerValueHandler(
             modId, mixinClass, method.name, methodNames.first(),
             captureTypes = listOf(normal[0].descriptor) + split.sugarTypes,
-            returnType = normal[0].descriptor,
+            returnType = ret.descriptor,
         )
         rules += Rule(
             targetInternal, methodNames, methodDesc, anchor,
@@ -1932,6 +1943,8 @@ object HookScanner {
                 method = bridgeName,
                 desc = bridgeDesc,
                 extras = split.bindings + DslValue.IntVal(id),
+                coerceParam = coerceParam,
+                coerceReturn = coerceReturn,
             ),
             policy, emptyList(), "ModifyReturnValue",
         )

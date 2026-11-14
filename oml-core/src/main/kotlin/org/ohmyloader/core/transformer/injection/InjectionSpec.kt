@@ -952,7 +952,16 @@ class InjectionSpec internal constructor(
 
                     is Payload.TransformReturn -> {
                         if (point.core !is InjectionPoint.Expression) {
-                            val list = PayloadEmitter.emit(payload, method, owner, locals) ?: continue
+                            val list = if (!payload.coerceParam && !payload.coerceReturn) {
+                                PayloadEmitter.emit(payload, method, owner, locals)
+                            } else {
+                                val value = Type.getReturnType(method.desc)
+                                PayloadEmitter.emitInPlaceValue(
+                                    "ModifyReturnValue", payload.owner, payload.method, payload.desc, payload.extras,
+                                    instance = false, value = value, method = method, owner = owner, locals = locals,
+                                    coerceParam = payload.coerceParam, coerceReturn = payload.coerceReturn,
+                                )
+                            } ?: continue
                             if (!insertBlock(method, anchor, list, point.after, frames, knownShares)) continue
                             inserted++
                         } else {
@@ -967,6 +976,7 @@ class InjectionSpec internal constructor(
                             val list = PayloadEmitter.emitInPlaceValue(
                                 "ModifyReturnValue", payload.owner, payload.method, payload.desc, payload.extras,
                                 instance = false, value = value, method = method, owner = owner, locals = locals,
+                                coerceParam = payload.coerceParam, coerceReturn = payload.coerceReturn,
                             ) ?: continue
                             if (valueAnchor.second) list.add(InsnNode(Opcodes.POP))
                             if (!insertBlock(method, valueAnchor.first, list, after = true, frames, knownShares)) continue

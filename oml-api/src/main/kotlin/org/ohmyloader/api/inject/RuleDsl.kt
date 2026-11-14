@@ -636,8 +636,15 @@ class PayloadBuilder @PublishedApi internal constructor(
      * + [HandlerKind.MODIFY_RETURN] (`@ModifyReturnValue`) — both rewrite the same
      * value; the only difference is where the handler lives.
      */
-    fun transformReturn(owner: String, method: String, desc: String, extras: List<DslValue> = emptyList()) {
-        payload = Payload.TransformReturn(owner, method, desc, extras)
+    fun transformReturn(
+        owner: String,
+        method: String,
+        desc: String,
+        extras: List<DslValue> = emptyList(),
+        coerceParam: Boolean = false,
+        coerceReturn: Boolean = false,
+    ) {
+        payload = Payload.TransformReturn(owner, method, desc, extras, coerceParam, coerceReturn)
     }
 
     /**

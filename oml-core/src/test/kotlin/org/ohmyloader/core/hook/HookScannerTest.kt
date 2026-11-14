@@ -618,6 +618,29 @@ class HookScannerTest {
     }
 
     @Test
+    fun `coerce marks the ModifyReturnValue handler`() {
+        newBridge()
+        val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyReturnValue;").apply {
+            values = mutableListOf<Any?>("method", "runTick")
+        }
+        val coerce = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Coerce;")
+        val method = MethodNode(
+            Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h",
+            "(Ljava/lang/Object;)Ljava/lang/Object;", null, null,
+        ).apply {
+            instructions.add(InsnNode(Opcodes.ACONST_NULL))
+            instructions.add(InsnNode(Opcodes.ARETURN))
+            visibleAnnotations = listOf(modify, coerce)
+            visibleParameterAnnotations = arrayOf(mutableListOf(coerce))
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        val payload = parsed.rules[0].payload as Payload.TransformReturn
+        assertTrue(payload.coerceParam)
+        assertTrue(payload.coerceReturn)
+    }
+
+    @Test
     fun `modify return value rejects a handler that cannot return the value`() {
         val node = mergeMixin().apply {
             methods.add(valueHandler("onReturn", "(I)V", modifyReturnValue, "runTick"))

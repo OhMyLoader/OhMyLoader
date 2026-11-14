@@ -634,6 +634,52 @@ class InjectionExpressionTest {
     }
 
     @Test
+    fun `coerce applies to ModifyReturnValue on an expression`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("text", desc = "()Ljava/lang/String;") {
+                        atExpression("'hi'") {
+                            transformReturn(
+                                ExpressionHandlers.OWNER, "coerceSuffix",
+                                "(Ljava/lang/Object;)Ljava/lang/Object;",
+                                coerceParam = true,
+                                coerceReturn = true,
+                            )
+                        }
+                    }
+                }
+            },
+            textTarget(),
+        )
+
+        assertEquals("hi!", invoke(clazz, "text"))
+    }
+
+    @Test
+    fun `coerce applies to ModifyReturnValue at a return`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("text", desc = "()Ljava/lang/String;") {
+                        atReturn {
+                            transformReturn(
+                                ExpressionHandlers.OWNER, "coerceSuffix",
+                                "(Ljava/lang/Object;)Ljava/lang/Object;",
+                                coerceParam = true,
+                                coerceReturn = true,
+                            )
+                        }
+                    }
+                }
+            },
+            textTarget(),
+        )
+
+        assertEquals("hi!", invoke(clazz, "text"))
+    }
+
+    @Test
     fun `an expression bounds the slice window`() {
         val definition = InjectionPoint.Expression.Definition(
             "max", methods = listOf("Ljava/lang/Math;max(II)I"),
@@ -947,6 +993,14 @@ class InjectionExpressionTest {
             add(VarInsnNode(Opcodes.ILOAD, 0))
             add(InsnNode(Opcodes.I2L))
             add(InsnNode(Opcodes.LRETURN))
+        },
+    )
+
+    /** `static String text() { return "hi"; }` */
+    private fun textTarget(): ClassNode = classNode(
+        methodNode("text", "()Ljava/lang/String;") {
+            add(org.objectweb.asm.tree.LdcInsnNode("hi"))
+            add(InsnNode(Opcodes.ARETURN))
         },
     )
 
