@@ -1428,10 +1428,18 @@ object HookScanner {
         val split = trailingSugar(method, mixinClass, where, modId, problems) ?: return
         val normal = split.normal
         val ret = Type.getReturnType(method.desc)
-        if (normal.isEmpty() || ret == Type.VOID_TYPE || normal[0] != ret) {
+        val coerceParams = (0 until normal.size).filterTo(mutableSetOf()) { i ->
+            method.visibleParameterAnnotations?.getOrNull(i)
+                ?.any { it.desc == COERCE_DESC } == true
+        }
+        val coerceReturn = method.visibleAnnotations.orEmpty().any { it.desc == COERCE_DESC }
+        if (normal.isEmpty() || ret == Type.VOID_TYPE ||
+            (normal[0] != ret && !(coerceParams.isNotEmpty() || coerceReturn))
+        ) {
             problems += "[$modId] $where —— @ModifyReceiver handler must be shaped " +
                 "(ReceiverType[, operands…, sugar…])ReceiverType " +
-                "(the first parameter and the return type are the receiver type), currently ${method.desc}"
+                "(the first parameter and the return type are the receiver type, or reference supertypes with " +
+                "@Coerce), currently ${method.desc}"
             return
         }
         // The bridge captures are the handler's full value parameter list (receiver + operands + sugar);
@@ -1454,6 +1462,8 @@ object HookScanner {
                 method = HookRegistry.bridgeMethodName(id, kind),
                 desc = HookRegistry.bridgeDesc(id, kind),
                 extras = split.bindings + DslValue.IntVal(id),
+                coerceParams = coerceParams,
+                coerceReturn = coerceReturn,
             ),
             policy, emptyList(), "ModifyReceiver",
         )

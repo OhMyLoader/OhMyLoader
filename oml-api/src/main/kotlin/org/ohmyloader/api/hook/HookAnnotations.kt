@@ -153,9 +153,10 @@ annotation class Mutable
  * MixinExtras' `@Coerce`): annotate the parameter to accept a reference **supertype** of the value,
  * and annotate the handler method to coerce the returned reference back to the value's type.
  * Reference coercion covers `@ModifyExpressionValue`, `@ModifyReturnValue`, `@ModifyArg`
- * (single-argument mode), `@ModifyConstant`, `@ModifyVariable`, `@Redirect` and `@WrapOperation`
- * (standard and `NEW` anchors; by parameter position). Primitive boxing/unboxing is implemented on
- * `@ModifyExpressionValue` only; comparison wraps and merged handlers are not covered yet.
+ * (single-argument mode), `@ModifyConstant`, `@ModifyVariable`, `@ModifyReceiver`, `@Redirect` and
+ * `@WrapOperation` (standard and `NEW` anchors; by parameter position). Primitive boxing/unboxing
+ * is implemented on `@ModifyExpressionValue` only; comparison wraps and merged handlers are not
+ * covered yet.
  */
 @Target(AnnotationTarget.VALUE_PARAMETER, AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)

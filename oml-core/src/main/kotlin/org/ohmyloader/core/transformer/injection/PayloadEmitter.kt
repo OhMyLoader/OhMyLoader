@@ -790,6 +790,8 @@ internal object PayloadEmitter {
         owner: String,
         anchor: AbstractInsnNode,
         locals: AnchorLocals?,
+        coerceParams: Set<Int> = emptySet(),
+        coerceReturn: Boolean = false,
     ): InsnList? {
         val receiverType: Type
         val operandTypes: Array<Type>
@@ -835,24 +837,34 @@ internal object PayloadEmitter {
         val handlerArgs = Type.getArgumentTypes(handlerDesc)
         val handlerRet = Type.getReturnType(handlerDesc)
         val valueCount = 1 + operandTypes.size
-        if (handlerRet != receiverType) {
+        if (handlerRet != receiverType && !(coerceReturn && isRefType(handlerRet) && isRefType(receiverType))) {
             throw InjectionError(
-                "[injection] the handler return type of ModifyReceiver must equal the receiver type: " +
-                    "receiver is ${receiverType.className}, handler returns ${handlerRet.className} ($handlerDesc)",
+                "[injection] the handler return type of ModifyReceiver must equal the receiver type" +
+                    " (or be a reference supertype with @Coerce): receiver is ${receiverType.className}, " +
+                    "handler returns ${handlerRet.className} ($handlerDesc)",
             )
         }
-        if (handlerArgs.size < valueCount + extras.size || handlerArgs[0] != receiverType) {
+        val receiverCoerced = 0 in coerceParams && isRefType(handlerArgs.firstOrNull() ?: Type.VOID_TYPE) &&
+            isRefType(receiverType)
+        if (handlerArgs.size < valueCount + extras.size ||
+            (handlerArgs[0] != receiverType && !receiverCoerced)
+        ) {
             throw InjectionError(
                 "[injection] the handler of ModifyReceiver must be shaped (ReceiverType, operands…, extras…)ReceiverType: " +
-                    "expected first parameter ${receiverType.className} and at least $valueCount value parameter(s), actual $handlerDesc",
+                    "expected first parameter ${receiverType.className} (or a reference supertype with @Coerce) and " +
+                    "at least $valueCount value parameter(s), actual $handlerDesc",
             )
         }
         for (i in operandTypes.indices) {
             if (handlerArgs[1 + i] != operandTypes[i]) {
-                throw InjectionError(
-                    "[injection] ModifyReceiver operand ${i + 1} type mismatch: expected ${operandTypes[i].className}, " +
-                        "actual ${handlerArgs[1 + i].className} ($handlerDesc)",
-                )
+                val coerced = (1 + i) in coerceParams &&
+                    isRefType(operandTypes[i]) && isRefType(handlerArgs[1 + i])
+                if (!coerced) {
+                    throw InjectionError(
+                        "[injection] ModifyReceiver operand ${i + 1} type mismatch: expected ${operandTypes[i].className}, " +
+                            "actual ${handlerArgs[1 + i].className} ($handlerDesc)",
+                    )
+                }
             }
         }
         validateArgTypes(handlerDesc, extras, valueCount, method, owner, locals, "ModifyReceiver.extras")
@@ -882,6 +894,9 @@ internal object PayloadEmitter {
             ),
         )
         emitWriteBacks(list, writeBacks)
+        if (coerceReturn && handlerRet != receiverType) {
+            list.add(TypeInsnNode(Opcodes.CHECKCAST, receiverType.internalName))
+        }
         // The handler returned the new receiver; re-seat it beneath the unchanged operands.
         list.add(VarInsnNode(Opcodes.ASTORE, receiverSlot))
         list.add(VarInsnNode(Opcodes.ALOAD, receiverSlot))

@@ -840,6 +840,7 @@ class InjectionSpec internal constructor(
                         val list = PayloadEmitter.emitModifyReceiver(
                             payload.owner, payload.method, payload.desc, payload.extras,
                             instance = false, method = method, owner = owner, anchor = anchor, locals = locals,
+                            coerceParams = payload.coerceParams, coerceReturn = payload.coerceReturn,
                         ) ?: continue
                         if (!insertBlock(method, anchor, list, after = false, frames, knownShares)) continue
                         inserted++

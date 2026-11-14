@@ -101,6 +101,32 @@ class InjectionModifyReceiverTest {
         assertTrue(failure.message!!.contains("require"), failure.message)
     }
 
+    @Test
+    fun `modifyReceiver coerces a reference receiver and return`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("target", desc = "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;") {
+                        beforeCall(
+                            owner = "java/lang/String", name = "concat",
+                            desc = "(Ljava/lang/String;)Ljava/lang/String;",
+                        ) {
+                            modifyReceiver(
+                                ModifyReceiverHandlers.OWNER, "upperReceiver",
+                                "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;",
+                                coerceParams = setOf(0),
+                                coerceReturn = true,
+                            )
+                        }
+                    }
+                }
+            },
+            targetWithStringConcat(),
+        )
+
+        assertEquals("ABCdef", invoke(clazz, "target", "abc", "def"))
+    }
+
     // ---------- fixtures ----------
 
     private fun classNode(vararg methods: MethodNode): ClassNode =
@@ -136,6 +162,21 @@ class InjectionModifyReceiverTest {
             add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, Receiver.OWNER, "record", "(I)V", false))
             add(InsnNode(Opcodes.ICONST_0))
             add(InsnNode(Opcodes.IRETURN))
+        },
+    )
+
+    /** `static String target(String a, String b) { return a.concat(b); }` */
+    private fun targetWithStringConcat(): ClassNode = classNode(
+        methodNode("target", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;") {
+            add(VarInsnNode(Opcodes.ALOAD, 0))
+            add(VarInsnNode(Opcodes.ALOAD, 1))
+            add(
+                MethodInsnNode(
+                    Opcodes.INVOKEVIRTUAL, "java/lang/String", "concat",
+                    "(Ljava/lang/String;)Ljava/lang/String;", false,
+                ),
+            )
+            add(InsnNode(Opcodes.ARETURN))
         },
     )
 
@@ -204,5 +245,8 @@ class InjectionModifyReceiverTest {
 
         @JvmStatic
         fun swap(receiver: Receiver, value: Int): Receiver = swapped
+
+        @JvmStatic
+        fun upperReceiver(receiver: Any?, value: String): Any? = (receiver as String).uppercase()
     }
 }

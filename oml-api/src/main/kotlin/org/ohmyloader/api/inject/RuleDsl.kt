@@ -792,8 +792,15 @@ class PayloadBuilder @PublishedApi internal constructor(
      * (or the field value for a write), and `ReceiverType` is decided by the anchor instruction. The original
      * instruction still runs, on the receiver the handler returns.
      */
-    fun modifyReceiver(owner: String, method: String, desc: String, extras: List<DslValue> = emptyList()) {
-        payload = Payload.ModifyReceiver(owner, method, desc, extras)
+    fun modifyReceiver(
+        owner: String,
+        method: String,
+        desc: String,
+        extras: List<DslValue> = emptyList(),
+        coerceParams: Set<Int> = emptySet(),
+        coerceReturn: Boolean = false,
+    ) {
+        payload = Payload.ModifyReceiver(owner, method, desc, extras, coerceParams, coerceReturn)
     }
 
     /**

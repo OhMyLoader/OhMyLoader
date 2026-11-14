@@ -1219,6 +1219,32 @@ class HookScannerTest {
     }
 
     @Test
+    fun `coerce marks the ModifyReceiver handler`() {
+        newBridge()
+        val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyReceiver;").apply {
+            values = mutableListOf<Any?>(
+                "method", "runTick",
+                "at", atNode("INVOKE", target = "Ljava/lang/String;concat(Ljava/lang/String;)Ljava/lang/String;"),
+            )
+        }
+        val coerce = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Coerce;")
+        val method = MethodNode(
+            Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h",
+            "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", null, null,
+        ).apply {
+            instructions.add(InsnNode(Opcodes.ACONST_NULL))
+            instructions.add(InsnNode(Opcodes.ARETURN))
+            visibleAnnotations = listOf(modify, coerce)
+            visibleParameterAnnotations = arrayOf(mutableListOf(coerce), mutableListOf())
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        val payload = parsed.rules[0].payload as Payload.ModifyReceiver
+        assertEquals(setOf(0), payload.coerceParams)
+        assertTrue(payload.coerceReturn)
+    }
+
+    @Test
     fun `wrapWithCondition parses a boolean handler`() {
         newBridge()
         val node = injectClass(
