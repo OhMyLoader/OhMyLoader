@@ -203,6 +203,42 @@ class InjectionWrapWithConditionTest {
         }
     }
 
+    @Test
+    fun `a false condition replaces an array creation with null`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("array", desc = "(I)[I") {
+                        beforeArrayCreate(Opcodes.NEWARRAY, atype = Opcodes.T_INT) {
+                            wrapWithCondition(WrapConditionHandlers.OWNER, "denyStatic", "(I)Z")
+                        }
+                    }
+                }
+            },
+            targetWithIntArray(),
+        )
+
+        assertEquals(null, invoke(clazz, "array", 4), "the skipped creation leaves null")
+    }
+
+    @Test
+    fun `a true condition creates the array`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("array", desc = "(I)[I") {
+                        beforeArrayCreate(Opcodes.NEWARRAY, atype = Opcodes.T_INT) {
+                            wrapWithCondition(WrapConditionHandlers.OWNER, "allowStatic", "(I)Z")
+                        }
+                    }
+                }
+            },
+            targetWithIntArray(),
+        )
+
+        assertEquals(4, (invoke(clazz, "array", 4) as IntArray).size)
+    }
+
     // ---------- fixtures ----------
 
     private fun classNode(vararg methods: MethodNode): ClassNode =
@@ -292,6 +328,15 @@ class InjectionWrapWithConditionTest {
             add(VarInsnNode(Opcodes.ILOAD, 0))
             add(MethodInsnNode(Opcodes.INVOKESTATIC, ProduceOps.OWNER, "produce", "(I)I", false))
             add(InsnNode(Opcodes.IRETURN))
+        },
+    )
+
+    /** `static int[] array(int size) { return new int[size]; }` */
+    private fun targetWithIntArray(): ClassNode = classNode(
+        methodNode("array", "(I)[I") {
+            add(VarInsnNode(Opcodes.ILOAD, 0))
+            add(org.objectweb.asm.tree.IntInsnNode(Opcodes.NEWARRAY, Opcodes.T_INT))
+            add(InsnNode(Opcodes.ARETURN))
         },
     )
 

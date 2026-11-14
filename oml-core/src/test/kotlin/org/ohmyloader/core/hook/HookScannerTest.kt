@@ -1661,6 +1661,31 @@ class HookScannerTest {
     }
 
     @Test
+    fun `wrapWithCondition accepts an array creation anchor`() {
+        newBridge()
+        val wrap = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/WrapWithCondition;").apply {
+            values = mutableListOf<Any?>(
+                "method", "runTick",
+                "at", atNode("NEW_ARRAY", target = "[I"),
+            )
+        }
+        val method = MethodNode(
+            Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h", "(I)Z", null, null,
+        ).apply {
+            instructions.add(InsnNode(Opcodes.ICONST_1))
+            instructions.add(InsnNode(Opcodes.IRETURN))
+            visibleAnnotations = listOf(wrap)
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        assertEquals(
+            InjectionPoint.ArrayCreate(Opcodes.NEWARRAY, atype = 10),
+            parsed.rules[0].anchor,
+        )
+        assertIs<Payload.WrapWithCondition>(parsed.rules[0].payload)
+    }
+
+    @Test
     fun `wrapMethod parses a whole-method Operation handler`() {
         newBridge()
         val node = injectClass(

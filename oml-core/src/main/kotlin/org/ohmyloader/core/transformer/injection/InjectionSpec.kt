@@ -238,6 +238,12 @@ class InjectionSpec internal constructor(
             anchor is TypeInsnNode || anchor is InsnNode || anchor is IntInsnNode ||
             anchor is MultiANewArrayInsnNode
 
+    /** `NEWARRAY` / `ANEWARRAY` / `MULTIANEWARRAY` — the anchors `WrapWithCondition` can gate. */
+    private fun isArrayCreationAnchor(anchor: AbstractInsnNode): Boolean =
+        anchor is MultiANewArrayInsnNode ||
+            (anchor is TypeInsnNode && anchor.opcode == Opcodes.ANEWARRAY) ||
+            (anchor is IntInsnNode && anchor.opcode == Opcodes.NEWARRAY)
+
     /** The instruction-producing payloads that *replace* what they anchor on, so only one rule can own a site. */
     private enum class Exclusive { INSTRUCTION, WHOLE_METHOD }
 
@@ -837,10 +843,10 @@ class InjectionSpec internal constructor(
                     }
 
                     is Payload.WrapWithCondition -> {
-                        if (anchor !is MethodInsnNode && anchor !is FieldInsnNode) {
+                        if (anchor !is MethodInsnNode && anchor !is FieldInsnNode && !isArrayCreationAnchor(anchor)) {
                             OmlLog.error(
                                 "Injection",
-                                "the anchor of WrapWithCondition must be a call or field write, " +
+                                "the anchor of WrapWithCondition must be a call, field write or array creation, " +
                                     "currently ${AnchorResolver.describe(point)}: ${method.name}",
                             )
                             continue
@@ -1143,11 +1149,11 @@ class InjectionSpec internal constructor(
                             }
 
                             HandlerKind.WRAP_WITH_CONDITION -> {
-                                if (anchor !is MethodInsnNode && anchor !is FieldInsnNode) {
+                                if (anchor !is MethodInsnNode && anchor !is FieldInsnNode && !isArrayCreationAnchor(anchor)) {
                                     OmlLog.error(
                                         "Injection",
-                                        "the anchor of HandlerCall(WRAP_WITH_CONDITION) must be a call or field write, " +
-                                            "currently ${AnchorResolver.describe(point)}: ${method.name}",
+                                        "the anchor of HandlerCall(WRAP_WITH_CONDITION) must be a call, field " +
+                                            "write or array creation, currently ${AnchorResolver.describe(point)}: ${method.name}",
                                     )
                                     continue
                                 }

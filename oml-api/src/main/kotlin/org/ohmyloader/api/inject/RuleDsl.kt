@@ -466,6 +466,22 @@ class MethodRuleBuilder @PublishedApi internal constructor(
     }
 
     /**
+     * Before an **array creation** (`NEWARRAY` / `ANEWARRAY` / `MULTIANEWARRAY`). The size operands are
+     * on the stack; a `@WrapWithCondition` handler decides whether the array is created, with `null`
+     * replacing it on the skip path.
+     */
+    fun beforeArrayCreate(
+        opcode: Int,
+        atype: Int = -1,
+        desc: String? = null,
+        dims: Int = 0,
+        ordinal: Int? = null,
+        block: PayloadBuilder.() -> Unit,
+    ) {
+        points += at(InjectionPoint.ArrayCreate(opcode, atype, desc, dims, ordinal)) to payloadOf(block)
+    }
+
+    /**
      * Before a **conditional branch** (`IFEQ`…`IF_ACMPNE`, `IFNULL`/`IFNONNULL`).
      *
      * The values the jump compares are already on the operand stack; [PayloadBuilder.wrapBranch]

@@ -1416,10 +1416,11 @@ object HookScanner {
     ) {
         val core = anchor.core
         if ((core !is InjectionPoint.Expression &&
-                core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess) || anchor.after
+                core !is InjectionPoint.Call && core !is InjectionPoint.FieldAccess &&
+                core !is InjectionPoint.ArrayCreate) || anchor.after
         ) {
-            problems += "[$modId] $where —— @WrapWithCondition's @At must be a call or field write, " +
-                "before the instruction"
+            problems += "[$modId] $where —— @WrapWithCondition's @At must be a call, field write or " +
+                "array creation, before the instruction"
             return
         }
         val ret = Type.getReturnType(method.desc)

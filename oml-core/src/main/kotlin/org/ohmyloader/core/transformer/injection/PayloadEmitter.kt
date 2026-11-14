@@ -878,16 +878,53 @@ internal object PayloadEmitter {
                 }
             }
 
+            is TypeInsnNode -> when (anchor.opcode) {
+                Opcodes.ANEWARRAY -> valueTypes = arrayOf(Type.INT_TYPE)
+                else -> {
+                    OmlLog.error(
+                        "Injection",
+                        "WrapWithCondition on an array needs ANEWARRAY, actual opcode ${anchor.opcode}: ${method.name}",
+                    )
+                    return null
+                }
+            }
+
+            is IntInsnNode -> when (anchor.opcode) {
+                Opcodes.NEWARRAY -> valueTypes = arrayOf(Type.INT_TYPE)
+                else -> {
+                    OmlLog.error(
+                        "Injection",
+                        "WrapWithCondition on an array needs NEWARRAY, actual opcode ${anchor.opcode}: ${method.name}",
+                    )
+                    return null
+                }
+            }
+
+            is MultiANewArrayInsnNode -> valueTypes = Array(anchor.dims) { Type.INT_TYPE }
+
             else -> {
-                OmlLog.error("Injection", "WrapWithCondition's anchor must be a call or field write: ${method.name}")
+                OmlLog.error(
+                    "Injection",
+                    "WrapWithCondition's anchor must be a call, field write or array creation: ${method.name}",
+                )
                 return null
             }
         }
+        val keepResult = anchor is TypeInsnNode || anchor is IntInsnNode || anchor is MultiANewArrayInsnNode
         val resultType = when (anchor) {
             is MethodInsnNode -> Type.getReturnType(anchor.desc)
+            is TypeInsnNode -> arrayTypeForElement(anchor.desc)
+            is IntInsnNode -> arrayTypeForAtype(anchor.operand) ?: run {
+                OmlLog.error(
+                    "Injection",
+                    "WrapWithCondition: unknown NEWARRAY atype ${anchor.operand}: ${method.name}",
+                )
+                return null
+            }
+            is MultiANewArrayInsnNode -> Type.getType(anchor.desc)
             else -> Type.VOID_TYPE
         }
-        if (resultType != Type.VOID_TYPE) {
+        if (resultType != Type.VOID_TYPE && !keepResult) {
             // A non-void operation is fine only when its result is thrown away immediately: the true path
             // leaves the real result, the skip path pushes a default of the same type, and the POP/POP2
             // right after the anchor discards whichever one survives.
