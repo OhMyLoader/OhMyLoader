@@ -464,6 +464,47 @@ class InjectionExpressionTest {
     }
 
     @Test
+    fun `wrapOperation wraps a complex comparison`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("dcmp", desc = "(D)I") {
+                        atExpression("? > 5.0") {
+                            wrapOperation(
+                                ExpressionHandlers.OWNER, "invertDouble",
+                                "(DDLorg/ohmyloader/api/hook/Operation;)Z",
+                            )
+                        }
+                    }
+                }
+            },
+            doubleCompareTarget(),
+        )
+
+        assertEquals(100, invoke(clazz, "dcmp", 1.0), "the operation re-evaluates 1.0 > 5.0 and the handler inverts it")
+        assertEquals(0, invoke(clazz, "dcmp", 9.0), "9.0 > 5.0 is true, inverted to false")
+    }
+
+    @Test
+    fun `wrapBranch decides a complex comparison`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("dcmp", desc = "(D)I") {
+                        atExpression("? > 5.0") {
+                            wrapBranch(ExpressionHandlers.OWNER, "denyDouble", "(DD)Z")
+                        }
+                    }
+                }
+            },
+            doubleCompareTarget(),
+        )
+
+        assertEquals(100, invoke(clazz, "dcmp", 1.0), "the handler suppresses the branch, taking the fall-through path")
+        assertEquals(100, invoke(clazz, "dcmp", 9.0), "raw branch semantics: false always falls through")
+    }
+
+    @Test
     fun `an expression bounds the slice window`() {
         val definition = InjectionPoint.Expression.Definition(
             "max", methods = listOf("Ljava/lang/Math;max(II)I"),
@@ -812,5 +853,12 @@ class InjectionExpressionTest {
 
         @JvmStatic
         fun wrapConcat(name: String, operation: Operation<String>): String = operation.call("$name!")
+
+        @JvmStatic
+        fun invertDouble(a: Double, b: Double, operation: Operation<Boolean>): Boolean = !operation.call(a, b)
+
+        @Suppress("UNUSED_PARAMETER")
+        @JvmStatic
+        fun denyDouble(a: Double, b: Double): Boolean = false
     }
 }

@@ -1027,8 +1027,9 @@ internal object PayloadEmitter {
         owner: String,
         jump: JumpInsnNode,
         locals: AnchorLocals?,
+        operandTypesOverride: Array<Type>? = null,
     ): InsnList? {
-        val operandTypes = jumpOperandTypes(jump.opcode) ?: run {
+        val operandTypes = operandTypesOverride ?: jumpOperandTypes(jump.opcode) ?: run {
             OmlLog.error(
                 "Injection",
                 "WrapBranch's anchor must be a conditional jump, actual opcode ${jump.opcode}: ${method.name}",
@@ -1052,12 +1053,16 @@ internal object PayloadEmitter {
         }
         for (i in operandTypes.indices) {
             val actual = handlerArgs[i]
-            val ok = if (operandTypes[i] == Type.INT_TYPE) actual.isIntFamily else actual.isReference
+            val want = operandTypes[i]
+            val ok = if (operandTypesOverride != null) {
+                if (want.isReference) actual.isReference else actual == want
+            } else {
+                if (want == Type.INT_TYPE) actual.isIntFamily else actual.isReference
+            }
             if (!ok) {
                 throw InjectionError(
-                    "[injection] WrapBranch operand ${i + 1} type mismatch: the jump compares " +
-                        "${if (operandTypes[i] == Type.INT_TYPE) "an int" else "a reference"}, " +
-                        "but the handler declares ${actual.className} ($handlerDesc)",
+                    "[injection] WrapBranch operand ${i + 1} type mismatch: the compared value is " +
+                        "${want.className}, but the handler declares ${actual.className} ($handlerDesc)",
                 )
             }
         }
@@ -1198,6 +1203,7 @@ internal object PayloadEmitter {
         owner: String,
         jump: JumpInsnNode,
         locals: AnchorLocals?,
+        cmpOpcode: Int = 0,
     ): InsnList? {
         // The matcher's "any int-like" placeholder is an int on the stack
         val input = if (comparison.input.descriptor == "Lint-like;") Type.INT_TYPE else comparison.input
@@ -1244,7 +1250,7 @@ internal object PayloadEmitter {
             list.add(VarInsnNode(Boxing.loadOpcode(operandTypes[i]), slots[i]))
         }
         OperationSupport.makeComparisonOperation(
-            classNode, list, operandTypes, jumpOpcode, comparison.jumpOnTrue,
+            classNode, list, operandTypes, cmpOpcode, jumpOpcode, comparison.jumpOnTrue,
         )
         val writeBacks = mutableListOf<SugarWriteBack>()
         if (!emitValues(list, extras, method, locals, writeBacks)) return null

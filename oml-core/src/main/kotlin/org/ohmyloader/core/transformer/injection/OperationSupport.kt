@@ -212,6 +212,7 @@ internal object OperationSupport {
         classNode: ClassNode,
         insns: InsnList,
         operandTypes: Array<Type>,
+        cmpOpcode: Int,
         jumpOpcode: Int,
         jumpOnTrue: Boolean,
     ) {
@@ -229,6 +230,8 @@ internal object OperationSupport {
         val ins = bridge.instructions
         emitCheck(ins, 0, operandTypes)
         emitUnpack(ins, 0, operandTypes)
+        // lcmp / fcmp / dcmp turn the two source operands into the int the jump consumes
+        if (cmpOpcode != 0) ins.add(InsnNode(cmpOpcode))
         val onTrue = LabelNode()
         val end = LabelNode()
         ins.add(JumpInsnNode(jumpOpcode, onTrue))

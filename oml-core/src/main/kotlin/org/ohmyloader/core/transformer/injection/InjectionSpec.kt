@@ -854,11 +854,24 @@ class InjectionSpec internal constructor(
                         val comparisonJump = comparison?.let { resolveComparisonJump(it, anchor, method) }
                         if (comparison != null && comparisonJump != null) {
                             if (comparison is ComplexComparisonInfo) {
-                                OmlLog.error(
-                                    "Injection",
-                                    "WrapOperation on a complex comparison (lcmp/fcmp/dcmp) is not supported yet: " +
-                                        method.name,
-                                )
+                                if (nextReal(anchor) !== comparisonJump) {
+                                    OmlLog.error(
+                                        "Injection",
+                                        "WrapOperation on a complex comparison needs the cmp and its branch " +
+                                            "to be adjacent: ${method.name}",
+                                    )
+                                    continue
+                                }
+                                val list = PayloadEmitter.emitWrapComparison(
+                                    payload.owner, payload.method, payload.desc, payload.extras,
+                                    instance = false, comparison, classNode, method, owner, comparisonJump, locals,
+                                    cmpOpcode = anchor.opcode,
+                                ) ?: continue
+                                if (!insertBlock(method, anchor, list, after = false, frames, knownShares)) continue
+                                method.instructions.remove(anchor)
+                                method.instructions.remove(comparisonJump)
+                                frames.invalidate()
+                                inserted++
                                 continue
                             }
                             val list = PayloadEmitter.emitWrapComparison(
@@ -1132,6 +1145,34 @@ class InjectionSpec internal constructor(
                             }
 
                             HandlerKind.WRAP_BRANCH -> {
+                                val comparison = comparisonDecoration(expressionDecorations, anchor)
+                                val comparisonJump = comparison?.let { resolveComparisonJump(it, anchor, method) }
+                                if (comparison is ComplexComparisonInfo && comparisonJump != null) {
+                                    if (nextReal(anchor) !== comparisonJump) {
+                                        OmlLog.error(
+                                            "Injection",
+                                            "WrapBranch on a complex comparison needs the cmp and its branch " +
+                                                "to be adjacent: ${method.name}",
+                                        )
+                                        continue
+                                    }
+                                    val input = if (comparison.input.descriptor == "Lint-like;") {
+                                        Type.INT_TYPE
+                                    } else {
+                                        comparison.input
+                                    }
+                                    val list = PayloadEmitter.emitWrapBranch(
+                                        payload.owner, payload.method, payload.desc, payload.captures,
+                                        instance = true, method = method, owner = owner, jump = comparisonJump,
+                                        locals = locals, operandTypesOverride = arrayOf(input, input),
+                                    ) ?: continue
+                                    if (!insertBlock(method, anchor, list, after = false, frames, knownShares)) continue
+                                    method.instructions.remove(anchor)
+                                    method.instructions.remove(comparisonJump)
+                                    frames.invalidate()
+                                    inserted++
+                                    continue
+                                }
                                 if (anchor !is JumpInsnNode) {
                                     OmlLog.error(
                                         "Injection",
@@ -1181,11 +1222,24 @@ class InjectionSpec internal constructor(
                                 val comparisonJump = comparison?.let { resolveComparisonJump(it, anchor, method) }
                                 if (comparison != null && comparisonJump != null) {
                                     if (comparison is ComplexComparisonInfo) {
-                                        OmlLog.error(
-                                            "Injection",
-                                            "WrapOperation on a complex comparison (lcmp/fcmp/dcmp) is not " +
-                                                "supported yet: ${method.name}",
-                                        )
+                                        if (nextReal(anchor) !== comparisonJump) {
+                                            OmlLog.error(
+                                                "Injection",
+                                                "WrapOperation on a complex comparison needs the cmp and its " +
+                                                    "branch to be adjacent: ${method.name}",
+                                            )
+                                            continue
+                                        }
+                                        val list = PayloadEmitter.emitWrapComparison(
+                                            payload.owner, payload.method, payload.desc, payload.captures,
+                                            instance = true, comparison, classNode, method, owner, comparisonJump,
+                                            locals, cmpOpcode = anchor.opcode,
+                                        ) ?: continue
+                                        if (!insertBlock(method, anchor, list, after = false, frames, knownShares)) continue
+                                        method.instructions.remove(anchor)
+                                        method.instructions.remove(comparisonJump)
+                                        frames.invalidate()
+                                        inserted++
                                         continue
                                     }
                                     val list = PayloadEmitter.emitWrapComparison(
@@ -1405,6 +1459,34 @@ class InjectionSpec internal constructor(
                     }
 
                     is Payload.WrapBranch -> {
+                        val comparison = comparisonDecoration(expressionDecorations, anchor)
+                        val comparisonJump = comparison?.let { resolveComparisonJump(it, anchor, method) }
+                        if (comparison is ComplexComparisonInfo && comparisonJump != null) {
+                            if (nextReal(anchor) !== comparisonJump) {
+                                OmlLog.error(
+                                    "Injection",
+                                    "WrapBranch on a complex comparison needs the cmp and its branch to be " +
+                                        "adjacent: ${method.name}",
+                                )
+                                continue
+                            }
+                            val input = if (comparison.input.descriptor == "Lint-like;") {
+                                Type.INT_TYPE
+                            } else {
+                                comparison.input
+                            }
+                            val list = PayloadEmitter.emitWrapBranch(
+                                payload.owner, payload.method, payload.desc, payload.extras,
+                                instance = false, method = method, owner = owner, jump = comparisonJump,
+                                locals = locals, operandTypesOverride = arrayOf(input, input),
+                            ) ?: continue
+                            if (!insertBlock(method, anchor, list, after = false, frames, knownShares)) continue
+                            method.instructions.remove(anchor)
+                            method.instructions.remove(comparisonJump)
+                            frames.invalidate()
+                            inserted++
+                            continue
+                        }
                         if (anchor !is JumpInsnNode) {
                             OmlLog.error(
                                 "Injection",
