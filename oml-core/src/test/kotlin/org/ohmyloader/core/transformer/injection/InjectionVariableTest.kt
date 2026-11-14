@@ -234,6 +234,27 @@ class InjectionVariableTest {
         assertEquals("t!7", invokeStatic(clazz, "tag", 7), "the write-back must stay typed as String")
     }
 
+    @Test
+    fun `coerce boxes a primitive local for an Object handler`() {
+        val spec = specOf {
+            classTarget(owner) {
+                method("compute", desc = "(I)I") {
+                    require(1)
+                    afterStore(index = 1, type = "I") {
+                        modifyVariable(
+                            VarHandlers.OWNER, "bumpBoxed", "(Ljava/lang/Object;)Ljava/lang/Object;",
+                            coerceParam = true, coerceReturn = true,
+                        )
+                    }
+                }
+            }
+        }
+        val clazz = define(spec, computeTarget())
+
+        // a=3 → x=4 → boxed, +1, unboxed → 5 → *10 = 50
+        assertEquals(50, invokeStatic(clazz, "compute", 3))
+    }
+
     // ---------- argsOnly ----------
 
     @Test
@@ -578,6 +599,9 @@ object VarHandlers {
 
     @JvmStatic
     fun exclaim(v: String): String = "$v!"
+
+    @JvmStatic
+    fun bumpBoxed(v: Any?): Any? = (v as Int) + 1
 
     @JvmStatic
     fun exclaimAny(v: Any?): Any = "$v!"

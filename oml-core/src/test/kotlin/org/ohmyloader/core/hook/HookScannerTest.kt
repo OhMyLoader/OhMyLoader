@@ -534,6 +534,29 @@ class HookScannerTest {
     }
 
     @Test
+    fun `coerce allows a mixed primitive shape on ModifyVariable`() {
+        newBridge()
+        val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyVariable;").apply {
+            values = mutableListOf<Any?>("method", "runTick", "at", atNode("STORE"), "index", 1)
+        }
+        val coerce = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Coerce;")
+        val method = MethodNode(
+            Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h",
+            "(Ljava/lang/Object;)I", null, null,
+        ).apply {
+            instructions.add(InsnNode(Opcodes.ICONST_0))
+            instructions.add(InsnNode(Opcodes.IRETURN))
+            visibleAnnotations = listOf(modify, coerce)
+            visibleParameterAnnotations = arrayOf(mutableListOf(coerce))
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        val payload = parsed.rules[0].payload as Payload.ModifyVariable
+        assertTrue(payload.coerceParam)
+        assertTrue(payload.coerceReturn)
+    }
+
+    @Test
     fun `modify variable merges the at anchor with its own discriminators`() {
         val parsed = HookScanner.parseMixinClass(
             asHooked(modifyVariableClass("(I)I", at = "STORE", index = 4, atOrdinal = 1)),

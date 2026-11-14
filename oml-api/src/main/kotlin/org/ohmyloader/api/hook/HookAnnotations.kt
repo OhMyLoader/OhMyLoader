@@ -155,8 +155,8 @@ annotation class Mutable
  * Reference coercion covers `@ModifyExpressionValue`, `@ModifyReturnValue`, `@ModifyArg`
  * (single-argument mode), `@ModifyConstant`, `@ModifyVariable`, `@ModifyReceiver`, `@Redirect` and
  * `@WrapOperation` (standard and `NEW` anchors; by parameter position). Primitive boxing/unboxing is
- * implemented on `@ModifyExpressionValue`, `@ModifyReturnValue`, `@ModifyArg` (single-argument mode)
- * and `@ModifyConstant`; comparison wraps and merged handlers are not covered yet.
+ * implemented on `@ModifyExpressionValue`, `@ModifyReturnValue`, `@ModifyArg` (single-argument mode),
+ * `@ModifyConstant` and `@ModifyVariable`; comparison wraps and merged handlers are not covered yet.
  */
 @Target(AnnotationTarget.VALUE_PARAMETER, AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)

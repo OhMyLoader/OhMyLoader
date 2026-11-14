@@ -2373,46 +2373,48 @@ internal object PayloadEmitter {
         }
         val slot = access.`var`
         val actual = locals?.frame()?.live(slot)
-        val valueReference = actual == null ||
-            actual.sort == Type.OBJECT || actual.sort == Type.ARRAY
-        if ((coerceParam || coerceReturn) && !valueReference) {
-            throw InjectionError(
-                "[injection] @Coerce on ModifyVariable requires a reference-typed local: " +
-                    "${method.name}${method.desc} slot $slot is ${actual?.descriptor} ($handlerDesc)",
-            )
-        }
+        val valueReference = actual == null || isRefType(actual)
+        val primitiveValue = actual != null && !valueReference
         val valueParam = handler.argumentTypes.firstOrNull()
+        val paramRef = valueParam != null && isRefType(valueParam)
         val paramOk = when {
-            coerceParam -> valueParam != null && valueReference &&
-                (valueParam.sort == Type.OBJECT || valueParam.sort == Type.ARRAY)
-
+            coerceParam && primitiveValue -> paramRef || valueParam == actual
+            coerceParam -> paramRef
             valueParam == handlerType -> true
-
-            coerceReturn && valueParam != null && valueReference &&
-                (valueParam.sort == Type.OBJECT || valueParam.sort == Type.ARRAY) ->
-                actual == null || valueParam == actual
-
+            coerceReturn && valueReference && paramRef -> actual == null || valueParam == actual
             else -> false
         }
         if (!paramOk) {
             throw InjectionError(
                 "[injection] the handler of ModifyVariable must be shaped (T[, captures...])T" +
-                    (if (coerceParam || coerceReturn) ", or use @Coerce on reference types" else "") + ": " +
+                    (if (coerceParam || coerceReturn) ", or use @Coerce on the parameter/return" else "") + ": " +
                     "the first parameter should equal ${handlerType.className}, actual " +
                     "${valueParam?.className ?: "no parameters"} ($handlerDesc)",
+            )
+        }
+        val unboxReturn = coerceReturn && primitiveValue && isRefType(handlerType)
+        if (primitiveValue && (coerceParam || coerceReturn) && handlerType != actual && !unboxReturn) {
+            throw InjectionError(
+                "[injection] the handler of ModifyVariable must return the local's type ${actual!!.className} " +
+                    "(or a reference type with @Coerce): actual ${handlerType.className} ($handlerDesc)",
             )
         }
         validateArgTypes(handlerDesc, extras, 1, method, owner, locals, "ModifyVariable.extras")
 
         // Type assertion: report only the **provably illegal** kind (handler declares `int`, slot is a reference)…
-        if (actual != null && !LocalFrame.sameCategory(handlerType, actual)) {
+        if (actual != null && !LocalFrame.sameCategory(handlerType, actual) && !(unboxReturn && coerceParam)) {
             throw InjectionError(
                 "[injection] the value type of ModifyVariable does not match the local variable: ${method.name}${method.desc} " +
                     "slot $slot is ${actual.descriptor}, but the handler declared ${handlerType.descriptor}" +
                     " ($handlerDesc)",
             )
         }
-        val storeType = if (coerceReturn && actual != null && valueReference) actual else handlerType
+        val boxParam = coerceParam && primitiveValue && paramRef
+        val storeType = when {
+            unboxReturn -> actual!!
+            coerceReturn && actual != null && valueReference -> actual
+            else -> handlerType
+        }
         // The write-back **widens** that slot's type to the store type (the JVM frames count the value stored by the
         // store instruction). If later code still uses the variable as its original type, class definition fails
         // with `VerifyError`…
@@ -2427,9 +2429,14 @@ internal object PayloadEmitter {
             )
         }
 
+        val loadType = if (primitiveValue && (coerceParam || coerceReturn)) actual!! else handlerType
         val list = InsnList()
         if (instance) list.add(VarInsnNode(Opcodes.ALOAD, 0)) // receiver (target instance)
-        list.add(VarInsnNode(Boxing.loadOpcode(handlerType), slot))
+        list.add(VarInsnNode(Boxing.loadOpcode(loadType), slot))
+        if (boxParam) {
+            val box = Boxing.box(actual!!) ?: throw IllegalStateException("no boxing type for ${actual.className}")
+            list.add(MethodInsnNode(Opcodes.INVOKESTATIC, box.owner, box.name, box.desc, false))
+        }
         val writeBacks = mutableListOf<SugarWriteBack>()
         if (!emitValues(list, extras, method, locals, writeBacks)) return null
         list.add(
@@ -2439,7 +2446,11 @@ internal object PayloadEmitter {
             ),
         )
         emitWriteBacks(list, writeBacks)
-        if (storeType != handlerType) {
+        if (unboxReturn) {
+            val unbox = Boxing.unbox(actual!!) ?: throw IllegalStateException("no unboxing type for ${actual.className}")
+            list.add(TypeInsnNode(Opcodes.CHECKCAST, unbox.owner))
+            list.add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, unbox.owner, unbox.name, unbox.desc, false))
+        } else if (storeType != handlerType) {
             list.add(TypeInsnNode(Opcodes.CHECKCAST, storeType.internalName))
         }
         list.add(VarInsnNode(Boxing.storeOpcode(storeType), slot))
