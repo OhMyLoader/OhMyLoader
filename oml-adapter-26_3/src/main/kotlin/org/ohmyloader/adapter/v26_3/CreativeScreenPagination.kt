@@ -6,6 +6,7 @@ import net.minecraft.client.gui.components.Button
 import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen
 import net.minecraft.client.gui.screens.inventory.PageButton
 import net.minecraft.network.chat.Component
+import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.world.item.CreativeModeTab
 import net.minecraft.world.item.CreativeModeTabs
 import org.ohmyloader.core.adapter.Refl
@@ -43,8 +44,18 @@ object CreativeScreenPagination {
     @Volatile
     private var currentPage = 0
 
-    /** The tabs that flow through the pages: everything except the right-aligned pinned specials. */
-    private fun flowingTabs(): List<CreativeModeTab> = CreativeModeTabs.tabs().filter { !it.isAlignedRight() }
+    /**
+     * The tabs that flow through the pages, in display order: everything except the right-aligned
+     * pinned specials. Mods that declared their tabs through the tab manager
+     * (org.ohmyloader.api26_3.OMLCreativeTabs) get the manager's constraint-resolved key order
+     * (resolved at declare time on keys - the holders were unbound then - and mapped to tabs
+     * here, post-freeze); raw registrations fall back to the registry order.
+     */
+    private fun flowingTabs(): List<CreativeModeTab> {
+        val keys = org.ohmyloader.api26_3.OMLCreativeTabs.resolvedKeyOrder
+            ?: return CreativeModeTabs.tabs().filter { !it.isAlignedRight() }
+        return keys.map { BuiltInRegistries.CREATIVE_MODE_TAB.getValue(it)!! }
+    }
 
     private fun pageCount(): Int = (flowingTabs().size + PAGE_CAPACITY - 1) / PAGE_CAPACITY
 

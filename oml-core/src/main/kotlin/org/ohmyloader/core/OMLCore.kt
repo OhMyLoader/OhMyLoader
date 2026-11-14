@@ -720,6 +720,8 @@ object OMLCore {
                 OmlLog.error("OMLCore", "Mod [${mod.id}] registry declaration failed", t)
             }
         }
+        // Every mod has declared: cross-mod orderings (creative-tab constraints, ...) resolve here.
+        org.ohmyloader.api.RegistrationPhase.completeAllDeclarations()
     }
 
     private fun initMods() {

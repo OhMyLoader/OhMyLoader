@@ -11,12 +11,10 @@ import net.minecraft.world.flag.FeatureFlagSet
 import net.minecraft.world.flag.FeatureFlags
 import net.minecraft.world.inventory.AbstractContainerMenu
 import net.minecraft.world.inventory.MenuType
-import net.minecraft.world.item.CreativeModeTab
 import net.minecraft.world.item.Item
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.entity.BlockEntity
-import net.minecraft.world.level.ItemLike
 import net.minecraft.world.level.block.entity.BlockEntityType
 import net.minecraft.world.level.block.state.BlockBehaviour
 import org.ohmyloader.api.RegistrationPhase
@@ -105,55 +103,6 @@ object OMLRegistration {
         val menuType = constructor.newInstance(supplier, FeatureFlags.VANILLA_SET) as MenuType<M>
         Registry.register(BuiltInRegistries.MENU, id(id), menuType)
         return menuType
-    }
-
-    /**
-     * Registers a creative tab in the declaring mod's namespace and returns its key (used by
-     * `Item.Properties`-level unlocks and `/give`-adjacent tooling, rarely by the mod itself).
-     *
-     * The (row, column) slot cannot be picked by reading the vanilla tabs — they are still
-     * unbound holders at declare time — so the column is derived from the registry size, which
-     * assumes vanilla splits its tabs evenly across the two rows (26.3: seven and seven, so the
-     * tab lands at the bottom row's next free column).
-     */
-    fun registerCreativeTab(
-        id: String,
-        title: Component,
-        icon: () -> ItemStack,
-        displayItems: () -> List<ItemLike>,
-    ): ResourceKey<CreativeModeTab> {
-        val column = BuiltInRegistries.CREATIVE_MODE_TAB.size() / 2
-        val tab = CreativeModeTab.builder(CreativeModeTab.Row.BOTTOM, column)
-            .title(title)
-            .icon(icon)
-            .displayItems(displayItemsGenerator(displayItems))
-            .build()
-        val key = ResourceKey.create(Registries.CREATIVE_MODE_TAB, id(id))
-        Registry.register(BuiltInRegistries.CREATIVE_MODE_TAB, key.identifier(), tab)
-        return key
-    }
-
-    /**
-     * `CreativeModeTab.Output` is not accessible from Kotlin, so the display generator cannot be
-     * written as a lambda against it - a proxy implements the public `DisplayItemsGenerator` and
-     * calls `Output.accept` reflectively (the tab rebuilds its display a handful of times per
-     * screen open).
-     */
-    private fun displayItemsGenerator(items: () -> List<ItemLike>): CreativeModeTab.DisplayItemsGenerator {
-        val iface = CreativeModeTab.DisplayItemsGenerator::class.java
-        val itemLike = ItemLike::class.java
-        @Suppress("UNCHECKED_CAST")
-        return java.lang.reflect.Proxy.newProxyInstance(iface.classLoader, arrayOf(iface)) { _, method, args ->
-            if (method.name == "accept") {
-                val output = args[1]
-                val accept = output.javaClass.methods.first {
-                    it.name == "accept" && it.parameterCount == 1 && it.parameterTypes[0] == itemLike
-                }
-                accept.isAccessible = true
-                for (item in items()) accept.invoke(output, item)
-            }
-            null
-        } as CreativeModeTab.DisplayItemsGenerator
     }
 
     // ---------------------------------------------------------------------------------------------

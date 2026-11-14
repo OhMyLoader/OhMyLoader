@@ -16,10 +16,15 @@ dependencies {
     // module's SnapshotEventBridge uses.
     implementation(project(":oml-adapter-common"))
     compileOnly(files("libs/26.3-client.jar"))
+    // The pagination consults the tab manager's resolved order; the manager jar ships in the
+    // same installer layer, so this only needs to be on the compile path.
+    compileOnly(project(":oml-api-26_3"))
     // The pagination rules rewrite method bodies directly (raw ASM)
     compileOnly(libs.bundles.asm)
     // `Commands.dispatcher` hands back a Brigadier dispatcher; the game supplies brigadier at run time.
     compileOnly(libs.brigadier)
+    // Registry extends com.mojang.serialization.Keyable - its supertypes must resolve on the compile path.
+    compileOnly(libs.datafixerupper)
 
     // HookShapeTest walks the live rule sets and reads the real game jar with ASM.
     testImplementation(kotlin("test"))
