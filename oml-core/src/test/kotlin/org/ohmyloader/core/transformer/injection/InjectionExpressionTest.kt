@@ -385,6 +385,31 @@ class InjectionExpressionTest {
     }
 
     @Test
+    fun `wrapOperation wraps a string concatenation`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("greet", desc = "(Ljava/lang/String;)Ljava/lang/String;") {
+                        atExpression("'Hi ' + ?") {
+                            wrapOperation(
+                                ExpressionHandlers.OWNER, "wrapConcat",
+                                "(Ljava/lang/String;Lorg/ohmyloader/api/hook/Operation;)Ljava/lang/String;",
+                            )
+                        }
+                    }
+                }
+            },
+            concatTarget(),
+        )
+
+        assertEquals(
+            "Hi Bob!",
+            invoke(clazz, "greet", "Bob"),
+            "the operation re-runs the invokedynamic with the handler's argument",
+        )
+    }
+
+    @Test
     fun `an expression bounds the slice window`() {
         val definition = InjectionPoint.Expression.Definition(
             "max", methods = listOf("Ljava/lang/Math;max(II)I"),
@@ -690,5 +715,8 @@ class InjectionExpressionTest {
         fun raiseFirst(args: Args) {
             args[0] = 20
         }
+
+        @JvmStatic
+        fun wrapConcat(name: String, operation: Operation<String>): String = operation.call("$name!")
     }
 }

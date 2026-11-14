@@ -306,6 +306,7 @@ internal object OperationSupport {
     private fun copyOf(insn: AbstractInsnNode): AbstractInsnNode = when (insn) {
         is MethodInsnNode -> MethodInsnNode(insn.opcode, insn.owner, insn.name, insn.desc, insn.itf)
         is FieldInsnNode -> FieldInsnNode(insn.opcode, insn.owner, insn.name, insn.desc)
+        is InvokeDynamicInsnNode -> InvokeDynamicInsnNode(insn.name, insn.desc, insn.bsm, *insn.bsmArgs)
         is TypeInsnNode -> TypeInsnNode(insn.opcode, insn.desc)
         is IntInsnNode -> IntInsnNode(insn.opcode, insn.operand)
         is MultiANewArrayInsnNode -> MultiANewArrayInsnNode(insn.desc, insn.dims)

@@ -83,6 +83,9 @@ public class BinaryExpression extends SimpleExpression {
             case MODIFY_EXPRESSION_VALUE:
                 // Supported.
                 return;
+            case WRAP_OPERATION:
+                // The whole concatenation is one invokedynamic; a captured component is an append call.
+                return;
         }
         throw new UnsupportedOperationException(
                 String.format(

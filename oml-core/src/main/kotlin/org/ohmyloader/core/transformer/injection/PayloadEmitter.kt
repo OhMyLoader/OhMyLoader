@@ -1299,6 +1299,13 @@ internal object PayloadEmitter {
                 returnType = Type.getReturnType(anchor.desc)
             }
 
+            is InvokeDynamicInsnNode -> {
+                // A string-concatenation / lambda factory call site: the operands on the stack are the
+                // bootstrap arguments and the Operation re-emits the same invokedynamic.
+                argTypes = Type.getArgumentTypes(anchor.desc)
+                returnType = Type.getReturnType(anchor.desc)
+            }
+
             is FieldInsnNode -> when (anchor.opcode) {
                 Opcodes.GETFIELD -> {
                     argTypes = arrayOf(Type.getObjectType(anchor.owner))

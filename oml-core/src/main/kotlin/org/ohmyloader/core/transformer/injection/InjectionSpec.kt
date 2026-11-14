@@ -234,8 +234,9 @@ class InjectionSpec internal constructor(
      */
     /** The instruction shapes a WrapOperation can wrap (NEW is handled separately). */
     private fun isWrapOperationAnchor(anchor: AbstractInsnNode): Boolean =
-        anchor is MethodInsnNode || anchor is FieldInsnNode || anchor is TypeInsnNode ||
-            anchor is InsnNode || anchor is IntInsnNode || anchor is MultiANewArrayInsnNode
+        anchor is MethodInsnNode || anchor is InvokeDynamicInsnNode || anchor is FieldInsnNode ||
+            anchor is TypeInsnNode || anchor is InsnNode || anchor is IntInsnNode ||
+            anchor is MultiANewArrayInsnNode
 
     /** The instruction-producing payloads that *replace* what they anchor on, so only one rule can own a site. */
     private enum class Exclusive { INSTRUCTION, WHOLE_METHOD }
