@@ -1083,6 +1083,15 @@ object HookScanner {
         val cancelable = (annotationValue(annotation, "cancelable") as? Boolean) ?: false
         val targetIsVoid = methodDesc == null || Type.getReturnType(methodDesc) == Type.VOID_TYPE
         val entryAnchor = anchor.core is InjectionPoint.Head || anchor.core is InjectionPoint.ConstructorHead
+        // After a **void** call the operand stack is empty again, so a void target can return there too;
+        // the engine derives the continuation frame by dataflow. A call whose descriptor is not written
+        // cannot be proven void, so it stays a notification instead of risking a frame the verifier rejects.
+        val afterVoidCall = (anchor.core as? InjectionPoint.Call)?.let { call ->
+            call.after && call.desc != null && Type.getReturnType(call.desc) == Type.VOID_TYPE
+        } == true
+        // The merged form's cancel stub is framed at method entry, so the after-call anchor is
+        // short-circuiting only for the bridge (static) path until that stub derives dataflow frames.
+        val shortCircuitAnchor = entryAnchor || (afterVoidCall && mergeInto == null)
 
         // The short-circuit paths split into two branches: a void target uses HookContext (CheckCall); a
         // non-void target uses HookValue (CancelableReturn; setReturnValue both cancels and
@@ -1090,10 +1099,23 @@ object HookScanner {
         var returnsValue = false
         if (cancelable) {
             when {
-                !entryAnchor -> OmlLog.warn(
+                afterVoidCall && mergeInto != null -> OmlLog.warn(
                     "Mixin",
-                    "short-circuiting only supports method-entry anchors (HEAD / CTOR_HEAD), degraded to notify: " +
+                    "short-circuiting after a void call needs a static handler (the merged cancel stub is " +
+                        "entry-framed), degraded to notify: ${methodNames.first()} (mod=$modId)",
+                )
+
+                !shortCircuitAnchor -> OmlLog.warn(
+                    "Mixin",
+                    "short-circuiting only supports method-entry anchors (HEAD / CTOR_HEAD) and anchors after a " +
+                        "void call, degraded to notify: " +
                         "${methodNames.first()} at=${AnchorResolver.describe(anchor)} (mod=$modId)",
+                )
+
+                tail == Tail.RETURNABLE && !entryAnchor -> OmlLog.warn(
+                    "Mixin",
+                    "value short-circuiting needs a method-entry anchor (after a void call only a void target " +
+                        "can cancel), degraded to notify: ${methodNames.first()} (mod=$modId)",
                 )
 
                 tail == Tail.RETURNABLE && methodDesc == null -> OmlLog.warn(
@@ -1133,8 +1155,8 @@ object HookScanner {
         if (mergeInto != null && !method.isDeclaredStatic()) {
             handlers += "${method.name}${method.desc}"
             val variant = when {
-                cancelable && entryAnchor && returnsValue -> HandlerVariant.RETURNABLE
-                cancelable && entryAnchor && targetIsVoid -> HandlerVariant.CANCELABLE
+                cancelable && shortCircuitAnchor && returnsValue -> HandlerVariant.RETURNABLE
+                cancelable && shortCircuitAnchor && targetIsVoid -> HandlerVariant.CANCELABLE
                 else -> HandlerVariant.NOTIFY
             }
             val handleDesc = if (variant == HandlerVariant.RETURNABLE) CALLBACK_RETURNABLE_DESC
@@ -1159,7 +1181,7 @@ object HookScanner {
             mixinClass = mixinClass,
             handlerMethod = method.name,
             targetMethod = methodNames.first(),
-            cancelable = cancelable && entryAnchor && !returnsValue && targetIsVoid,
+            cancelable = cancelable && shortCircuitAnchor && !returnsValue && targetIsVoid,
             captureTypes = bridgeCaptures,
             handlerParamCount = bridgeCaptures.size + 1,
             returnsValue = returnsValue,

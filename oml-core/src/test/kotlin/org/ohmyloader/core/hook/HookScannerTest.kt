@@ -326,6 +326,73 @@ class HookScannerTest {
     }
 
     @Test
+    fun `cancelable after a void call uses the cancelable payload`() {
+        val parsed = HookScanner.parseMixinClass(
+            injectClass(
+                handler(
+                    "h", "(Lorg/ohmyloader/api/hook/HookContext;)V",
+                    targetDesc = "(I)V", at = "INVOKE_ASSIGN",
+                    atTarget = "Lx/Y;record(I)V", cancelable = true,
+                ),
+                hooked = true,
+            ),
+            "m",
+        )
+        assertIs<Payload.CheckCall>(parsed.rules.single().payload)
+    }
+
+    @Test
+    fun `cancelable after a non void call degrades to notify`() {
+        val parsed = HookScanner.parseMixinClass(
+            injectClass(
+                handler(
+                    "h", "(Lorg/ohmyloader/api/hook/HookContext;)V",
+                    targetDesc = "(I)V", at = "INVOKE_ASSIGN",
+                    atTarget = "Lx/Y;produce(I)I", cancelable = true,
+                ),
+                hooked = true,
+            ),
+            "m",
+        )
+        assertIs<Payload.StaticCall>(parsed.rules.single().payload)
+    }
+
+    @Test
+    fun `cancelable after a call without a descriptor degrades to notify`() {
+        val parsed = HookScanner.parseMixinClass(
+            injectClass(
+                handler(
+                    "h", "(Lorg/ohmyloader/api/hook/HookContext;)V",
+                    targetDesc = "(I)V", at = "INVOKE_ASSIGN",
+                    atTarget = "record", cancelable = true,
+                ),
+                hooked = true,
+            ),
+            "m",
+        )
+        assertIs<Payload.StaticCall>(parsed.rules.single().payload)
+    }
+
+    @Test
+    fun `a merged handler cannot cancel after a call`() {
+        val parsed = HookScanner.parseMixinClass(
+            asMerged(
+                injectClass(
+                    handler(
+                        "h", "(Lorg/ohmyloader/api/hook/HookContext;)V",
+                        targetDesc = "(I)V", at = "INVOKE_ASSIGN",
+                        atTarget = "Lx/Y;record(I)V", cancelable = true,
+                    ),
+                ),
+            ),
+            "m",
+        )
+        val payload = parsed.rules.single().payload
+        assertIs<Payload.HandlerCall>(payload)
+        assertEquals(HandlerVariant.NOTIFY, payload.variant)
+    }
+
+    @Test
     fun `missing method name is reported`() {
         val node = injectClass(handler("h", "(Lorg/ohmyloader/api/hook/HookContext;)V"))
         // Erase the method value
@@ -2447,6 +2514,7 @@ class HookScannerTest {
         injectMethod: String = "runTick",
         targetDesc: String = "(Z)V",
         at: String = "HEAD",
+        atTarget: String = "",
         cancelable: Boolean = false,
         locals: String? = null,
         // Int.MIN_VALUE = "this field is not written" (so the test can pass negatives to verify the checks)
@@ -2457,7 +2525,7 @@ class HookScannerTest {
         val pairs = mutableListOf<Any?>(
             "method", injectMethod,
             "desc", targetDesc,
-            "at", atNode(at),
+            "at", atNode(at, target = atTarget),
             "cancelable", cancelable,
         )
         if (locals != null) pairs.addAll(listOf("locals", listOf("Lorg/ohmyloader/api/hook/LocalCapture;", locals)))

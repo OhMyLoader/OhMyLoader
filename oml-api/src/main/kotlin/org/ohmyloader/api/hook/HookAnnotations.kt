@@ -206,8 +206,10 @@ enum class LocalCapture {
  * [methods] is the **union** of target method names.
  * [desc] empty matches **any overload**; when left empty, the [locals] capture is resolved at the injection point by data-flow analysis
  * over types — the static rule "i-th capture = i-th target parameter" needs the descriptor to compute slots.
- * [cancelable] really short-circuits only at the method-entry anchors (HEAD / CTOR_HEAD): a void target with `HookContext`, non-void with
- * `HookValue<T>`; other positions degrade to a notification.
+ * [cancelable] short-circuits at the method-entry anchors (HEAD / CTOR_HEAD): a void target with `HookContext`, non-void with
+ * `HookValue<T>`. A void target can also cancel right after a **void** call (`INVOKE_ASSIGN`, or `shift = AFTER`
+ * with the call's descriptor written); other positions, and every anchor of a merged instance handler, degrade to
+ * a notification.
  */
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)

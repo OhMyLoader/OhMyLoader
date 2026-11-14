@@ -186,6 +186,43 @@ class HookPipelineTest {
         assertEquals(1, recorderHits.get(), "exactly one dispatch per call")
     }
 
+    @Test
+    fun `a cancelable handler after a void call returns from the target there`() {
+        val targetClass = javaClass.classLoader.loadClass("omltest.pipeline.CancelAfterCallFixtures\$Target")
+        val mixinClass = javaClass.classLoader.loadClass("omltest.pipeline.CancelAfterCallFixtures\$Mixin")
+        @Suppress("UNCHECKED_CAST")
+        val calls = targetClass.getField("calls").get(null) as MutableList<String>
+        calls.clear()
+        val jar = jarOf(targetClass, mixinClass)
+        val mod = ModContainer(
+            id = "cancel_after_call_mod", name = "Cancel After Call Mod", version = "0.1.0",
+            entryClass = "omltest.pipeline.CancelAfterCallFixtures", file = jar,
+        )
+
+        HookRegistry.installClassLoader(javaClass.classLoader)
+        val transformer = HookScanner.createTransformer(listOf(mod))
+        assertNotNull(transformer)
+        val targetName = "omltest/pipeline/CancelAfterCallFixtures\$Target"
+        assertTrue(transformer.appliesTo(targetName))
+        val node = classNodeOf(targetClass)
+        assertTrue(transformer.transform(TransformContext(targetName, node)))
+
+        // In tests the bridge lives in a one-off child of the test loader, so the target must be defined
+        // under that loader's parent chain to resolve the injected INVOKESTATIC by name.
+        val writer = ClassWriter(ClassWriter.COMPUTE_MAXS)
+        node.accept(writer)
+        val bytes = writer.toByteArray()
+        val clazz = object : ClassLoader(HookRegistry.bridgeClass!!.classLoader) {
+            fun define(): Class<*> = defineClass(targetName.replace('/', '.'), bytes, 0, bytes.size)
+        }.define()
+        val instance = clazz.getDeclaredConstructor().newInstance()
+        clazz.getMethod("run", Int::class.javaPrimitiveType).invoke(instance, 7)
+        assertEquals(
+            listOf("record:7"), calls,
+            "the handler cancels right after record(); mark() must not run",
+        )
+    }
+
     // ---------- the concurrency shape: one transformer, many distinct targets, parallel ----------
 
     @Test
