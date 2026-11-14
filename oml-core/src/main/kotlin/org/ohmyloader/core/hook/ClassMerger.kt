@@ -525,6 +525,9 @@ internal object ClassMerger {
                         }
                     } else {
                         val t = argTypes[0]
+                        // The JVM refuses PUTSTATIC on a final field from any method but <clinit>;
+                        // a mod declaring a setter has access-transformer intent, so the modifier goes.
+                        targetField.access = targetField.access and Opcodes.ACC_FINAL.inv()
                         buildMethod(access, synthName, method.desc, t.size, t.size) {
                             add(VarInsnNode(t.getOpcode(Opcodes.ILOAD), 0))
                             add(FieldInsnNode(Opcodes.PUTSTATIC, target.name, targetField.name, targetField.desc))
@@ -546,6 +549,10 @@ internal object ClassMerger {
                     }
                 } else {
                     val t = argTypes[0]
+                    // The JVM refuses PUTFIELD on a final instance field from any method but the
+                    // declaring <init> (the crash is an IllegalAccessError at the write site); a mod
+                    // declaring a setter has access-transformer intent, so the modifier goes.
+                    targetField.access = targetField.access and Opcodes.ACC_FINAL.inv()
                     buildMethod(concrete, method.name, method.desc, 1 + t.size, 1 + t.size) {
                         add(VarInsnNode(Opcodes.ALOAD, 0))
                         add(VarInsnNode(t.getOpcode(Opcodes.ILOAD), 1))

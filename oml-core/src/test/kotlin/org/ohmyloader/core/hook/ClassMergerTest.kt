@@ -572,6 +572,31 @@ class ClassMergerTest {
     }
 
     @Test
+    fun `accessor setter strips ACC_FINAL from the target field`() {
+        // The JVM refuses PUTFIELD on a final instance field from any method but the declaring
+        // <init> (IllegalAccessError at the write site) — the synthesizer must drop the modifier,
+        // or every setter on a final field (e.g. swapping ChestBlockEntity.openersCounter) dies
+        // the first time it runs.
+        val finalTarget = target().apply {
+            fields.forEach { it.access = it.access or Opcodes.ACC_FINAL }
+        }
+        val [merged, result] = mergeInto(
+            finalTarget,
+            accessorMixin(
+                abstractMethod("writePayload", "(Ljava/lang/String;)V", ACCESSOR, "payload"),
+                abstractMethod("readPayload", "()Ljava/lang/String;", ACCESSOR, "payload"),
+            ),
+        )
+        assertEquals(emptyList(), result.problems, result.problems.toString())
+
+        val clazz = define(merged)
+        val instance = clazz.getDeclaredConstructor().newInstance()
+        // On the unfixed synthesizer this write throws IllegalAccessError.
+        clazz.methods.first { it.name == "writePayload" }.invoke(instance, "new")
+        assertEquals("new", invoke(clazz, instance, "readPayload"))
+    }
+
+    @Test
     fun `accessor name is inferred from the get prefix`() {
         // `value` is left empty: getPayload() → target field payload (matching Mixin's prefix convention)
         val [merged, result] = mergeInto(
