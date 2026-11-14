@@ -73,6 +73,12 @@ object HookRegistry {
         val returnsValue: Boolean = false,
         val returnType: String = "V",
         val mirror: Boolean = false,
+        /**
+         * The bridge kind the front end built its `INVOKESTATIC` from. A value-handler may return `void`
+         * (`@ModifyArgs`) while still needing the id-dropping `MODIFY` shape, which the return type alone
+         * cannot express.
+         */
+        val kind: BridgeKind? = null,
     )
 
     private val nextId = AtomicInteger()
@@ -136,11 +142,12 @@ object HookRegistry {
         returnsValue: Boolean = false,
         returnType: String = "V",
         mirror: Boolean = false,
+        kind: BridgeKind? = null,
     ): Int {
         val id = nextId.incrementAndGet()
         handlers[id] = Handler(
             id, modId, mixinClass, handlerMethod, targetMethod, cancelable,
-            captureTypes, handlerParamCount, returnsValue, returnType, mirror,
+            captureTypes, handlerParamCount, returnsValue, returnType, mirror, kind,
         )
         return id
     }
@@ -148,8 +155,8 @@ object HookRegistry {
     /** Look up a registered handler (for the front end to build the bridge-call descriptor). */
     fun handler(id: Int): Handler? = handlers[id]
 
-    /** Which kind of bridge this handler uses (derived from the flags set at registration). */
-    private fun kindOf(handler: Handler): BridgeKind = when {
+    /** Which kind of bridge this handler uses: the front end's explicit kind, else derived from the flags. */
+    private fun kindOf(handler: Handler): BridgeKind = handler.kind ?: when {
         handler.returnsValue -> BridgeKind.RETURNABLE
         handler.cancelable -> BridgeKind.CANCELABLE
         handler.mirror -> BridgeKind.MIRROR

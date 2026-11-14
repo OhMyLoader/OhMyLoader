@@ -266,6 +266,42 @@ fun `a lambda whose body is another class's method is registered against that cl
         assertEquals(1, hits.get(), "the handler must run inside the referenced method")
     }
 
+    @Test
+fun `a void ModifyArgs handler calls the bridge generated for its kind`() {
+        val targetClass = javaClass.classLoader.loadClass("omltest.pipeline.ModifyArgsFixture\$Target")
+        val mixinClass = javaClass.classLoader.loadClass("omltest.pipeline.ModifyArgsFixture\$Mixin")
+        val helperClass = javaClass.classLoader.loadClass("omltest.pipeline.ModifyArgsFixture\$Helper")
+        @Suppress("UNCHECKED_CAST")
+        val seen = helperClass.getField("seen").get(null) as MutableList<Int>
+        seen.clear()
+        val jar = jarOf(targetClass, mixinClass)
+        val mod = ModContainer(
+            id = "modify_args_mod", name = "Modify Args Mod", version = "0.1.0",
+            entryClass = "omltest.pipeline.ModifyArgsFixture", file = jar,
+        )
+
+        HookRegistry.installClassLoader(javaClass.classLoader)
+        val transformer = HookScanner.createTransformer(listOf(mod))
+        assertNotNull(transformer)
+        val targetName = "omltest/pipeline/ModifyArgsFixture\$Target"
+        assertTrue(transformer.appliesTo(targetName))
+        val node = classNodeOf(targetClass)
+        assertTrue(transformer.transform(TransformContext(targetName, node)))
+
+        val writer = ClassWriter(ClassWriter.COMPUTE_MAXS)
+        node.accept(writer)
+        val bytes = writer.toByteArray()
+        val clazz = object : ClassLoader(HookRegistry.bridgeClass!!.classLoader) {
+            fun define(): Class<*> = defineClass(targetName.replace('/', '.'), bytes, 0, bytes.size)
+        }.define()
+        val instance = clazz.getDeclaredConstructor().newInstance()
+        clazz.getMethod("run", Int::class.javaPrimitiveType).invoke(instance, 5)
+        assertEquals(
+            listOf(15), seen,
+            "the void handler's MODIFY bridge must exist and rewrite the argument",
+        )
+    }
+
     // ---------- the concurrency shape: one transformer, many distinct targets, parallel ----------
 
     @Test

@@ -2250,6 +2250,9 @@ object HookScanner {
             captureTypes = captureTypes,
             handlerParamCount = captureTypes.size,
             returnType = returnType,
+            // A void value-handler (@ModifyArgs) still needs the id-dropping MODIFY shape; the return
+            // type alone would be read as NOTIFY and the emitted call would name a missing bridge.
+            kind = HookRegistry.BridgeKind.MODIFY,
         )
         val kind = HookRegistry.BridgeKind.MODIFY
         return Triple(id, HookRegistry.bridgeMethodName(id, kind), HookRegistry.bridgeDesc(id, kind))
