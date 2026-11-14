@@ -396,6 +396,21 @@ class InjectionSpec internal constructor(
     }
 
     /**
+     * The value types an expression capture recorded for a simple operation (`length` records the
+     * array's static type; comparisons record their operands). Only `ARRAYLENGTH` needs it here.
+     */
+    private fun expressionOperationArgs(
+        point: InjectionPoint,
+        decorations: Map<AbstractInsnNode, Map<String, Any?>>,
+        anchor: AbstractInsnNode,
+    ): Array<Type>? {
+        if (point.core !is InjectionPoint.Expression) return null
+        val raw = decorations[anchor]?.get(ExpressionDecorations.SIMPLE_OPERATION_ARGS) as? Array<*>
+            ?: return null
+        return raw.filterIsInstance<Type>().toTypedArray()
+    }
+
+    /**
      * Expands the compound instruction a captured expression belongs to and returns the component this
      * injector targets. Expansion happens at most once per compound, so a second rule on the same
      * instruction reuses the rewritten form.
@@ -909,6 +924,7 @@ class InjectionSpec internal constructor(
                             payload.owner, payload.method, payload.desc, payload.extras,
                             instance = false, classNode = classNode, method = method, owner = owner,
                             anchor = anchor, locals = locals, frames = frames,
+                            operandTypesOverride = expressionOperationArgs(point, expressionDecorations, anchor),
                         ) ?: continue
                         if (!insertBlock(method, anchor, list, after = false, frames, knownShares)) continue
                         method.instructions.remove(anchor)
@@ -1278,6 +1294,9 @@ class InjectionSpec internal constructor(
                                     payload.owner, payload.method, payload.desc, payload.captures,
                                     instance = true, classNode = classNode, method = method, owner = owner,
                                     anchor = anchor, locals = locals, frames = frames,
+                                    operandTypesOverride = expressionOperationArgs(
+                                        point, expressionDecorations, anchor,
+                                    ),
                                 ) ?: continue
                                 if (!insertBlock(method, anchor, list, after = false, frames, knownShares)) continue
                                 method.instructions.remove(anchor)

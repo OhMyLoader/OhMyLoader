@@ -1284,6 +1284,7 @@ internal object PayloadEmitter {
         anchor: AbstractInsnNode,
         locals: AnchorLocals?,
         frames: MethodFrames,
+        operandTypesOverride: Array<Type>? = null,
     ): InsnList? {
         val argTypes: Array<Type>
         val returnType: Type
@@ -1368,6 +1369,20 @@ internal object PayloadEmitter {
                 val load = arrayLoad(anchor.opcode)
                 val store = arrayStore(anchor.opcode)
                 when {
+                    anchor.opcode == Opcodes.ARRAYLENGTH -> {
+                        // The bridge must cast the operand to the array type before ARRAYLENGTH; an
+                        // `Object` would be rejected by the verifier. The expression match recorded it.
+                        argTypes = operandTypesOverride ?: run {
+                            OmlLog.error(
+                                "Injection",
+                                "WrapOperation on ARRAYLENGTH needs the array's static type, which only an " +
+                                    "@Expression capture records: ${method.name}",
+                            )
+                            return null
+                        }
+                        returnType = Type.INT_TYPE
+                    }
+
                     load != null -> {
                         argTypes = arrayOf(load.array, Type.INT_TYPE)
                         returnType = load.element

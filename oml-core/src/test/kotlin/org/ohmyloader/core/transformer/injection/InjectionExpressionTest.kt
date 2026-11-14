@@ -505,6 +505,27 @@ class InjectionExpressionTest {
     }
 
     @Test
+    fun `wrapOperation wraps an array length`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("len", desc = "([I)I") {
+                        atExpression("?.length") {
+                            wrapOperation(
+                                ExpressionHandlers.OWNER, "arrayLengthPlus",
+                                "([ILorg/ohmyloader/api/hook/Operation;)I",
+                            )
+                        }
+                    }
+                }
+            },
+            arrayLengthTarget(),
+        )
+
+        assertEquals(13, invoke(clazz, "len", intArrayOf(1, 2, 3)), "length 3 + 10")
+    }
+
+    @Test
     fun `an expression bounds the slice window`() {
         val definition = InjectionPoint.Expression.Definition(
             "max", methods = listOf("Ljava/lang/Math;max(II)I"),
@@ -755,6 +776,15 @@ class InjectionExpressionTest {
         },
     )
 
+    /** `static int len(int[] values) { return values.length; }` */
+    private fun arrayLengthTarget(): ClassNode = classNode(
+        methodNode("len", "([I)I") {
+            add(VarInsnNode(Opcodes.ALOAD, 0))
+            add(InsnNode(Opcodes.ARRAYLENGTH))
+            add(InsnNode(Opcodes.IRETURN))
+        },
+    )
+
     /** `static int cmp(int x) { if (x > 5) return 100; return 0; }` */
     private fun compareTarget(): ClassNode = classNode(
         methodNode("cmp", "(I)I") {
@@ -860,5 +890,8 @@ class InjectionExpressionTest {
         @Suppress("UNUSED_PARAMETER")
         @JvmStatic
         fun denyDouble(a: Double, b: Double): Boolean = false
+
+        @JvmStatic
+        fun arrayLengthPlus(array: IntArray, operation: Operation<Int>): Int = operation.call(array) + 10
     }
 }
