@@ -151,9 +151,10 @@ annotation class Mutable
 /**
  * Allows a handler parameter or return type to differ from the value's actual type (aligned with
  * MixinExtras' `@Coerce`): annotate the parameter to accept a reference **supertype** of the value,
- * and annotate the handler method to coerce the returned reference back to the value's type. The
- * first slice covers reference types on `@ModifyExpressionValue`; primitive boxing/unboxing is
- * rejected with an explicit error.
+ * and annotate the handler method to coerce the returned reference back to the value's type.
+ * Reference coercion covers `@ModifyExpressionValue`, `@ModifyReturnValue`, `@ModifyArg`
+ * (single-argument mode), `@ModifyConstant`, `@ModifyVariable` and `@Redirect` (by parameter
+ * position); primitive boxing/unboxing is implemented on `@ModifyExpressionValue` only.
  */
 @Target(AnnotationTarget.VALUE_PARAMETER, AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)

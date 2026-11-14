@@ -1185,36 +1185,75 @@ object HookScanner {
         val split = trailingSugar(method, mixinClass, where, modId, problems) ?: return
         val handlerParams = split.normal.map { it.descriptor }
         val handlerRet = Type.getReturnType(method.desc).descriptor
+        val coerceParams = (0 until split.normal.size).filterTo(mutableSetOf()) { i ->
+            method.visibleParameterAnnotations?.getOrNull(i)
+                ?.any { it.desc == COERCE_DESC } == true
+        }
+        val coerceReturn = method.visibleAnnotations.orEmpty().any { it.desc == COERCE_DESC }
 
         if (call != null) {
             val callArgs = Type.getArgumentTypes(call.desc).map { it.descriptor }
             val callRet = Type.getReturnType(call.desc).descriptor
-
-            // Handler params = the arguments, or "receiver + arguments" (instance call; consistent with Mixin's
-            // "first param is the receiver"); trailing sugar params are extras.
-            val receiverOk = handlerParams == callArgs || handlerParams.drop(1) == callArgs
-            if (!receiverOk || handlerRet != callRet) {
-                problems += "[$modId] $where —— @Redirect handler's non-sugar parameter list must equal the " +
-                    "replaced call (an instance call places the receiver as the first parameter): expected " +
-                    "(${callArgs.joinToString("")})$callRet or (receiver${callArgs.joinToString("")})$callRet, " +
-                    "actual ${method.desc}"
-                return
+            if (coerceParams.isEmpty() && !coerceReturn) {
+                // Handler params = the arguments, or "receiver + arguments" (instance call; consistent with Mixin's
+                // "first param is the receiver"); trailing sugar params are extras.
+                val receiverOk = handlerParams == callArgs || handlerParams.drop(1) == callArgs
+                if (!receiverOk || handlerRet != callRet) {
+                    problems += "[$modId] $where —— @Redirect handler's non-sugar parameter list must equal the " +
+                        "replaced call (an instance call places the receiver as the first parameter): expected " +
+                        "(${callArgs.joinToString("")})$callRet or (receiver${callArgs.joinToString("")})$callRet, " +
+                        "actual ${method.desc}"
+                    return
+                }
+            } else {
+                // With @Coerce the shape is compared against either pushed form (arguments only, or
+                // receiver + arguments), allowing reference supertypes at the annotated positions; the
+                // engine knows whether the call is static and rejects the wrong form there.
+                val forms = listOf(callArgs, listOf("L${call.owner};") + callArgs)
+                fun formOk(pushed: List<String>): Boolean =
+                    handlerParams.size == pushed.size && pushed.indices.all { i ->
+                        handlerParams[i] == pushed[i] ||
+                            (i in coerceParams && isReferenceDescriptor(pushed[i]) &&
+                                isReferenceDescriptor(handlerParams[i]))
+                    }
+                val paramsOk = forms.any(::formOk)
+                val retOk = if (coerceReturn) {
+                    isReferenceDescriptor(handlerRet) && isReferenceDescriptor(callRet)
+                } else {
+                    handlerRet == callRet
+                }
+                if (!paramsOk || !retOk) {
+                    problems += "[$modId] $where —— with @Coerce the @Redirect handler must declare the replaced " +
+                        "call's receiver plus arguments (instance) or its arguments (static), with reference " +
+                        "supertypes only where annotated: actual ${method.desc}"
+                    return
+                }
             }
         }
         if (new != null && new.owner != null && new.desc != null) {
             val ctorArgs = Type.getArgumentTypes(new.desc).map { it.descriptor }
             val constructed = "L${new.owner};"
-            if (handlerParams != ctorArgs || handlerRet != constructed) {
+            val paramsOk = handlerParams.size == ctorArgs.size && ctorArgs.indices.all { i ->
+                handlerParams[i] == ctorArgs[i] ||
+                    (i in coerceParams && isReferenceDescriptor(ctorArgs[i]) &&
+                        isReferenceDescriptor(handlerParams[i]))
+            }
+            val retOk = if (coerceReturn) {
+                isReferenceDescriptor(handlerRet) && isReferenceDescriptor(constructed)
+            } else {
+                handlerRet == constructed
+            }
+            if (!paramsOk || !retOk) {
                 problems += "[$modId] $where —— @Redirect on NEW handler's non-sugar parameter list must equal " +
-                    "the constructor's arguments and return the constructed type: expected " +
-                    "(${ctorArgs.joinToString("")})$constructed, actual ${method.desc}"
+                    "the constructor's arguments and return the constructed type (reference supertypes allowed " +
+                    "with @Coerce): actual ${method.desc}"
                 return
             }
         }
         // With an @Expression or an unqualified NEW the target is only known at injection time, so the
         // engine validates the handler shape and the bridge descriptor against the actual instruction.
         val payload: Payload
-        if (call != null && split.bindings.isEmpty()) {
+        if (call != null && split.bindings.isEmpty() && coerceParams.isEmpty() && !coerceReturn) {
             val id = HookRegistry.register(
                 modId = modId,
                 mixinClass = mixinClass,
@@ -1249,12 +1288,18 @@ object HookScanner {
                 HookRegistry.bridgeMethodName(id, kind),
                 desc = HookRegistry.bridgeDesc(id, kind),
                 extras = split.bindings + DslValue.IntVal(id),
+                coerceParams = coerceParams,
+                coerceReturn = coerceReturn,
             )
         }
         rules += Rule(
             targetInternal, methodNames, methodDesc, anchor, payload, policy, emptyList(), "Redirect",
         )
     }
+
+    /** A `@Coerce` position must be a reference on both sides: wrapper boxing is not implemented here. */
+    private fun isReferenceDescriptor(desc: String): Boolean =
+        desc.startsWith("L") || desc.startsWith("[")
 
     // ---------- @ModifyArg / @ModifyArgs / @ModifyConstant ----------
 

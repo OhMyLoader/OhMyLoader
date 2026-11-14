@@ -340,6 +340,32 @@ class HookScannerTest {
     // ---------- @Redirect ----------
 
     @Test
+    fun `coerce marks the Redirect handler`() {
+        newBridge()
+        val redirect = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Redirect;").apply {
+            values = mutableListOf<Any?>(
+                "method", "runTick",
+                "at", atNode("INVOKE", target = "Lnet/minecraft/Foo;bar(Ljava/lang/String;)Ljava/lang/String;"),
+            )
+        }
+        val coerce = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Coerce;")
+        val method = MethodNode(
+            Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h",
+            "(Ljava/lang/Object;)Ljava/lang/Object;", null, null,
+        ).apply {
+            instructions.add(InsnNode(Opcodes.ACONST_NULL))
+            instructions.add(InsnNode(Opcodes.ARETURN))
+            visibleAnnotations = listOf(redirect, coerce)
+            visibleParameterAnnotations = arrayOf(mutableListOf(coerce))
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        val payload = parsed.rules[0].payload as Payload.Redirect
+        assertEquals(setOf(0), payload.coerceParams)
+        assertTrue(payload.coerceReturn)
+    }
+
+    @Test
     fun `redirect on a static call mirrors the descriptor`() {
         val parsed = HookScanner.parseMixinClass(
             redirectClass("(ILjava/lang/String;)V", "INVOKE", "Lnet/minecraft/Foo;bar(ILjava/lang/String;)V"),

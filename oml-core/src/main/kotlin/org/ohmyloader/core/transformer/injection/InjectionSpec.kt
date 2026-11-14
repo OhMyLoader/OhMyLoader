@@ -244,6 +244,9 @@ class InjectionSpec internal constructor(
             (anchor is TypeInsnNode && anchor.opcode == Opcodes.ANEWARRAY) ||
             (anchor is IntInsnNode && anchor.opcode == Opcodes.NEWARRAY)
 
+    private fun isReferenceValue(type: Type): Boolean =
+        type.sort == Type.OBJECT || type.sort == Type.ARRAY
+
     /** The instruction-producing payloads that *replace* what they anchor on, so only one rule can own a site. */
     private enum class Exclusive { INSTRUCTION, WHOLE_METHOD }
 
@@ -1468,6 +1471,7 @@ class InjectionSpec internal constructor(
                             val edit = PayloadEmitter.emitRedirectNew(
                                 payload.handlerOwner, payload.handlerMethod, handlerDesc, payload.extras,
                                 method, owner, anchor, locals,
+                                coerceParams = payload.coerceParams, coerceReturn = payload.coerceReturn,
                             ) ?: continue
                             if (!insertBlock(method, edit.initInsn, edit.block, after = false, frames, knownShares)) continue
                             method.instructions.remove(edit.initInsn)
@@ -1504,17 +1508,25 @@ class InjectionSpec internal constructor(
                         }
                         if (payload.desc != null) {
                             val params = Type.getArgumentTypes(payload.desc)
-                            if (params.size < pushed.size ||
-                                !params.copyOfRange(0, pushed.size).contentEquals(pushed) ||
-                                Type.getReturnType(payload.desc) != callRet
-                            ) {
+                            val handlerRet = Type.getReturnType(payload.desc)
+                            val prefixOk = params.size >= pushed.size && pushed.indices.all { i ->
+                                params[i] == pushed[i] ||
+                                    (i in payload.coerceParams &&
+                                        isReferenceValue(params[i]) && isReferenceValue(pushed[i]))
+                            }
+                            val retOk = if (payload.coerceReturn) {
+                                isReferenceValue(handlerRet) && isReferenceValue(callRet)
+                            } else {
+                                handlerRet == callRet
+                            }
+                            if (!prefixOk || !retOk) {
                                 throw InjectionError(
                                     "[injection] @Redirect handler's parameters must start with " +
                                         "${pushed.joinToString("", "(", ")") { it.descriptor }}${callRet.descriptor} " +
-                                        "(the replaced call's receiver + arguments and its return type): " +
-                                        "actual ${payload.desc} (${method.name}${method.desc}) — for an instance " +
-                                        "call the receiver must be the first parameter, and an @Expression is " +
-                                        "only checked here",
+                                        "(the replaced call's receiver + arguments and its return type, with " +
+                                        "reference supertypes only where @Coerce allows): actual ${payload.desc} " +
+                                        "(${method.name}${method.desc}) — for an instance call the receiver must " +
+                                        "be the first parameter, and an @Expression is only checked here",
                                 )
                             }
                         }
@@ -1538,6 +1550,9 @@ class InjectionSpec internal constructor(
                             MethodInsnNode(Opcodes.INVOKESTATIC, payload.handlerOwner, payload.handlerMethod, desc, false),
                         )
                         PayloadEmitter.emitWriteBacks(block, writeBacks)
+                        if (payload.coerceReturn && Type.getReturnType(desc) != callRet) {
+                            block.add(TypeInsnNode(Opcodes.CHECKCAST, callRet.internalName))
+                        }
                         if (!insertBlock(method, anchor, block, after = true, frames, knownShares)) continue
                         method.instructions.remove(anchor)
                         frames.invalidate()

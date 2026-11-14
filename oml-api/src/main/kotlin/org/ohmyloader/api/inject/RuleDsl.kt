@@ -737,8 +737,12 @@ class PayloadBuilder @PublishedApi internal constructor(
         handlerMethod: String,
         handlerDesc: String? = null,
         extras: List<DslValue> = emptyList(),
+        coerceParams: Set<Int> = emptySet(),
+        coerceReturn: Boolean = false,
     ) {
-        payload = Payload.Redirect(handlerOwner, handlerMethod, handlerDesc, extras)
+        payload = Payload.Redirect(
+            handlerOwner, handlerMethod, handlerDesc, extras, coerceParams, coerceReturn,
+        )
     }
 
     /**

@@ -1208,6 +1208,9 @@ internal object PayloadEmitter {
     private val Type.isReference: Boolean
         get() = sort == Type.OBJECT || sort == Type.ARRAY
 
+    private fun isRefType(type: Type): Boolean =
+        type.sort == Type.OBJECT || type.sort == Type.ARRAY
+
     /**
      * Materializes the **boolean value of a comparison** around its jump so a value-modifying handler can
      * rewrite it (MixinExtras' comparison handling). The original jump is retargeted to a local label; both
@@ -1797,6 +1800,8 @@ internal object PayloadEmitter {
         owner: String,
         newInsn: TypeInsnNode,
         locals: AnchorLocals?,
+        coerceParams: Set<Int> = emptySet(),
+        coerceReturn: Boolean = false,
     ): WrapNewEdit? {
         val next = nextReal(newInsn)
         if (next == null || next.opcode != Opcodes.DUP) {
@@ -1825,16 +1830,20 @@ internal object PayloadEmitter {
         }
         for (i in argTypes.indices) {
             if (handlerArgs[i] != argTypes[i]) {
-                throw InjectionError(
-                    "[injection] Redirect(NEW) constructor argument ${i + 1} type mismatch: expected " +
-                        "${argTypes[i].className}, actual ${handlerArgs[i].className} ($handlerDesc)",
-                )
+                val coerced = i in coerceParams && isRefType(argTypes[i]) && isRefType(handlerArgs[i])
+                if (!coerced) {
+                    throw InjectionError(
+                        "[injection] Redirect(NEW) constructor argument ${i + 1} type mismatch: expected " +
+                            "${argTypes[i].className}, actual ${handlerArgs[i].className} ($handlerDesc)",
+                    )
+                }
             }
         }
-        if (handlerRet != constructed) {
+        if (handlerRet != constructed && !(coerceReturn && isRefType(handlerRet))) {
             throw InjectionError(
                 "[injection] the handler of Redirect(NEW) must return the constructed type " +
-                    "${constructed.className}, actual ${handlerRet.className} ($handlerDesc)",
+                    "${constructed.className} (or a reference supertype with @Coerce), actual " +
+                    "${handlerRet.className} ($handlerDesc)",
             )
         }
         validateArgTypes(handlerDesc, extras, argTypes.size, method, owner, locals, "Redirect(NEW).extras")
@@ -1852,6 +1861,9 @@ internal object PayloadEmitter {
         if (!emitValues(list, extras, method, locals, writeBacks)) return null
         list.add(MethodInsnNode(Opcodes.INVOKESTATIC, handlerOwner, handlerMethod, handlerDesc, false))
         emitWriteBacks(list, writeBacks)
+        if (coerceReturn && handlerRet != constructed) {
+            list.add(TypeInsnNode(Opcodes.CHECKCAST, constructed.internalName))
+        }
         // [null, null, result] → [result]: duplicate the result below the two nulls, then drop them.
         list.add(InsnNode(Opcodes.DUP_X2))
         list.add(InsnNode(Opcodes.POP))
