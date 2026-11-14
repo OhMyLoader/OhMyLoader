@@ -9,6 +9,7 @@ import org.ohmyloader.core.transformer.injection.AnchorResolver.NOT_CONSTANT
 import org.ohmyloader.core.transformer.injection.AnchorResolver.applyOrdinal
 import org.ohmyloader.core.transformer.injection.AnchorResolver.constantValueOf
 import org.ohmyloader.core.transformer.injection.AnchorResolver.sameConstant
+import java.util.IdentityHashMap
 
 /**
  * Anchor resolution: turns a declarative [InjectionPoint] into a set of instruction nodes inside the target method.
@@ -193,7 +194,11 @@ internal object AnchorResolver {
         superName: String?,
         frames: MethodFrames,
     ): List<AbstractInsnNode> {
-        val insns = method.instructions
+        // Instruction → index once: the window checks below are otherwise O(n) per lookup, so a sliced
+        // anchor with several candidates was quadratic in the method size
+        val positions = IdentityHashMap<AbstractInsnNode, Int>()
+        val insns = method.instructions.toArray()
+        for (i in insns.indices) positions[insns[i]] = i
 
         // Cross-module val properties don't smart-cast (Kotlin only guarantees stability for same-module properties),
         // so hoist them into local variables first, otherwise every null check would need a `!!`.
@@ -212,7 +217,7 @@ internal object AnchorResolver {
                 )
                 return emptyList()
             }
-            insns.indexOf(node)
+            positions[node] ?: -1
         }
 
         val toIndex = if (to == null) {
@@ -227,10 +232,10 @@ internal object AnchorResolver {
                 )
                 return emptyList()
             }
-            insns.indexOf(node)
+            positions[node] ?: Int.MAX_VALUE
         }
 
-        return candidates.filter { insns.indexOf(it) in (fromIndex + 1) until toIndex }
+        return candidates.filter { positions[it]?.let { index -> index in (fromIndex + 1) until toIndex } == true }
     }
 
     /** Each anchor's ordinal; for sliced anchors it is the ordinal of their core. */

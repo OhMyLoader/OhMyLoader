@@ -45,6 +45,12 @@ internal object ExpressionAnchors {
         val target: ExpressionTarget,
     )
 
+    /**
+     * Parsed patterns by source text. Rules are applied per class and the conflict pre-pass resolves some
+     * points twice, so the same pattern would otherwise be re-parsed (and re-validated) repeatedly.
+     */
+    private val parsedPatterns = java.util.concurrent.ConcurrentHashMap<String, Expression>()
+
     fun resolve(
         classNode: ClassNode,
         method: MethodNode,
@@ -53,13 +59,15 @@ internal object ExpressionAnchors {
         contextType: ExpressionContext.Type,
     ): Resolution {
         val patterns = point.expressions.map { pattern ->
-            try {
-                ExpressionParserFacade.parse(pattern)
-            } catch (failure: RuntimeException) {
-                throw InjectionError(
-                    "[injection] @Expression pattern cannot be parsed in ${method.name}${method.desc}: " +
-                        failure.message,
-                )
+            parsedPatterns.computeIfAbsent(pattern) {
+                try {
+                    ExpressionParserFacade.parse(pattern)
+                } catch (failure: RuntimeException) {
+                    throw InjectionError(
+                        "[injection] @Expression pattern cannot be parsed in ${method.name}${method.desc}: " +
+                            failure.message,
+                    )
+                }
             }
         }
         val pool = identifierPool(point.definitions, classNode, method)

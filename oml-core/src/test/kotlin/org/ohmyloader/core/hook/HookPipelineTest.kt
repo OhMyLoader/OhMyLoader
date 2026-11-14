@@ -16,6 +16,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.jar.JarEntry
 import java.util.jar.JarOutputStream
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -29,6 +30,12 @@ import kotlin.test.assertTrue
  * cannot resolve, passes every per-step test and does nothing at runtime.
  */
 class HookPipelineTest {
+
+    /** The bridge is generated once per registry state; each case registers its own handlers. */
+    @BeforeTest
+    fun resetBridge() {
+        HookRegistry.resetForTests()
+    }
 
     // ---------- the real pipeline: jar → scanner → transformer → defineClass → call ----------
 

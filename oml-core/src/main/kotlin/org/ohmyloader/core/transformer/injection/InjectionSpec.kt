@@ -98,12 +98,12 @@ class InjectionSpec internal constructor(
         val classRules = ruleSet.classes[context.internalName] ?: return false
         var changed = false
 
-        // Before any mutation: two rules that would both replace the same instruction cannot both run,
-        // and after the first one does the second silently misses. Name both instead.
-        reportExclusiveConflicts(context, classRules)
-
         // One dataflow cache per method node, shared by every rule touching that method (see MethodFrames)
         val frameCache = HashMap<MethodNode, MethodFrames>()
+
+        // Before any mutation: two rules that would both replace the same instruction cannot both run,
+        // and after the first one does the second silently misses. Name both instead.
+        reportExclusiveConflicts(context, classRules, frameCache)
 
         // Access flags land first: they are **declaration-level**, and body injection and class merging both build
         // on the final flags. Only flag bits change, no instructions, so no stack frames are involved; the class is
@@ -304,10 +304,17 @@ class InjectionSpec internal constructor(
      * rule's anchor no longer exists, so without this pass the loser only shows up as a hit-count miss.
      * Only exclusive payloads are tracked; notification-style payloads may legally stack.
      */
-    private fun reportExclusiveConflicts(context: TransformContext, classRules: ClassRules) {
+    private fun reportExclusiveConflicts(
+        context: TransformContext,
+        classRules: ClassRules,
+        frames: MutableMap<MethodNode, MethodFrames>,
+    ) {
+        // Nothing can conflict when fewer than two exclusive points exist in the whole class
+        if (classRules.methods.sumOf { rule -> rule.points.count { exclusiveKind(it.second) != null } } < 2) {
+            return
+        }
         val byInstruction = IdentityHashMap<MethodNode, MutableMap<AbstractInsnNode, MutableList<String>>>()
         val byMethod = HashMap<MethodNode, MutableList<String>>()
-        val frames = HashMap<MethodNode, MethodFrames>()
         val conflicts = mutableListOf<String>()
         for (rule in classRules.methods) {
             val named = targetMethods(context.node, rule.selector).filter { it.instructions.size() > 0 }

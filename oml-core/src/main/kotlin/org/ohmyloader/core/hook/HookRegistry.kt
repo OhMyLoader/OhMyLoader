@@ -1,27 +1,38 @@
 package org.ohmyloader.core.hook
 
 import org.objectweb.asm.ClassWriter
+import org.objectweb.asm.Handle
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.hook.HookContext
 import org.ohmyloader.api.hook.HookValue
 import org.ohmyloader.core.transformer.injection.Boxing
+import java.lang.invoke.CallSite
+import java.lang.invoke.ConstantCallSite
+import java.lang.invoke.MethodHandle
+import java.lang.invoke.MethodHandles
+import java.lang.invoke.MethodType
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
+import java.lang.reflect.Modifier
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Mixin handler registry and runtime bridge. During the scan phase each `@Inject` handler is assigned an int
  * id written into the injection bytecode; at the injection point the game calls a static method on the **bridge
- * class**, which invokes the handler reflectively; handler exceptions are caught and isolated so they cannot
- * disturb the game itself. Why a generated bridge: a handler is an **instance method** on the mixin class
- * while the target method's `this` is a different object, and the injection point's shape is not
- * decidable at compile time (captures depend on each handler's parameter table); a flat `vararg Object[]`
- * would box primitives in the game's main loop (`runTick` runs every frame), while the concrete-descriptor
- * bridge keeps the injection point a clean `INVOKESTATIC` aligned with `DslValue.Local` — zero boxing.
- * Generated **once at startup** (self-check phase), one method per handler (cancelable return `Z`, else `V`).
+ * class**, which invokes the handler.
+ *
+ * Each bridge method is one `invokedynamic` whose bootstrap runs at **first execution** — the point where the
+ * handler class is safe to load. The bootstrap binds a `MethodHandle` to the handler (direct static call, or a
+ * bound instance for non-static handlers) and returns a `ConstantCallSite`, so the steady-state path has no
+ * reflection, no boxing and no captures array. Kinds whose result must be read back from a per-call handle
+ * ([BridgeKind.CANCELABLE] / [BridgeKind.RETURNABLE]), or handlers whose class cannot be reached directly,
+ * fall back to the reflective entry points below with identical semantics.
+ *
+ * The bridge class itself is generated once at startup, one method per handler (cancelable return `Z`, else
+ * `V`), because the capture descriptor is only known after scanning.
  */
 object HookRegistry {
 
@@ -87,6 +98,27 @@ object HookRegistry {
     private val resolvedCalls = ConcurrentHashMap<Int, ResolvedCall>()
     private var loader: ClassLoader? = null
     private var bridgeLoaded = false
+
+    /** The `invokedynamic` bootstrap every bridge method links through (id and kind travel as bsm arguments). */
+    private val BOOTSTRAP = Handle(
+        Opcodes.H_INVOKESTATIC,
+        REGISTRY,
+        "bootstrap",
+        "(Ljava/lang/invoke/MethodHandles\$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;II)" +
+            "Ljava/lang/invoke/CallSite;",
+        false,
+    )
+
+    /** Recovery for a failing NOTIFY handler: the same isolation as [dispatch], without a per-call wrapper. */
+    private val REPORT_NOTIFY_FAILURE: MethodHandle by lazy {
+        MethodHandles.lookup().findStatic(
+            HookRegistry::class.java,
+            "reportNotifyFailure",
+            MethodType.methodType(Void.TYPE, Integer.TYPE, Throwable::class.java),
+        )
+    }
+
+    private val fallbackCounter = AtomicInteger()
 
     /** The injection bytecode needs to load mod classes at dispatch time; set by OMLCore during assembly. */
     fun installClassLoader(loader: ClassLoader) {
@@ -171,8 +203,8 @@ object HookRegistry {
      * Generate the bridge class (idempotent). **Must be called before any injection bytecode runs** — called
      * once by [org.ohmyloader.core.HookScanner.createTransformer] after scanning **all** mods and registering
      * **all** handlers. A handler registered after this call has no bridge method, so generation can only
-     * happen at the point where everything is registered. The result is a class of static methods whose
-     * bodies are "pack captures → look up → reflectively invoke"; it is generated rather than hard-coded
+     * happen at the point where everything is registered. The result is a class of static methods, each one
+     * a single `invokedynamic` linked lazily through [bootstrap]; it is generated rather than hard-coded
      * because each handler's capture descriptor is unknown at compile time (see the class doc). In tests,
      * [resetForTests] returns the not-yet-generated state.
      */
@@ -258,107 +290,179 @@ object HookRegistry {
     var bridgeClass: Class<*>? = null
         private set
 
-    /** Generate the bridge method for a single handler. */
-    private fun emitBridgeMethod(cw: ClassWriter, handler: Handler) {
-        val kind = kindOf(handler)
-        val argTypes = handler.captureTypes.map { Type.getType(it) }
-        val desc = bridgeDesc(handler.id, kind)
-        val mv = cw.visitMethod(
-            Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC or Opcodes.ACC_SYNTHETIC,
-            bridgeMethodName(handler.id, kind), desc, null, null,
-        )
-        mv.visitCode()
+    /**
+     * The bootstrap every bridge method's `invokedynamic` links through. It runs **once per handler**, at the
+     * first execution of that bridge (the point where loading the handler class is safe), and returns a
+     * constant call site so the steady state is a plain handle invocation.
+     */
+    @JvmStatic
+    fun bootstrap(lookup: MethodHandles.Lookup, name: String, type: MethodType, id: Int, kindOrdinal: Int): CallSite {
+        val handler = handlers[id] ?: throw IllegalStateException("unknown hook handler id $id ($name)")
+        val kind = BridgeKind.entries[kindOrdinal]
+        val target = try {
+            directCallSite(handler, kind, type)
+        } catch (_: Throwable) {
+            // Private/odd handler shapes or an unresolvable class path: keep the reflective semantics
+            reflectiveCallSite(handler, kind, type)
+        }
+        return ConstantCallSite(target)
+    }
 
-        // Pack the captured arguments into an Object[] (parameter slots: captures… then id[, callback handle]),
-        // forwarding to dispatch. The boxing cost only kicks in when the handler **actually declares captures**;
-        // a bridge with no declared captures is an empty array + one INVOKESTATIC, equivalent to the static
-        // bridge path.
-        mv.visitLdcInsn(argTypes.size)
+    /** Direct `MethodHandle` binding for the kinds whose result needs no per-call read-back. */
+    private fun directCallSite(handler: Handler, kind: BridgeKind, bridgeType: MethodType): MethodHandle {
+        val resolved = resolvedCall(handler)
+        val method = resolved.method
+        val owner = method.declaringClass
+        val privateLookup = MethodHandles.privateLookupIn(owner, MethodHandles.lookup())
+        val methodType = methodTypeOf(method)
+        var handle = if (Modifier.isStatic(method.modifiers)) {
+            privateLookup.findStatic(owner, method.name, methodType)
+        } else {
+            privateLookup.findVirtual(owner, method.name, methodType).bindTo(resolved.receiver)
+        }
+        return when (kind) {
+            BridgeKind.NOTIFY -> {
+                // Not cancelable: one immutable context per handler is enough, and `cancel()` throws anyway
+                val context = HookContext(handler.targetMethod, false)
+                handle = MethodHandles.insertArguments(handle, handle.type().parameterCount() - 1, context)
+                val report = MethodHandles.insertArguments(REPORT_NOTIFY_FAILURE, 0, handler.id)
+                val recovery = MethodHandles.dropArguments(report, 1, handle.type().parameterList())
+                handle = MethodHandles.catchException(handle, Throwable::class.java, recovery)
+                MethodHandles.dropArguments(handle, handle.type().parameterCount(), Integer.TYPE).asType(bridgeType)
+            }
+
+            BridgeKind.MODIFY -> MethodHandles.dropArguments(
+                handle, handle.type().parameterCount(), Integer.TYPE,
+            ).asType(bridgeType)
+
+            BridgeKind.MIRROR -> handle.asType(bridgeType)
+
+            // These read state back from a per-call context/handle; the reflective entry points keep that
+            else -> throw UnsupportedOperationException("no direct handle for $kind")
+        }
+    }
+
+    /**
+     * The reflective path: generate a tiny static stub with the **exact bridge descriptor** (pack captures,
+     * call [dispatch] / [dispatchReturnable] / [dispatchValue], unbox), define it in this package and return
+     * a handle to it. `asCollector` cannot collect primitive captures, and a stub keeps the previous
+     * semantics exactly — including the observable exceptions when the handler is missing.
+     */
+    private fun reflectiveCallSite(handler: Handler, kind: BridgeKind, bridgeType: MethodType): MethodHandle {
+        val lookup = MethodHandles.lookup()
+        val defined = lookup.defineClass(fallbackStub(handler, kind, bridgeType))
+        return lookup.findStatic(defined, "invoke", bridgeType)
+    }
+
+    /** The body used to be the generated bridge method itself; keep it as a stub when a direct call is impossible. */
+    private fun fallbackStub(handler: Handler, kind: BridgeKind, bridgeType: MethodType): ByteArray {
+        val cw = ClassWriter(ClassWriter.COMPUTE_MAXS)
+        val internal = "$REGISTRY\$Fallback${fallbackCounter.incrementAndGet()}"
+        cw.visit(
+            Opcodes.V1_8, Opcodes.ACC_PUBLIC or Opcodes.ACC_FINAL or Opcodes.ACC_SYNTHETIC,
+            internal, null, "java/lang/Object", null,
+        )
+        val desc = bridgeType.toMethodDescriptorString()
+        val mv = cw.visitMethod(Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "invoke", desc, null, null)
+        mv.visitCode()
+        val argTypes = Type.getArgumentTypes(desc)
+        val captureCount = handler.captureTypes.size
+        mv.visitLdcInsn(captureCount)
         mv.visitTypeInsn(Opcodes.ANEWARRAY, "java/lang/Object")
         var slot = 0
-        argTypes.forEachIndexed { i, type ->
+        for (i in 0 until captureCount) {
+            val type = argTypes[i]
             mv.visitInsn(Opcodes.DUP)
             mv.visitLdcInsn(i)
-            mv.visitVarInsn(loadOpcode(type), slot)
-            boxIfPrimitive(mv, type)
+            mv.visitVarInsn(type.getOpcode(Opcodes.ILOAD), slot)
+            Boxing.box(type)?.let { box ->
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, box.owner, box.name, box.desc, false)
+            }
             mv.visitInsn(Opcodes.AASTORE)
             slot += type.size
         }
-
-        // id comes right after the captured arguments; **except MIRROR** -- its descriptor must equal the replaced
-        // call, leaving no room for an id parameter, so the id is encoded in the method name and pushed with LDC here
-        if (kind == BridgeKind.MIRROR) mv.visitLdcInsn(handler.id) else mv.visitVarInsn(Opcodes.ILOAD, slot)
+        if (kind == BridgeKind.MIRROR) {
+            mv.visitLdcInsn(handler.id)
+        } else {
+            mv.visitVarInsn(Opcodes.ILOAD, slot)
+            slot += 1
+        }
         when (kind) {
             BridgeKind.NOTIFY -> {
                 mv.visitLdcInsn(false)
-                mv.visitMethodInsn(
-                    Opcodes.INVOKESTATIC, REGISTRY,
-                    "dispatch", "([Ljava/lang/Object;IZ)Z", false,
-                )
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, REGISTRY, "dispatch", "([Ljava/lang/Object;IZ)Z", false)
                 mv.visitInsn(Opcodes.POP)
                 mv.visitInsn(Opcodes.RETURN)
             }
 
             BridgeKind.CANCELABLE -> {
                 mv.visitLdcInsn(true)
-                mv.visitMethodInsn(
-                    Opcodes.INVOKESTATIC, REGISTRY,
-                    "dispatch", "([Ljava/lang/Object;IZ)Z", false,
-                )
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, REGISTRY, "dispatch", "([Ljava/lang/Object;IZ)Z", false)
                 mv.visitInsn(Opcodes.IRETURN)
             }
 
             BridgeKind.RETURNABLE -> {
-                // The handle is the last parameter (created and passed in by the engine)
-                mv.visitVarInsn(Opcodes.ALOAD, slot + 1)
+                mv.visitVarInsn(Opcodes.ALOAD, slot)
                 mv.visitMethodInsn(
-                    Opcodes.INVOKESTATIC, REGISTRY,
-                    "dispatchReturnable", "([Ljava/lang/Object;I$CALLBACK_RETURNABLE_DESC)V", false,
+                    Opcodes.INVOKESTATIC, REGISTRY, "dispatchReturnable",
+                    "([Ljava/lang/Object;I$CALLBACK_RETURNABLE_DESC)V", false,
                 )
                 mv.visitInsn(Opcodes.RETURN)
             }
 
-            // MODIFY / MIRROR: whatever the handler returns is the result; unbox and return it
             BridgeKind.MODIFY, BridgeKind.MIRROR -> {
                 mv.visitMethodInsn(
-                    Opcodes.INVOKESTATIC, REGISTRY,
-                    "dispatchValue", "([Ljava/lang/Object;I)Ljava/lang/Object;", false,
+                    Opcodes.INVOKESTATIC, REGISTRY, "dispatchValue",
+                    "([Ljava/lang/Object;I)Ljava/lang/Object;", false,
                 )
-                emitUnboxAndReturn(mv, Type.getType(handler.returnType))
+                val ret = Type.getReturnType(desc)
+                if (ret == Type.VOID_TYPE) {
+                    mv.visitInsn(Opcodes.POP)
+                    mv.visitInsn(Opcodes.RETURN)
+                } else {
+                    val unbox = Boxing.unbox(ret)
+                    if (unbox == null) {
+                        mv.visitTypeInsn(Opcodes.CHECKCAST, ret.internalName)
+                    } else {
+                        mv.visitTypeInsn(Opcodes.CHECKCAST, unbox.owner)
+                        mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, unbox.owner, unbox.name, unbox.desc, false)
+                    }
+                    mv.visitInsn(Boxing.returnOpcode(ret))
+                }
             }
         }
+        mv.visitMaxs(0, 0)
+        mv.visitEnd()
+        cw.visitEnd()
+        return cw.toByteArray()
+    }
 
+    private fun methodTypeOf(method: Method): MethodType =
+        MethodType.methodType(method.returnType, method.parameterTypes)
+
+    /** Generate the bridge method for a single handler: one `invokedynamic`, linked at first execution. */
+    private fun emitBridgeMethod(cw: ClassWriter, handler: Handler) {
+        val kind = kindOf(handler)
+        val desc = bridgeDesc(handler.id, kind)
+        val mv = cw.visitMethod(
+            Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC or Opcodes.ACC_SYNTHETIC,
+            bridgeMethodName(handler.id, kind), desc, null, null,
+        )
+        mv.visitCode()
+        // The indy call site takes the bridge's own parameters as-is: no capture array, no boxing
+        var slot = 0
+        for (argument in Type.getArgumentTypes(desc)) {
+            mv.visitVarInsn(argument.getOpcode(Opcodes.ILOAD), slot)
+            slot += argument.size
+        }
+        mv.visitInvokeDynamicInsn("call", desc, BOOTSTRAP, handler.id, kind.ordinal)
+        mv.visitInsn(Type.getReturnType(desc).getOpcode(Opcodes.IRETURN))
         mv.visitMaxs(0, 0)
         mv.visitEnd()
     }
 
-    /** Convert the `Object` returned by `dispatchValue` to [type] and `xRETURN` (primitives are CHECKCAST first, then unboxed). */
-    private fun emitUnboxAndReturn(mv: org.objectweb.asm.MethodVisitor, type: Type) {
-        if (type == Type.VOID_TYPE) {
-            mv.visitInsn(Opcodes.POP)
-            mv.visitInsn(Opcodes.RETURN)
-            return
-        }
-        val unbox = Boxing.unbox(type)
-        if (unbox == null) {
-            mv.visitTypeInsn(Opcodes.CHECKCAST, type.internalName)
-        } else {
-            mv.visitTypeInsn(Opcodes.CHECKCAST, unbox.owner)
-            mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, unbox.owner, unbox.name, unbox.desc, false)
-        }
-        mv.visitInsn(Boxing.returnOpcode(type))
-    }
 
-    /** Load instruction for a local via [Boxing] -- the mapping is maintained in exactly one place (shared with the injection engine). */
-    private fun loadOpcode(type: Type): Int = Boxing.loadOpcode(type)
-
-    /** Box via [Boxing] -- the mapping is maintained in exactly one place (shared with the injection engine). */
-    private fun boxIfPrimitive(mv: org.objectweb.asm.MethodVisitor, type: Type) {
-        val box = Boxing.box(type) ?: return
-        mv.visitMethodInsn(Opcodes.INVOKESTATIC, box.owner, box.name, box.desc, false)
-    }
-
-    // ---------- entry points called by the generated bridge class (reflection and exception isolation live here) ----------
+    // ---------- entry points used by the fallback stub (reflection and exception isolation live here) ----------
 
     /**
      * [Bridge entry point] Execute the handler and return whether it canceled.
@@ -378,6 +482,13 @@ object HookRegistry {
             reportHandlerFailure(handler, t)
         }
         return canceled
+    }
+
+    /** Recovery for a failing NOTIFY handler: the same isolation as [dispatch], without a per-call wrapper. */
+    @JvmStatic
+    fun reportNotifyFailure(id: Int, t: Throwable) {
+        val handler = handlers[id] ?: return
+        reportHandlerFailure(handler, t)
     }
 
     /**
