@@ -195,6 +195,8 @@ object HookScanner {
     private const val LOCAL_DESC = "Lorg/ohmyloader/api/hook/Local;"
     private const val SHARE_DESC = "Lorg/ohmyloader/api/hook/Share;"
     private const val CANCELABLE_DESC = "Lorg/ohmyloader/api/hook/Cancellable;"
+    private const val COERCE_DESC = "Lorg/ohmyloader/api/hook/Coerce;"
+    private val OBJECT_SORTS = setOf(Type.OBJECT, Type.ARRAY)
     private const val HOOK_CONTEXT_DESC = "Lorg/ohmyloader/api/hook/HookContext;"
     private const val HOOK_VALUE_DESC = "Lorg/ohmyloader/api/hook/HookValue;"
     private const val EXPRESSION_DESC = "Lorg/ohmyloader/api/hook/Expression;"
@@ -1959,16 +1961,27 @@ object HookScanner {
         val split = trailingSugar(method, mixinClass, where, modId, problems) ?: return
         val normal = split.normal
         val ret = Type.getReturnType(method.desc)
-        if (ret == Type.VOID_TYPE || normal.size != 1 || normal[0] != ret) {
+        if (ret == Type.VOID_TYPE || normal.size != 1) {
             problems += "[$modId] $where —— @ModifyExpressionValue handler must be shaped (T[, sugar…])T " +
                 "(T is the type produced by the expression, put back on the stack after the change), " +
                 "currently ${method.desc}"
             return
         }
+        val coerceParam = method.visibleParameterAnnotations?.getOrNull(0)
+            ?.any { it.desc == COERCE_DESC } == true
+        val coerceReturn = method.visibleAnnotations.orEmpty().any { it.desc == COERCE_DESC }
+        if (normal[0] != ret) {
+            val bothReferences = normal[0].sort in OBJECT_SORTS && ret.sort in OBJECT_SORTS
+            if ((!coerceParam && !coerceReturn) || !bothReferences) {
+                problems += "[$modId] $where —— @ModifyExpressionValue handler must be shaped " +
+                    "(T[, sugar…])T, or use @Coerce on a reference parameter/return: currently ${method.desc}"
+                return
+            }
+        }
         val [id, bridgeName, bridgeDesc] = registerValueHandler(
             modId, mixinClass, method.name, methodNames.first(),
             captureTypes = listOf(normal[0].descriptor) + split.sugarTypes,
-            returnType = normal[0].descriptor,
+            returnType = ret.descriptor,
         )
         rules += Rule(
             targetInternal, methodNames, methodDesc, anchor,
@@ -1977,6 +1990,8 @@ object HookScanner {
                 method = bridgeName,
                 desc = bridgeDesc,
                 extras = split.bindings + DslValue.IntVal(id),
+                coerceParam = coerceParam,
+                coerceReturn = coerceReturn,
             ),
             policy, emptyList(), "ModifyExpressionValue",
         )

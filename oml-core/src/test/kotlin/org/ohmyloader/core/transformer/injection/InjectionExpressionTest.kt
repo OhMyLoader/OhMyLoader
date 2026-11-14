@@ -589,6 +589,51 @@ class InjectionExpressionTest {
     }
 
     @Test
+    fun `coerce widens the handler parameter and casts the return`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("greet", desc = "(Ljava/lang/String;)Ljava/lang/String;") {
+                        atExpression("'Hi ' + ?") {
+                            modifyExpressionValue(
+                                ExpressionHandlers.OWNER, "coerceSuffix",
+                                "(Ljava/lang/Object;)Ljava/lang/Object;",
+                                coerceParam = true,
+                                coerceReturn = true,
+                            )
+                        }
+                    }
+                }
+            },
+            concatTarget(),
+        )
+
+        assertEquals("Hi Bob!", invoke(clazz, "greet", "Bob"))
+    }
+
+    @Test
+    fun `a coerced handler still needs the coerce flags`() {
+        val spec = specOf {
+            classTarget(owner) {
+                method("greet", desc = "(Ljava/lang/String;)Ljava/lang/String;") {
+                    atExpression("'Hi ' + ?") {
+                        modifyExpressionValue(
+                            ExpressionHandlers.OWNER, "coerceSuffix",
+                            "(Ljava/lang/Object;)Ljava/lang/Object;",
+                        )
+                    }
+                    require(1)
+                }
+            }
+        }
+
+        val failure = assertFailsWith<InjectionError> {
+            spec.transform(TransformContext(owner, concatTarget()))
+        }
+        assertTrue(failure.message!!.contains("value's type"), failure.message)
+    }
+
+    @Test
     fun `an expression bounds the slice window`() {
         val definition = InjectionPoint.Expression.Definition(
             "max", methods = listOf("Ljava/lang/Math;max(II)I"),
@@ -1022,5 +1067,8 @@ class InjectionExpressionTest {
 
         @JvmStatic
         fun widenPlusOne(a: Int, operation: Operation<Long>): Long = operation.call(a) + 1L
+
+        @JvmStatic
+        fun coerceSuffix(value: Any?): Any? = (value as String) + "!"
     }
 }

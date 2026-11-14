@@ -190,19 +190,35 @@ internal object PayloadEmitter {
         method: MethodNode,
         owner: String,
         locals: AnchorLocals?,
+        coerceParam: Boolean = false,
+        coerceReturn: Boolean = false,
     ): InsnList? {
         val handler = Type.getMethodType(handlerDesc)
         val valueParam = handler.argumentTypes.firstOrNull()
-        if (valueParam == null || !ProducedValue.sameValueType(valueParam, value)) {
+        val valueReference = value.sort == Type.OBJECT || value.sort == Type.ARRAY
+        val paramOk = if (coerceParam) {
+            valueParam != null && valueReference &&
+                (valueParam.sort == Type.OBJECT || valueParam.sort == Type.ARRAY)
+        } else {
+            valueParam != null && ProducedValue.sameValueType(valueParam, value)
+        }
+        if (!paramOk) {
             throw InjectionError(
                 "[injection] the handler's first parameter type of $rule must be **the value's type** ${value.className}" +
+                    (if (coerceParam) " or, with @Coerce, a reference supertype of it" else "") +
                     " (decided by the anchor): actual ${valueParam?.className ?: "no parameters"} ($handlerDesc)",
             )
         }
-        if (handler.returnType != value) {
+        val returnOk = if (coerceReturn) {
+            valueReference && (handler.returnType.sort == Type.OBJECT || handler.returnType.sort == Type.ARRAY)
+        } else {
+            handler.returnType == value
+        }
+        if (!returnOk) {
             throw InjectionError(
-                "[injection] the handler of $rule must return ${value.className} (the value's type, to be put back on the stack): " +
-                    "actual ${handler.returnType.className} ($handlerDesc)",
+                "[injection] the handler of $rule must return ${value.className} (the value's type, to be put back on the stack)" +
+                    (if (coerceReturn) " or, with @Coerce, a reference supertype of it" else "") +
+                    ": actual ${handler.returnType.className} ($handlerDesc)",
             )
         }
         validateArgTypes(handlerDesc, extras, 1, method, owner, locals, "$rule.extras")
@@ -222,6 +238,9 @@ internal object PayloadEmitter {
             ),
         )
         emitWriteBacks(list, writeBacks)
+        if (coerceReturn && handler.returnType != value) {
+            list.add(TypeInsnNode(Opcodes.CHECKCAST, value.internalName))
+        }
         return list
     }
 

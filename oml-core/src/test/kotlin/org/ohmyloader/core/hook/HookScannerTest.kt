@@ -1404,6 +1404,35 @@ class HookScannerTest {
     }
 
     @Test
+    fun `coerce marks the ModifyExpressionValue handler`() {
+        newBridge()
+        val expression = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Expression;").apply {
+            values = mutableListOf<Any?>("value", listOf("max(?, 3)"))
+        }
+        val definition = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Definition;").apply {
+            values = mutableListOf<Any?>("id", "max", "method", listOf("Ljava/lang/Math;max(II)I"))
+        }
+        val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyExpressionValue;").apply {
+            values = mutableListOf<Any?>("method", "runTick", "at", atNode("EXPRESSION"))
+        }
+        val coerce = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Coerce;")
+        val method = MethodNode(
+            Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h",
+            "(Ljava/lang/Object;)Ljava/lang/Object;", null, null,
+        ).apply {
+            instructions.add(InsnNode(Opcodes.ACONST_NULL))
+            instructions.add(InsnNode(Opcodes.ARETURN))
+            visibleAnnotations = listOf(modify, expression, definition, coerce)
+            visibleParameterAnnotations = arrayOf(mutableListOf(coerce))
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        val payload = parsed.rules[0].payload as Payload.ModifyExpressionValue
+        assertTrue(payload.coerceParam)
+        assertTrue(payload.coerceReturn)
+    }
+
+    @Test
     fun `an expression anchor without a pattern is reported`() {
         newBridge()
         val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyExpressionValue;").apply {

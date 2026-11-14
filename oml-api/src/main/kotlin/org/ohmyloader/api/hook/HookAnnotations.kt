@@ -149,6 +149,17 @@ annotation class Implements(vararg val value: KClass<*>)
 annotation class Mutable
 
 /**
+ * Allows a handler parameter or return type to differ from the value's actual type (aligned with
+ * MixinExtras' `@Coerce`): annotate the parameter to accept a reference **supertype** of the value,
+ * and annotate the handler method to coerce the returned reference back to the value's type. The
+ * first slice covers reference types on `@ModifyExpressionValue`; primitive boxing/unboxing is
+ * rejected with an explicit error.
+ */
+@Target(AnnotationTarget.VALUE_PARAMETER, AnnotationTarget.FUNCTION)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class Coerce
+
+/**
  * A constant matcher (aligned with Mixin's `@Constant`), used in [ModifyConstant.constant].
  * **Only fields explicitly written count** (annotation defaults are not written into the
  * bytecode), so `@Constant(intValue = 0)` expresses "match 0" — the same approach Mixin uses.

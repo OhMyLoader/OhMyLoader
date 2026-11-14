@@ -757,8 +757,10 @@ class PayloadBuilder @PublishedApi internal constructor(
         method: String,
         desc: String,
         extras: List<DslValue> = emptyList(),
+        coerceParam: Boolean = false,
+        coerceReturn: Boolean = false,
     ) {
-        payload = Payload.ModifyExpressionValue(owner, method, desc, extras)
+        payload = Payload.ModifyExpressionValue(owner, method, desc, extras, coerceParam, coerceReturn)
     }
 
     /**

@@ -1436,6 +1436,7 @@ class InjectionSpec internal constructor(
                         val list = PayloadEmitter.emitInPlaceValue(
                             "ModifyExpressionValue", payload.owner, payload.method, payload.desc, payload.extras,
                             instance = false, value = value, method = method, owner = owner, locals = locals,
+                            coerceParam = payload.coerceParam, coerceReturn = payload.coerceReturn,
                         ) ?: continue
                         if (valueAnchor.second) list.add(InsnNode(Opcodes.POP))
                         val after = point.after || point.core is InjectionPoint.Expression
