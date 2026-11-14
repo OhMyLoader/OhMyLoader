@@ -68,13 +68,16 @@ internal object ClassMerger {
         val constructors: Int = 0,
         /** Number of interfaces added to the target by `@Implements`. */
         val interfaces: Int = 0,
+        /** Number of `@Mutable` borrowed fields whose target field lost `final`. */
+        val mutable: Int = 0,
     ) {
         val changed: Boolean
             get() = fields > 0 || methods > 0 || overwrites > 0 ||
-                accessors > 0 || invokers > 0 || constructors > 0 || interfaces > 0
+                accessors > 0 || invokers > 0 || constructors > 0 || interfaces > 0 || mutable > 0
     }
 
     private const val BORROWED_DESC = "Lorg/ohmyloader/api/hook/Borrowed;"
+    private const val MUTABLE_DESC = "Lorg/ohmyloader/api/hook/Mutable;"
     private const val OVERWRITE_DESC = "Lorg/ohmyloader/api/hook/Replace;"
     public const val ACCESSOR_DESC = "Lorg/ohmyloader/api/hook/FieldAccess;"
     public const val INVOKER_DESC = "Lorg/ohmyloader/api/hook/MethodAccess;"
@@ -187,10 +190,17 @@ internal object ClassMerger {
         val methodRename = mutableMapOf<String, String>()
         var shadows = 0
         var renamed = 0
+        var mutable = 0
 
         val mergedFields = mutableListOf<FieldNode>()
         for (field in mixin.node.fields) {
             val shadow = field.visibleAnnotations?.find { it.desc == BORROWED_DESC }
+            val wantsMutable = field.visibleAnnotations.orEmpty().any { it.desc == MUTABLE_DESC }
+            if (wantsMutable && shadow == null) {
+                problems += "$where —— @Mutable only applies to a @Borrowed field: ${field.name} ${field.desc}" +
+                    " (without @Borrowed the field would be merged in as a new member, and there is no target field to un-final)"
+                continue
+            }
             if (shadow != null) {
                 val hit = resolveShadow(field.name, shadow, field.desc, target.fields.map { it.name to it.desc })
                 if (hit == null) {
@@ -200,6 +210,13 @@ internal object ClassMerger {
                     continue
                 }
                 shadows++
+                if (wantsMutable) {
+                    val targetField = target.fields.first { it.name == hit && it.desc == field.desc }
+                    if (targetField.access and Opcodes.ACC_FINAL != 0) {
+                        targetField.access = targetField.access and Opcodes.ACC_FINAL.inv()
+                        mutable++
+                    }
+                }
                 if (hit != field.name) fieldRename[field.name] = hit
                 continue // not merged in
             }
@@ -390,6 +407,7 @@ internal object ClassMerger {
             mergedFields.size, mergedMethods.size, overwrites, shadows, renamed, problems,
             constructors = constructors,
             interfaces = addedInterfaces,
+            mutable = mutable,
         )
     }
 

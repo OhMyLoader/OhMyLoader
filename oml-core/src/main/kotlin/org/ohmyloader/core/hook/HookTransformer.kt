@@ -82,6 +82,7 @@ internal class HookTransformer(
             var invokers = 0
             var constructors = 0
             var interfaces = 0
+            var mutable = 0
             for (mixin in here) {
                 val result = ClassMerger.merge(mixin, context.node, overwritten)
                 fields += result.fields
@@ -93,6 +94,7 @@ internal class HookTransformer(
                 invokers += result.invokers
                 constructors += result.constructors
                 interfaces += result.interfaces
+                mutable += result.mutable
                 problems += result.problems
                 if (result.problems.isNotEmpty()) {
                     // Merge problems make the merged bytecode **definitely wrong** (`@Shadow` pointing to a
@@ -119,7 +121,8 @@ internal class HookTransformer(
                     (if (accessors > 0) ", @Accessor synthesized $accessors" else "") +
                     (if (invokers > 0) ", @Invoker synthesized $invokers" else "") +
                     (if (constructors > 0) ", constructors merged $constructors" else "") +
-                    (if (interfaces > 0) ", @Implements added $interfaces interface(s)" else "") + ")",
+                    (if (interfaces > 0) ", @Implements added $interfaces interface(s)" else "") +
+                    (if (mutable > 0) ", @Mutable un-finalized $mutable field(s)" else "") + ")",
             )
             Diagnostics.recordPhase("merge", System.nanoTime() - mergeStarted)
         }

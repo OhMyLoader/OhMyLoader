@@ -140,6 +140,15 @@ annotation class Slice(
 annotation class Implements(vararg val value: KClass<*>)
 
 /**
+ * Clears `final` on the matching `@Borrowed` target field before merging, so merged methods and
+ * injections can write it (a final field may otherwise only be assigned in its declaring class's
+ * constructor). Valid only together with [Borrowed]; the field is still not merged in.
+ */
+@Target(AnnotationTarget.FIELD)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class Mutable
+
+/**
  * A constant matcher (aligned with Mixin's `@Constant`), used in [ModifyConstant.constant].
  * **Only fields explicitly written count** (annotation defaults are not written into the
  * bytecode), so `@Constant(intValue = 0)` expresses "match 0" — the same approach Mixin uses.

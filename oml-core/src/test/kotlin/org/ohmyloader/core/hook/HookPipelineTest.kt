@@ -93,6 +93,34 @@ class HookPipelineTest {
     }
 
     @Test
+    fun `mutable lets merged code write a target final field`() {
+        val targetClass = javaClass.classLoader.loadClass("omltest.pipeline.MutableFixtures\$Target")
+        val mixinClass = javaClass.classLoader.loadClass("omltest.pipeline.MutableFixtures\$Mixin")
+        val jar = jarOf(targetClass, mixinClass)
+        val mod = ModContainer(
+            id = "mutable_mod", name = "Mutable Mod", version = "0.1.0",
+            entryClass = "omltest.pipeline.MutableFixtures", file = jar,
+        )
+
+        HookRegistry.installClassLoader(javaClass.classLoader)
+        val transformer = HookScanner.createTransformer(listOf(mod))
+        assertNotNull(transformer)
+        val targetName = "omltest/pipeline/MutableFixtures\$Target"
+        assertTrue(transformer.appliesTo(targetName))
+        val node = classNodeOf(targetClass)
+        assertTrue(transformer.transform(TransformContext(targetName, node)))
+
+        val clazz = define(node)
+        val instance = clazz.getDeclaredConstructor().newInstance()
+        clazz.getMethod("write", Int::class.javaPrimitiveType).invoke(instance, 5)
+        assertEquals(
+            5,
+            clazz.getMethod("read").invoke(instance),
+            "the merged method must be able to write the formerly final borrowed field",
+        )
+    }
+
+    @Test
     fun `a static handler rides the bridge onto an interface target`() {
         // The fixture is a Java source (Kotlin's companion @JvmStatic delegates do not carry the
         // annotations the scanner reads), referenced by reflection so the Kotlin test compilation
