@@ -276,13 +276,14 @@ sealed class InjectionPoint {
             /**
              * A `@DefinitionLocal`: the local variable the identifier stands for. [index] pins the slot;
              * otherwise the [ordinal]-th live local of [type] is used. [argsOnly] restricts the search to
-             * the method's parameter slots.
+             * the method's parameter slots; [print] logs the resolution during weaving.
              */
             data class Local(
                 val index: Int? = null,
                 val type: String? = null,
                 val ordinal: Int = 0,
                 val argsOnly: Boolean = false,
+                val print: Boolean = false,
             )
         }
     }

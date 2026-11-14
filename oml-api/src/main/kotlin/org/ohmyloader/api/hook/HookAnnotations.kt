@@ -504,7 +504,8 @@ annotation class Definitions(val value: Array<Definition>)
 /**
  * One local-variable identifier for [Definition] (aligned with MixinExtras' `Local` inside
  * `@Definition`): [index] pins the slot, otherwise the [ordinal]-th live local of [type] is used, and
- * [argsOnly] restricts the search to parameter slots.
+ * [argsOnly] restricts the search to parameter slots. [print] logs the resolved slot and the locals
+ * available at the matching instruction during weaving.
  */
 @Retention(AnnotationRetention.RUNTIME)
 annotation class DefinitionLocal(
@@ -512,6 +513,7 @@ annotation class DefinitionLocal(
     val ordinal: Int = -1,
     val type: String = "",
     val argsOnly: Boolean = false,
+    val print: Boolean = false,
 )
 
 /**

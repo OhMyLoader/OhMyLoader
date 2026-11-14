@@ -3,6 +3,7 @@ package org.ohmyloader.core.transformer.injection
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.*
+import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.inject.DslValue
 import org.ohmyloader.api.inject.HandlerKind
 import org.ohmyloader.api.inject.InjectionError
@@ -71,7 +72,8 @@ internal object ExpressionAnchors {
                 }
             }
         }
-        val pool = identifierPool(point.definitions, classNode, method)
+        val localDiagnostics = LocalDiagnostics()
+        val pool = identifierPool(point.definitions, classNode, method, localDiagnostics)
         val flows = try {
             FlowInterpreter.analyze(classNode, method, null)
         } catch (failure: RuntimeException) {
@@ -170,18 +172,41 @@ internal object ExpressionAnchors {
                 null
             }
 
-            partialExpr != null -> {
+            else -> {
+                val parts = mutableListOf<String>()
                 val node = partialNode
-                val where = if (node == null || node.isComplex) "a merge point" else {
-                    describeInsn(runCatching { node.insn }.getOrNull())
+                if (partialExpr != null) {
+                    val where = if (node == null || node.isComplex) "a merge point" else {
+                        describeInsn(runCatching { node.insn }.getOrNull())
+                    }
+                    parts += "the closest partial match was \"${partialExpr!!.src}\" against $where, " +
+                        "but at least one of its inputs did not match"
                 }
-                "the closest partial match was \"${partialExpr!!.src}\" against $where, " +
-                    "but at least one of its inputs did not match"
+                localDiagnostics.hint()?.let { parts += it }
+                parts.joinToString("; ").ifEmpty { null }
             }
-
-            else -> null
         }
         return Resolution(selected, decorations, target, hint)
+    }
+
+    /** One `@DefinitionLocal`'s outcome across every load instruction the matcher examined. */
+    private class LocalTracker(val described: String, val print: Boolean) {
+        var resolved = false
+        var failure: String? = null
+        var printedFailure = false
+    }
+
+    private class LocalDiagnostics {
+        val trackers = mutableListOf<LocalTracker>()
+
+        /** Diagnostics for locals that never resolved; a local that resolves anywhere is not a miss cause. */
+        fun hint(): String? {
+            val failed = trackers.filter { !it.resolved && it.failure != null }
+            if (failed.isEmpty()) return null
+            return failed.take(3).joinToString("; ") { tracker ->
+                "@DefinitionLocal ${tracker.described} never resolved: ${tracker.failure}"
+            }
+        }
     }
 
     /** A one-line instruction description for miss diagnostics. */
@@ -230,6 +255,7 @@ internal object ExpressionAnchors {
         definitions: List<InjectionPoint.Expression.Definition>,
         classNode: ClassNode,
         method: MethodNode,
+        localDiagnostics: LocalDiagnostics,
     ): IdentifierPool {
         val pool = IdentifierPool()
         val frames = if (definitions.any { it.locals.isNotEmpty() }) MethodFrames(classNode.name, method) else null
@@ -267,6 +293,19 @@ internal object ExpressionAnchors {
                 pool.addType(definition.id, TypeDefinition { actual -> actual == parsed })
             }
             for (local in definition.locals) {
+                val described = buildString {
+                    append('"').append(definition.id).append("\" (")
+                    if (local.index != null) {
+                        append("index=").append(local.index)
+                    } else {
+                        append("type=").append(local.type ?: "?")
+                        if (local.ordinal != 0) append(", ordinal=").append(local.ordinal)
+                        if (local.argsOnly) append(", argsOnly")
+                    }
+                    append(')')
+                }
+                val tracker = LocalTracker(described, local.print)
+                localDiagnostics.trackers += tracker
                 pool.addMember(
                     definition.id,
                     MemberDefinition { flow ->
@@ -274,13 +313,52 @@ internal object ExpressionAnchors {
                         if (insn !is VarInsnNode || insn.opcode !in Opcodes.ILOAD..Opcodes.ALOAD) {
                             return@MemberDefinition false
                         }
-                        val frame = frames?.at(insn, after = false)?.frame() ?: return@MemberDefinition false
-                        val resolved = frame.resolve(
-                            DslValue.Local(local.index, local.type, local.ordinal, strict = false),
-                            isStatic,
-                        )
-                        val slot = (resolved as? LocalResolution.Found)?.slot ?: return@MemberDefinition false
-                        slot == insn.`var` && (!local.argsOnly || insn.`var` < argSlots)
+                        val frame = frames?.at(insn, after = false)?.frame()
+                        if (frame == null) {
+                            tracker.failure = "the dataflow state at the load is unavailable"
+                            if (local.print && !tracker.printedFailure) {
+                                OmlLog.warn(
+                                    "Injection",
+                                    "@DefinitionLocal $described not resolvable at " +
+                                        "${method.name}${method.desc}: ${tracker.failure}",
+                                )
+                                tracker.printedFailure = true
+                            }
+                            return@MemberDefinition false
+                        }
+                        when (
+                            val resolved = frame.resolve(
+                                DslValue.Local(local.index, local.type, local.ordinal, strict = false),
+                                isStatic,
+                            )
+                        ) {
+                            is LocalResolution.Found -> {
+                                if (local.print && !tracker.resolved) {
+                                    OmlLog.info(
+                                        "Injection",
+                                        "@DefinitionLocal $described resolved to slot ${resolved.slot} " +
+                                            "(${resolved.type.descriptor}) at ${method.name}${method.desc}; " +
+                                            "locals: ${frame.describe()}",
+                                    )
+                                }
+                                tracker.resolved = true
+                                resolved.slot == insn.`var` && (!local.argsOnly || insn.`var` < argSlots)
+                            }
+
+                            is LocalResolution.Missing -> {
+                                tracker.failure = resolved.reason
+                                if (local.print && !tracker.printedFailure) {
+                                    OmlLog.warn(
+                                        "Injection",
+                                        "@DefinitionLocal $described not resolvable at " +
+                                            "${method.name}${method.desc}: ${resolved.reason}; " +
+                                            "locals: ${frame.describe()}",
+                                    )
+                                    tracker.printedFailure = true
+                                }
+                                false
+                            }
+                        }
                     },
                 )
             }

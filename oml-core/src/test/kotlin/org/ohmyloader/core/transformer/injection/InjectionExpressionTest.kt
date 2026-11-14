@@ -619,6 +619,34 @@ class InjectionExpressionTest {
     }
 
     @Test
+    fun `an unresolved definition local is named in the miss hint`() {
+        val node = localTarget()
+        val method = node.methods.first()
+        val point = InjectionPoint.Expression(
+            listOf("x * 2"), null,
+            listOf(
+                InjectionPoint.Expression.Definition(
+                    "x",
+                    locals = listOf(
+                        InjectionPoint.Expression.Definition.Local(type = "J", ordinal = 0),
+                    ),
+                ),
+            ),
+        )
+        val resolution = ExpressionAnchors.resolve(
+            node, method, point,
+            Payload.ModifyExpressionValue(ExpressionHandlers.OWNER, "double", "(I)I"),
+            ExpressionContext.Type.MODIFY_EXPRESSION_VALUE,
+        )
+
+        assertTrue(resolution.instructions.isEmpty())
+        val hint = resolution.missHint ?: error("a miss must carry a hint")
+        assertTrue(hint.contains("@DefinitionLocal \"x\""), hint)
+        assertTrue(hint.contains("never resolved"), hint)
+        assertTrue(hint.contains("type J"), hint)
+    }
+
+    @Test
     fun `an out-of-range expression ordinal is reported`() {
         val node = maxTarget()
         val method = node.methods.first()

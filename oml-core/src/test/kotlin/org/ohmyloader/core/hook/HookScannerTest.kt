@@ -1377,6 +1377,33 @@ class HookScannerTest {
     }
 
     @Test
+    fun `definition local print is carried into the model`() {
+        newBridge()
+        val expression = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Expression;").apply {
+            values = mutableListOf<Any?>("value", listOf("x * 2"))
+        }
+        val local = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/DefinitionLocal;").apply {
+            values = mutableListOf<Any?>("index", 1, "print", true)
+        }
+        val definition = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Definition;").apply {
+            values = mutableListOf<Any?>("id", "x", "local", listOf(local))
+        }
+        val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyExpressionValue;").apply {
+            values = mutableListOf<Any?>("method", "runTick", "at", atNode("EXPRESSION"))
+        }
+        val method = MethodNode(Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h", "(I)I", null, null).apply {
+            instructions.add(InsnNode(Opcodes.IRETURN))
+            visibleAnnotations = listOf(modify, expression, definition)
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        val point = parsed.rules[0].anchor as InjectionPoint.Expression
+        val declared = point.definitions.single().locals.single()
+        assertEquals(1, declared.index)
+        assertTrue(declared.print)
+    }
+
+    @Test
     fun `an expression anchor without a pattern is reported`() {
         newBridge()
         val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyExpressionValue;").apply {

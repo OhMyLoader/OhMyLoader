@@ -2193,6 +2193,7 @@ object HookScanner {
                             type = (annotationValue(local, "type") as? String)?.takeIf { it.isNotEmpty() },
                             ordinal = (annotationValue(local, "ordinal") as? Int)?.takeIf { it >= 0 } ?: 0,
                             argsOnly = annotationValue(local, "argsOnly") as? Boolean ?: false,
+                            print = annotationValue(local, "print") as? Boolean ?: false,
                         )
                     }
                 InjectionPoint.Expression.Definition(
