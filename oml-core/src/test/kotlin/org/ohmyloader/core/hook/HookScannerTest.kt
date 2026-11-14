@@ -1655,6 +1655,96 @@ class HookScannerTest {
     }
 
     @Test
+    fun `cancellable trails a WrapOperation handler`() {
+        newBridge()
+        val wrap = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/WrapOperation;").apply {
+            values = mutableListOf<Any?>(
+                "method", "runTick",
+                "desc", "(Z)I",
+                "at", atNode("INVOKE", target = "Lnet/minecraft/client/Minecraft;runTick(Z)I"),
+            )
+        }
+        val handle = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Cancellable;")
+        val method = MethodNode(
+            Opcodes.ACC_PUBLIC,
+            "h",
+            "(ILorg/ohmyloader/api/hook/Operation;Lorg/ohmyloader/api/hook/HookValue;)I",
+            null,
+            null,
+        ).apply {
+            instructions.add(InsnNode(Opcodes.RETURN))
+            visibleAnnotations = listOf(wrap)
+            visibleParameterAnnotations = arrayOf(mutableListOf(), mutableListOf(), mutableListOf(handle))
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        assertEquals(1, parsed.rules.size)
+        val payload = parsed.rules[0].payload as Payload.WrapOperation
+        val bound = payload.extras[0] as DslValue.CancelableHandle
+        assertEquals("Lorg/ohmyloader/api/hook/HookValue;", bound.descriptor)
+        val handler = HookRegistry.handler(1)!!
+        assertEquals(
+            listOf("I", "Lorg/ohmyloader/api/hook/Operation;", "Lorg/ohmyloader/api/hook/HookValue;"),
+            handler.captureTypes,
+        )
+        assertEquals(3, handler.handlerParamCount)
+    }
+
+    @Test
+    fun `cancellable handle type must match the target return`() {
+        newBridge()
+        val wrap = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/WrapOperation;").apply {
+            values = mutableListOf<Any?>(
+                "method", "runTick",
+                "desc", "(Z)V",
+                "at", atNode("INVOKE", target = "Lnet/minecraft/client/Minecraft;runTick(Z)V"),
+            )
+        }
+        val handle = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Cancellable;")
+        val method = MethodNode(
+            Opcodes.ACC_PUBLIC,
+            "h",
+            "(ILorg/ohmyloader/api/hook/Operation;Lorg/ohmyloader/api/hook/HookValue;)V",
+            null,
+            null,
+        ).apply {
+            instructions.add(InsnNode(Opcodes.RETURN))
+            visibleAnnotations = listOf(wrap)
+            visibleParameterAnnotations = arrayOf(mutableListOf(), mutableListOf(), mutableListOf(handle))
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(
+            parsed.problems.any { it.contains("must use HookContext") },
+            parsed.problems.toString(),
+        )
+    }
+
+    @Test
+    fun `cancellable is rejected on non-WrapOperation handlers`() {
+        newBridge()
+        val inject = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Inject;").apply {
+            values = mutableListOf<Any?>("method", "runTick", "at", atNode("HEAD"))
+        }
+        val handle = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Cancellable;")
+        val method = MethodNode(
+            Opcodes.ACC_PUBLIC,
+            "h",
+            "(Lorg/ohmyloader/api/hook/HookContext;)V",
+            null,
+            null,
+        ).apply {
+            instructions.add(InsnNode(Opcodes.RETURN))
+            visibleAnnotations = listOf(inject)
+            visibleParameterAnnotations = arrayOf(mutableListOf(handle))
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(
+            parsed.problems.any { it.contains("only supported on @WrapOperation") },
+            parsed.problems.toString(),
+        )
+    }
+
+    @Test
     fun `typed local ref sugar carries the ref type`() {
         newBridge()
         val inject = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Inject;").apply {

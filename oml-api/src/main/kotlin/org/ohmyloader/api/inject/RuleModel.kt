@@ -434,6 +434,15 @@ sealed class DslValue {
         val type: String = "Lorg/ohmyloader/api/hook/LocalRef;",
     ) : DslValue()
 
+    /**
+     * Engine-internal: a per-call cancellation handle for a `@Cancellable` handler parameter. The engine
+     * creates a `HookContext` (void target) or `HookValue` (non-void target), passes it to the handler and,
+     * when canceled, returns from the target method. [descriptor] is the parameter's declared type.
+     */
+    data class CancelableHandle(
+        val descriptor: String = "Lorg/ohmyloader/api/hook/HookContext;",
+    ) : DslValue()
+
     data class IntVal(val value: Int) : DslValue()
     data class LongVal(val value: Long) : DslValue()
     data class Str(val value: String) : DslValue()

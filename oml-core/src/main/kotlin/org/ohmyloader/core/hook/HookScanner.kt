@@ -193,6 +193,9 @@ object HookScanner {
     private const val WRAP_METHOD_DESC = "Lorg/ohmyloader/api/hook/WrapMethod;"
     private const val LOCAL_DESC = "Lorg/ohmyloader/api/hook/Local;"
     private const val SHARE_DESC = "Lorg/ohmyloader/api/hook/Share;"
+    private const val CANCELABLE_DESC = "Lorg/ohmyloader/api/hook/Cancellable;"
+    private const val HOOK_CONTEXT_DESC = "Lorg/ohmyloader/api/hook/HookContext;"
+    private const val HOOK_VALUE_DESC = "Lorg/ohmyloader/api/hook/HookValue;"
     private const val EXPRESSION_DESC = "Lorg/ohmyloader/api/hook/Expression;"
     private const val EXPRESSIONS_DESC = "Lorg/ohmyloader/api/hook/Expressions;"
     private const val DEFINITION_DESC = "Lorg/ohmyloader/api/hook/Definition;"
@@ -934,6 +937,16 @@ object HookScanner {
         rules: MutableList<Rule>,
         problems: MutableList<String>,
     ) {
+        // @Inject carries its handle as the mandatory trailing parameter; a @Cancellable marker here would
+        // otherwise be silently ignored, so reject it explicitly
+        val argumentCount = Type.getArgumentTypes(method.desc).size
+        if ((0 until argumentCount).any { i ->
+                method.visibleParameterAnnotations?.getOrNull(i)?.any { it.desc == CANCELABLE_DESC } == true
+            }
+        ) {
+            problems += "[$modId] $where —— @Cancellable is only supported on @WrapOperation handlers for now"
+            return
+        }
         // The typed self parameter: a bridge-dispatched (@Hooked) handler may declare the target
         // instance as its first parameter, typed as the target class — the engine passes it at the
         // injection point and the declared type is checked at startup. The merge model never strips
@@ -1574,12 +1587,23 @@ object HookScanner {
                 "check or array instruction, before the instruction"
             return
         }
-        val split = trailingSugar(method, mixinClass, where, modId, problems) ?: return
+        val split = trailingSugar(method, mixinClass, where, modId, problems, allowCancellable = true) ?: return
         val normal = split.normal
         if (normal.isEmpty() || normal.last().descriptor != OPERATION_DESC) {
             problems += "[$modId] $where —— @WrapOperation handler's last non-sugar parameter must be " +
                 "$OPERATION_DESC (Operation<R>), currently ${method.desc}"
             return
+        }
+        val cancelable = split.bindings.filterIsInstance<DslValue.CancelableHandle>().firstOrNull()
+        if (cancelable != null && methodDesc != null) {
+            val targetRet = Type.getReturnType(methodDesc)
+            val expected = if (targetRet == Type.VOID_TYPE) HOOK_CONTEXT_DESC else HOOK_VALUE_DESC
+            if (cancelable.descriptor != expected) {
+                problems += "[$modId] $where —— @Cancellable on a target returning " +
+                    "${targetRet.className} must use ${if (targetRet == Type.VOID_TYPE) "HookContext" else "HookValue"}, " +
+                    "currently ${Type.getType(cancelable.descriptor).className}"
+                return
+            }
         }
         val ret = Type.getReturnType(method.desc)
         if (mergeInto != null && !method.isDeclaredStatic()) {
@@ -2303,24 +2327,46 @@ object HookScanner {
         where: String,
         modId: String,
         problems: MutableList<String>,
+        allowCancellable: Boolean = false,
     ): SugarSplit? {
         val params = Type.getArgumentTypes(method.desc)
         val annotations = method.visibleParameterAnnotations
         val annotated = params.indices.filter { i ->
-            annotations?.getOrNull(i)?.any { it.desc == LOCAL_DESC || it.desc == SHARE_DESC } == true
+            annotations?.getOrNull(i)?.any {
+                it.desc == LOCAL_DESC || it.desc == SHARE_DESC || it.desc == CANCELABLE_DESC
+            } == true
         }
         if (annotated.isEmpty()) return SugarSplit(params, emptyList(), emptyList())
         val first = annotated.first()
         if (annotated.size != params.size - first || annotated != (first until params.size).toList()) {
-            problems += "[$modId] $where —— @Local/@Share parameters must be a contiguous trailing suffix"
+            problems += "[$modId] $where —— @Local/@Share/@Cancellable parameters must be a contiguous trailing suffix"
             return null
         }
         val locals = localBindings(method)
         val shares = shareBindings(method, mixinClass)
         val bindings = (first until params.size).map { i ->
-            locals[i] ?: shares[i] ?: run {
-                problems += "[$modId] $where —— internal: no sugar binding for parameter $i"
-                return null
+            val cancellable = annotations?.getOrNull(i)?.any { it.desc == CANCELABLE_DESC } == true
+            if (cancellable) {
+                if (!allowCancellable) {
+                    problems += "[$modId] $where —— @Cancellable is only supported on @WrapOperation handlers for now"
+                    return null
+                }
+                if (i != params.size - 1) {
+                    problems += "[$modId] $where —— @Cancellable must be the last handler parameter"
+                    return null
+                }
+                val descriptor = params[i].descriptor
+                if (descriptor != HOOK_CONTEXT_DESC && descriptor != HOOK_VALUE_DESC) {
+                    problems += "[$modId] $where —— @Cancellable parameter $i must be HookContext (void target) " +
+                        "or HookValue (non-void target), currently ${params[i].className}"
+                    return null
+                }
+                DslValue.CancelableHandle(descriptor)
+            } else {
+                locals[i] ?: shares[i] ?: run {
+                    problems += "[$modId] $where —— internal: no sugar binding for parameter $i"
+                    return null
+                }
             }
         }
         if (!validateSugarBindings((first until params.size).associateWith { bindings[it - first] }, params, where, modId, problems)) {

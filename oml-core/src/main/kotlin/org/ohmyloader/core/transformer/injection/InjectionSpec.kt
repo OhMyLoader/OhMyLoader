@@ -890,7 +890,7 @@ class InjectionSpec internal constructor(
                         val list = PayloadEmitter.emitWrapOperation(
                             payload.owner, payload.method, payload.desc, payload.extras,
                             instance = false, classNode = classNode, method = method, owner = owner,
-                            anchor = anchor, locals = locals,
+                            anchor = anchor, locals = locals, frames = frames,
                         ) ?: continue
                         if (!insertBlock(method, anchor, list, after = false, frames, knownShares)) continue
                         method.instructions.remove(anchor)
@@ -1173,7 +1173,7 @@ class InjectionSpec internal constructor(
                                 val list = PayloadEmitter.emitWrapOperation(
                                     payload.owner, payload.method, payload.desc, payload.captures,
                                     instance = true, classNode = classNode, method = method, owner = owner,
-                                    anchor = anchor, locals = locals,
+                                    anchor = anchor, locals = locals, frames = frames,
                                 ) ?: continue
                                 if (!insertBlock(method, anchor, list, after = false, frames, knownShares)) continue
                                 method.instructions.remove(anchor)

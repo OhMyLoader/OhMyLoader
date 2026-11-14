@@ -526,6 +526,7 @@ internal object PayloadEmitter {
             is DslValue.Str -> Type.getType("Ljava/lang/String;")
             is DslValue.Cls -> Type.getType("Ljava/lang/Class;")
             is DslValue.Null -> null
+            is DslValue.CancelableHandle -> Type.getType(value.descriptor)
         }
 
     /**
@@ -1276,6 +1277,7 @@ internal object PayloadEmitter {
         owner: String,
         anchor: AbstractInsnNode,
         locals: AnchorLocals?,
+        frames: MethodFrames,
     ): InsnList? {
         val argTypes: Array<Type>
         val returnType: Type
@@ -1434,7 +1436,8 @@ internal object PayloadEmitter {
         }
         OperationSupport.makeOperation(classNode, list, argTypes, returnType, anchor)
         val writeBacks = mutableListOf<SugarWriteBack>()
-        if (!emitValues(list, extras, method, locals, writeBacks)) return null
+        val cancelChecks = mutableListOf<CancelCheck>()
+        if (!emitValues(list, extras, method, locals, writeBacks, cancelChecks)) return null
         list.add(
             MethodInsnNode(
                 if (instance) Opcodes.INVOKEVIRTUAL else Opcodes.INVOKESTATIC,
@@ -1442,6 +1445,7 @@ internal object PayloadEmitter {
             ),
         )
         emitWriteBacks(list, writeBacks)
+        if (!emitCancelChecks(list, cancelChecks, method, returnType, frames, anchor)) return null
         return list
     }
 
@@ -2099,15 +2103,19 @@ internal object PayloadEmitter {
         val refType: String = LOCAL_REF_DESC,
     )
 
+    /** A `@Cancellable` handle created for this injection: its slot holds the `HookContext`/`HookValue`. */
+    internal class CancelCheck(val slot: Int)
+
     internal fun emitValues(
         list: InsnList,
         values: List<DslValue>,
         method: MethodNode,
         locals: AnchorLocals?,
         writeBacks: MutableList<SugarWriteBack>? = null,
+        cancelChecks: MutableList<CancelCheck>? = null,
     ): Boolean {
         for (value in values) {
-            if (!emitValue(list, value, method, locals, writeBacks)) return false
+            if (!emitValue(list, value, method, locals, writeBacks, cancelChecks)) return false
         }
         return true
     }
@@ -2152,6 +2160,83 @@ internal object PayloadEmitter {
     }
 
     /**
+     * Appends the `@Cancellable` check after the handler call: when the handle is canceled, the operation's
+     * result on the stack is dropped and the target method returns immediately (a void target exits, a
+     * non-void one reads the value back out of its `HookValue`). The fall-through path needs a stack-map
+     * frame because the `IFEQ` creates a new jump target; its locals are the dataflow truth at the anchor and
+     * its stack is exactly the operation result the original instruction would have produced.
+     */
+    internal fun emitCancelChecks(
+        list: InsnList,
+        checks: List<CancelCheck>,
+        method: MethodNode,
+        stackType: Type,
+        frames: MethodFrames,
+        anchor: AbstractInsnNode,
+    ): Boolean {
+        if (checks.isEmpty()) return true
+        if (checks.size > 1) {
+            throw InjectionError(
+                "[injection] only one @Cancellable parameter is allowed: ${method.name}${method.desc}",
+            )
+        }
+        val frameLocals = frames.frameLocalsAt(anchor, after = false) ?: run {
+            OmlLog.error(
+                "Injection",
+                "injection skipped: the local state before the @Cancellable anchor cannot be derived " +
+                    "(dataflow failed): ${method.name}${method.desc}",
+            )
+            return false
+        }
+        val targetRet = Type.getReturnType(method.desc)
+        val slot = checks[0].slot
+        val notCancelled = LabelNode()
+        list.add(VarInsnNode(Opcodes.ALOAD, slot))
+        list.add(
+            MethodInsnNode(
+                Opcodes.INVOKEVIRTUAL, CALLBACK_INFO, "getCanceled", "()Z", false,
+            ),
+        )
+        list.add(JumpInsnNode(Opcodes.IFEQ, notCancelled))
+        if (stackType != Type.VOID_TYPE) {
+            list.add(InsnNode(if (stackType.size == 2) Opcodes.POP2 else Opcodes.POP))
+        }
+        if (targetRet == Type.VOID_TYPE) {
+            list.add(InsnNode(Opcodes.RETURN))
+        } else {
+            list.add(VarInsnNode(Opcodes.ALOAD, slot))
+            when (targetRet.sort) {
+                Type.BOOLEAN -> returnAccessor(list, "getReturnValueZ", "()Z")
+                Type.BYTE -> returnAccessor(list, "getReturnValueB", "()B")
+                Type.CHAR -> returnAccessor(list, "getReturnValueC", "()C")
+                Type.SHORT -> returnAccessor(list, "getReturnValueS", "()S")
+                Type.INT -> returnAccessor(list, "getReturnValueI", "()I")
+                Type.LONG -> returnAccessor(list, "getReturnValueJ", "()J")
+                Type.FLOAT -> returnAccessor(list, "getReturnValueF", "()F")
+                Type.DOUBLE -> returnAccessor(list, "getReturnValueD", "()D")
+                else -> {
+                    returnAccessor(list, "getReturnValue", "()Ljava/lang/Object;")
+                    list.add(TypeInsnNode(Opcodes.CHECKCAST, targetRet.internalName))
+                }
+            }
+            list.add(InsnNode(targetRet.getOpcode(Opcodes.IRETURN)))
+        }
+        list.add(notCancelled)
+        val stack = if (stackType == Type.VOID_TYPE) {
+            emptyArray<Any>()
+        } else {
+            arrayOf<Any>(frameType(stackType))
+        }
+        list.add(FrameNode(Opcodes.F_NEW, frameLocals.size, frameLocals, stack.size, stack))
+        return true
+    }
+
+    /** Reads one typed accessor off the `HookValue` that `ALOAD slot` just pushed. */
+    private fun returnAccessor(list: InsnList, name: String, desc: String) {
+        list.add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, CALLBACK_RETURNABLE, name, desc, false))
+    }
+
+    /**
      * Emits one value-loading instruction.
      *
      * Returns `false` = this value **cannot be loaded** (reason already printed), and the caller must abandon the
@@ -2165,6 +2250,7 @@ internal object PayloadEmitter {
         method: MethodNode,
         locals: AnchorLocals?,
         writeBacks: MutableList<SugarWriteBack>? = null,
+        cancelChecks: MutableList<CancelCheck>? = null,
     ): Boolean {
         when (value) {
             is DslValue.This -> {
@@ -2316,6 +2402,41 @@ internal object PayloadEmitter {
             is DslValue.Str -> list.add(LdcInsnNode(value.value))
             is DslValue.Cls -> list.add(LdcInsnNode(Type.getObjectType(value.internalName)))
             is DslValue.Null -> list.add(InsnNode(Opcodes.ACONST_NULL))
+
+            is DslValue.CancelableHandle -> {
+                if (cancelChecks == null) {
+                    OmlLog.error(
+                        "Injection",
+                        "@Cancellable is only supported on @WrapOperation with a plain call, field, type-check " +
+                            "or array anchor: ${method.name}${method.desc}",
+                    )
+                    return false
+                }
+                val targetRet = Type.getReturnType(method.desc)
+                val expected = if (targetRet == Type.VOID_TYPE) CALLBACK_INFO_DESC else CALLBACK_RETURNABLE_DESC
+                if (value.descriptor != expected) {
+                    throw InjectionError(
+                        "[injection] @Cancellable parameter type must be " +
+                            "${if (targetRet == Type.VOID_TYPE) "HookContext" else "HookValue"} for a target " +
+                            "returning ${targetRet.className}, actual ${Type.getType(value.descriptor).className}: " +
+                            "${method.name}${method.desc}",
+                    )
+                }
+                val handleType = Type.getType(value.descriptor)
+                val slot = allocLocalSlot(method)
+                list.add(TypeInsnNode(Opcodes.NEW, handleType.internalName))
+                list.add(InsnNode(Opcodes.DUP))
+                list.add(LdcInsnNode(method.name))
+                list.add(InsnNode(Opcodes.ICONST_1))
+                list.add(
+                    MethodInsnNode(
+                        Opcodes.INVOKESPECIAL, handleType.internalName, "<init>", "(Ljava/lang/String;Z)V", false,
+                    ),
+                )
+                list.add(VarInsnNode(Opcodes.ASTORE, slot))
+                list.add(VarInsnNode(Opcodes.ALOAD, slot))
+                cancelChecks += CancelCheck(slot)
+            }
         }
         return true
     }

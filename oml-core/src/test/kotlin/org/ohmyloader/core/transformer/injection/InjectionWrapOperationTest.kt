@@ -11,7 +11,10 @@ import org.objectweb.asm.tree.MethodInsnNode
 import org.objectweb.asm.tree.MethodNode
 import org.objectweb.asm.tree.TypeInsnNode
 import org.objectweb.asm.tree.VarInsnNode
+import org.ohmyloader.api.hook.HookContext
+import org.ohmyloader.api.hook.HookValue
 import org.ohmyloader.api.hook.Operation
+import org.ohmyloader.api.inject.DslValue
 import org.ohmyloader.core.transformer.TransformContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -177,9 +180,123 @@ class InjectionWrapOperationTest {
         assertEquals(99, made.factor, "the handler returned its own object; the original constructor never ran")
     }
 
+    @Test
+    fun `cancellable HookValue returns a value from a non-void target`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("target", desc = "(I)I") {
+                        beforeCall(owner = Ops.OWNER, name = "times2", desc = "(I)I") {
+                            wrapOperation(
+                                WrapOpHandlers.OWNER, "cancelWithValue",
+                                "(I$OPERATION_DESC$HOOK_VALUE_DESC)I",
+                                extras = listOf(DslValue.CancelableHandle(HOOK_VALUE_DESC)),
+                            )
+                        }
+                    }
+                }
+            },
+            targetWithStaticCall(),
+        )
+
+        assertEquals(77, invoke(clazz, "target", 5), "cancel() on the HookValue returns its value from the target")
+    }
+
+    @Test
+    fun `cancellable HookValue does not disturb the normal path`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("target", desc = "(I)I") {
+                        beforeCall(owner = Ops.OWNER, name = "times2", desc = "(I)I") {
+                            wrapOperation(
+                                WrapOpHandlers.OWNER, "passThrough",
+                                "(I$OPERATION_DESC$HOOK_VALUE_DESC)I",
+                                extras = listOf(DslValue.CancelableHandle(HOOK_VALUE_DESC)),
+                            )
+                        }
+                    }
+                }
+            },
+            targetWithStaticCall(),
+        )
+
+        assertEquals(11, invoke(clazz, "target", 5), "without cancel() the handler's ordinary result is kept")
+    }
+
+    @Test
+    fun `cancellable HookValue casts a reference return`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("target", desc = "(I)Ljava/lang/String;") {
+                        beforeCall(owner = Ops.OWNER, name = "label", desc = "(I)Ljava/lang/String;") {
+                            wrapOperation(
+                                WrapOpHandlers.OWNER, "cancelWithLabel",
+                                "(I$OPERATION_DESC$HOOK_VALUE_DESC)Ljava/lang/String;",
+                                extras = listOf(DslValue.CancelableHandle(HOOK_VALUE_DESC)),
+                            )
+                        }
+                    }
+                }
+            },
+            targetWithReferenceCall(),
+        )
+
+        assertEquals("cancelled", invoke(clazz, "target", 5))
+    }
+
+    @Test
+    fun `cancellable HookValue pops a wide operation result`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("target", desc = "(I)J") {
+                        beforeCall(owner = Ops.OWNER, name = "wide", desc = "(I)J") {
+                            wrapOperation(
+                                WrapOpHandlers.OWNER, "cancelWithWide",
+                                "(I$OPERATION_DESC$HOOK_VALUE_DESC)J",
+                                extras = listOf(DslValue.CancelableHandle(HOOK_VALUE_DESC)),
+                            )
+                        }
+                    }
+                }
+            },
+            targetWithWideCall(),
+        )
+
+        assertEquals(123L, invoke(clazz, "target", 5))
+    }
+
+    @Test
+    fun `cancellable HookContext stops a void target`() {
+        Ops.recorded = null
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("target", desc = "(I)V") {
+                        beforeCall(owner = Ops.OWNER, name = "record", desc = "(I)V") {
+                            wrapOperation(
+                                WrapOpHandlers.OWNER, "skipVoid",
+                                "(I$OPERATION_DESC$HOOK_CONTEXT_DESC)V",
+                                extras = listOf(DslValue.CancelableHandle(HOOK_CONTEXT_DESC)),
+                            )
+                        }
+                    }
+                }
+            },
+            targetWithVoidCall(),
+        )
+
+        invoke(clazz, "target", 5)
+        assertEquals(null, Ops.recorded, "cancel() returns from the void target before the wrapped call")
+    }
+
     // ---------- fixtures ----------
 
     private val OPERATION_DESC = "Lorg/ohmyloader/api/hook/Operation;"
+    private val HOOK_CONTEXT_DESC = "Lorg/ohmyloader/api/hook/HookContext;"
+    private val HOOK_VALUE_DESC = "Lorg/ohmyloader/api/hook/HookValue;"
 
     private fun classNode(vararg methods: MethodNode): ClassNode =
         ClassNode(Opcodes.ASM9).apply {
@@ -250,6 +367,33 @@ class InjectionWrapOperationTest {
         },
     )
 
+    /** `static String target(int seed) { return Ops.label(seed); }` */
+    private fun targetWithReferenceCall(): ClassNode = classNode(
+        methodNode("target", "(I)Ljava/lang/String;") {
+            add(VarInsnNode(Opcodes.ILOAD, 0))
+            add(MethodInsnNode(Opcodes.INVOKESTATIC, Ops.OWNER, "label", "(I)Ljava/lang/String;", false))
+            add(InsnNode(Opcodes.ARETURN))
+        },
+    )
+
+    /** `static long target(int seed) { return Ops.wide(seed); }` */
+    private fun targetWithWideCall(): ClassNode = classNode(
+        methodNode("target", "(I)J") {
+            add(VarInsnNode(Opcodes.ILOAD, 0))
+            add(MethodInsnNode(Opcodes.INVOKESTATIC, Ops.OWNER, "wide", "(I)J", false))
+            add(InsnNode(Opcodes.LRETURN))
+        },
+    )
+
+    /** `static void target(int seed) { Ops.record(seed); }` */
+    private fun targetWithVoidCall(): ClassNode = classNode(
+        methodNode("target", "(I)V") {
+            add(VarInsnNode(Opcodes.ILOAD, 0))
+            add(MethodInsnNode(Opcodes.INVOKESTATIC, Ops.OWNER, "record", "(I)V", false))
+            add(InsnNode(Opcodes.RETURN))
+        },
+    )
+
     /** `static Receiver make(int seed) { return new Receiver(seed); }` */
     private fun targetWithInstantiation(): ClassNode = classNode(
         methodNode("make", "(I)L${Receiver.OWNER};") {
@@ -292,7 +436,21 @@ class InjectionWrapOperationTest {
         val OWNER: String = Ops::class.java.name.replace('.', '/')
 
         @JvmStatic
+        var recorded: Int? = null
+
+        @JvmStatic
+        fun record(value: Int) {
+            recorded = value
+        }
+
+        @JvmStatic
         fun times2(value: Int): Int = value * 2
+
+        @JvmStatic
+        fun label(value: Int): String = "label$value"
+
+        @JvmStatic
+        fun wide(value: Int): Long = value.toLong()
     }
 
     object WrapOpHandlers {
@@ -322,5 +480,35 @@ class InjectionWrapOperationTest {
         @Suppress("UNUSED_PARAMETER")
         @JvmStatic
         fun substitute(value: Int, operation: Operation<Receiver>): Receiver = Receiver(99)
+
+        @Suppress("UNUSED_PARAMETER")
+        @JvmStatic
+        fun cancelWithValue(value: Int, operation: Operation<Int>, hook: HookValue<Int>): Int {
+            hook.setReturnValue(77)
+            return -1
+        }
+
+        @JvmStatic
+        fun passThrough(value: Int, operation: Operation<Int>, hook: HookValue<Int>): Int = operation.call(value) + 1
+
+        @Suppress("UNUSED_PARAMETER")
+        @JvmStatic
+        fun skipVoid(value: Int, operation: Operation<Void>, hook: HookContext) {
+            hook.cancel()
+        }
+
+        @Suppress("UNUSED_PARAMETER")
+        @JvmStatic
+        fun cancelWithLabel(value: Int, operation: Operation<String>, hook: HookValue<String>): String {
+            hook.setReturnValue("cancelled")
+            return ""
+        }
+
+        @Suppress("UNUSED_PARAMETER")
+        @JvmStatic
+        fun cancelWithWide(value: Int, operation: Operation<Long>, hook: HookValue<Long>): Long {
+            hook.setReturnValue(123L)
+            return 0L
+        }
     }
 }

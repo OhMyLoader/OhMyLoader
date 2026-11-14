@@ -524,6 +524,16 @@ annotation class Lambda(
 )
 
 /**
+ * Lets a `@WrapOperation` handler **cancel the target method** instead of only rewriting the operation:
+ * the parameter must be `HookContext` for a void target or `HookValue<T>` for a non-void one, and must
+ * be the **last** handler parameter. Calling `cancel()` / `setReturnValue(v)` returns from the target
+ * method after the handler returns, with the handle's value.
+ */
+@Target(AnnotationTarget.VALUE_PARAMETER)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class Cancellable
+
+/**
  * Binds a handler parameter to a **local variable at the injection point** (aligned with MixinExtras'
  * `@Local`). Supported on handler parameters of every method annotation: on `@Inject` the sugar sits
  * **before** the trailing `HookContext`/`HookValue`, on every other injector it is a **trailing suffix**
