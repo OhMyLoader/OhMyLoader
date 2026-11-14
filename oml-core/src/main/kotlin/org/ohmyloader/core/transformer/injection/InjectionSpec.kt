@@ -16,6 +16,7 @@ import org.ohmyloader.core.expression.utils.FlowDecorations
 import org.ohmyloader.core.hook.LOCAL_REF
 import org.ohmyloader.core.hook.LOCAL_REF_DESC
 import org.ohmyloader.core.hook.LOCAL_REFS
+import org.ohmyloader.core.transformer.ExclusiveClaim
 import org.ohmyloader.core.transformer.TransformContext
 import java.util.IdentityHashMap
 
@@ -306,6 +307,58 @@ class InjectionSpec internal constructor(
             else -> payload.javaClass.simpleName
         }
         return "$what   [rule: ${rule.selector.describe()}]"
+    }
+
+    /** Cheap pre-check used by the class loader before resolving any cross-transformer claims. */
+    fun hasExclusivePoints(internalName: String): Boolean {
+        val rules = ruleSet.classes[internalName] ?: return false
+        return rules.methods.any { rule -> rule.points.any { exclusiveKind(it.second) != null } }
+    }
+
+    /**
+     * Resolves the exclusive anchors of this spec on the **untouched** class. The class loader calls this
+     * for every interested transformer before any of them mutates the node, which is the only moment an
+     * adapter and a mod rule can be compared on the same instruction.
+     */
+    fun exclusiveClaims(context: TransformContext): List<ExclusiveClaim> {
+        val classRules = ruleSet.classes[context.internalName] ?: return emptyList()
+        val frames = HashMap<MethodNode, MethodFrames>()
+        val claims = mutableListOf<ExclusiveClaim>()
+        for (rule in classRules.methods) {
+            val named = targetMethods(context.node, rule.selector).filter { it.instructions.size() > 0 }
+            for (method in named) {
+                for ((point, payload) in rule.points) {
+                    when (exclusiveKind(payload)) {
+                        Exclusive.INSTRUCTION -> {
+                            val anchors = when (point) {
+                                is InjectionPoint.Expression -> ExpressionAnchors.resolve(
+                                    context.node, method, point, payload,
+                                    ExpressionAnchors.contextTypeOf(payload),
+                                ).instructions
+
+                                else -> AnchorResolver.resolve(
+                                    point, context.node, method, context.internalName, context.node.superName,
+                                    frames.getOrPut(method) { MethodFrames(context.internalName, method) },
+                                )
+                            }
+                            val label = claimLabel(rule, payload)
+                            for (anchor in anchors) {
+                                claims += ExclusiveClaim(
+                                    method.name, method.desc, method.instructions.indexOf(anchor), false, label,
+                                )
+                            }
+                        }
+
+                        Exclusive.WHOLE_METHOD -> claims += ExclusiveClaim(
+                            method.name, method.desc, -1, true, claimLabel(rule, payload),
+                        )
+
+                        null -> Unit
+                    }
+                }
+            }
+        }
+        return claims
     }
 
     /**

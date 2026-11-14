@@ -1,7 +1,9 @@
 package org.ohmyloader.core.transformer.injection
 
 import org.ohmyloader.api.inject.RuleSet
+import org.ohmyloader.core.transformer.ExclusiveClaim
 import org.ohmyloader.core.transformer.IClassTransformer
+import org.ohmyloader.core.transformer.IExclusiveClaimSource
 import org.ohmyloader.core.transformer.IVerifiableTransformer
 import org.ohmyloader.core.transformer.TransformContext
 
@@ -22,13 +24,17 @@ abstract class InjectingTransformer(
     override val id: String,
     /** Static problems the frontend (e.g. the Mixin scanner) found while compiling the rules, folded into the same self-check report. */
     private val verifyExtras: List<String> = emptyList(),
-) : IClassTransformer, IVerifiableTransformer {
+) : IClassTransformer, IVerifiableTransformer, IExclusiveClaimSource {
 
     private val spec = InjectionSpec(rules)
 
     final override fun appliesTo(internalName: String): Boolean = spec.appliesTo(internalName)
 
     final override fun transform(context: TransformContext): Boolean = spec.transform(context)
+
+    override fun hasExclusivePoints(internalName: String): Boolean = spec.hasExclusivePoints(internalName)
+
+    override fun exclusiveClaims(context: TransformContext): List<ExclusiveClaim> = spec.exclusiveClaims(context)
 
     final override fun verify(loader: ClassLoader?): List<String> = verifyExtras + spec.verify(loader)
 }

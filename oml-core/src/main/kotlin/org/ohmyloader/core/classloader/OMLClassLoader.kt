@@ -4,9 +4,12 @@ import org.objectweb.asm.ClassReader
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.ClassNode
+import org.ohmyloader.api.inject.InjectionError
 import org.ohmyloader.core.diagnostics.Diagnostics
 import org.ohmyloader.core.transformer.IClassTransformer
+import org.ohmyloader.core.transformer.IExclusiveClaimSource
 import org.ohmyloader.core.transformer.TransformContext
+import org.ohmyloader.core.transformer.injection.CrossTransformerConflicts
 import java.net.URL
 import java.net.URLClassLoader
 import java.util.concurrent.CopyOnWriteArrayList
@@ -109,6 +112,29 @@ class OMLClassLoader(
         // local-variable table, which is what the expanded form carries).
         ClassReader(bytes).accept(node, ClassReader.EXPAND_FRAMES)
         Diagnostics.recordPhase("parse", System.nanoTime() - parseStarted)
+
+        // 2b) Cross-transformer conflict pre-pass: each rule-based transformer owns its own rule set, so the
+        //     per-spec conflict check cannot see an adapter and a mod claiming the same instruction. Resolve
+        //     every interested transformer's exclusive claims on the untouched node and refuse the load when
+        //     two different transformers own the same site (the second would otherwise miss silently).
+        val claimSources = transformers
+            .filterIsInstance<IExclusiveClaimSource>()
+            .filter { it.appliesTo(node.name) && it.hasExclusivePoints(node.name) }
+        if (claimSources.size > 1) {
+            val claimContext = TransformContext(node.name, node)
+            val sources = claimSources.map {
+                CrossTransformerConflicts.Source(it.id, it.exclusiveClaims(claimContext))
+            }
+            val conflicts = CrossTransformerConflicts.find(sources)
+            if (conflicts.isNotEmpty()) {
+                throw InjectionError(
+                    "[injection] conflicting exclusive injections across transformers — two transformers " +
+                        "cannot both replace/own the same instruction or method body: only the first would run " +
+                        "and the second would silently miss:\n" +
+                        conflicts.joinToString("\n") { "    - $it" },
+                )
+            }
+        }
 
         // 3) Version transformers modify in turn
         var modified = false
