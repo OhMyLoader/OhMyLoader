@@ -2464,7 +2464,8 @@ object HookScanner {
         while (i + 1 < values.size) {
             when (values[i]) {
                 "nullValue" -> if (values[i + 1] == true) return null
-                "intValue", "longValue", "floatValue", "doubleValue", "stringValue" -> return values[i + 1]
+                "intValue", "longValue", "floatValue", "doubleValue", "stringValue", "classValue" ->
+                    return values[i + 1]
             }
             i += 2
         }

@@ -1,5 +1,7 @@
 package org.ohmyloader.api.hook
 
+import kotlin.reflect.KClass
+
 /**
  * Declares a **hook carrier**: methods carrying [Inject] / [Redirect] / `@Modify*` annotations are
  * compiled into injection rules and woven in when the target class loads; [target] is the mapped
@@ -130,7 +132,8 @@ annotation class Slice(
  * A constant matcher (aligned with Mixin's `@Constant`), used in [ModifyConstant.constant].
  * **Only fields explicitly written count** (annotation defaults are not written into the
  * bytecode), so `@Constant(intValue = 0)` expresses "match 0" — the same approach Mixin uses.
- * [intValue] and [longValue] are different types: `1` does not match `1L`.
+ * [intValue] and [longValue] are different types: `1` does not match `1L`. [classValue] matches a
+ * class literal (`LDC` of a `Class`).
  */
 @Target(AnnotationTarget.ANNOTATION_CLASS)
 @Retention(AnnotationRetention.RUNTIME)
@@ -141,6 +144,7 @@ annotation class Constant(
     val floatValue: Float = 0f,
     val doubleValue: Double = 0.0,
     val stringValue: String = "",
+    val classValue: KClass<*> = Any::class,
     val ordinal: Int = -1,
 )
 

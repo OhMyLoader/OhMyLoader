@@ -437,6 +437,24 @@ class HookScannerTest {
         assertIs<Payload.ModifyConstant>(parsed.rules.single().payload)
     }
 
+    @Test
+    fun `modify constant reads a class literal discriminator`() {
+        val stringClass = org.objectweb.asm.Type.getObjectType("java/lang/String")
+        val constant = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Constant;").apply {
+            values = mutableListOf<Any?>("classValue", stringClass)
+        }
+        val annotation = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyConstant;").apply {
+            values = mutableListOf<Any?>("method", "runTick", "constant", constant)
+        }
+        val parsed = HookScanner.parseMixinClass(
+            mixinClass(annotated("modify", "(Ljava/lang/Class;)Ljava/lang/Class;", annotation)), "m",
+        )
+
+        assertEquals(emptyList(), parsed.problems)
+        assertEquals(InjectionPoint.Constant(stringClass, null, after = true), parsed.rules.single().anchor)
+        assertIs<Payload.ModifyConstant>(parsed.rules.single().payload)
+    }
+
     // ---------- @ModifyVariable ----------
 
     @Test

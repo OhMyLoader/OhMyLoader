@@ -2,6 +2,7 @@ package org.ohmyloader.core.transformer.injection
 
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes
+import org.objectweb.asm.Type
 import org.objectweb.asm.tree.*
 import org.ohmyloader.api.inject.DslValue
 import org.ohmyloader.api.inject.InjectionError
@@ -286,6 +287,34 @@ class InjectionModifyTest {
         assertEquals("HELLO", invoke(clazz, "text"))
     }
 
+    @Test
+    fun `modifyConstant rewrites a class constant`() {
+        val stringClass = Type.getObjectType("java/lang/String")
+        val spec = specOf {
+            classTarget(owner) {
+                method("type", desc = "()Ljava/lang/Class;") {
+                    afterConstant(value = stringClass) {
+                        modifyConstant(
+                            ModifyHandlers.OWNER, "otherClass",
+                            "(Ljava/lang/Class;)Ljava/lang/Class;",
+                        )
+                    }
+                }
+            }
+        }
+        val clazz = define(
+            spec,
+            classNode(
+                methodNode("type", "()Ljava/lang/Class;") {
+                    add(LdcInsnNode(stringClass))
+                    add(InsnNode(Opcodes.ARETURN))
+                },
+            ),
+        )
+
+        assertEquals(Integer::class.java, invoke(clazz, "type"))
+    }
+
     // ---------- rule-level validation ----------
 
     @Test
@@ -522,6 +551,10 @@ object ModifyHandlers {
 
     @JvmStatic
     fun shout(v: String): String = v.uppercase()
+
+    @Suppress("UNUSED_PARAMETER")
+    @JvmStatic
+    fun otherClass(v: Class<*>): Class<*> = Integer::class.java
 
     @JvmStatic
     fun patchString(v: String): String = "patched"
