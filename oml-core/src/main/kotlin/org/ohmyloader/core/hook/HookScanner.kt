@@ -731,37 +731,43 @@ object HookScanner {
     ) {
         val where = "$mergeInto.${method.name}"
         val call = point.core as? InjectionPoint.Call
-        if (call == null) {
-            problems += "[$modId] $where —— @Redirect's @At must be a method call (INVOKE / INVOKE_ASSIGN)"
+        val expression = point.core is InjectionPoint.Expression
+        if (!expression && call == null) {
+            problems += "[$modId] $where —— @Redirect's @At must be a method call (INVOKE / INVOKE_ASSIGN) " +
+                "or an @Expression"
             return
         }
         // Cross-module attributes are not smart-converted ⇒ collect them into local variables, used in several spots below
-        val callOwner = call.owner
-        val callName = call.name
-        val callDesc = call.desc
-        if (callOwner == null || callName == null || callDesc == null) {
+        val callOwner = call?.owner
+        val callName = call?.name
+        val callDesc = call?.desc
+        if (call != null && (callOwner == null || callName == null || callDesc == null)) {
             problems += "[$modId] $where —— @Redirect's @At must write a full target (Lowner;name(args)ret):" +
                 " the engine must determine the handler's descriptor at startup"
             return
         }
-        val callRet = Type.getReturnType(callDesc).descriptor
-        val handlerRet = Type.getReturnType(method.desc).descriptor
-        // A static call has no receiver to take ⇒ the handler cannot be an instance method (this is exactly
-        // the boundary between the instance form and the static form)
-        if (call.isStaticCall()) {
-            problems += "[$modId] $where —— the @Redirect target $callOwner.$callName is a static call:" +
-                " an instance handler has no receiver to accept, please make the handler static (it will return to the static bridge path)"
-            return
-        }
         val split = trailingSugar(method, mixinClass, where, modId, problems) ?: return
-        val want = listOf(Type.getObjectType(callOwner).descriptor) +
-            Type.getArgumentTypes(callDesc).map { it.descriptor }
-        if (split.normal.map { it.descriptor } != want || handlerRet != callRet) {
-            problems += "[$modId] $where —— the instance @Redirect handler's non-sugar parameter list must " +
-                "equal the replaced call's receiver + its arguments, and the return type must equal the " +
-                "replaced call's return type: expected ${want.joinToString("")}, actual ${method.desc}"
-            return
+        if (call != null) {
+            val callRet = Type.getReturnType(callDesc).descriptor
+            val handlerRet = Type.getReturnType(method.desc).descriptor
+            // A static call has no receiver to take ⇒ the handler cannot be an instance method (this is exactly
+            // the boundary between the instance form and the static form)
+            if (call.isStaticCall()) {
+                problems += "[$modId] $where —— the @Redirect target $callOwner.$callName is a static call:" +
+                    " an instance handler has no receiver to accept, please make the handler static (it will return to the static bridge path)"
+                return
+            }
+            val want = listOf(Type.getObjectType(callOwner).descriptor) +
+                Type.getArgumentTypes(callDesc).map { it.descriptor }
+            if (split.normal.map { it.descriptor } != want || handlerRet != callRet) {
+                problems += "[$modId] $where —— the instance @Redirect handler's non-sugar parameter list must " +
+                    "equal the replaced call's receiver + its arguments, and the return type must equal the " +
+                    "replaced call's return type: expected ${want.joinToString("")}, actual ${method.desc}"
+                return
+            }
         }
+        // With an @Expression the captured call is only known at injection time; the engine re-checks the
+        // handler shape and rejects static calls there.
         handlers += "${method.name}${method.desc}"
         rules += Rule(
             targetInternal, methodNames, methodDesc, anchor,
@@ -816,8 +822,9 @@ object HookScanner {
         // here it is reported earlier and with the annotation name)
         when (kind) {
             HandlerKind.MODIFY_ARG, HandlerKind.MODIFY_ARGS ->
-                if (anchor.core !is InjectionPoint.Call) {
-                    problems += "[$modId] $where —— ${kind.annotationName}'s @At must be a method call (INVOKE)"
+                if (anchor.core !is InjectionPoint.Call && anchor.core !is InjectionPoint.Expression) {
+                    problems += "[$modId] $where —— ${kind.annotationName}'s @At must be a method call (INVOKE)" +
+                        " or an @Expression"
                     return
                 }
 
@@ -1136,33 +1143,40 @@ object HookScanner {
         problems: MutableList<String>,
     ) {
         val call = point as? InjectionPoint.Call
-        if (call == null) {
-            problems += "[$modId] $where —— @Redirect's @At must be a method call (INVOKE / INVOKE_ASSIGN)"
+        val expression = point.core is InjectionPoint.Expression
+        if (!expression && call == null) {
+            problems += "[$modId] $where —— @Redirect's @At must be a method call (INVOKE / INVOKE_ASSIGN) " +
+                "or an @Expression"
             return
         }
-        if (call.owner == null || call.name == null || call.desc == null) {
+        if (call != null && (call.owner == null || call.name == null || call.desc == null)) {
             problems += "[$modId] $where —— @Redirect's @At must write a full target (Lowner;name(args)ret):" +
                 " the engine must determine the bridge method's descriptor at startup"
             return
         }
         val split = trailingSugar(method, mixinClass, where, modId, problems) ?: return
-        val callArgs = Type.getArgumentTypes(call.desc).map { it.descriptor }
-        val callRet = Type.getReturnType(call.desc).descriptor
         val handlerParams = split.normal.map { it.descriptor }
         val handlerRet = Type.getReturnType(method.desc).descriptor
 
-        // Handler params = the arguments, or "receiver + arguments" (instance call; consistent with Mixin's
-        // "first param is the receiver"); trailing sugar params are extras.
-        val receiverOk = handlerParams == callArgs || handlerParams.drop(1) == callArgs
-        if (!receiverOk || handlerRet != callRet) {
-            problems += "[$modId] $where —— @Redirect handler's non-sugar parameter list must equal the " +
-                "replaced call (an instance call places the receiver as the first parameter): expected " +
-                "(${callArgs.joinToString("")})$callRet or (receiver${callArgs.joinToString("")})$callRet, " +
-                "actual ${method.desc}"
-            return
+        if (call != null) {
+            val callArgs = Type.getArgumentTypes(call.desc).map { it.descriptor }
+            val callRet = Type.getReturnType(call.desc).descriptor
+
+            // Handler params = the arguments, or "receiver + arguments" (instance call; consistent with Mixin's
+            // "first param is the receiver"); trailing sugar params are extras.
+            val receiverOk = handlerParams == callArgs || handlerParams.drop(1) == callArgs
+            if (!receiverOk || handlerRet != callRet) {
+                problems += "[$modId] $where —— @Redirect handler's non-sugar parameter list must equal the " +
+                    "replaced call (an instance call places the receiver as the first parameter): expected " +
+                    "(${callArgs.joinToString("")})$callRet or (receiver${callArgs.joinToString("")})$callRet, " +
+                    "actual ${method.desc}"
+                return
+            }
         }
+        // With an @Expression the captured call is only known at injection time, so the engine validates the
+        // handler shape and the bridge descriptor against the actual instruction.
         val payload: Payload
-        if (split.bindings.isEmpty()) {
+        if (split.bindings.isEmpty() && !expression) {
             val id = HookRegistry.register(
                 modId = modId,
                 mixinClass = mixinClass,
@@ -1220,8 +1234,9 @@ object HookScanner {
         rules: MutableList<Rule>,
         problems: MutableList<String>,
     ) {
-        if (anchor.core !is InjectionPoint.Call) {
-            problems += "[$modId] $where —— @ModifyArg's @At must be a method call (INVOKE)"
+        val core = anchor.core
+        if (core !is InjectionPoint.Call && core !is InjectionPoint.Expression) {
+            problems += "[$modId] $where —— @ModifyArg's @At must be a method call (INVOKE) or an @Expression"
             return
         }
         val split = trailingSugar(method, mixinClass, where, modId, problems) ?: return
@@ -1264,8 +1279,9 @@ object HookScanner {
         rules: MutableList<Rule>,
         problems: MutableList<String>,
     ) {
-        if (anchor.core !is InjectionPoint.Call) {
-            problems += "[$modId] $where —— @ModifyArgs' @At must be a method call (INVOKE)"
+        val core = anchor.core
+        if (core !is InjectionPoint.Call && core !is InjectionPoint.Expression) {
+            problems += "[$modId] $where —— @ModifyArgs' @At must be a method call (INVOKE) or an @Expression"
             return
         }
         val split = trailingSugar(method, mixinClass, where, modId, problems) ?: return

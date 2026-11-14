@@ -11,6 +11,7 @@ import org.objectweb.asm.tree.LabelNode
 import org.objectweb.asm.tree.MethodInsnNode
 import org.objectweb.asm.tree.MethodNode
 import org.objectweb.asm.tree.VarInsnNode
+import org.ohmyloader.api.hook.Args
 import org.ohmyloader.api.hook.Operation
 import org.ohmyloader.api.inject.Anchor
 import org.ohmyloader.api.inject.InjectionError
@@ -279,6 +280,108 @@ class InjectionExpressionTest {
 
         assertEquals(100, invoke(clazz, "cmp", 1), "the operation re-evaluates 1 > 5 and the handler inverts it")
         assertEquals(0, invoke(clazz, "cmp", 9), "9 > 5 is true, inverted to false")
+    }
+
+    @Test
+    fun `redirect replaces a call captured by an expression`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("calc", desc = "(I)I") {
+                        atExpression(
+                            "max(?, 3)",
+                            definitions = listOf(
+                                InjectionPoint.Expression.Definition(
+                                    "max", methods = listOf("Ljava/lang/Math;max(II)I"),
+                                ),
+                            ),
+                        ) {
+                            redirect(ExpressionHandlers.OWNER, "sum", "(II)I")
+                        }
+                    }
+                }
+            },
+            maxTarget(),
+        )
+
+        assertEquals(8, invoke(clazz, "calc", 5), "Math.max(5, 3) is replaced by 5 + 3")
+        assertEquals(5, invoke(clazz, "calc", 2), "Math.max(2, 3) is replaced by 2 + 3")
+    }
+
+    @Test
+    fun `redirect rejects a handler that does not match the captured call`() {
+        val spec = specOf {
+            classTarget(owner) {
+                method("calc", desc = "(I)I") {
+                    atExpression(
+                        "max(?, 3)",
+                        definitions = listOf(
+                            InjectionPoint.Expression.Definition(
+                                "max", methods = listOf("Ljava/lang/Math;max(II)I"),
+                            ),
+                        ),
+                    ) {
+                        redirect(ExpressionHandlers.OWNER, "double", "(I)I")
+                    }
+                    require(1)
+                }
+            }
+        }
+
+        val failure = assertFailsWith<InjectionError> {
+            spec.transform(TransformContext(owner, maxTarget()))
+        }
+        assertTrue(failure.message!!.contains("must start with"), failure.message)
+    }
+
+    @Test
+    fun `modifyArg rewrites an argument of an expression call`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("calc", desc = "(I)I") {
+                        atExpression(
+                            "max(?, 3)",
+                            definitions = listOf(
+                                InjectionPoint.Expression.Definition(
+                                    "max", methods = listOf("Ljava/lang/Math;max(II)I"),
+                                ),
+                            ),
+                        ) {
+                            modifyArg(ExpressionHandlers.OWNER, "timesTen", "(I)I", index = 1)
+                        }
+                    }
+                }
+            },
+            maxTarget(),
+        )
+
+        assertEquals(30, invoke(clazz, "calc", 5), "the second argument becomes 30, so max(5, 30) = 30")
+    }
+
+    @Test
+    fun `modifyArgs rewrites all arguments of an expression call`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("calc", desc = "(I)I") {
+                        atExpression(
+                            "max(?, 3)",
+                            definitions = listOf(
+                                InjectionPoint.Expression.Definition(
+                                    "max", methods = listOf("Ljava/lang/Math;max(II)I"),
+                                ),
+                            ),
+                        ) {
+                            modifyArgs(ExpressionHandlers.OWNER, "raiseFirst", "(Lorg/ohmyloader/api/hook/Args;)V")
+                        }
+                    }
+                }
+            },
+            maxTarget(),
+        )
+
+        assertEquals(20, invoke(clazz, "calc", 5), "the first argument becomes 20, so max(20, 3) = 20")
     }
 
     @Test
@@ -576,5 +679,16 @@ class InjectionExpressionTest {
 
         @JvmStatic
         fun plusOne(value: Int): Int = value + 1
+
+        @JvmStatic
+        fun sum(a: Int, b: Int): Int = a + b
+
+        @JvmStatic
+        fun timesTen(value: Int): Int = value * 10
+
+        @JvmStatic
+        fun raiseFirst(args: Args) {
+            args[0] = 20
+        }
     }
 }

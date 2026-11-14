@@ -1225,6 +1225,16 @@ class InjectionSpec internal constructor(
                                             "actual ${payload.desc} (${method.name}${method.desc})",
                                     )
                                 }
+                                if (org.objectweb.asm.Type.getReturnType(payload.desc) !=
+                                    org.objectweb.asm.Type.getReturnType(anchor.desc)
+                                ) {
+                                    throw InjectionError(
+                                        "[injection] the handler of HandlerCall(REDIRECT) must return " +
+                                            "${org.objectweb.asm.Type.getReturnType(anchor.desc).className}, " +
+                                            "actual ${org.objectweb.asm.Type.getReturnType(payload.desc).className} " +
+                                            "(${method.name}${method.desc})",
+                                    )
+                                }
                                 val list = PayloadEmitter.emitRedirect(
                                     payload.owner, payload.method, payload.desc, payload.captures,
                                     method, owner, anchor, locals,
@@ -1290,11 +1300,38 @@ class InjectionSpec internal constructor(
                             OmlLog.error("Injection", "Redirect cannot be applied to a constructor call: $anchor")
                             continue
                         }
+                        // With an @Expression the scanner cannot compare the handler against the call: do it
+                        // here against the instruction the expression actually captured. The bridge descriptor
+                        // starts with the handler's value parameters, so the prefix must be exactly what the
+                        // original instruction consumes.
+                        val callArgs = Type.getArgumentTypes(anchor.desc)
+                        val callRet = Type.getReturnType(anchor.desc)
+                        val staticCall = anchor.opcode == Opcodes.INVOKESTATIC
+                        val pushed = if (staticCall) {
+                            callArgs
+                        } else {
+                            arrayOf(Type.getObjectType(anchor.owner)) + callArgs
+                        }
+                        if (payload.desc != null) {
+                            val params = Type.getArgumentTypes(payload.desc)
+                            if (params.size < pushed.size ||
+                                !params.copyOfRange(0, pushed.size).contentEquals(pushed) ||
+                                Type.getReturnType(payload.desc) != callRet
+                            ) {
+                                throw InjectionError(
+                                    "[injection] @Redirect handler's parameters must start with " +
+                                        "${pushed.joinToString("", "(", ")") { it.descriptor }}${callRet.descriptor} " +
+                                        "(the replaced call's receiver + arguments and its return type): " +
+                                        "actual ${payload.desc} (${method.name}${method.desc}) — for an instance " +
+                                        "call the receiver must be the first parameter, and an @Expression is " +
+                                        "only checked here",
+                                )
+                            }
+                        }
                         // Static call: the descriptor is taken as-is. **For an instance call the receiver must be folded into the
                         // parameter list** — on the stack it's [receiver, args…], so after switching to INVOKESTATIC the
                         // receiver must become the first parameter, otherwise only the args get consumed and the stack is off.
                         // With sugar the payload carries the bridge descriptor (extras + handler id included).
-                        val staticCall = anchor.opcode == Opcodes.INVOKESTATIC
                         val desc = payload.desc ?: if (staticCall) {
                             anchor.desc
                         } else {

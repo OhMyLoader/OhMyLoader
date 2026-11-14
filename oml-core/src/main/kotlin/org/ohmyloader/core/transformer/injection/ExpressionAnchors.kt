@@ -134,6 +134,12 @@ internal object ExpressionAnchors {
                     throw InjectionError(
                         "[injection] @Expression in ${method.name}${method.desc}: ${failure.message}",
                     )
+                } catch (failure: UnsupportedOperationException) {
+                    // This injector cannot target the captured shape (compound instruction, string concat, factory…)
+                    throw InjectionError(
+                        "[injection] @Expression in ${method.name}${method.desc} is not supported by " +
+                            "this injector: ${failure.message}",
+                    )
                 }
             }
         }
@@ -149,8 +155,14 @@ internal object ExpressionAnchors {
         is Payload.ModifyExpressionValue -> ExpressionContext.Type.MODIFY_EXPRESSION_VALUE
         is Payload.WrapOperation -> ExpressionContext.Type.WRAP_OPERATION
         is Payload.ModifyVariable -> ExpressionContext.Type.MODIFY_VARIABLE
+        is Payload.Redirect -> ExpressionContext.Type.REDIRECT
+        is Payload.ModifyArg -> ExpressionContext.Type.MODIFY_ARG
+        is Payload.ModifyArgs -> ExpressionContext.Type.MODIFY_ARGS
         is Payload.HandlerCall -> when (payload.kind) {
             HandlerKind.INJECT -> ExpressionContext.Type.INJECT
+            HandlerKind.REDIRECT -> ExpressionContext.Type.REDIRECT
+            HandlerKind.MODIFY_ARG -> ExpressionContext.Type.MODIFY_ARG
+            HandlerKind.MODIFY_ARGS -> ExpressionContext.Type.MODIFY_ARGS
             HandlerKind.MODIFY_EXPR_VALUE -> ExpressionContext.Type.MODIFY_EXPRESSION_VALUE
             HandlerKind.WRAP_OPERATION -> ExpressionContext.Type.WRAP_OPERATION
             HandlerKind.MODIFY_VAR -> ExpressionContext.Type.MODIFY_VARIABLE

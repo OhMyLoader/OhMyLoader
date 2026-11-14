@@ -191,7 +191,9 @@ annotation class Inject(
  * the receiver is the **first** parameter, consistent with Mixin) and the return type must match;
  * the original call no longer executes.
  * [at]'s `target` **must** be written — the engine must fix the bridge method's descriptor at
- * startup; a missing one is an explicit startup-stage problem, not a silent no-op.
+ * startup; a missing one is an explicit startup-stage problem, not a silent no-op. The sole
+ * exception is `@At("EXPRESSION")`: the captured call is only known at weaving time, so the
+ * engine validates the handler shape against it there.
  * An exception thrown by the handler is **not isolated**: this annotation replaces real behavior,
  * and swallowing the exception would mean the call silently never happened.
  */
@@ -214,9 +216,9 @@ annotation class Redirect(
  * default) auto-locates by the return type — used when the call has exactly one argument whose
  * type equals the return type; zero or several report an error (guessing the wrong position is
  * far more dangerous than an error).
- * The anchor must be a method call (`@At(value = "INVOKE", target = "…")`). The engine does not
- * box: it stores the arguments into temporary locals in reverse order, modifies one, pushes them
- * back in order.
+ * The anchor must be a method call (`@At(value = "INVOKE", target = "…")`) or a call captured
+ * by `@At("EXPRESSION")`. The engine does not box: it stores the arguments into temporary locals
+ * in reverse order, modifies one, pushes them back in order.
  */
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
@@ -236,9 +238,8 @@ annotation class ModifyArg(
  * Gets **all of a call's arguments** at once and rewrites them (aligned with
  * Mixin's `@ModifyArgs`).
  *
- * The handler has the form `(Args)V`, where `args[0]` is the receiver (for an
- * instance call) or the first argument. This path **necessarily boxes**, so on hot
- * paths use [ModifyArg] instead.
+ * The handler has the form `(Args)V`, where `args[0]` is the call's first argument — the receiver
+ * is not part of the list. This path **necessarily boxes**, so on hot paths use [ModifyArg] instead.
  */
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)

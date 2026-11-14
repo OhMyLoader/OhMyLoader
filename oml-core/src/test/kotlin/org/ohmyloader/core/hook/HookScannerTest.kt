@@ -1241,6 +1241,79 @@ class HookScannerTest {
     }
 
     @Test
+    fun `redirect accepts an expression anchor`() {
+        newBridge()
+        val expression = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Expression;").apply {
+            values = mutableListOf<Any?>("value", listOf("max(?, 3)"))
+        }
+        val definition = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Definition;").apply {
+            values = mutableListOf<Any?>("id", "max", "method", listOf("Ljava/lang/Math;max(II)I"))
+        }
+        val redirect = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Redirect;").apply {
+            values = mutableListOf<Any?>("method", "runTick", "at", atNode("EXPRESSION"))
+        }
+        val method = MethodNode(Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h", "(II)I", null, null).apply {
+            instructions.add(InsnNode(Opcodes.IRETURN))
+            visibleAnnotations = listOf(redirect, expression, definition)
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        assertIs<InjectionPoint.Expression>(parsed.rules[0].anchor.core)
+        val payload = parsed.rules[0].payload as Payload.Redirect
+        assertNotNull(payload.desc, "an expression anchor registers a bridge so the engine can check the call")
+        val handler = HookRegistry.handler(1)!!
+        assertEquals(listOf("I", "I"), handler.captureTypes)
+        assertEquals("I", handler.returnType)
+    }
+
+    @Test
+    fun `modifyArg accepts an expression anchor`() {
+        newBridge()
+        val expression = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Expression;").apply {
+            values = mutableListOf<Any?>("value", listOf("max(?, 3)"))
+        }
+        val definition = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Definition;").apply {
+            values = mutableListOf<Any?>("id", "max", "method", listOf("Ljava/lang/Math;max(II)I"))
+        }
+        val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyArg;").apply {
+            values = mutableListOf<Any?>("method", "runTick", "at", atNode("EXPRESSION"), "index", 1)
+        }
+        val method = MethodNode(Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h", "(I)I", null, null).apply {
+            instructions.add(InsnNode(Opcodes.IRETURN))
+            visibleAnnotations = listOf(modify, expression, definition)
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        assertIs<InjectionPoint.Expression>(parsed.rules[0].anchor.core)
+        assertIs<Payload.ModifyArg>(parsed.rules[0].payload)
+    }
+
+    @Test
+    fun `modifyArgs accepts an expression anchor`() {
+        newBridge()
+        val expression = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Expression;").apply {
+            values = mutableListOf<Any?>("value", listOf("max(?, 3)"))
+        }
+        val definition = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Definition;").apply {
+            values = mutableListOf<Any?>("id", "max", "method", listOf("Ljava/lang/Math;max(II)I"))
+        }
+        val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyArgs;").apply {
+            values = mutableListOf<Any?>("method", "runTick", "at", atNode("EXPRESSION"))
+        }
+        val method = MethodNode(
+            Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "h",
+            "(Lorg/ohmyloader/api/hook/Args;)V", null, null,
+        ).apply {
+            instructions.add(InsnNode(Opcodes.RETURN))
+            visibleAnnotations = listOf(modify, expression, definition)
+        }
+        val parsed = HookScanner.parseMixinClass(mixinClass(method), "m")
+        assertTrue(parsed.problems.isEmpty(), parsed.problems.toString())
+        assertIs<InjectionPoint.Expression>(parsed.rules[0].anchor.core)
+        assertIs<Payload.ModifyArgs>(parsed.rules[0].payload)
+    }
+
+    @Test
     fun `an expression anchor without a pattern is reported`() {
         newBridge()
         val modify = AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/ModifyExpressionValue;").apply {

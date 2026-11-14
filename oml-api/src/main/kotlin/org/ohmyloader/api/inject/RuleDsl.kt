@@ -703,6 +703,20 @@ class PayloadBuilder @PublishedApi internal constructor(
     }
 
     /**
+     * **Replace the anchored call with a static handler** (the payload of [redirectCall], for anchors that
+     * are supplied elsewhere — an `@Expression`, a slice, a merged rule). For an instance call the handler's
+     * first parameter must be the receiver.
+     */
+    fun redirect(
+        handlerOwner: String,
+        handlerMethod: String,
+        handlerDesc: String? = null,
+        extras: List<DslValue> = emptyList(),
+    ) {
+        payload = Payload.Redirect(handlerOwner, handlerMethod, handlerDesc, extras)
+    }
+
+    /**
      * **Rewrite a constant** (aligned with Mixin `@ModifyConstant`).
      *
      * The anchor must be `afterConstant(...)` (only after the constant is loaded
