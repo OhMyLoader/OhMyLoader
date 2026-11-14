@@ -1368,6 +1368,7 @@ internal object PayloadEmitter {
             is InsnNode -> {
                 val load = arrayLoad(anchor.opcode)
                 val store = arrayStore(anchor.opcode)
+                val numeric = numericOperation(anchor.opcode)
                 when {
                     anchor.opcode == Opcodes.ARRAYLENGTH -> {
                         // The bridge must cast the operand to the array type before ARRAYLENGTH; an
@@ -1391,6 +1392,11 @@ internal object PayloadEmitter {
                     store != null -> {
                         argTypes = arrayOf(store.array, Type.INT_TYPE, store.element)
                         returnType = Type.VOID_TYPE
+                    }
+
+                    numeric != null -> {
+                        argTypes = numeric.first
+                        returnType = numeric.second
                     }
 
                     else -> {
@@ -1501,6 +1507,50 @@ internal object PayloadEmitter {
         Opcodes.BASTORE -> ArrayOperation(Type.getType("[B"), Type.BYTE_TYPE)
         Opcodes.CASTORE -> ArrayOperation(Type.getType("[C"), Type.CHAR_TYPE)
         Opcodes.SASTORE -> ArrayOperation(Type.getType("[S"), Type.SHORT_TYPE)
+        else -> null
+    }
+
+    /**
+     * Operand and result types of a numeric arithmetic / bitwise / shift / negation / conversion
+     * instruction. Narrowing conversions (`I2B`/`I2C`/`I2S`) stay int on the stack and are not
+     * operations here.
+     */
+    private fun numericOperation(opcode: Int): Pair<Array<Type>, Type>? = when (opcode) {
+        Opcodes.IADD, Opcodes.ISUB, Opcodes.IMUL, Opcodes.IDIV, Opcodes.IREM,
+        Opcodes.ISHL, Opcodes.ISHR, Opcodes.IUSHR, Opcodes.IAND, Opcodes.IOR, Opcodes.IXOR,
+            -> arrayOf(Type.INT_TYPE, Type.INT_TYPE) to Type.INT_TYPE
+
+        Opcodes.LADD, Opcodes.LSUB, Opcodes.LMUL, Opcodes.LDIV, Opcodes.LREM,
+        Opcodes.LAND, Opcodes.LOR, Opcodes.LXOR,
+            -> arrayOf(Type.LONG_TYPE, Type.LONG_TYPE) to Type.LONG_TYPE
+
+        Opcodes.LSHL, Opcodes.LSHR, Opcodes.LUSHR,
+            -> arrayOf(Type.LONG_TYPE, Type.INT_TYPE) to Type.LONG_TYPE
+
+        Opcodes.FADD, Opcodes.FSUB, Opcodes.FMUL, Opcodes.FDIV, Opcodes.FREM,
+            -> arrayOf(Type.FLOAT_TYPE, Type.FLOAT_TYPE) to Type.FLOAT_TYPE
+
+        Opcodes.DADD, Opcodes.DSUB, Opcodes.DMUL, Opcodes.DDIV, Opcodes.DREM,
+            -> arrayOf(Type.DOUBLE_TYPE, Type.DOUBLE_TYPE) to Type.DOUBLE_TYPE
+
+        Opcodes.INEG -> arrayOf(Type.INT_TYPE) to Type.INT_TYPE
+        Opcodes.LNEG -> arrayOf(Type.LONG_TYPE) to Type.LONG_TYPE
+        Opcodes.FNEG -> arrayOf(Type.FLOAT_TYPE) to Type.FLOAT_TYPE
+        Opcodes.DNEG -> arrayOf(Type.DOUBLE_TYPE) to Type.DOUBLE_TYPE
+
+        Opcodes.I2L -> arrayOf(Type.INT_TYPE) to Type.LONG_TYPE
+        Opcodes.I2F -> arrayOf(Type.INT_TYPE) to Type.FLOAT_TYPE
+        Opcodes.I2D -> arrayOf(Type.INT_TYPE) to Type.DOUBLE_TYPE
+        Opcodes.L2I -> arrayOf(Type.LONG_TYPE) to Type.INT_TYPE
+        Opcodes.L2F -> arrayOf(Type.LONG_TYPE) to Type.FLOAT_TYPE
+        Opcodes.L2D -> arrayOf(Type.LONG_TYPE) to Type.DOUBLE_TYPE
+        Opcodes.F2I -> arrayOf(Type.FLOAT_TYPE) to Type.INT_TYPE
+        Opcodes.F2L -> arrayOf(Type.FLOAT_TYPE) to Type.LONG_TYPE
+        Opcodes.F2D -> arrayOf(Type.FLOAT_TYPE) to Type.DOUBLE_TYPE
+        Opcodes.D2I -> arrayOf(Type.DOUBLE_TYPE) to Type.INT_TYPE
+        Opcodes.D2L -> arrayOf(Type.DOUBLE_TYPE) to Type.LONG_TYPE
+        Opcodes.D2F -> arrayOf(Type.DOUBLE_TYPE) to Type.FLOAT_TYPE
+
         else -> null
     }
 

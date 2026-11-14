@@ -526,6 +526,69 @@ class InjectionExpressionTest {
     }
 
     @Test
+    fun `wrapOperation wraps an arithmetic instruction`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("mul", desc = "(I)I") {
+                        atExpression("? * 7") {
+                            wrapOperation(
+                                ExpressionHandlers.OWNER, "timesNext",
+                                "(IILorg/ohmyloader/api/hook/Operation;)I",
+                            )
+                        }
+                    }
+                }
+            },
+            multiplyTarget(),
+        )
+
+        assertEquals(42, invoke(clazz, "mul", 5), "the handler passes x + 1 to the operation: 6 * 7")
+    }
+
+    @Test
+    fun `wrapOperation wraps a long shift`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("shl", desc = "(J)J") {
+                        atExpression("? << 2") {
+                            wrapOperation(
+                                ExpressionHandlers.OWNER, "shiftNext",
+                                "(JILorg/ohmyloader/api/hook/Operation;)J",
+                            )
+                        }
+                    }
+                }
+            },
+            shiftTarget(),
+        )
+
+        assertEquals(8L, invoke(clazz, "shl", 1L), "the handler raises the shift amount to 3")
+    }
+
+    @Test
+    fun `wrapOperation wraps a primitive cast`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("widen", desc = "(I)J") {
+                        atExpression("(long) ?") {
+                            wrapOperation(
+                                ExpressionHandlers.OWNER, "widenPlusOne",
+                                "(ILorg/ohmyloader/api/hook/Operation;)J",
+                            )
+                        }
+                    }
+                }
+            },
+            widenTarget(),
+        )
+
+        assertEquals(42L, invoke(clazz, "widen", 41), "the operation re-runs i2l, then the handler adds one")
+    }
+
+    @Test
     fun `an expression bounds the slice window`() {
         val definition = InjectionPoint.Expression.Definition(
             "max", methods = listOf("Ljava/lang/Math;max(II)I"),
@@ -813,6 +876,35 @@ class InjectionExpressionTest {
         },
     )
 
+    /** `static int mul(int x) { return x * 7; }` */
+    private fun multiplyTarget(): ClassNode = classNode(
+        methodNode("mul", "(I)I") {
+            add(VarInsnNode(Opcodes.ILOAD, 0))
+            add(IntInsnNode(Opcodes.BIPUSH, 7))
+            add(InsnNode(Opcodes.IMUL))
+            add(InsnNode(Opcodes.IRETURN))
+        },
+    )
+
+    /** `static long shl(long x) { return x << 2; }` */
+    private fun shiftTarget(): ClassNode = classNode(
+        methodNode("shl", "(J)J") {
+            add(VarInsnNode(Opcodes.LLOAD, 0))
+            add(InsnNode(Opcodes.ICONST_2))
+            add(InsnNode(Opcodes.LSHL))
+            add(InsnNode(Opcodes.LRETURN))
+        },
+    )
+
+    /** `static long widen(int x) { return (long) x; }` */
+    private fun widenTarget(): ClassNode = classNode(
+        methodNode("widen", "(I)J") {
+            add(VarInsnNode(Opcodes.ILOAD, 0))
+            add(InsnNode(Opcodes.I2L))
+            add(InsnNode(Opcodes.LRETURN))
+        },
+    )
+
     /** `static int cmp(int x) { if (x > 5) return 100; return 0; }` */
     private fun compareTarget(): ClassNode = classNode(
         methodNode("cmp", "(I)I") {
@@ -921,5 +1013,14 @@ class InjectionExpressionTest {
 
         @JvmStatic
         fun arrayLengthPlus(array: IntArray, operation: Operation<Int>): Int = operation.call(array) + 10
+
+        @JvmStatic
+        fun timesNext(a: Int, b: Int, operation: Operation<Int>): Int = operation.call(a + 1, b)
+
+        @JvmStatic
+        fun shiftNext(a: Long, b: Int, operation: Operation<Long>): Long = operation.call(a, b + 1)
+
+        @JvmStatic
+        fun widenPlusOne(a: Int, operation: Operation<Long>): Long = operation.call(a) + 1L
     }
 }
