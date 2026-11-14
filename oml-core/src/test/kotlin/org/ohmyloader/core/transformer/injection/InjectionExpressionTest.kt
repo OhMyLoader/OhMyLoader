@@ -680,6 +680,66 @@ class InjectionExpressionTest {
     }
 
     @Test
+    fun `coerce boxes a primitive value for an Object handler`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("calc", desc = "(I)I") {
+                        atExpression(
+                            "max(?, 3)",
+                            definitions = listOf(
+                                InjectionPoint.Expression.Definition(
+                                    "max", methods = listOf("Ljava/lang/Math;max(II)I"),
+                                ),
+                            ),
+                        ) {
+                            modifyExpressionValue(
+                                ExpressionHandlers.OWNER, "coerceBoxed",
+                                "(Ljava/lang/Object;)Ljava/lang/Object;",
+                                coerceParam = true,
+                                coerceReturn = true,
+                            )
+                        }
+                    }
+                }
+            },
+            maxTarget(),
+        )
+
+        assertEquals(6, invoke(clazz, "calc", 5), "max(5, 3) is boxed, incremented, unboxed")
+        assertEquals(4, invoke(clazz, "calc", 2), "max(2, 3) is boxed, incremented, unboxed")
+    }
+
+    @Test
+    fun `coerce boxes a primitive parameter with a primitive return`() {
+        val clazz = define(
+            specOf {
+                classTarget(owner) {
+                    method("calc", desc = "(I)I") {
+                        atExpression(
+                            "max(?, 3)",
+                            definitions = listOf(
+                                InjectionPoint.Expression.Definition(
+                                    "max", methods = listOf("Ljava/lang/Math;max(II)I"),
+                                ),
+                            ),
+                        ) {
+                            modifyExpressionValue(
+                                ExpressionHandlers.OWNER, "coerceBoxedInt",
+                                "(Ljava/lang/Object;)I",
+                                coerceParam = true,
+                            )
+                        }
+                    }
+                }
+            },
+            maxTarget(),
+        )
+
+        assertEquals(6, invoke(clazz, "calc", 5))
+    }
+
+    @Test
     fun `an expression bounds the slice window`() {
         val definition = InjectionPoint.Expression.Definition(
             "max", methods = listOf("Ljava/lang/Math;max(II)I"),
@@ -1124,5 +1184,11 @@ class InjectionExpressionTest {
 
         @JvmStatic
         fun coerceSuffix(value: Any?): Any? = (value as String) + "!"
+
+        @JvmStatic
+        fun coerceBoxed(value: Any?): Any? = (value as Int) + 1
+
+        @JvmStatic
+        fun coerceBoxedInt(value: Any?): Int = (value as Int) + 1
     }
 }

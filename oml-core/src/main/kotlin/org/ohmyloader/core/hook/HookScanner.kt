@@ -2025,13 +2025,10 @@ object HookScanner {
         val coerceParam = method.visibleParameterAnnotations?.getOrNull(0)
             ?.any { it.desc == COERCE_DESC } == true
         val coerceReturn = method.visibleAnnotations.orEmpty().any { it.desc == COERCE_DESC }
-        if (normal[0] != ret) {
-            val bothReferences = normal[0].sort in OBJECT_SORTS && ret.sort in OBJECT_SORTS
-            if ((!coerceParam && !coerceReturn) || !bothReferences) {
-                problems += "[$modId] $where —— @ModifyExpressionValue handler must be shaped " +
-                    "(T[, sugar…])T, or use @Coerce on a reference parameter/return: currently ${method.desc}"
-                return
-            }
+        if (normal[0] != ret && !coerceParam && !coerceReturn) {
+            problems += "[$modId] $where —— @ModifyExpressionValue handler must be shaped " +
+                "(T[, sugar…])T, or use @Coerce on the parameter/return: currently ${method.desc}"
+            return
         }
         val [id, bridgeName, bridgeDesc] = registerValueHandler(
             modId, mixinClass, method.name, methodNames.first(),

@@ -197,30 +197,43 @@ internal object PayloadEmitter {
         val valueParam = handler.argumentTypes.firstOrNull()
         val valueReference = value.sort == Type.OBJECT || value.sort == Type.ARRAY
         val paramOk = if (coerceParam) {
-            valueParam != null && valueReference &&
-                (valueParam.sort == Type.OBJECT || valueParam.sort == Type.ARRAY)
+            valueParam != null && if (valueReference) {
+                valueParam.sort == Type.OBJECT || valueParam.sort == Type.ARRAY
+            } else {
+                valueParam.sort == Type.OBJECT || valueParam.sort == Type.ARRAY ||
+                    ProducedValue.sameValueType(valueParam, value)
+            }
         } else {
             valueParam != null && ProducedValue.sameValueType(valueParam, value)
         }
         if (!paramOk) {
             throw InjectionError(
                 "[injection] the handler's first parameter type of $rule must be **the value's type** ${value.className}" +
-                    (if (coerceParam) " or, with @Coerce, a reference supertype of it" else "") +
+                    (if (coerceParam) " or, with @Coerce, a reference type to coerce it" else "") +
                     " (decided by the anchor): actual ${valueParam?.className ?: "no parameters"} ($handlerDesc)",
             )
         }
         val returnOk = if (coerceReturn) {
-            valueReference && (handler.returnType.sort == Type.OBJECT || handler.returnType.sort == Type.ARRAY)
+            if (valueReference) {
+                handler.returnType.sort == Type.OBJECT || handler.returnType.sort == Type.ARRAY
+            } else {
+                handler.returnType.sort == Type.OBJECT || handler.returnType.sort == Type.ARRAY ||
+                    handler.returnType == value
+            }
         } else {
             handler.returnType == value
         }
         if (!returnOk) {
             throw InjectionError(
                 "[injection] the handler of $rule must return ${value.className} (the value's type, to be put back on the stack)" +
-                    (if (coerceReturn) " or, with @Coerce, a reference supertype of it" else "") +
+                    (if (coerceReturn) " or, with @Coerce, a reference type to coerce it" else "") +
                     ": actual ${handler.returnType.className} ($handlerDesc)",
             )
         }
+        val boxParam = coerceParam && !valueReference && valueParam != null &&
+            (valueParam.sort == Type.OBJECT || valueParam.sort == Type.ARRAY)
+        val unboxReturn = coerceReturn && !valueReference &&
+            (handler.returnType.sort == Type.OBJECT || handler.returnType.sort == Type.ARRAY)
         validateArgTypes(handlerDesc, extras, 1, method, owner, locals, "$rule.extras")
         val list = InsnList()
         if (instance) {
@@ -228,6 +241,10 @@ internal object PayloadEmitter {
             list.add(VarInsnNode(Boxing.storeOpcode(value), slot))
             list.add(VarInsnNode(Opcodes.ALOAD, 0))
             list.add(VarInsnNode(Boxing.loadOpcode(value), slot))
+        }
+        if (boxParam) {
+            val box = Boxing.box(value) ?: throw IllegalStateException("no boxing type for ${value.className}")
+            list.add(MethodInsnNode(Opcodes.INVOKESTATIC, box.owner, box.name, box.desc, false))
         }
         val writeBacks = mutableListOf<SugarWriteBack>()
         if (!emitValues(list, extras, method, locals, writeBacks)) return null
@@ -238,7 +255,11 @@ internal object PayloadEmitter {
             ),
         )
         emitWriteBacks(list, writeBacks)
-        if (coerceReturn && handler.returnType != value) {
+        if (unboxReturn) {
+            val unbox = Boxing.unbox(value) ?: throw IllegalStateException("no unboxing type for ${value.className}")
+            list.add(TypeInsnNode(Opcodes.CHECKCAST, unbox.owner))
+            list.add(MethodInsnNode(Opcodes.INVOKEVIRTUAL, unbox.owner, unbox.name, unbox.desc, false))
+        } else if (coerceReturn && handler.returnType != value) {
             list.add(TypeInsnNode(Opcodes.CHECKCAST, value.internalName))
         }
         return list
