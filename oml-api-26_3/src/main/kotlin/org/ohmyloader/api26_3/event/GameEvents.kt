@@ -25,6 +25,7 @@ class FrameRateLimitEvent(val currentLimit: Int) : Event() {
 
 /**
  * The HUD pass is beginning, once per frame while a world is loaded, before the HUD is extracted.
- * [graphics] is the frame's draw surface, so a mod draws through the game's own object.
+ * [graphics] is the frame's draw surface, so a mod draws through the game's own object. The
+ * instance is reused every frame by [EventDispatch] — handlers must not retain the reference.
  */
-class HudRenderEvent(val graphics: GuiGraphicsExtractor) : Event()
+class HudRenderEvent(var graphics: GuiGraphicsExtractor?) : Event()

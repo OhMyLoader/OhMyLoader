@@ -199,6 +199,14 @@ internal class MethodFrames(private val owner: String, private val method: Metho
     private var table: Array<Frame<BasicValue>?>? = null
     private var failure: String? = null
 
+    // Snapshots memoized per target instruction for the current analysis generation. One anchor's
+    // frame is asked for several times within one generation (payload locals capture, FrameRepair,
+    // and re-resolution passes all land on the same node), and every un-memoized query paid an
+    // O(n) `instructions.indexOf` plus a fresh snapshot allocation. Cleared on [invalidate] and on
+    // every re-analysis — across generations the index-addressed table may answer differently.
+    private val localsByTarget = HashMap<AbstractInsnNode, AnchorLocals>()
+    private val encodedLocalsByTarget = HashMap<AbstractInsnNode, Array<Any>?>()
+
     /**
      * The last instruction an earlier rule inserted **after** an anchor. Inserting after it (instead of
      * immediately after the anchor) keeps the run order equal to the application order — without this,
@@ -220,17 +228,24 @@ internal class MethodFrames(private val owner: String, private val method: Metho
      * instruction is examined (e.g. for `afterField`, that `PUTFIELD` has already completed).
      */
     fun at(anchor: AbstractInsnNode, after: Boolean): AnchorLocals {
-        ensure()
-        val frames = table ?: return AnchorLocals.unavailable(failure)
         var node: AbstractInsnNode? = anchor
         if (after) node = nextExecutable(anchor)
         // A frame describes the state "before executing that instruction"; when inserted before the anchor, it is
         // exactly the anchor's own frame.
         val target = firstExecutableFrom(node) ?: anchor
-        val frame: Frame<BasicValue> = frames.getOrNull(method.instructions.indexOf(target))
-            ?: return AnchorLocals.unavailable(null)
-        val slots: List<BasicValue?> = List(frame.locals) { i -> frame.getLocal(i) }
-        return AnchorLocals(LocalFrame(slots), null)
+        // The size check guards the memo the same way it guards the table: a mutation that bypassed
+        // invalidate() must not be answered from a pre-mutation snapshot.
+        if (analyzedAtSize == method.instructions.size()) {
+            localsByTarget[target]?.let { return it }
+        }
+        ensure()
+        val frames = table
+        val result = when (val frame = frames?.getOrNull(method.instructions.indexOf(target))) {
+            null -> AnchorLocals.unavailable(failure)
+            else -> AnchorLocals(LocalFrame(List(frame.locals) { i -> frame.getLocal(i) }), null)
+        }
+        localsByTarget[target] = result
+        return result
     }
 
     private fun nextExecutable(node: AbstractInsnNode): AbstractInsnNode? = firstExecutableFrom(node.next)
@@ -270,6 +285,8 @@ internal class MethodFrames(private val owner: String, private val method: Metho
         analyzedAtSize = -1
         table = null
         failure = null
+        localsByTarget.clear()
+        encodedLocalsByTarget.clear()
     }
 
     /**
@@ -283,10 +300,13 @@ internal class MethodFrames(private val owner: String, private val method: Metho
      * `null` = analysis unavailable, or no state obtainable at that instruction.
      */
     fun frameLocalsAt(node: AbstractInsnNode, after: Boolean = false): Array<Any>? {
-        ensure()
-        val frames = table ?: return null
         val target = firstExecutableFrom(if (after) node.next else node) ?: return null
-        val frame = frames.getOrNull(method.instructions.indexOf(target)) ?: return null
+        if (analyzedAtSize == method.instructions.size() && encodedLocalsByTarget.containsKey(target)) {
+            return encodedLocalsByTarget[target]
+        }
+        ensure()
+        val frames = table
+        val frame = frames?.getOrNull(method.instructions.indexOf(target)) ?: return null
         // A long/double occupies **one entry** in a FrameNode array (it covers two slots); the slot it pads
         // with TOP must not be emitted, or the frame claims more locals than max_locals.
         val locals = ArrayList<Any>(frame.locals)
@@ -301,7 +321,9 @@ internal class MethodFrames(private val owner: String, private val method: Metho
         while (locals.isNotEmpty() && locals.last() == Opcodes.TOP) {
             locals.removeAt(locals.size - 1)
         }
-        return locals.toTypedArray()
+        val encoded = locals.toTypedArray()
+        encodedLocalsByTarget[target] = encoded
+        return encoded
     }
 
     /**
@@ -334,6 +356,8 @@ internal class MethodFrames(private val owner: String, private val method: Metho
         analyzedAtSize = size
         table = null
         failure = null
+        localsByTarget.clear()
+        encodedLocalsByTarget.clear()
         try {
             val analyzer = Analyzer(PreciseInterpreter())
             analyzer.analyze(owner, method)

@@ -92,10 +92,12 @@ object OMLScheduler {
 
     private fun queueOf(side: OMLSide): Queue = queues.getValue(side)
 
-    /** Ticks this side's queue; driven by the loader's tick hooks, not by mods. */
+    /** Ticks this side's queue; driven by the loader's tick hooks, not by mods. The due list is
+     * allocated only when something is actually due — an idle tick pays for one map peek, not an
+     * `ArrayList` per side per tick. */
     fun advance(side: OMLSide) {
         val queue = queueOf(side)
-        val ready = ArrayList<Entry>()
+        var ready: MutableList<Entry>? = null
         val current: Long
         synchronized(queue.lock) {
             current = ++queue.tick
@@ -104,10 +106,10 @@ object OMLScheduler {
                 val slot = iterator.next()
                 if (slot.key > current) break
                 iterator.remove()
-                ready += slot.value
+                (ready ?: ArrayList<Entry>().also { ready = it }) += slot.value
             }
         }
-        ready.forEach { entry ->
+        ready?.forEach { entry ->
             if (entry.canceled) return@forEach
             try {
                 entry.body()

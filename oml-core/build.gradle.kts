@@ -54,3 +54,10 @@ tasks.register<JavaExec>("injectionBenchmark") {
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("org.ohmyloader.core.benchmark.InjectionBenchmark")
 }
+
+tasks.register<JavaExec>("transformBenchmark") {
+    group = "verification"
+    description = "Measures per-class transform cost: parse, rule application, write-back."
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("org.ohmyloader.core.benchmark.TransformBenchmark")
+}

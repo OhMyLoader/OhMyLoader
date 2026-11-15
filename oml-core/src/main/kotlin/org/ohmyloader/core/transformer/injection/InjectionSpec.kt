@@ -120,7 +120,7 @@ class InjectionSpec internal constructor(
             val result = AccessApplier.apply(context.node, rule)
             result.problems.forEach { OmlLog.error("Injection", it) }
             reportHits(
-                "${context.internalName} :: ${rule.describe()}",
+                { "${context.internalName} :: ${rule.describe()}" },
                 rule.require, rule.expect, rule.allow, rule.optional, result.hits,
                 notes = result.problems,
             )
@@ -152,7 +152,7 @@ class InjectionSpec internal constructor(
                 )
             }
             reportHits(
-                "${context.internalName} :: ${rule.selector.describe()}",
+                { "${context.internalName} :: ${rule.selector.describe()}" },
                 rule.require, rule.expect, rule.allow, rule.optional, hits,
                 // The diagnosis scans the instruction table, so it is only computed when this rule actually needs to report
                 diagnosis = if (hits == 0) MissDiagnosis.explain(
@@ -187,7 +187,8 @@ class InjectionSpec internal constructor(
      * since a hard failure aborts startup and the exception message is the one the caller is guaranteed to see.
      */
     private fun reportHits(
-        where: String,
+        /** Lazy: the label joins selector names, work wasted whenever the hit count is fine and nothing prints. */
+        where: () -> String,
         require: Int?,
         expect: Int?,
         allow: Int?,
@@ -200,25 +201,25 @@ class InjectionSpec internal constructor(
         when {
             require != null && hits < require ->
                 throw InjectionError(
-                    "Rule hit count too low: $where declares require=$require (minimum), but got $hits$block",
+                    "Rule hit count too low: ${where()} declares require=$require (minimum), but got $hits$block",
                 )
 
             allow != null && hits > allow ->
                 throw InjectionError(
-                    "Rule hit count exceeded: $where declares allow=$allow (maximum), but got $hits" +
+                    "Rule hit count exceeded: ${where()} declares allow=$allow (maximum), but got $hits" +
                         " (the selector may be written too broadly, hitting an unexpected place)$block",
                 )
 
             expect != null && hits != expect ->
                 OmlLog.error(
                     "Injection",
-                    "hit count does not match expect: $where expects $expect, but got $hits$block",
+                    "hit count does not match expect: ${where()} expects $expect, but got $hits$block",
                 )
 
             require == null && allow == null && expect == null && hits == 0 && !optional ->
                 OmlLog.error(
                     "Injection",
-                    "rule hit nothing: $where" +
+                    "rule hit nothing: ${where()}" +
                         " (if intentional, mark optional() to silence; if it must hit, mark require(1) to hard-fail)$block",
                 )
         }

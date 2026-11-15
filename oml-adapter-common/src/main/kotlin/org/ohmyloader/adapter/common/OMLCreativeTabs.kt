@@ -35,6 +35,9 @@ object OMLCreativeTabs {
     @JvmStatic
     fun spriteBound(bound: Int): Int = (bound - 1).coerceAtLeast(0)
 
+    /** The reflective `Output.accept(ItemLike)` resolved once per output class (see the displayItems lambda). */
+    private val acceptMethods = java.util.concurrent.ConcurrentHashMap<Class<*>, java.lang.reflect.Method>()
+
     fun register(itemLikes: List<ItemLike>) {
         if (itemLikes.isEmpty()) return
         val tab = CreativeModeTab.builder(TAB_ROW, TAB_COLUMN)
@@ -44,11 +47,15 @@ object OMLCreativeTabs {
             .displayItems { _, output ->
                 // `Output` is a protected nested type in the game jar's InnerClasses attribute, so
                 // Kotlin cannot name it or reference its members; the receiver is driven through
-                // reflection, picking the ItemLike overload by parameter type.
-                val accept = output.javaClass.methods.first {
-                    it.name == "accept" && it.parameterCount == 1 &&
-                        it.parameterTypes[0].name == "net.minecraft.world.level.ItemLike"
-                }.apply { isAccessible = true }
+                // reflection, picking the ItemLike overload by parameter type. The resolved Method
+                // is cached per output class — the tab rebuilds on every screen open, and a full
+                // getMethods() scan per rebuild is wasted reflection.
+                val accept = acceptMethods.computeIfAbsent(output.javaClass) { type ->
+                    type.methods.first {
+                        it.name == "accept" && it.parameterCount == 1 &&
+                            it.parameterTypes[0].name == "net.minecraft.world.level.ItemLike"
+                    }.apply { isAccessible = true }
+                }
                 itemLikes.forEach { accept.invoke(output, it) }
             }
             .build()

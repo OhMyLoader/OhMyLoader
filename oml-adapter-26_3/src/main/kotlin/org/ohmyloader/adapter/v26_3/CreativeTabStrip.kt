@@ -11,34 +11,25 @@ import net.minecraft.world.item.CreativeModeTabs
  * - tabs with `isAlignedRight()` (vanilla's hotbar / search / operator / inventory) are pinned to
  *   the rightmost slots of their row on every page;
  * - every other tab - vanilla categories and modded alike - flows through pages in display order
- *   (the tab manager's constraint-resolved order with the player's hide/reorder applied), five
+ *   (the tab manager's constraint-resolved order with the player's arrangement applied), five
  *   top + five bottom slots per page;
  * - a tab's slot is a property of this model, so the drawn position and the hit test can never
  *   disagree, and tabs that are hidden or on another page have no slot at all (nothing is drawn,
  *   nothing is clickable).
  *
- * Pure state - no game calls; the screen-facing handlers translate.
+ * Pure state - no game calls; the screen-facing handlers translate. The slot table is computed
+ * once at construction: the strip is rebuilt at every screen init, so the render path's per-tab
+ * slot lookup is a single map hit with no page scanning and no per-frame allocation.
  */
 class CreativeTabStrip(
     allTabs: List<CreativeModeTab>,
     flowingOrder: List<CreativeModeTab>,
 ) {
-    class Slot(val top: Boolean, val column: Int)
+    /** Where a tab sits: which page owns it, and its strip position. [PINNED_PAGE] = every page. */
+    class Slot(val page: Int, val top: Boolean, val column: Int)
 
     /** The right-aligned specials, pinned to the rightmost slots of their row. */
     val pinned: List<CreativeModeTab> = allTabs.filter { it.isAlignedRight() }
-
-    private val pinnedSlots: Map<CreativeModeTab, Slot> = buildMap {
-        var topColumn = TOP_COLUMNS
-        var bottomColumn = BOTTOM_COLUMNS
-        for (tab in pinned) {
-            if (tab.row() == CreativeModeTab.Row.TOP) {
-                put(tab, Slot(true, --topColumn))
-            } else {
-                put(tab, Slot(false, --bottomColumn))
-            }
-        }
-    }
 
     /** Columns each strip row offers to the flowing tabs (the pinned specials take the rest). */
     private val topColumnsForFlowing = TOP_COLUMNS - pinned.count { it.row() == CreativeModeTab.Row.TOP }
@@ -50,6 +41,26 @@ class CreativeTabStrip(
 
     val pageCount: Int = pages.size
 
+    /** Every tab's slot, computed once: pinned specials first, then each page's flowing tabs. */
+    private val slots: Map<CreativeModeTab, Slot> = buildMap {
+        var topColumn = TOP_COLUMNS
+        var bottomColumn = BOTTOM_COLUMNS
+        for (tab in pinned) {
+            val slot = if (tab.row() == CreativeModeTab.Row.TOP) {
+                Slot(PINNED_PAGE, true, --topColumn)
+            } else {
+                Slot(PINNED_PAGE, false, --bottomColumn)
+            }
+            put(tab, slot)
+        }
+        for ((pageIndex, pageTabs) in pages.withIndex()) {
+            for ((index, tab) in pageTabs.withIndex()) {
+                val top = index < topColumnsForFlowing
+                put(tab, Slot(pageIndex, top, if (top) index else index - topColumnsForFlowing))
+            }
+        }
+    }
+
     /** Current page, clamped whenever the page count shrinks (config edits, tab removal). */
     var page: Int = 0
         set(value) {
@@ -57,24 +68,18 @@ class CreativeTabStrip(
         }
 
     /**
-     * The slot of [tab] on the **current** page, or `null` when the tab has no slot here: hidden
-     * tabs have none by config, and tabs on another page have one only where they are not drawn.
+     * The slot of [tab] on the **current** page, or `null` when the tab has no slot here: pinned
+     * specials sit on every page; a flowing tab only on its own page - hidden tabs have none by
+     * config (they are never placed in the flow), other pages' tabs none on this one.
      */
-    fun slotOf(tab: CreativeModeTab): Slot? {
-        pinnedSlots[tab]?.let { return it }
-        val pageIndex = pages.indexOfFirst { it.contains(tab) }
-        if (pageIndex != page) {
-            return null
-        }
-        val onPage = pages[page].indexOf(tab)
-        return if (onPage < topColumnsForFlowing) Slot(true, onPage) else Slot(false, onPage - topColumnsForFlowing)
-    }
-
-    /** The tabs drawn on the current page's strip: the page's own tabs plus the pinned specials. */
-    fun visibleTabs(): List<CreativeModeTab> = pages.getOrNull(page).orEmpty() + pinned
+    fun slotOf(tab: CreativeModeTab): Slot? =
+        slots[tab]?.takeIf { it.page == PINNED_PAGE || it.page == page }
 
     companion object {
         const val TOP_COLUMNS = 7
         const val BOTTOM_COLUMNS = 7
+
+        /** Pinned specials live on every page; no flowing page can share the sentinel. */
+        private const val PINNED_PAGE = -1
     }
 }

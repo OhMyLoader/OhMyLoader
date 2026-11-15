@@ -111,6 +111,8 @@ object OMLCreativeTabs {
      * `CreativeModeTab.Output` is not accessible from Kotlin, so the display generator cannot be
      * written as a lambda against it - a proxy implements the public `DisplayItemsGenerator` and
      * calls `Output.accept` reflectively (the tab rebuilds its display on every screen open).
+     * The resolved `Method` is cached per output class: the rebuild happens on every screen open
+     * and search refresh, and a full `getMethods()` scan per rebuild is wasted reflection.
      */
     private fun displayItemsGenerator(items: () -> List<ItemLike>): CreativeModeTab.DisplayItemsGenerator {
         val iface = CreativeModeTab.DisplayItemsGenerator::class.java
@@ -119,15 +121,18 @@ object OMLCreativeTabs {
         return java.lang.reflect.Proxy.newProxyInstance(iface.classLoader, arrayOf(iface)) { _, method, args ->
             if (method.name == "accept") {
                 val output = args[1]
-                val accept = output.javaClass.methods.first {
-                    it.name == "accept" && it.parameterCount == 1 && it.parameterTypes[0] == itemLike
+                val accept = acceptMethods.computeIfAbsent(output.javaClass) { type ->
+                    type.methods.first {
+                        it.name == "accept" && it.parameterCount == 1 && it.parameterTypes[0] == itemLike
+                    }.apply { isAccessible = true }
                 }
-                accept.isAccessible = true
                 for (item in items()) accept.invoke(output, item)
             }
             null
         } as CreativeModeTab.DisplayItemsGenerator
     }
+
+    private val acceptMethods = java.util.concurrent.ConcurrentHashMap<Class<*>, java.lang.reflect.Method>()
 
     private val declarations = mutableListOf<Declaration>()
     private val completionHooked = java.util.concurrent.atomic.AtomicBoolean()

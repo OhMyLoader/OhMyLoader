@@ -17,9 +17,15 @@ import kotlin.test.assertTrue
  */
 class HandlerShapeTest {
 
+    // The handover shape must be the one whose handlers live on THIS module's classpath: this
+    // walk asserts every named handler resolves locally, and COMMANDS_INSTANCE names
+    // V26_3EventBridge, unreachable from here. The real-jar side of that shape is covered by
+    // RuleApplyTest (which needs the 26.3 targets) and the 26.3 adapter's own HookShapeTest.
+    private val handoverTestShapes = testHookShapes.copy(commandHandover = CommandHandover.PARSE_BOX)
+
     private val ruleSets: List<Any> = listOf(
-        MinecraftHookTransformer(idPrefix = "test", shapes = testHookShapes),
-        ServerHookTransformer(idPrefix = "test", shapes = testHookShapes),
+        MinecraftHookTransformer(idPrefix = "test", shapes = handoverTestShapes),
+        ServerHookTransformer(idPrefix = "test", shapes = handoverTestShapes),
         NetworkCompressionTransformer(idPrefix = "test"),
         NetworkPayloadTransformer(idPrefix = "test"),
     )

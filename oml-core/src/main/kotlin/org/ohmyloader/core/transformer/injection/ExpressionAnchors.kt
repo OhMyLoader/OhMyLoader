@@ -53,6 +53,26 @@ internal object ExpressionAnchors {
      */
     private val parsedPatterns = java.util.concurrent.ConcurrentHashMap<String, Expression>()
 
+    /**
+     * Reconstructed value flows per (class, method), reused across the passes that resolve the same
+     * expression points (conflict claim, conflict report, application — up to three `FlowInterpreter.analyze`
+     * runs per point otherwise). The analysis is valid while the instruction list is unchanged: an
+     * injection mutates the method, so the cached size must match. Weak keys — the nodes die with their
+     * class transform, so the cache never pins them. Flows computed against a pre-mutation graph are
+     * safe to reuse for later rules: captured instructions are filtered against the live list
+     * (`instructions.toArray()`), so stale flows can only miss, never match detached nodes.
+     */
+    private val flowCache =
+        java.util.Collections.synchronizedMap(java.util.WeakHashMap<ClassNode, MutableMap<MethodNode, Pair<Int, Collection<FlowValue>>>>())
+
+    private fun flowsFor(classNode: ClassNode, method: MethodNode): Collection<FlowValue> {
+        val size = method.instructions.size()
+        flowCache[classNode]?.get(method)?.takeIf { it.first == size }?.let { return it.second }
+        val flows = FlowInterpreter.analyze(classNode, method, null)
+        flowCache.getOrPut(classNode) { HashMap() }[method] = size to flows
+        return flows
+    }
+
     fun resolve(
         classNode: ClassNode,
         method: MethodNode,
@@ -75,7 +95,7 @@ internal object ExpressionAnchors {
         val localDiagnostics = LocalDiagnostics()
         val pool = identifierPool(point.definitions, classNode, method, localDiagnostics)
         val flows = try {
-            FlowInterpreter.analyze(classNode, method, null)
+            flowsFor(classNode, method)
         } catch (failure: RuntimeException) {
             throw InjectionError(
                 "[injection] the value flow of ${classNode.name}.${method.name}${method.desc} " +

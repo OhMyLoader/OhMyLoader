@@ -14,6 +14,9 @@ internal val testHookShapes = HookShapes(
     tabButtonDesc = "(Lnet/minecraft/client/gui/GuiGraphicsExtractor;IILnet/minecraft/world/item/CreativeModeTab;)V",
     tabClampOwner = "net/minecraft/util/Mth",
     tabClampDesc = "(III)I",
+    // The 26.3 line's real handover shape: its rules must apply to the real jar (RuleApplyTest),
+    // which is why this fixture names COMMANDS_INSTANCE's performPrefixedCommand / getCommands.
+    commandHandover = CommandHandover.COMMANDS_INSTANCE,
     freezeAnchorClass = "net/minecraft/core/registries/BuiltInRegistries",
     freezeCallOwner = "net/minecraft/core/registries/BuiltInRegistries",
     freezeHandlerOwner = "org/ohmyloader/adapter/common/EventBridge",

@@ -10,6 +10,7 @@ import org.ohmyloader.api.hook.Inject;
 import org.ohmyloader.api.hook.ModifyArg;
 import org.ohmyloader.api.hook.ModifyArgs;
 import org.ohmyloader.api.hook.ModifyReturnValue;
+import org.ohmyloader.api.hook.ModifyVariable;
 import org.ohmyloader.api.hook.Operation;
 import org.ohmyloader.api.hook.Redirect;
 import org.ohmyloader.api.hook.WrapMethod;
@@ -164,6 +165,51 @@ public final class BenchFixtures {
         public static int onMethod(int value, Operation<Integer> operation) {
             Ops.hits++;
             return operation.call(value) + 1;
+        }
+    }
+
+    // ---------- the transform-time stack case ----------
+
+    /**
+     * One method, four int locals, four handlers stacked on the four STORE sites. Every
+     * local-capturing injection forces a whole-method dataflow pass, so this is the shape that
+     * exposes the per-injection analysis cost the transform benchmark tracks.
+     */
+    public static final class StackedTarget implements IntUnaryOperator {
+        @Override
+        public int applyAsInt(int x) {
+            int a = x + 1;
+            int b = a * 2;
+            int c = b + 3;
+            int d = c * 4;
+            return Ops.times2(d) + 1;
+        }
+    }
+
+    @Hooked(target = "omltest.bench.BenchFixtures$StackedTarget")
+    public static final class StackedMixin {
+        @ModifyVariable(method = "applyAsInt", desc = "(I)I", ordinal = 0, at = {@At(value = At.STORE)}, require = 1)
+        public static int onA(int value) {
+            Ops.hits++;
+            return value;
+        }
+
+        @ModifyVariable(method = "applyAsInt", desc = "(I)I", ordinal = 1, at = {@At(value = At.STORE)}, require = 1)
+        public static int onB(int value) {
+            Ops.hits++;
+            return value;
+        }
+
+        @ModifyVariable(method = "applyAsInt", desc = "(I)I", ordinal = 2, at = {@At(value = At.STORE)}, require = 1)
+        public static int onC(int value) {
+            Ops.hits++;
+            return value;
+        }
+
+        @ModifyVariable(method = "applyAsInt", desc = "(I)I", ordinal = 3, at = {@At(value = At.STORE)}, require = 1)
+        public static int onD(int value) {
+            Ops.hits++;
+            return value;
         }
     }
 

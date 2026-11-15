@@ -5,7 +5,6 @@ import net.minecraft.client.Minecraft
 import net.minecraft.client.renderer.RenderPipelines
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen
-import net.minecraft.client.gui.components.Button
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.network.chat.Component
 import net.minecraft.util.Mth
@@ -20,7 +19,8 @@ import org.ohmyloader.core.adapter.Refl
  * from `tab.row()` / `tab.column()`:
  *
  * - [drawTab] replaces `extractTabButton`: draws a tab at its strip slot, or nothing when the
- *   tab has no slot on this page (hidden by the player, or on another page);
+ *   tab has no slot on this page (hidden by the player - hidden tabs are never placed in the
+ *   flow at all - or on another page);
  * - [tabClicked] / [tabHovered] replace `checkTabClicked` / `checkTabHovering`: hit tests against
  *   the strip slot;
  * - [onScreenInit] also creates the two vanilla `PageButton`s when the strip spans multiple
@@ -28,11 +28,10 @@ import org.ohmyloader.core.adapter.Refl
  *   the interaction).
  *
  * The vanilla loops still drive all of this - they iterate every registered tab and hand each to
- * the handlers, which decide visibility from the strip. No vanilla layout state is read.
- *
- * `leftPos` / `topPos` / `imageWidth` / `imageHeight` / `addRenderableWidget` are protected screen
- * members read through cached reflection - the injection DSL has no field operand, the same
- * reason `Refl` exists.
+ * the handlers, which decide visibility from the strip. No vanilla layout state is read per
+ * frame: the panel geometry (`leftPos` / `topPos` / `imageWidth` / `imageHeight`) is captured
+ * once per init - init also runs on resize, so the cache stays fresh - and the render path is
+ * map lookups and arithmetic only. The reflection helpers are init-time only.
  */
 object CreativeScreenPagination {
 
@@ -40,32 +39,49 @@ object CreativeScreenPagination {
     @Volatile
     private var strip: CreativeTabStrip? = null
 
+    // Panel geometry, captured at every init (resize re-runs init) - the render path reads
+    // these instead of reflecting into the screen three times per tab per frame.
+    private var panelLeft = 0
+    private var panelTop = 0
+    private var panelWidth = 0
+    private var panelHeight = 0
+
+    // The page indicator's text, rebuilt only when the page or page count changes.
+    private var indicator: Component? = null
+    private var indicatorPage = -1
+    private var indicatorPageCount = -1
+
     @JvmStatic
     fun onScreenInit(screen: CreativeModeInventoryScreen) {
         // The player config is read first: the strip is built from the ordered flowing set it
         // produces, so config edits apply when the screen (re)opens.
         CreativeTabsPlayerConfig.onScreenInit(screen)
+        panelLeft = readPos(screen, "leftPos")
+        panelTop = readPos(screen, "topPos")
+        panelWidth = readPos(screen, "imageWidth")
+        panelHeight = readPos(screen, "imageHeight")
         val strip = CreativeTabStrip(CreativeModeTabs.tabs(), flowingOrder())
         this.strip = strip
+        indicator = null
         if (strip.pageCount > 1) {
             // UnfocusedButton, not Button: the arrows must keep the hover-only border — a plain
             // button takes focus on press and keeps the white border after the mouse leaves.
-            addWidget(screen, UnfocusedButton(leftPos(screen), topPos(screen) - 50, 20, 20, Component.literal("<")) {
+            addWidget(screen, UnfocusedButton(panelLeft, panelTop - 50, 20, 20, Component.literal("<")) {
                 strip.page = (strip.page - 1).coerceAtLeast(0)
             })
             addWidget(
                 screen,
                 UnfocusedButton(
-                    leftPos(screen) + imageWidth(screen) - 20, topPos(screen) - 50, 20, 20, Component.literal(">"),
+                    panelLeft + panelWidth - 20, panelTop - 50, 20, 20, Component.literal(">"),
                 ) { strip.page = (strip.page + 1).coerceAtMost(strip.pageCount - 1) },
             )
         }
         // The in-game tab manager (phase two of the player config): lists every flowing tab with
-        // hide / reorder controls and writes creative-tabs.toml on Done.
+        // hide / reorder controls and writes oml.toml on Done.
         addWidget(
             screen,
             UnfocusedButton(
-                leftPos(screen) + imageWidth(screen) / 2 - 50, topPos(screen) - 74, 100, 20, Component.literal("Manage Tabs"),
+                panelLeft + panelWidth / 2 - 50, panelTop - 74, 100, 20, Component.literal("Manage Tabs"),
             ) { Minecraft.getInstance().setScreenAndShow(CreativeTabsManageScreen(screen)) },
         )
     }
@@ -120,18 +136,13 @@ object CreativeScreenPagination {
         mouseY: Int,
         tab: CreativeModeTab,
     ) {
-        val currentStrip = strip ?: return
-        if (CreativeTabsPlayerConfig.hiddenIds().contains(
-                BuiltInRegistries.CREATIVE_MODE_TAB.getResourceKey(tab).orElseThrow().identifier(),
-            )
-        ) {
-            return
-        }
-        val slot = currentStrip.slotOf(tab) ?: return
+        // No hidden check here: hidden tabs are never placed in the flow, so slotOf already
+        // answers null for them - the extra registry-key lookup per tab per frame was waste.
+        val slot = strip?.slotOf(tab) ?: return
         val selected = selectedTab() === tab
         val top = slot.top
-        val x = leftPos(screen) + 27 * slot.column
-        val y = topPos(screen) - if (top) 28 else -(imageHeight(screen) - 4)
+        val x = panelLeft + 27 * slot.column
+        val y = panelTop - if (top) 28 else -(panelHeight - 4)
         val sprites = when {
             top && selected -> spriteArrays[0]
             top -> spriteArrays[1]
@@ -160,9 +171,8 @@ object CreativeScreenPagination {
         xm: Double,
         ym: Double,
     ): Boolean {
-        val currentStrip = strip ?: return false
-        val slot = currentStrip.slotOf(tab) ?: return false
-        val relY = if (slot.top) -32 else imageHeight(screen)
+        val slot = strip?.slotOf(tab) ?: return false
+        val relY = if (slot.top) -32 else panelHeight
         val relX = 27 * slot.column
         return xm >= relX && xm <= relX + 26 && ym >= relY && ym <= relY + 32
     }
@@ -176,10 +186,9 @@ object CreativeScreenPagination {
         xm: Int,
         ym: Int,
     ): Boolean {
-        val currentStrip = strip ?: return false
-        val slot = currentStrip.slotOf(tab) ?: return false
+        val slot = strip?.slotOf(tab) ?: return false
         val relX = 27 * slot.column
-        val relY = if (slot.top) -32 else imageHeight(screen)
+        val relY = if (slot.top) -32 else panelHeight
         if (xm >= relX + 3 && xm <= relX + 24 && ym >= relY + 3 && ym <= relY + 30) {
             graphics.setTooltipForNextFrame(screen.getFont(), tab.getDisplayName(), xm, ym)
             return true
@@ -191,7 +200,8 @@ object CreativeScreenPagination {
      * [CreativeModeInventoryScreen.extractLabels] tail: the `i / n` page indicator. The labels
      * pass draws in panel-relative coordinates (the pose is translated to the panel), so the
      * indicator centers on `imageWidth / 2` at `-44` — the same spot vanilla's absolute-space
-     * draws (`leftPos + imageWidth / 2 …, topPos - 44`) land on screen.
+     * draws (`leftPos + imageWidth / 2 …, topPos - 44`) land on screen. The text is rebuilt
+     * only when the page or page count changes, not every frame.
      */
     @JvmStatic
     fun drawPageIndicator(
@@ -202,9 +212,14 @@ object CreativeScreenPagination {
         if (currentStrip.pageCount <= 1) {
             return
         }
+        if (indicator == null || indicatorPage != currentStrip.page || indicatorPageCount != currentStrip.pageCount) {
+            indicator = Component.literal("${currentStrip.page + 1} / ${currentStrip.pageCount}")
+            indicatorPage = currentStrip.page
+            indicatorPageCount = currentStrip.pageCount
+        }
         val font = screen.getFont()
-        val text = Component.literal("${currentStrip.page + 1} / ${currentStrip.pageCount}")
-        graphics.text(font, text, imageWidth(screen) / 2 - font.width(text) / 2, -44, -1, false)
+        val text = indicator!!
+        graphics.text(font, text, panelWidth / 2 - font.width(text) / 2, -44, -1, false)
     }
 
     private fun addWidget(screen: CreativeModeInventoryScreen, widget: Any) {
@@ -218,15 +233,7 @@ object CreativeScreenPagination {
         ).apply { isAccessible = true }
     }
 
-    private fun leftPos(screen: CreativeModeInventoryScreen): Int =
-        Refl.fieldOrNull(CreativeModeInventoryScreen::class.java, "leftPos", net.minecraft.client.gui.screens.Screen::class.java)!!.getInt(screen)
-
-    private fun topPos(screen: CreativeModeInventoryScreen): Int =
-        Refl.fieldOrNull(CreativeModeInventoryScreen::class.java, "topPos", net.minecraft.client.gui.screens.Screen::class.java)!!.getInt(screen)
-
-    private fun imageWidth(screen: CreativeModeInventoryScreen): Int =
-        Refl.fieldOrNull(CreativeModeInventoryScreen::class.java, "imageWidth", net.minecraft.client.gui.screens.Screen::class.java)!!.getInt(screen)
-
-    private fun imageHeight(screen: CreativeModeInventoryScreen): Int =
-        Refl.fieldOrNull(CreativeModeInventoryScreen::class.java, "imageHeight", net.minecraft.client.gui.screens.Screen::class.java)!!.getInt(screen)
+    /** Init-time panel geometry reads - the render path never calls these. */
+    private fun readPos(screen: CreativeModeInventoryScreen, name: String): Int =
+        Refl.fieldOrNull(CreativeModeInventoryScreen::class.java, name, net.minecraft.client.gui.screens.Screen::class.java)!!.getInt(screen)
 }

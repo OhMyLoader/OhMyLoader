@@ -222,8 +222,15 @@ object EventDispatch {
     @JvmStatic
     fun onWorldDisconnect() = Events.WORLD_LOAD.fire(WorldLoadEvent(null))
 
+    /** One event instance reused per frame — allocation churn at 60fps for an object whose only
+     * varying field is the graphics handle. */
+    private val hudRenderEvent = HudRenderEvent(null)
+
     @JvmStatic
-    fun onHudRender(graphics: GuiGraphicsExtractor) = Events.HUD_RENDER.fire(HudRenderEvent(graphics))
+    fun onHudRender(graphics: GuiGraphicsExtractor) {
+        hudRenderEvent.graphics = graphics
+        Events.HUD_RENDER.fire(hudRenderEvent)
+    }
 
     /**
      * The three inbound chat packet handlers, dispatched with the text resolved the way the game

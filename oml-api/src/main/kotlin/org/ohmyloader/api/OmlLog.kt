@@ -16,6 +16,12 @@ package org.ohmyloader.api
  */
 object OmlLog {
 
+    /** Development narration, printed only with `-Doml.log.debug=true`. The message is a lambda so
+     * a debug call site in a hot loop costs nothing while the gate is closed. */
+    fun debug(tag: String, message: () -> String) {
+        if (debugEnabled) println("[$tag] ${message()}")
+    }
+
     /** Normal progress narration (startup steps, hook hits, materialization summaries). */
     fun info(tag: String, message: String) {
         println("[$tag] $message")
@@ -31,4 +37,6 @@ object OmlLog {
         System.err.println("[$tag] ERROR: $message")
         t?.printStackTrace()
     }
+
+    private val debugEnabled = System.getProperty("oml.log.debug") == "true"
 }
