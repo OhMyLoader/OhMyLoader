@@ -153,6 +153,114 @@ class MinecraftHookTransformer(private val idPrefix: String, private val shapes:
             method("disconnectFromWorld", desc = "(Lnet/minecraft/network/chat/Component;)V") {
                 atHead { call("org/ohmyloader/adapter/common/EventBridge", "onWorldDisconnect", "()V") }
             }
+            // The Vulkan surface owns the SDL window and its close() destroys it; a leased window
+            // must survive into the next session, where the new device builds a fresh surface.
+            method("close", desc = "()V") {
+                beforeCall(
+                    owner = "com/mojang/renderpearl/api/device/GpuSurface",
+                    name = "close",
+                    desc = "()V",
+                ) {
+                    raw { m, _ ->
+                        for (insn in m.instructions) {
+                            if (insn is org.objectweb.asm.tree.MethodInsnNode &&
+                                insn.owner == "com/mojang/renderpearl/api/device/GpuSurface" &&
+                                insn.name == "close" &&
+                                insn.desc == "()V"
+                            ) {
+                                // The receiver is already on the stack; a static helper with it as
+                                // the only parameter keeps the frame shape unchanged.
+                                insn.setOpcode(org.objectweb.asm.Opcodes.INVOKESTATIC)
+                                insn.owner = "org/ohmyloader/adapter/common/WindowHooks"
+                                insn.name = "surfaceClose"
+                                insn.desc = "(Lcom/mojang/renderpearl/api/device/GpuSurface;)V"
+                                insn.itf = false
+                            }
+                        }
+                        add(org.objectweb.asm.tree.InsnNode(org.objectweb.asm.Opcodes.NOP))
+                    }
+                }
+                require(1)
+            }
+            // The client loop has stopped; the integrated server may still be saving. Wait for its
+            // shutdown before the supervisor starts the next session over the same world directory.
+            method("close", desc = "()V") {
+                atHead { call("org/ohmyloader/adapter/common/EventBridge", "onGameClosing", "()V") }
+            }
+            // SDL shutdown for the window lease. This is the only SDL_Quit site and both the normal
+            // and exceptional close paths carry it, hence require(2). The old session's quit is
+            // skipped while the supervisor holds the window for the next session.
+            method("close", desc = "()V") {
+                // A Redirect/WrapOperation over this static no-arg void call generates an invalid
+                // operand stack in the engine; replace the call itself instead. The helper has the
+                // same ()V shape, so no stack or frame changes are needed.
+                beforeCall(owner = "org/lwjgl/sdl/SDLInit", name = "SDL_Quit", desc = "()V") {
+                    raw { m, _ ->
+                        for (insn in m.instructions) {
+                            if (insn is org.objectweb.asm.tree.MethodInsnNode &&
+                                insn.owner == "org/lwjgl/sdl/SDLInit" &&
+                                insn.name == "SDL_Quit" &&
+                                insn.desc == "()V"
+                            ) {
+                                insn.owner = "org/ohmyloader/adapter/common/WindowHooks"
+                                insn.name = "quit"
+                            }
+                        }
+                        // A no-op marks the method as changed so the rewrite is written back.
+                        add(org.objectweb.asm.tree.InsnNode(org.objectweb.asm.Opcodes.NOP))
+                    }
+                }
+                require(2)
+            }
+            method("close", desc = "()V") {
+                // The backend that created the window must stay loaded while the window is leased;
+                // its unload path is the SDL window owner. The new session's backend loads its own.
+                beforeCall(
+                    owner = "com/mojang/blaze3d/systems/RenderSystem",
+                    name = "unloadTrackedBackendLibrary",
+                    desc = "()V",
+                ) {
+                    raw { m, _ ->
+                        for (insn in m.instructions) {
+                            if (insn is org.objectweb.asm.tree.MethodInsnNode &&
+                                insn.owner == "com/mojang/blaze3d/systems/RenderSystem" &&
+                                insn.name == "unloadTrackedBackendLibrary" &&
+                                insn.desc == "()V"
+                            ) {
+                                insn.owner = "org/ohmyloader/adapter/common/WindowHooks"
+                                insn.name = "unloadBackend"
+                            }
+                        }
+                        add(org.objectweb.asm.tree.InsnNode(org.objectweb.asm.Opcodes.NOP))
+                    }
+                }
+                require(2)
+            }
+        }
+        classTarget("com/mojang/blaze3d/platform/Window") {
+            // The SDL window is leased across a reboot. The first session records the handle that
+            // GpuBackend.createWindow returned; the next session returns it without creating a second
+            // window. createWindow is private and takes the backend/width/height/title; the GPU
+            // surface is rebuilt separately by the new GpuDevice.createSurface(handle).
+            method("createWindow", desc = "(Lcom/mojang/renderpearl/api/device/GpuBackend;IILjava/lang/String;)J") {
+                wrapMethod(
+                    owner = "org/ohmyloader/adapter/common/WindowHooks",
+                    method = "createWindow",
+                    desc = "(Lcom/mojang/renderpearl/api/device/GpuBackend;IILjava/lang/String;Lorg/ohmyloader/api/hook/Operation;I)J",
+                    extras = listOf(DslValue.IntVal(0)),
+                )
+                require(1)
+            }
+            // The old session's close must not destroy the leased window.
+            method("close", desc = "()V") {
+                wrapMethod(
+                    owner = "org/ohmyloader/adapter/common/WindowHooks",
+                    method = "close",
+                    desc = "(Lorg/ohmyloader/api/hook/Operation;I)V",
+                    extras = listOf(DslValue.IntVal(0)),
+                )
+                require(1)
+            }
         }
         classTarget("com/mojang/blaze3d/platform/FramerateLimitTracker") {
             // FrameRateLimitEvent (modifiable). The limit moved off Minecraft: this is the method

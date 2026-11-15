@@ -76,9 +76,32 @@ object EventBridge {
 
     @JvmStatic
     fun onClientTick() {
+        clientTicks++
+        val target = autoRebootAt
+        if (target != null && clientTicks >= target) {
+            // One-shot: SessionControl clears the property for the next session.
+            System.clearProperty("oml.reboot.afterTicks")
+            org.ohmyloader.api26_3.OMLReboot.restart("automatic after $clientTicks ticks")
+        }
         OMLKeyBindingsBridge.applyPending()
         EventDispatch.onClientTick()
     }
+
+    /**
+     * The client loop has stopped but the integrated server may still be saving. The reboot path
+     * starts the next session as soon as this returns, so wait for the server's shutdown here; a
+     * half-written world would be read by the next session and crash the native chunk IO.
+     */
+    @JvmStatic
+    fun onGameClosing() {
+        val client = runCatching { net.minecraft.client.Minecraft.getInstance() }.getOrNull() ?: return
+        if (!client.hasSingleplayerServer()) return
+        runCatching { client.disconnectWithSavingScreen() }
+            .onFailure { OmlLog.error("Reboot", "waiting for the integrated server to save failed", it) }
+    }
+
+    private var clientTicks = 0
+    private val autoRebootAt = System.getProperty("oml.reboot.afterTicks")?.toIntOrNull()
 
     /**
      * [keyPress head] Dispatches declared key bindings. Vanilla's own gating is re-applied here
