@@ -28,11 +28,21 @@ final class Session {
      * kept. Safe to call from a JVM shutdown hook, where the game may still be winding down.
      */
     synchronized boolean drain() {
+        return drain(false);
+    }
+
+    /**
+     * @param reboot true only for the in-process swap: old shutdown hooks and other session-scoped
+     *               registrations must be removed. The final process shutdown keeps them because
+     *               the test verdict and the game's own hooks still have to run.
+     */
+    synchronized boolean drain(boolean reboot) {
         if (drained) return collected;
         drained = true;
         loader = null;
         // Diagnostic switch: skip the GC probe when a JVM-level crash is being narrowed down.
-        collected = "off".equalsIgnoreCase(System.getProperty("oml.canary", "on")) || canary.awaitCollected(5_000);
+        collected = "off".equalsIgnoreCase(System.getProperty("oml.canary", "on")) ||
+            canary.awaitCollected(5_000, reboot);
         return collected;
     }
 
@@ -42,7 +52,7 @@ final class Session {
      */
     synchronized boolean close() {
         closeLoader();
-        return drain();
+        return drain(true);
     }
 
     private void closeLoader() {

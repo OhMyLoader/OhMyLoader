@@ -76,7 +76,7 @@ public final class OMLSupervisor {
         Session session = activeSession;
         if (session == null) return true;
         activeSession = null;
-        return session.drain();
+        return session.drain(false);
     }
 
     /**
