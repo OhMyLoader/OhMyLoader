@@ -1,173 +1,201 @@
 package org.ohmyloader.adapter.v26_3
 
-import net.minecraft.client.Minecraft
+import com.mojang.blaze3d.platform.cursor.CursorTypes
+import net.minecraft.client.renderer.RenderPipelines
 import net.minecraft.client.gui.GuiGraphicsExtractor
-import net.minecraft.client.gui.components.Button
 import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen
-import net.minecraft.client.gui.screens.inventory.PageButton
-import net.minecraft.network.chat.Component
+import net.minecraft.client.gui.components.Button
 import net.minecraft.core.registries.BuiltInRegistries
+import net.minecraft.network.chat.Component
+import net.minecraft.util.Mth
 import net.minecraft.world.item.CreativeModeTab
 import net.minecraft.world.item.CreativeModeTabs
 import org.ohmyloader.core.adapter.Refl
 
 /**
- * Creative-screen tab pagination (client only), modeled on NeoForge's
- * `CreativeTabsScreenPage` layout. 26.3's creative screen has no pages: tabs are laid out from
- * their (row, column) at a fixed 27px pitch, seven per row - a modded tab cannot fit, and one
- * placed past column 6 renders outside the panel.
+ * The screen-facing half of the creative-tab takeover: owns the [CreativeTabStrip] (rebuilt on
+ * every screen init from the registry, the tab manager's resolved order and the player's config)
+ * and answers, from the strip model alone, everything the vanilla strip code used to compute
+ * from `tab.row()` / `tab.column()`:
  *
- * The model, matching NeoForge: tabs whose `isAlignedRight()` is set (vanilla's hotbar / search /
- * operator / inventory tabs) are pinned to their natural right-side slots on every page; every
- * other tab - vanilla categories and modded ones alike - flows through pages of five top + five
- * bottom slots. Pages beyond the first are navigated with the two arrow buttons
- * ([CreativeScreenPaginationTransformer] injects their creation and the `i / n` page indicator).
+ * - [drawTab] replaces `extractTabButton`: draws a tab at its strip slot, or nothing when the
+ *   tab has no slot on this page (hidden by the player, or on another page);
+ * - [tabClicked] / [tabHovered] replace `checkTabClicked` / `checkTabHovering`: hit tests against
+ *   the strip slot;
+ * - [onScreenInit] also creates the two vanilla `PageButton`s when the strip spans multiple
+ *   pages (the book UI's page-turn button: page sprites, turn sound, never takes focus after
+ *   the interaction).
  *
- * The repositioning works by replacing what the screen *reads* (`CreativeModeTab.row()` /
- * `column()` become [pagedRow] / [pagedColumn] inside the patched methods), so the drawn tab and
- * its hit test can never disagree - the first revision moved only the hit test and the drawn tab
- * sat in a different strip than the clickable area.
+ * The vanilla loops still drive all of this - they iterate every registered tab and hand each to
+ * the handlers, which decide visibility from the strip. No vanilla layout state is read.
  *
  * `leftPos` / `topPos` / `imageWidth` / `imageHeight` / `addRenderableWidget` are protected screen
  * members read through cached reflection - the injection DSL has no field operand, the same
- * reason [Refl] exists.
+ * reason `Refl` exists.
  */
 object CreativeScreenPagination {
 
-    private const val PAGE_TOP_SLOTS = 5
-    private const val PAGE_BOTTOM_SLOTS = 5
-    private const val PAGE_CAPACITY = PAGE_TOP_SLOTS + PAGE_BOTTOM_SLOTS
-
-    /** The column another-page tabs read: 27 * (-37) puts their draw far off-screen. */
-    private const val OFF_SCREEN_COLUMN = -37
-
+    /** The strip, rebuilt at every screen init (config edits apply when the screen reopens). */
     @Volatile
-    private var currentPage = 0
+    private var strip: CreativeTabStrip? = null
 
-    /**
-     * The tabs that flow through the pages, in display order: everything except the right-aligned
-     * pinned specials. Mods that declared their tabs through the tab manager
-     * (org.ohmyloader.api26_3.OMLCreativeTabs) get the manager's constraint-resolved key order
-     * (resolved at declare time on keys - the holders were unbound then - and mapped to tabs
-     * here, post-freeze); raw registrations fall back to the registry order.
-     */
-    private fun flowingTabs(): List<CreativeModeTab> {
-        val keys = org.ohmyloader.api26_3.OMLCreativeTabs.resolvedKeyOrder
-            ?: return CreativeModeTabs.tabs().filter { !it.isAlignedRight() }
-        return keys.map { BuiltInRegistries.CREATIVE_MODE_TAB.getValue(it)!! }
-    }
-
-    private fun pageCount(): Int = (flowingTabs().size + PAGE_CAPACITY - 1) / PAGE_CAPACITY
-
-    /**
-     * What the screen should read as the tab's row: the paged row for flowing tabs on the current
-     * page, the natural row for the pinned specials, and TOP for another-page flowing tabs -
-     * whose column is the off-screen sentinel ([pagedColumn]), so wherever they draw, nobody
-     * sees them.
-     */
     @JvmStatic
-    fun pagedRow(tab: CreativeModeTab): CreativeModeTab.Row {
-        val index = flowingTabs().indexOf(tab)
-        if (index < 0) {
-            return tab.row()
+    fun onScreenInit(screen: CreativeModeInventoryScreen) {
+        // The player config is read first: the strip is built from the ordered flowing set it
+        // produces, so config edits apply when the screen (re)opens.
+        CreativeTabsPlayerConfig.onScreenInit(screen)
+        val strip = CreativeTabStrip(CreativeModeTabs.tabs(), flowingOrder())
+        this.strip = strip
+        if (strip.pageCount > 1) {
+            // Vanilla's own page-turn button (the book UI's): page sprites, turn sound, and it
+            // never takes focus after the interaction.
+            addWidget(screen, Button.builder(Component.literal("<")) { strip.page = (strip.page - 1).coerceAtLeast(0) }
+                .pos(leftPos(screen), topPos(screen) - 50).size(20, 20).build())
+            addWidget(screen, Button.builder(Component.literal(">")) { strip.page = (strip.page + 1).coerceAtMost(strip.pageCount - 1) }
+                .pos(leftPos(screen) + imageWidth(screen) - 20, topPos(screen) - 50).size(20, 20).build())
         }
-        if (index / PAGE_CAPACITY != currentPage) {
-            return CreativeModeTab.Row.TOP
-        }
-        return if (index % PAGE_CAPACITY < PAGE_TOP_SLOTS) CreativeModeTab.Row.TOP else CreativeModeTab.Row.BOTTOM
     }
 
     /**
-     * What the screen should read as the tab's column: the paged column for flowing tabs on the
-     * current page, the natural column for the pinned specials, and the off-screen sentinel
-     * (-37, past the left edge of the world) for another-page flowing tabs - the extract loop
-     * still visits them, and this is what keeps them invisible without a branch in the patched
-     * drawing code.
+     * The flowing-tab display order: the tab manager's constraint-resolved key order (mapped
+     * back to tabs post-freeze) with the player's hide/reorder applied; the registry order when
+     * no mod declared through the manager.
      */
-    @JvmStatic
-    fun pagedColumn(tab: CreativeModeTab): Int {
-        val index = flowingTabs().indexOf(tab)
-        if (index < 0) {
-            return tab.column()
+    private fun flowingOrder(): List<CreativeModeTab> {
+        val registryOrder = CreativeModeTabs.tabs().filter { !it.isAlignedRight() }
+        val idOf = { tab: CreativeModeTab ->
+            BuiltInRegistries.CREATIVE_MODE_TAB.getResourceKey(tab).orElseThrow().identifier()
         }
-        if (index / PAGE_CAPACITY != currentPage) {
-            return OFF_SCREEN_COLUMN
+        // The player's hidden filter runs FIRST: a tab in hidden is removed from the set before
+        // any ordering is applied, so order can never resurrect it.
+        val config = CreativeTabsPlayerConfig.cached
+        val hiddenSet = config?.hidden ?: emptySet()
+        val base = (org.ohmyloader.api26_3.OMLCreativeTabs.resolvedKeyOrder
+            ?.mapNotNull { key -> registryOrder.firstOrNull { idOf(it) == key } }
+            ?: registryOrder)
+            .filter { idOf(it) !in hiddenSet }
+        if (config == null || config.order.isEmpty()) {
+            return base
         }
-        val on = index % PAGE_CAPACITY
-        return if (on < PAGE_TOP_SLOTS) on else on - PAGE_TOP_SLOTS
+        val byId = base.associateBy(idOf)
+        val listed = config.order.mapNotNull(byId::get)
+        val unlisted = base.filter { idOf(it) !in config.orderSet }
+        return listed + unlisted
     }
 
-    /** Whether [tab] is on the current page's strip (pinned tabs always are). */
-    private fun isOnCurrentPage(tab: CreativeModeTab): Boolean {
-        val index = flowingTabs().indexOf(tab)
-        return index < 0 || index / PAGE_CAPACITY == currentPage
+    private fun selectedTab(): CreativeModeTab = selectedTabField.get(null) as CreativeModeTab
+
+    private val selectedTabField by lazy {
+        CreativeModeInventoryScreen::class.java.getDeclaredField("selectedTab").apply { isAccessible = true }
     }
 
-    /** [CreativeModeInventoryScreen.getTabX] replacement. */
+    private val spriteArrays by lazy {
+        val screen = CreativeModeInventoryScreen::class.java
+        fun array(name: String): Array<out Any> {
+            val field = screen.getDeclaredField(name)
+            field.isAccessible = true
+            return field.get(null) as Array<out Any>
+        }
+        arrayOf(
+            array("SELECTED_TOP_TABS"), array("UNSELECTED_TOP_TABS"),
+            array("SELECTED_BOTTOM_TABS"), array("UNSELECTED_BOTTOM_TABS"),
+        )
+    }
+
+    /** [CreativeModeInventoryScreen.extractTabButton] replacement: draws the tab at its strip slot. */
     @JvmStatic
-    fun tabX(screen: CreativeModeInventoryScreen, tab: CreativeModeTab): Int {
-        val column = pagedColumn(tab)
-        return if (tab.isAlignedRight()) imageWidth(screen) - 27 * (7 - column) + 1 else 27 * column
-    }
-
-    /** [CreativeModeInventoryScreen.getTabY] replacement. */
-    @JvmStatic
-    fun tabY(screen: CreativeModeInventoryScreen, tab: CreativeModeTab): Int {
-        return if (pagedRow(tab) == CreativeModeTab.Row.TOP) -32 else imageHeight(screen)
-    }
-
-    /** [CreativeModeInventoryScreen.extractBackground] tail: the selected tab is only drawn when
-     * it lives on the current page (its paged slot would otherwise ghost-draw over a page tab). */
-    @JvmStatic
-    fun drawSelectedTabIfVisible(
+    fun drawTab(
         screen: CreativeModeInventoryScreen,
         graphics: GuiGraphicsExtractor,
         mouseX: Int,
         mouseY: Int,
         tab: CreativeModeTab,
     ) {
-        if (!isOnCurrentPage(tab)) {
+        val currentStrip = strip ?: return
+        if (CreativeTabsPlayerConfig.hiddenIds().contains(
+                BuiltInRegistries.CREATIVE_MODE_TAB.getResourceKey(tab).orElseThrow().identifier(),
+            )
+        ) {
             return
         }
-        extractTabButton(screen, graphics, mouseX, mouseY, tab)
+        val slot = currentStrip.slotOf(tab) ?: return
+        val selected = selectedTab() === tab
+        val top = slot.top
+        val x = leftPos(screen) + 27 * slot.column
+        val y = topPos(screen) - if (top) 28 else -(imageHeight(screen) - 4)
+        val sprites = when {
+            top && selected -> spriteArrays[0]
+            top -> spriteArrays[1]
+            selected -> spriteArrays[2]
+            else -> spriteArrays[3]
+        }
+        if (!selected && mouseX > x && mouseY > y && mouseX < x + 26 && mouseY < y + 32) {
+            graphics.requestCursor(CursorTypes.POINTING_HAND)
+        }
+        graphics.blitSprite(
+            RenderPipelines.GUI_TEXTURED,
+            sprites[Mth.clamp(slot.column, 0, sprites.size - 1)] as net.minecraft.resources.Identifier,
+            x,
+            y,
+            26,
+            32,
+        )
+        graphics.item(tab.getIconItem(), x + 13 - 8, y + 16 - 8 + if (top) 1 else -1)
     }
 
-    /** [CreativeModeInventoryScreen.extractLabels] tail: the `i / n` page indicator. */
+    /** [CreativeModeInventoryScreen.checkTabClicked] replacement: strip-slot hit test. */
     @JvmStatic
-    fun drawPageIndicator(screen: CreativeModeInventoryScreen, graphics: GuiGraphicsExtractor) {
-        if (pageCount() <= 1) {
-            return
+    fun tabClicked(
+        screen: CreativeModeInventoryScreen,
+        tab: CreativeModeTab,
+        xm: Double,
+        ym: Double,
+    ): Boolean {
+        val currentStrip = strip ?: return false
+        val slot = currentStrip.slotOf(tab) ?: return false
+        val relY = if (slot.top) -32 else imageHeight(screen)
+        val relX = 27 * slot.column
+        return xm >= relX && xm <= relX + 26 && ym >= relY && ym <= relY + 32
+    }
+
+    /** [CreativeModeInventoryScreen.checkTabHovering] replacement: strip-slot hover + tooltip. */
+    @JvmStatic
+    fun tabHovered(
+        screen: CreativeModeInventoryScreen,
+        graphics: GuiGraphicsExtractor,
+        tab: CreativeModeTab,
+        xm: Int,
+        ym: Int,
+    ): Boolean {
+        val currentStrip = strip ?: return false
+        val slot = currentStrip.slotOf(tab) ?: return false
+        val relX = 27 * slot.column
+        val relY = if (slot.top) -32 else imageHeight(screen)
+        if (xm >= relX + 3 && xm <= relX + 24 && ym >= relY + 3 && ym <= relY + 30) {
+            graphics.setTooltipForNextFrame(screen.getFont(), tab.getDisplayName(), xm, ym)
+            return true
         }
-        val font = screen.getFont()
-        val text = Component.literal("${currentPage + 1} / ${pageCount()}")
-        // The labels pass draws in panel-relative coordinates (the vanilla title sits at (8, 6)),
-        // so the indicator is positioned relative to the panel too.
-        graphics.text(font, text, imageWidth(screen) / 2 - font.width(text) / 2, -44, -1, false)
+        return false
     }
 
     /**
-     * [CreativeModeInventoryScreen.init] tail: the two page-arrow buttons, mirroring NeoForge's
-     * (vanilla buttons above the panel, clamped at the page bounds).
+     * [CreativeModeInventoryScreen.extractLabels] tail: the `i / n` page indicator. The labels
+     * pass draws in panel-relative coordinates (the pose is translated to the panel), so the
+     * indicator centers on `imageWidth / 2` at `-44` — the same spot vanilla's absolute-space
+     * draws (`leftPos + imageWidth / 2 …, topPos - 44`) land on screen.
      */
     @JvmStatic
-    fun addPageButtons(screen: CreativeModeInventoryScreen) {
-        if (pageCount() <= 1) {
+    fun drawPageIndicator(
+        screen: CreativeModeInventoryScreen,
+        graphics: GuiGraphicsExtractor,
+    ) {
+        val currentStrip = strip ?: return
+        if (currentStrip.pageCount <= 1) {
             return
         }
-        addWidget(screen, Button.builder(Component.literal("<"), Button.OnPress {
-            currentPage--
-            screen.setFocused(null)
-        })
-            .pos(leftPos(screen), topPos(screen) - 50)
-            .size(20, 20)
-            .build())
-        addWidget(screen, Button.builder(Component.literal(">"), Button.OnPress {
-            currentPage++
-            screen.setFocused(null)
-        })
-            .pos(leftPos(screen) + imageWidth(screen) - 20, topPos(screen) - 50)
-            .size(20, 20)
-            .build())
+        val font = screen.getFont()
+        val text = Component.literal("${currentStrip.page + 1} / ${currentStrip.pageCount}")
+        graphics.text(font, text, imageWidth(screen) / 2 - font.width(text) / 2, -44, -1, false)
     }
 
     private fun addWidget(screen: CreativeModeInventoryScreen, widget: Any) {
@@ -179,26 +207,6 @@ object CreativeScreenPagination {
             "addRenderableWidget",
             net.minecraft.client.gui.components.events.GuiEventListener::class.java,
         ).apply { isAccessible = true }
-    }
-
-    private val extractTabButtonMethod by lazy {
-        CreativeModeInventoryScreen::class.java.getDeclaredMethod(
-            "extractTabButton",
-            GuiGraphicsExtractor::class.java,
-            Int::class.javaPrimitiveType,
-            Int::class.javaPrimitiveType,
-            CreativeModeTab::class.java,
-        ).apply { isAccessible = true }
-    }
-
-    private fun extractTabButton(
-        screen: CreativeModeInventoryScreen,
-        graphics: GuiGraphicsExtractor,
-        mouseX: Int,
-        mouseY: Int,
-        tab: CreativeModeTab,
-    ) {
-        extractTabButtonMethod.invoke(screen, graphics, mouseX, mouseY, tab)
     }
 
     private fun leftPos(screen: CreativeModeInventoryScreen): Int =

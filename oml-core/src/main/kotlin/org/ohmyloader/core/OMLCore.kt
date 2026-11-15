@@ -91,6 +91,13 @@ object OMLCore {
      */
     private lateinit var gameDir: File
 
+    /**
+     * The game's `config` directory - where the loader's own preferences and every mod's
+     * `OMLConfig` file land. Only meaningful after [start] has resolved the game directory.
+     */
+    @JvmStatic
+    fun configDirectory(): File = File(gameDir, "config")
+
     @JvmStatic
     fun start(args: Array<String>) {
         installLogFile()
