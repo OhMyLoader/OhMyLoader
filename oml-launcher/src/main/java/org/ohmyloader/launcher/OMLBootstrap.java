@@ -2,6 +2,7 @@ package org.ohmyloader.launcher;
 
 import java.io.File;
 import java.io.InputStream;
+import java.io.PrintStream;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.net.URLClassLoader;
@@ -36,6 +37,17 @@ public final class OMLBootstrap {
 
     private static final String LAYER_DIR = "lib";
     private static final String CONFIG_FILE = "launch.properties";
+
+    // The game replaces System.out/err with log4j-backed streams. Those streams belong to the
+    // disposable session and are also a ThreadLocal root; the supervisor must print its canary
+    // diagnostics through the original process streams after the session stops.
+    private static final PrintStream ORIGINAL_OUT = System.out;
+    private static final PrintStream ORIGINAL_ERR = System.err;
+
+    static void restoreConsole() {
+        System.setOut(ORIGINAL_OUT);
+        System.setErr(ORIGINAL_ERR);
+    }
 
     public static void main(String[] args) throws Exception {
         System.out.println("[OMLBootstrap] JVM version: " + Runtime.version());

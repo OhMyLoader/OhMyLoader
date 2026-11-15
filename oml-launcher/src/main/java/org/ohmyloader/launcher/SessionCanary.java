@@ -1,5 +1,8 @@
 package org.ohmyloader.launcher;
 
+import java.io.FileDescriptor;
+import java.io.FileOutputStream;
+import java.io.PrintStream;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.List;
@@ -20,6 +23,11 @@ import java.util.concurrent.TimeUnit;
  * must downgrade to a process restart rather than accumulate Metaspace.
  */
 final class SessionCanary {
+
+    // The session replaces System.err with its own log4j-backed stream; after the session's
+    // formatter ThreadLocals are cleared, that stream throws. Write diagnostics to the process fd.
+    private static final PrintStream RAW_ERR =
+        new PrintStream(new FileOutputStream(FileDescriptor.err), true);
 
     private final WeakReference<ClassLoader> session;
     private final ClassLoader supervisor;
@@ -49,14 +57,14 @@ final class SessionCanary {
         } while (System.nanoTime() < deadline);
 
         if (collected()) return true;
-        System.err.println(
+        RAW_ERR.println(
             "[OMLSupervisor] session classloader was not collected within " + timeoutMillis + " ms" +
                 " (supervisor=" + (supervisor == null ? "platform" : supervisor) + ")");
         List<String> leaks = leakedThreads();
         if (leaks.isEmpty()) {
-            System.err.println("[OMLSupervisor]   no thread names the session; a non-thread static or JNI callback holds it");
+            RAW_ERR.println("[OMLSupervisor]   no thread names the session; a non-thread static or JNI callback holds it");
         } else {
-            for (String line : leaks) System.err.println("[OMLSupervisor]   " + line);
+            for (String line : leaks) RAW_ERR.println("[OMLSupervisor]   " + line);
         }
         return false;
     }
@@ -69,6 +77,9 @@ final class SessionCanary {
      * discovery, test harness threads) that the game never owned.
      */
     void releaseThreads() {
+        // The game's log4j stream is itself a session object and its formatter state lives in a
+        // ThreadLocal we are about to clear; print from the original process streams first.
+        OMLBootstrap.restoreConsole();
         ClassLoader target = session.get();
         ClassLoader main = SessionControl.mainLoader();
         if (target == null && main == null) return;
@@ -97,8 +108,8 @@ final class SessionCanary {
      * The render thread survives the session, and its ThreadLocalMap can still hold Session 1
      * values (RenderSystem/GlStateManager caches, profiler state). Neither TCCL nor the stack
      * diagnostics see those values, yet they keep the old loader reachable. Null the values whose
-     * runtime class came from the session/main loader; the map's weak keys and probing layout stay
-     * intact.
+     * runtime class came from the session/main loader; clearing bootstrap-class containers such as
+     * log4j's formatter cache would break the supervisor's own diagnostics.
      */
     private static void clearThreadLocals(Thread thread, ClassLoader target, ClassLoader main) {
         if (target == null && main == null) return;
