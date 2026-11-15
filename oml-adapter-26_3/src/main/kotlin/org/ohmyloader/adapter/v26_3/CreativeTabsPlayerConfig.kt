@@ -75,6 +75,35 @@ object CreativeTabsPlayerConfig {
     /** The ids the player hid, empty when no config is in effect. */
     fun hiddenIds(): Set<Identifier> = cached?.hidden ?: emptySet()
 
+    /**
+     * Persists the player's choices: `hidden` as its array, and the full flowing-tab arrangement
+     * (every tab in display order, hidden ones excluded) as `order` — the manage screen writes
+     * the whole arrangement so up/down edits are preserved exactly. Applies on the next creative
+     * screen init, which re-reads this file.
+     */
+    fun save(hidden: List<Identifier>, order: List<Identifier>) {
+        val file = File(OMLCore.configDirectory(), "creative-tabs.toml")
+        val body = buildString {
+            appendLine("# Creative screen tab preferences (OML).")
+            appendLine("#")
+            appendLine("# hidden: tabs removed from the creative screen entirely.")
+            appendLine("# order: the full display order of the tabs; changes apply when the screen")
+            appendLine("#        reopens. Editable by hand or through the in-game manage screen.")
+            append("hidden = [")
+            append(hidden.joinToString(", ") { "\"$it\"" })
+            appendLine("]")
+            append("order = [")
+            append(order.joinToString(", ") { "\"$it\"" })
+            appendLine("]")
+        }
+        runCatching {
+            file.parentFile?.mkdirs()
+            file.writeText(body)
+        }.onFailure {
+            OmlLog.warn("OMLCreativeTabs", "could not save creative-tabs.toml (${it.message})")
+        }
+    }
+
     /** Writes a commented template naming every configurable tab id, once, if the file is absent. */
     private fun writeTemplate(screen: CreativeModeInventoryScreen) {
         val file = File(OMLCore.configDirectory(), "creative-tabs.toml")

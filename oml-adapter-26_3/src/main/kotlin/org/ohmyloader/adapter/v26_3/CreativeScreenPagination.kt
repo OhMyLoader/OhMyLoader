@@ -1,6 +1,7 @@
 package org.ohmyloader.adapter.v26_3
 
 import com.mojang.blaze3d.platform.cursor.CursorTypes
+import net.minecraft.client.Minecraft
 import net.minecraft.client.renderer.RenderPipelines
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen
@@ -54,6 +55,17 @@ object CreativeScreenPagination {
             addWidget(screen, Button.builder(Component.literal(">")) { strip.page = (strip.page + 1).coerceAtMost(strip.pageCount - 1) }
                 .pos(leftPos(screen) + imageWidth(screen) - 20, topPos(screen) - 50).size(20, 20).build())
         }
+        // The in-game tab manager (phase two of the player config): lists every flowing tab with
+        // hide / reorder controls and writes creative-tabs.toml on Done.
+        addWidget(
+            screen,
+            Button.builder(Component.literal("Manage Tabs")) {
+                Minecraft.getInstance().setScreenAndShow(CreativeTabsManageScreen(screen))
+            }
+                .pos(leftPos(screen) + imageWidth(screen) / 2 - 50, topPos(screen) - 74)
+                .size(100, 20)
+                .build(),
+        )
     }
 
     /**
