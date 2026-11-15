@@ -2,7 +2,15 @@ package org.ohmyloader.adapter.v26_3
 
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
+import net.minecraft.client.gui.components.AbstractWidget
 import net.minecraft.client.gui.components.Button
+import net.minecraft.client.gui.components.ContainerObjectSelectionList
+import net.minecraft.client.gui.components.CycleButton
+import net.minecraft.client.gui.components.EditBox
+import net.minecraft.client.gui.components.MultiLineTextWidget
+import net.minecraft.client.gui.components.StringWidget
+import net.minecraft.client.gui.layouts.HeaderAndFooterLayout
+import net.minecraft.client.gui.layouts.LinearLayout
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen
 import net.minecraft.core.registries.BuiltInRegistries
@@ -13,18 +21,16 @@ import net.minecraft.world.item.CreativeModeTabs
 import org.ohmyloader.api26_3.OMLCreativeTabs
 
 /**
- * The in-game creative-tab manager — phase two of the player config: the list-plus-controls UI
- * that replaces hand-editing `config/creative-tabs.toml`. Opened from the creative screen's
- * "Manage Tabs" button; every flowing tab (vanilla categories and modded alike, no right-aligned
- * specials) is one row with a Hide/Show toggle and Up/Down reorder buttons over a draft of the
- * display arrangement. "Done" persists the draft through [CreativeTabsPlayerConfig.save] and
- * returns to the creative screen, whose init rebuilds the strip from the new file; ESC (or any
- * other close) discards the draft.
+ * The in-game creative-tab manager — phase two of the player config — modeled on the vanilla
+ * F3+F6 [net.minecraft.client.gui.screens.debug.DebugOptionsScreen]: a `HeaderAndFooterLayout`
+ * (title + search header, Done footer) over a scrolling [ContainerObjectSelectionList] whose
+ * rows are the flowing tabs, each with a Hide/Show cycle button and Up/Down reorder buttons.
+ * Replaces hand-editing `config/creative-tabs.toml`.
  *
- * A plain screen, drawn against the same 26.x extract pipeline everything else uses:
- * `extractRenderState` is where the rows are drawn (the wrapper draws the dimmed background
- * before it, and `super` renders the widgets after it), rows scroll by wheel with the row
- * widgets rebuilt against the new scroll offset.
+ * The rows are a draft over the effective display arrangement (the manager's resolved order
+ * with the player's saved hide/reorder applied); edits mutate the draft and refresh the list.
+ * Done persists the draft through [CreativeTabsPlayerConfig.save] and returns to the creative
+ * screen, whose init rebuilds the strip from the new file; ESC (or any other close) discards.
  */
 class CreativeTabsManageScreen(private val parent: CreativeModeInventoryScreen) :
     Screen(Component.literal("Creative Tabs")) {
@@ -34,93 +40,46 @@ class CreativeTabsManageScreen(private val parent: CreativeModeInventoryScreen) 
 
     private val rows: MutableList<Row> = buildDraft()
 
-    // Screen metrics, recomputed at every init (resize).
-    private var panelX = 0
-    private var rowsTop = 0
-    private var rowsBottom = 0
-    private var visibleRows = 1
-    private var scroll = 0
+    private val layout = HeaderAndFooterLayout(this)
+    private lateinit var tabList: TabList
+    private lateinit var searchBox: EditBox
 
     override fun init() {
-        panelX = (width - PANEL_W) / 2
-        rowsTop = 36
-        rowsBottom = height - 34
-        visibleRows = ((rowsBottom - rowsTop) / ROW_H).coerceAtLeast(1)
-        scroll = scroll.coerceIn(0, maxScroll())
-        rebuildRowWidgets()
-    }
-
-    /** Rows are drawn first; `super` renders the row widgets (and the Done button) on top. */
-    override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
-        graphics.text(
-            font, title,
-            (width - font.width(title)) / 2, 14, -1, false,
+        val header = LinearLayout.vertical().spacing(4)
+        searchBox = EditBox(font, 0, 0, SEARCH_WIDTH, 16, Component.literal("Search"))
+        searchBox.setHint(Component.literal("Search"))
+        searchBox.setResponder { tabList.updateSearch(it) }
+        header.addChild(
+            StringWidget(title, font),
+            header.newCellSettings().alignHorizontallyCenter(),
         )
-        graphics.fill(panelX - 8, rowsTop - 8, panelX + PANEL_W + 8, rowsBottom + 4, 0x5A000000.toInt())
-        graphics.enableScissor(0, rowsTop, width, rowsBottom)
-        for (i in 0 until visibleRows) {
-            val row = rows.getOrNull(scroll + i) ?: break
-            val rowY = rowsTop + i * ROW_H + 2
-            graphics.item(row.tab.iconItem, panelX + 4, rowY + 2)
-            val name = font.plainSubstrByWidth(row.tab.displayName.string, NAME_WIDTH)
-            graphics.text(font, name, panelX + 26, rowY + 6, if (row.hidden) HIDDEN_COLOR else -1, false)
-        }
-        graphics.disableScissor()
-        super.extractRenderState(graphics, mouseX, mouseY, partialTick)
+        header.addChild(searchBox, header.newCellSettings().alignHorizontallyCenter())
+        header.addChild(
+            MultiLineTextWidget(
+                Component.literal(
+                    "Hide tabs, or reorder them for every page. Changes apply when the screen reopens.",
+                ),
+                font,
+            ).setMaxWidth(MAX_ROW_W).setCentered(true),
+            header.newCellSettings().alignHorizontallyCenter(),
+        )
+        layout.addToHeader(header)
+        tabList = TabList()
+        layout.addToContents(tabList)
+        val footer = LinearLayout.horizontal().spacing(4)
+        footer.addChild(Button.builder(Component.translatable("gui.done")) { saveAndClose() }.width(200).build())
+        layout.addToFooter(footer)
+        layout.visitWidgets { addRenderableWidget(it) }
+        repositionElements()
     }
 
-    override fun mouseScrolled(x: Double, y: Double, xAmount: Double, yAmount: Double): Boolean {
-        val next = (scroll - yAmount.toInt()).coerceIn(0, maxScroll())
-        if (next != scroll) {
-            scroll = next
-            rebuildRowWidgets()
-            return true
-        }
-        return super.mouseScrolled(x, y, xAmount, yAmount)
+    override fun repositionElements() {
+        layout.arrangeElements()
+        tabList.updateSize(width, layout)
     }
 
     override fun onClose() {
         Minecraft.getInstance().setScreenAndShow(parent)
-    }
-
-    /**
-     * Every widget, rebuilt together: the row controls shift with the scroll offset, and the
-     * hide toggle flips a row's label — cheaper to rebuild than to retrack fixed slots.
-     */
-    private fun rebuildRowWidgets() {
-        clearWidgets()
-        addRenderableWidget(
-            Button.builder(Component.translatable("gui.done")) { saveAndClose() }
-                .bounds(width / 2 - 100, height - 26, 200, 20)
-                .build(),
-        )
-        for (i in 0 until visibleRows) {
-            val index = scroll + i
-            val row = rows.getOrNull(index) ?: break
-            val rowY = rowsTop + i * ROW_H + 2
-            val hide = Button.builder(if (row.hidden) Component.literal("Show") else Component.literal("Hide")) {
-                row.hidden = !row.hidden
-                rebuildRowWidgets()
-            }.bounds(panelX + HIDE_X, rowY, HIDE_W, 20).build()
-            val up = Button.builder(Component.literal("Up")) { move(index, -1) }
-                .bounds(panelX + UP_X, rowY, MOVE_W, 20).build()
-            val down = Button.builder(Component.literal("Down")) { move(index, +1) }
-                .bounds(panelX + DOWN_X, rowY, MOVE_W + 8, 20).build()
-            up.active = !row.hidden && index > 0
-            down.active = !row.hidden && index < rows.size - 1
-            addRenderableWidget(hide)
-            addRenderableWidget(up)
-            addRenderableWidget(down)
-        }
-    }
-
-    private fun move(index: Int, direction: Int) {
-        val target = index + direction
-        if (index !in rows.indices || target !in rows.indices) {
-            return
-        }
-        rows[index] = rows[target].also { rows[target] = rows[index] }
-        rebuildRowWidgets()
     }
 
     private fun saveAndClose() {
@@ -129,7 +88,108 @@ class CreativeTabsManageScreen(private val parent: CreativeModeInventoryScreen) 
         onClose()
     }
 
-    private fun maxScroll(): Int = (rows.size - visibleRows).coerceAtLeast(0)
+    /** Swap [row] with its neighbor, then redraw the list from the draft. */
+    private fun move(row: Row, direction: Int) {
+        val index = rows.indexOf(row)
+        val target = index + direction
+        if (index < 0 || target !in rows.indices) {
+            return
+        }
+        rows[index] = rows[target].also { rows[target] = rows[index] }
+        tabList.refreshEntries()
+    }
+
+    /**
+     * The list, sized and positioned like vanilla's (`updateSize` against the layout). Rows are
+     * rebuilt from the draft on every change, so row-button states (visibility, edge disabling)
+     * can never go stale.
+     */
+    private inner class TabList : ContainerObjectSelectionList<TabEntry>(
+        Minecraft.getInstance(),
+        this@CreativeTabsManageScreen.width,
+        layout.contentHeight,
+        layout.headerHeight,
+        ITEM_HEIGHT,
+    ) {
+        init {
+            refreshEntries()
+        }
+
+        override fun getRowWidth(): Int = MAX_ROW_W
+
+        fun updateSearch(query: String) {
+            refreshEntries(query.trim())
+        }
+
+        fun refreshEntries() {
+            refreshEntries("")
+        }
+
+        private fun refreshEntries(query: String) {
+            clearEntries()
+            val visible = rows.asSequence()
+                .withIndex()
+                .filter { (_, row) -> query.isEmpty() || row.tab.displayName.string.contains(query, true) }
+                .toList()
+            for ((index, row) in visible) {
+                addEntry(TabEntry(this@CreativeTabsManageScreen, row, index, index > 0, index < rows.size - 1))
+            }
+        }
+    }
+
+    /** One list row: icon + name drawn by [extractContent], with the row's own widgets. */
+    private class TabEntry(
+        private val screen: CreativeTabsManageScreen,
+        private val row: Row,
+        private val index: Int,
+        private val hasUp: Boolean,
+        private val hasDown: Boolean,
+    ) : ContainerObjectSelectionList.Entry<TabEntry>() {
+        private val hideButton: CycleButton<Boolean> =
+            CycleButton.booleanBuilder(Component.literal("Hidden"), Component.literal("Shown"), row.hidden)
+                .displayOnlyValue()
+                .create(0, 0, HIDE_W, BUTTON_H, Component.literal("Hide tab")) { _, value ->
+                    row.hidden = value
+                    screen.tabList.refreshEntries()
+                }
+        private val upButton = Button.builder(Component.literal("Up")) { screen.move(row, -1) }
+            .bounds(0, 0, MOVE_W, BUTTON_H).build()
+        private val downButton = Button.builder(Component.literal("Down")) { screen.move(row, +1) }
+            .bounds(0, 0, MOVE_W + 8, BUTTON_H).build()
+        private val widgets = listOf(hideButton, upButton, downButton)
+
+        init {
+            upButton.active = !row.hidden && hasUp
+            downButton.active = !row.hidden && hasDown
+            hideButton.setValue(row.hidden)
+        }
+
+        override fun children(): List<AbstractWidget> = widgets
+
+        override fun narratables(): List<net.minecraft.client.gui.narration.NarratableEntry> = widgets
+
+        /**
+         * The vanilla entry pattern: the content is drawn at the content origin, then the row
+         * widgets are right-aligned against it and extracted — their positions are recomputed
+         * every frame, so the scroll offset can never leave them behind.
+         */
+        override fun extractContent(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, hovered: Boolean, partialTick: Float) {
+            val iconY = contentY + (contentHeight - 16) / 2
+            graphics.item(row.tab.iconItem, contentX + 2, iconY)
+            val name = screen.font.plainSubstrByWidth(
+                row.tab.displayName.string,
+                contentWidth - HIDE_W - MOVE_W - MOVE_W - 8 - 32,
+            )
+            graphics.text(screen.font, name, contentX + 24, contentYMiddle - 4, if (row.hidden) HIDDEN_COLOR else -1, false)
+            downButton.x = contentRight - downButton.width
+            upButton.x = downButton.x - 4 - upButton.width
+            hideButton.x = upButton.x - 4 - hideButton.width
+            for (widget in widgets) {
+                widget.y = contentYMiddle - widget.height / 2
+                widget.extractRenderState(graphics, mouseX, mouseY, partialTick)
+            }
+        }
+    }
 
     /**
      * The draft starts from what the player currently sees: the manager's resolved order (the
@@ -154,16 +214,12 @@ class CreativeTabsManageScreen(private val parent: CreativeModeInventoryScreen) 
     }
 
     private companion object {
-        const val PANEL_W = 300
-        const val ROW_H = 24
-        const val NAME_WIDTH = 134
-
-        // The three row buttons, right-aligned inside the panel.
+        const val ITEM_HEIGHT = 24
+        const val MAX_ROW_W = 310
+        const val SEARCH_WIDTH = 200
         const val HIDE_W = 48
         const val MOVE_W = 34
-        const val DOWN_X = PANEL_W - 4 - MOVE_W - 8
-        const val UP_X = DOWN_X - 4 - MOVE_W
-        const val HIDE_X = UP_X - 4 - HIDE_W
+        const val BUTTON_H = 20
         const val HIDDEN_COLOR = 0xFF808080.toInt()
     }
 }
