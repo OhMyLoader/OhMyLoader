@@ -28,8 +28,7 @@ import java.io.File
  * after the listed ones. Right-aligned special tabs (hotbar / search / operator / inventory)
  * are functional entries of the screen and are not configurable. A missing file means defaults;
  * a broken file logs and means defaults - a player typo must never take the creative screen
- * down. The pre-manager `hidden` / `order` pair is still read (hidden tabs land at the end of
- * the arrangement), so an old file survives the merge.
+ * down.
  */
 object CreativeTabsPlayerConfig {
 
@@ -72,19 +71,10 @@ object CreativeTabsPlayerConfig {
             return null
         }
         val root = doc[""] ?: return null
-        if (root.containsKey("tabs")) {
-            val entries = stringArray(root["tabs"]).mapNotNull { raw ->
-                val hidden = raw.startsWith(HIDDEN_PREFIX)
-                parseId(raw.removePrefix(HIDDEN_PREFIX))?.let { Entry(it, hidden) }
-            }
-            return Config(entries)
+        val entries = stringArray(root["tabs"]).mapNotNull { raw ->
+            val hidden = raw.startsWith(HIDDEN_PREFIX)
+            parseId(raw.removePrefix(HIDDEN_PREFIX))?.let { Entry(it, hidden) }
         }
-        // The legacy hidden/order pair: hidden entries carry no position, so they land at the
-        // end of the arrangement (and order entries flagged hidden lose their position).
-        val legacyHidden = stringArray(root["hidden"]).mapNotNull(::parseId).toSet()
-        val legacyOrder = stringArray(root["order"]).mapNotNull(::parseId)
-        val entries = legacyOrder.filter { it !in legacyHidden }.map { Entry(it, false) } +
-            legacyHidden.map { Entry(it, true) }
         return Config(entries)
     }
 
