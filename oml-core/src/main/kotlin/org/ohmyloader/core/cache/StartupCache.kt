@@ -44,7 +44,11 @@ object StartupCache {
     private val jars = LinkedHashMap<String, JarStamp>()
     private val mods = HashMap<String, List<CachedMod>>()
     private val rules = HashMap<String, List<CachedRule>>()
+    private val hookCarriers = HashMap<String, List<String>>()
     private var dirty = false
+
+    /// The carrier-discovery contract version — bump when the scanner's carrier criteria change.
+    private const val HOOKS_SCHEMA = "HOOKS1"
 
     private class JarStamp(val size: Long, val mtime: Long, val sha: String)
 
@@ -57,6 +61,7 @@ object StartupCache {
         jars.clear()
         mods.clear()
         rules.clear()
+        hookCarriers.clear()
         dirty = false
         if (cacheDir == null) return
         val file = ledgerFile(cacheDir)
@@ -66,6 +71,7 @@ object StartupCache {
             jars.clear()
             mods.clear()
             rules.clear()
+            hookCarriers.clear()
         }
     }
 
@@ -91,6 +97,10 @@ object StartupCache {
                     val sha = fields[1]
                     val id = fields[3].takeIf { it.isNotEmpty() }
                     rules[sha] = rules.getOrDefault(sha, emptyList()) + CachedRule(fields[2], id)
+                }
+
+                "HOOKS" -> if (fields.size == 3) {
+                    hookCarriers[fields[1]] = fields[2].split(";").filter { it.isNotEmpty() }
                 }
             }
         }
@@ -139,6 +149,19 @@ object StartupCache {
         dirty = true
     }
 
+    /**
+     * The jar's mixin-carrier classes (`@Hooked`/`@Merged`), from the ledger — the hook scanner
+     * parses only these instead of every class in the jar. The record carries a discovery-schema
+     * tag: bump `HOOKS_SCHEMA` when the carrier-annotation set or the scan-shape contract changes,
+     * or a loader update would silently miss carriers the old tag never recorded.
+     */
+    fun hookCarriersFor(sha: String): List<String>? = hookCarriers["$HOOKS_SCHEMA:$sha"]
+
+    fun rememberHookCarriers(sha: String, carriers: List<String>) {
+        hookCarriers["$HOOKS_SCHEMA:$sha"] = carriers
+        dirty = true
+    }
+
     /** Persists the ledger (atomic rename); a no-op when nothing changed this run. */
     fun save() {
         val target = dir?.let(::ledgerFile) ?: return
@@ -158,6 +181,9 @@ object StartupCache {
                 for (record in records) {
                     append("RULE\t$sha\t${escape(record.internalName)}\t${escape(record.id.orEmpty())}\n")
                 }
+            }
+            for ((key, carriers) in hookCarriers) {
+                append("HOOKS\t$key\t${escape(carriers.joinToString(";"))}\n")
             }
         }
         runCatching {

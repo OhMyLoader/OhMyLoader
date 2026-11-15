@@ -9,6 +9,7 @@ import org.objectweb.asm.tree.MethodNode
 import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.inject.*
 import org.ohmyloader.api.hook.LocalCapture
+import org.ohmyloader.core.cache.StartupCache
 import org.ohmyloader.core.hook.HookScanner.parseRedirect
 import org.ohmyloader.core.hook.HookScanner.policyProblem
 import org.ohmyloader.core.hook.HookScanner.refineVarAnchor
@@ -118,6 +119,7 @@ object HookScanner {
             problems += scanned.problems
             merges += scanned.merges
         }
+        StartupCache.save()
         problems += extraProblems
         merges += extraMerges
         if (rules.isEmpty() && merges.isEmpty() && problems.isEmpty() && extraRules.classes.isEmpty()) {
@@ -268,36 +270,62 @@ object HookScanner {
         val rules = mutableListOf<Rule>()
         val problems = mutableListOf<String>()
         val merges = mutableListOf<ClassMerger.HookClass>()
+        // Happy path: the startup cache holds this jar's carrier classes (@Hooked/@Merged), keyed
+        // by the jar digest — only those are parsed with the expensive EXPAND_FRAMES mode, instead
+        // of every class in the jar. The full pass below is the cold path that builds the list.
+        val sha = StartupCache.statSha(mod.file) ?: StartupCache.hash(mod.file)
+        val cachedCarriers = StartupCache.hookCarriersFor(sha)
+        val carriers = mutableListOf<String>()
         JarFile(mod.file).use { zip ->
-            val entries = zip.entries()
-            while (entries.hasMoreElements()) {
-                val entry = entries.nextElement()
-                if (!entry.name.endsWith(".class")) continue
-                // MR-JAR versioned copies are not mixin declarations: scanning them would register the
-                // same mixin class twice (duplicate @Overwrite ledger entries / double member synthesis).
-                if (entry.name.startsWith("META-INF/")) continue
-                try {
-                    zip.getInputStream(entry).use { stream ->
-                        val node = ClassNode(Opcodes.ASM9)
-                        // Keep instructions (do not SKIP_CODE): we must decide whether the injection handler has a body --
-                        // skipping them would misjudge every handler as abstract/native.
-                        // **Keep stack frames (EXPAND_FRAMES)**: class merging moves whole method bodies into
-                        // the target class, and the loader writes back with COMPUTE_MAXS (not COMPUTE_FRAMES,
-                        // see OMLClassLoader); frames can only be carried along -- dropping them at read time
-                        // can never be recovered later.
-                        val reader = ClassReader(stream)
-                        reader.accept(node, ClassReader.SKIP_DEBUG or ClassReader.EXPAND_FRAMES)
-                        val parsed = parseMixinClass(node, mod.id, lambdaScan)
-                        rules += parsed.rules
-                        problems += parsed.problems
-                        merges += parsed.merges
-                    }
+            val classEntries = zip.entries().asSequence()
+                .filter { it.name.endsWith(".class") && !it.name.startsWith("META-INF/") }
+                .map { it.name.removeSuffix(".class") }
+                .toList()
+            val scanTargets = cachedCarriers ?: classEntries
+            for (internalName in scanTargets) {
+                val stream = try {
+                    readClass(zip, internalName)
                 } catch (t: Throwable) {
-                    problems += "[${mod.id}] could not read ${entry.name}: ${t.javaClass.simpleName}: ${t.message}"
+                    problems += "[${mod.id}] could not read $internalName.class: ${t.javaClass.simpleName}: ${t.message}"
+                    null
+                }
+                if (stream == null) {
+                    if (cachedCarriers != null) {
+                        // The digest matched, so a missing carrier entry should be impossible;
+                        // report it rather than silently dropping the mixin.
+                        problems += "[${mod.id}] could not read $internalName.class: the entry is missing from the jar"
+                    }
+                    continue
+                }
+                stream.use {
+                    val node = ClassNode(Opcodes.ASM9)
+                    // Keep instructions (do not SKIP_CODE): we must decide whether the injection handler has a body --
+                    // skipping them would misjudge every handler as abstract/native.
+                    // **Keep stack frames (EXPAND_FRAMES)**: class merging moves whole method bodies into
+                    // the target class, and the loader writes back with COMPUTE_MAXS (not COMPUTE_FRAMES,
+                    // see OMLClassLoader); frames can only be carried along -- dropping them at read time
+                    // can never be recovered later.
+                    val reader = ClassReader(stream)
+                    reader.accept(node, ClassReader.SKIP_DEBUG or ClassReader.EXPAND_FRAMES)
+                    val parsed = parseMixinClass(node, mod.id, lambdaScan)
+                    rules += parsed.rules
+                    problems += parsed.problems
+                    merges += parsed.merges
+                    if (cachedCarriers == null &&
+                        node.visibleAnnotations.orEmpty().any { it.desc == HOOKED_DESC || it.desc == MERGED_DESC }
+                    ) {
+                        carriers += node.name
+                    }
                 }
             }
         }
+        if (cachedCarriers == null) StartupCache.rememberHookCarriers(sha, carriers)
         return ScanResult(rules, problems, merges)
+    }
+
+    private fun readClass(zip: JarFile, internalName: String): java.io.InputStream? {
+        val entry = zip.getEntry("$internalName.class") ?: return null
+        return zip.getInputStream(entry)
     }
 
     /** Parse the `@Hooked` / `@Merged` declaration on a single class and the injection annotations on its methods; returns an empty table for non-carrier classes. */

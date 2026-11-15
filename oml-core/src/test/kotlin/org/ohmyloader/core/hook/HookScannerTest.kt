@@ -8,6 +8,7 @@ import org.ohmyloader.api.inject.*
 import org.ohmyloader.api.hook.HookContext
 import java.lang.reflect.InvocationTargetException
 import kotlin.test.*
+import org.ohmyloader.core.cache.StartupCache
 
 /**
  * Mixin **annotation front-end**. The front-end only does "translate + report statically-detectable
@@ -1159,6 +1160,51 @@ class HookScannerTest {
         val mod = org.ohmyloader.core.mod.ModContainer("m", "M", "1.0", "x.Y", jar)
 
         assertNull(HookScanner.createTransformer(listOf(mod)))
+    }
+
+    @Test
+    fun `the carrier cache answers a re-scan with the same visibility`() {
+        // The startup cache records a jar's carrier classes (@Hooked/@Merged); the second scan
+        // must answer from that list — same targets, no dropped rules — and the ledger must
+        // actually carry it (a cache line that never lands would make every run the cold path).
+        val cacheDir = java.nio.file.Files.createTempDirectory("oml-hook-scan-cache").toFile().apply { deleteOnExit() }
+        val jar = java.io.File.createTempFile("oml-mixin-cached-", ".jar")
+        jar.deleteOnExit()
+        java.util.jar.JarOutputStream(jar.outputStream()).use { out ->
+            val writer = ClassWriter(ClassWriter.COMPUTE_MAXS)
+            injectClass(handler("h", "(Lorg/ohmyloader/api/hook/HookContext;)V")).accept(writer)
+            out.putNextEntry(java.util.jar.JarEntry("org/ohmyloader/testmod/TestMixin.class"))
+            out.write(writer.toByteArray())
+            out.closeEntry()
+            // A non-carrier class shares the jar; the cached path never parses it
+            val filler = ClassNode(Opcodes.ASM9).apply {
+                name = "org/ohmyloader/testmod/Filler"
+                superName = "java/lang/Object"
+                version = Opcodes.V1_8
+            }
+            val fillerWriter = ClassWriter(ClassWriter.COMPUTE_MAXS)
+            filler.accept(fillerWriter)
+            out.putNextEntry(java.util.jar.JarEntry("org/ohmyloader/testmod/Filler.class"))
+            out.write(fillerWriter.toByteArray())
+            out.closeEntry()
+        }
+        val mod = org.ohmyloader.core.mod.ModContainer("m", "M", "1.0", "x.Y", jar)
+
+        StartupCache.init(cacheDir)
+        val first = HookScanner.createTransformer(listOf(mod))
+        assertNotNull(first)
+        assertTrue(first.appliesTo("net/minecraft/client/Minecraft"))
+
+        // Second run: same ledger from disk, the scan must take the cached path
+        StartupCache.init(cacheDir)
+        val second = HookScanner.createTransformer(listOf(mod))
+        assertNotNull(second)
+        assertTrue(second.appliesTo("net/minecraft/client/Minecraft"))
+        assertEquals(first.appliesTo("net/minecraft/client/Minecraft"), second.appliesTo("net/minecraft/client/Minecraft"))
+        assertTrue(
+            java.io.File(cacheDir, "startup-scan.v1.txt").readText().contains("HOOKS\t"),
+            "the carrier list never landed in the ledger",
+        )
     }
 
     // ---------- Bridge: dispatch & exception isolation ----------
