@@ -15,10 +15,19 @@ import java.util.zip.ZipFile
  * Namespaces are the jars' first segments plus [assetDomains], for content whose assets the adapter
  * synthesizes with no `assets/` entry shipped at all.
  */
-class ModAssetIndex(modJars: List<File>, assetDomains: Collection<String>) {
+class ModAssetIndex private constructor(private val keys: Set<String>, private val domains: Set<String>) {
 
-    private val keys: Set<String> = scan(modJars)
-    private val domains: Set<String> = assetDomains.toSet()
+    /** The slow path: a full zip walk over every mod jar. */
+    constructor(modJars: List<File>, assetDomains: Collection<String>) : this(scan(modJars), assetDomains.toSet())
+
+    /**
+     * The cached path: rehydrates an index the startup cache persisted for an unchanged file-set
+     * signature — no jar is opened.
+     */
+    constructor(cachedKeys: Set<String>, assetDomains: Collection<String>) : this(
+        cachedKeys,
+        assetDomains.toSet(),
+    )
 
     /** Every indexed key, `"namespace/relative/path"`. */
     fun keys(): Set<String> = keys
@@ -46,24 +55,26 @@ class ModAssetIndex(modJars: List<File>, assetDomains: Collection<String>) {
         return keys.filter { it.startsWith(prefix) }.map { it.removePrefix("$namespace/") }
     }
 
-    private fun scan(modJars: List<File>): Set<String> {
-        val keys = HashSet<String>()
-        for (jar in modJars) {
-            try {
-                ZipFile(jar).use { zip ->
-                    val entries = zip.entries()
-                    while (entries.hasMoreElements()) {
-                        val name = entries.nextElement().name
-                        if ((name.startsWith("assets/") || name.startsWith("data/")) && !name.endsWith("/")) {
-                            keys += name.removePrefix("assets/").removePrefix("data/")
+    companion object {
+
+        private fun scan(modJars: List<File>): Set<String> {
+            val keys = HashSet<String>()
+            for (jar in modJars) {
+                try {
+                    ZipFile(jar).use { zip ->
+                        val entries = zip.entries()
+                        while (entries.hasMoreElements()) {
+                            val name = entries.nextElement().name
+                            if ((name.startsWith("assets/") || name.startsWith("data/")) && !name.endsWith("/")) {
+                                keys += name.removePrefix("assets/").removePrefix("data/")
+                            }
                         }
                     }
+                } catch (t: Throwable) {
+                    OmlLog.error("ModAssets", "cannot index ${jar.name}", t)
                 }
-            } catch (t: Throwable) {
-                OmlLog.error("ModAssets", "cannot index ${jar.name}", t)
             }
+            return keys
         }
-        return keys
     }
-
 }

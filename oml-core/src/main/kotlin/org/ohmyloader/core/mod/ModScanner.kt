@@ -3,6 +3,8 @@ package org.ohmyloader.core.mod
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.tree.ClassNode
 import org.ohmyloader.api.OmlLog
+import org.ohmyloader.core.cache.StartupCache
+import org.ohmyloader.core.diagnostics.Diagnostics
 import java.io.File
 import java.util.jar.JarFile
 
@@ -21,10 +23,44 @@ object ModScanner {
      * libraries — defines those copies, and every `net.minecraft.*` reference inside them resolves
      * there. Refusing at scan time is the only point that still has the jar name to report with.
      */
-    fun scan(modsDir: File): List<ModContainer> =
-        ModsDirectory.files(modsDir, ".jar").flatMap { scanJar(it) }
+    fun scan(modsDir: File): List<ModContainer> {
+        val started = System.nanoTime()
+        val found = ArrayList<ModContainer>()
+        for (jarFile in ModsDirectory.files(modsDir, ".jar")) {
+            // Happy path: the ledger's stat stamp matches and the @Mod records come straight from
+            // the cache — no hashing, no jar opened. A miss hashes the jar once and re-scans.
+            val sha = StartupCache.statSha(jarFile) ?: StartupCache.hash(jarFile)
+            val cached = StartupCache.modsFor(sha)
+            if (cached != null) {
+                for (record in cached) {
+                    found += ModContainer(
+                        record.id, record.name, record.version, record.entryClass, jarFile,
+                        record.dependencies.map(DependencySpec::parse),
+                    )
+                }
+                continue
+            }
+            val scanned = scanJar(jarFile)
+            // A reserved-namespace jar is an error path (logged on every scan, never cached) —
+            // a broken setup must keep shouting until it is fixed.
+            if (!scanned.reservedHit) {
+                StartupCache.rememberMods(
+                    sha,
+                    scanned.mods.map {
+                        StartupCache.CachedMod(it.id, it.name, it.version, it.entryClass, it.dependencies.map(DependencySpec::display))
+                    },
+                )
+            }
+            found += scanned.mods
+        }
+        Diagnostics.recordPhase("mod scan", System.nanoTime() - started)
+        StartupCache.save()
+        return found
+    }
 
-    private fun scanJar(jarFile: File): List<ModContainer> {
+    private class ScanResult(val mods: List<ModContainer>, val reservedHit: Boolean)
+
+    private fun scanJar(jarFile: File): ScanResult {
         val found = mutableListOf<ModContainer>()
         val reserved = mutableListOf<String>()
         JarFile(jarFile).use { zip ->
@@ -89,9 +125,9 @@ object ModScanner {
                     "namespace and keep oml-api on the compile classpath instead of bundling it (the official " +
                     "Gradle plugin provides it).",
             )
-            return emptyList()
+            return ScanResult(emptyList(), reservedHit = true)
         }
-        return found
+        return ScanResult(found, reservedHit = false)
     }
 
     /** Entries that would define a class in OML's own namespace: both the base copy and a versioned copy. */

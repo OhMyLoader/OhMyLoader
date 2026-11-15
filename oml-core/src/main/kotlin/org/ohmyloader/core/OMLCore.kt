@@ -16,9 +16,11 @@ import org.ohmyloader.content.AbstractContentRegistry
 import org.ohmyloader.content.TomlContentLoader
 import org.ohmyloader.core.OMLCore.contentPackFiles
 import org.ohmyloader.core.OMLCore.installLogFile
+import org.ohmyloader.core.cache.StartupCache
 import org.ohmyloader.core.classloader.OMLClassLoader
 import org.ohmyloader.core.client.KeyBindingDeclarations
 import org.ohmyloader.core.command.CommandDeclarations
+import org.ohmyloader.core.diagnostics.Diagnostics
 import org.ohmyloader.core.hook.HookScanner
 import org.ohmyloader.core.hook.HookRegistry
 import org.ohmyloader.core.mod.ModContainer
@@ -98,6 +100,14 @@ object OMLCore {
     @JvmStatic
     fun configDirectory(): File = File(gameDir, "config")
 
+    /**
+     * The loader's own cross-run cache directory (`cache/loader/` under the game directory): the
+     * startup scan ledger and the asset-index cache. Safe to delete at any time — everything in it
+     * is regenerated from the jars and packs on the next run.
+     */
+    @JvmStatic
+    fun cacheDirectory(): File = File(gameDir, "cache/loader")
+
     @JvmStatic
     fun start(args: Array<String>) {
         installLogFile()
@@ -108,6 +118,10 @@ object OMLCore {
 
         // The game directory is decided here: every default path based on it is read from this point on
         gameDir = resolveGameDir(args)
+
+        // The startup scan cache opens before the first mod-jar walk: the scan, the rule-set load
+        // and the hook compilation all answer from it on the happy path.
+        StartupCache.init(cacheDirectory())
 
         // Parent loader = the "loader classpath" set up by the launcher (core / api / adapter / dependencies all live on this layer)
         val parent = Thread.currentThread().contextClassLoader
@@ -266,13 +280,17 @@ object OMLCore {
         }
 
         HookRegistry.installClassLoader(omlLoader)
+        var phaseStarted = System.nanoTime()
         val modRules = ModRuleSets.load(mods, omlLoader)
+        Diagnostics.recordPhase("rule sets", System.nanoTime() - phaseStarted)
+        phaseStarted = System.nanoTime()
         val mixinTransformer = HookScanner.createTransformer(
             mods, modRules.rules, modRules.merges, modRules.problems,
             // `@Lambda` may reference a method in another class; resolving it now registers that class
             // as a rule target before any class loads, so load order cannot lose the injection.
             targetBytes = { internal -> omlLoader.getResourceAsStream("$internal.class")?.use { it.readAllBytes() } },
         )
+        Diagnostics.recordPhase("hook scan", System.nanoTime() - phaseStarted)
         if (mixinTransformer != null) {
             omlLoader.registerTransformer(mixinTransformer)
             registered += mixinTransformer
@@ -307,7 +325,9 @@ object OMLCore {
             }
         }
 
+        val started = System.nanoTime()
         loadContentPacks(modsDir, contentRegistry)
+        Diagnostics.recordPhase("content packs", System.nanoTime() - started)
     }
 
     /**
@@ -578,11 +598,23 @@ object OMLCore {
      * The asset index over the loader's own mod set — the form the version adapters consume. Built
      * lazily by the caller (first asset query), after the mod scan has populated this class. The
      * class itself lives in `oml-content`; this bridge is what keeps it decoupled from [OMLCore]'s
-     * mod state.
+     * mod state. The build lands inside the game's resource-reload window, so it is cached across
+     * runs under the exact stat signature of the jar+pack file set — a match answers from the
+     * startup cache without opening a single archive.
      */
     @JvmStatic
-    fun assetIndex(): org.ohmyloader.content.ModAssetIndex =
-        org.ohmyloader.content.ModAssetIndex(loadedModFiles() + contentPackFiles(), assetDomainIds())
+    fun assetIndex(): org.ohmyloader.content.ModAssetIndex {
+        val files = loadedModFiles() + contentPackFiles()
+        val signature = StartupCache.assetSignature(files)
+        val started = System.nanoTime()
+        val index = StartupCache.assetIndexCached(signature)?.let { cached ->
+            org.ohmyloader.content.ModAssetIndex(cached.toSet(), assetDomainIds())
+        } ?: org.ohmyloader.content.ModAssetIndex(files, assetDomainIds()).also {
+            StartupCache.rememberAssetIndex(signature, it.keys().toList())
+        }
+        Diagnostics.recordPhase("asset index", System.nanoTime() - started)
+        return index
+    }
 
     /**
      * Resource domains the asset injector synthesizes content assets for: loaded mod ids plus the

@@ -9,6 +9,7 @@ import org.ohmyloader.api.inject.MergeSource
 import org.ohmyloader.api.inject.Payload
 import org.ohmyloader.api.inject.RuleSet
 import org.ohmyloader.api.inject.RuleSetProvider
+import org.ohmyloader.core.cache.StartupCache
 import org.ohmyloader.core.hook.ClassMerger
 import org.ohmyloader.core.mod.ModContainer
 import java.io.File
@@ -102,7 +103,14 @@ internal object ModRuleSets {
 
     // ------------------------------------------------------------- Discovery
 
-    /** Reads bytecode only: finds classes annotated with `@RuleSource` and collects the class names in the same jars as "own". */
+    /**
+     * Reads bytecode only: finds classes annotated with `@RuleSource` and collects the class names in the same jars as "own".
+     *
+     * Happy path: the startup cache holds this jar's `@RuleSource` class list (keyed by the jar's
+     * digest, stat-stamped in the ledger), so only the rule classes themselves are parsed — the
+     * per-class decompress-and-parse of every other class in the jar is skipped, and the entry
+     * walk touches the central directory only.
+     */
     private fun scan(
         mod: ModContainer,
         found: MutableList<Found>,
@@ -110,6 +118,8 @@ internal object ModRuleSets {
         seenRuleClasses: HashSet<String>,
     ) {
         try {
+            val sha = StartupCache.statSha(mod.file) ?: StartupCache.hash(mod.file)
+            val cached = StartupCache.rulesFor(sha)
             JarFile(mod.file).use { zip ->
                 val entries = mutableListOf<String>()
                 val all = zip.entries()
@@ -122,27 +132,58 @@ internal object ModRuleSets {
                     if (name.endsWith(".class")) entries += name.removeSuffix(".class")
                 }
                 val own = entries.toSet()
-                for (entry in entries) {
-                    zip.getInputStream(zip.getEntry("$entry.class")).use { stream ->
-                        val node = ClassNode(Opcodes.ASM9)
-                        ClassReader(stream).accept(node, ClassReader.SKIP_DEBUG or ClassReader.SKIP_FRAMES)
-                        if (!hasRuleSource(node)) return@use
+
+                if (cached != null) {
+                    for (rule in cached) {
                         // One class = one merge: the same rule class inside a multi-mod jar is
-                        // registered for the first @Mod only, otherwise the merge runs twice and the
-                        // second run collides with its own first (@Overwrite ledger / synthetic members)
-                        if (!seenRuleClasses.add(node.name)) {
+                        // registered for the first @Mod only (same ledger as the uncached path).
+                        if (!seenRuleClasses.add(rule.internalName)) {
                             OmlLog.warn(
                                 "OMLCore",
-                                "rule class ${node.name} already registered by an earlier @Mod in this jar; skipping duplicate",
+                                "rule class ${rule.internalName} already registered by an earlier @Mod in this jar; skipping duplicate",
                             )
-                            return@use
+                            continue
                         }
-                        found += Found(mod.id, node.name, ruleSourceId(node), node, mod.file, own)
+                        val node = parseClass(zip, rule.internalName)
+                        if (node == null) {
+                            problems += "[${mod.id}] the cached rule class ${rule.internalName} is missing from the jar"
+                            continue
+                        }
+                        found += Found(mod.id, node.name, rule.id, node, mod.file, own)
                     }
+                    return
                 }
+
+                val jarRules = mutableListOf<StartupCache.CachedRule>()
+                for (entry in entries) {
+                    val node = parseClass(zip, entry) ?: continue
+                    if (!hasRuleSource(node)) continue
+                    jarRules += StartupCache.CachedRule(node.name, ruleSourceId(node))
+                    // One class = one merge: the same rule class inside a multi-mod jar is
+                    // registered for the first @Mod only, otherwise the merge runs twice and the
+                    // second run collides with its own first (@Overwrite ledger / synthetic members)
+                    if (!seenRuleClasses.add(node.name)) {
+                        OmlLog.warn(
+                            "OMLCore",
+                            "rule class ${node.name} already registered by an earlier @Mod in this jar; skipping duplicate",
+                        )
+                        continue
+                    }
+                    found += Found(mod.id, node.name, ruleSourceId(node), node, mod.file, own)
+                }
+                StartupCache.rememberRules(sha, jarRules)
             }
         } catch (t: Throwable) {
             problems += "[${mod.id}] failed to scan rule set: ${t.javaClass.simpleName}: ${t.message}"
+        }
+    }
+
+    private fun parseClass(zip: JarFile, internalName: String): ClassNode? {
+        val entry = zip.getEntry("$internalName.class") ?: return null
+        zip.getInputStream(entry).use { stream ->
+            val node = ClassNode(Opcodes.ASM9)
+            ClassReader(stream).accept(node, ClassReader.SKIP_DEBUG or ClassReader.SKIP_FRAMES)
+            return node
         }
     }
 
