@@ -13,25 +13,36 @@ import java.io.File
 /**
  * The player's creative-tab preferences: `config/creative-tabs.toml`, read at creative-screen
  * init and cached until the next screen (re)init. Purely a client-side display preference -
- * the manager's resolved order is the base, the player overrides hide/order on top, and nothing
- * here reaches the server.
+ * the manager's resolved order is the base, the player overrides arrangement/hiding on top,
+ * and nothing here reaches the server.
  *
- * The file carries two root-table string arrays:
+ * The file carries one root-table string array, in display order, with `-` marking a hidden tab:
  *
  * ```toml
- * hidden = ["minecraft:food"]
- * order = ["ironchest:general", "minecraft:building_blocks"]
+ * tabs = ["minecraft:building_blocks", "-minecraft:food", "ironchest:general"]
  * ```
  *
- * `hidden` removes tabs from the screen entirely; `order` places the listed tabs first, in this
- * exact relative order, with unlisted tabs keeping their default order after them. Right-aligned
- * special tabs (hotbar / search / operator / inventory) are functional entries of the screen and
- * are not configurable. A missing file means defaults; a broken file logs and means defaults -
- * a player typo must never take the creative screen down.
+ * One collection carries both facts the manage screen edits: the entry order is the display
+ * arrangement, and the `-` prefix is the Hide toggle. Hidden entries keep their slot so that
+ * re-showing a tab puts it back where it was. Tabs not listed keep their default position
+ * after the listed ones. Right-aligned special tabs (hotbar / search / operator / inventory)
+ * are functional entries of the screen and are not configurable. A missing file means defaults;
+ * a broken file logs and means defaults - a player typo must never take the creative screen
+ * down. The pre-manager `hidden` / `order` pair is still read (hidden tabs land at the end of
+ * the arrangement), so an old file survives the merge.
  */
 object CreativeTabsPlayerConfig {
 
-    class Config(val hidden: Set<Identifier>, val order: List<Identifier>, val orderSet: Set<Identifier>)
+    /** One arrangement entry: where the tab sits, and whether it is hidden. */
+    class Entry(val id: Identifier, val hidden: Boolean)
+
+    class Config(val entries: List<Entry>) {
+        /** The ids the player hid. */
+        val hidden: Set<Identifier> = entries.filter { it.hidden }.map { it.id }.toSet()
+
+        /** Every id the file places - hidden ones included, they keep their slot for re-showing. */
+        val placedIds: Set<Identifier> = entries.mapTo(HashSet()) { it.id }
+    }
 
     @Volatile
     internal var cached: Config? = null
@@ -61,9 +72,20 @@ object CreativeTabsPlayerConfig {
             return null
         }
         val root = doc[""] ?: return null
-        val hidden = stringArray(root["hidden"]).mapNotNull(::parseId).toSet()
-        val order = stringArray(root["order"]).mapNotNull(::parseId)
-        return Config(hidden, order, order.toSet())
+        if (root.containsKey("tabs")) {
+            val entries = stringArray(root["tabs"]).mapNotNull { raw ->
+                val hidden = raw.startsWith(HIDDEN_PREFIX)
+                parseId(raw.removePrefix(HIDDEN_PREFIX))?.let { Entry(it, hidden) }
+            }
+            return Config(entries)
+        }
+        // The legacy hidden/order pair: hidden entries carry no position, so they land at the
+        // end of the arrangement (and order entries flagged hidden lose their position).
+        val legacyHidden = stringArray(root["hidden"]).mapNotNull(::parseId).toSet()
+        val legacyOrder = stringArray(root["order"]).mapNotNull(::parseId)
+        val entries = legacyOrder.filter { it !in legacyHidden }.map { Entry(it, false) } +
+            legacyHidden.map { Entry(it, true) }
+        return Config(entries)
     }
 
     private fun stringArray(value: Any?): List<String> =
@@ -76,24 +98,21 @@ object CreativeTabsPlayerConfig {
     fun hiddenIds(): Set<Identifier> = cached?.hidden ?: emptySet()
 
     /**
-     * Persists the player's choices: `hidden` as its array, and the full flowing-tab arrangement
-     * (every tab in display order, hidden ones excluded) as `order` — the manage screen writes
-     * the whole arrangement so up/down edits are preserved exactly. Applies on the next creative
-     * screen init, which re-reads this file.
+     * Persists the player's arrangement: every row of the manage screen's draft in display
+     * order, `-`-marked when hidden - hidden ones keep their slot, so re-showing puts them
+     * back. Applies on the next creative screen init, which re-reads this file.
      */
-    fun save(hidden: List<Identifier>, order: List<Identifier>) {
+    fun save(entries: List<Entry>) {
         val file = File(OMLCore.configDirectory(), "creative-tabs.toml")
         val body = buildString {
             appendLine("# Creative screen tab preferences (OML).")
             appendLine("#")
-            appendLine("# hidden: tabs removed from the creative screen entirely.")
-            appendLine("# order: the full display order of the tabs; changes apply when the screen")
-            appendLine("#        reopens. Editable by hand or through the in-game manage screen.")
-            append("hidden = [")
-            append(hidden.joinToString(", ") { "\"$it\"" })
-            appendLine("]")
-            append("order = [")
-            append(order.joinToString(", ") { "\"$it\"" })
+            appendLine("# One tabs array, in display order; \"-namespace:path\" hides that tab.")
+            appendLine("# Tabs not listed keep their default position after the listed ones.")
+            appendLine("# Editable by hand or through the in-game manage screen; changes apply")
+            appendLine("# when the screen reopens.")
+            append("tabs = [")
+            append(entries.joinToString(", ") { "\"${if (it.hidden) HIDDEN_PREFIX else ""}${it.id}\"" })
             appendLine("]")
         }
         runCatching {
@@ -116,15 +135,14 @@ object CreativeTabsPlayerConfig {
         val body = buildString {
             appendLine("# Creative screen tab preferences (OML).")
             appendLine("#")
-            appendLine("# hidden: tabs removed from the creative screen entirely.")
-            appendLine("# order: the listed tabs display first, in this exact relative order; tabs not")
-            appendLine("#        listed keep their default position after them.")
-            appendLine("# Every id is \"namespace:path\". The right-aligned special tabs (hotbar, search,")
-            appendLine("# operator, inventory) are not configurable. Changes apply when the screen reopens.")
+            appendLine("# One tabs array, in display order; \"-namespace:path\" hides that tab.")
+            appendLine("# Tabs not listed keep their default position after the listed ones.")
+            appendLine("# Every id is \"namespace:path\". The right-aligned special tabs (hotbar,")
+            appendLine("# search, operator, inventory) are not configurable. Changes apply when")
+            appendLine("# the screen reopens. Editable by hand or through the in-game manage screen.")
             appendLine("# Tabs currently registered:")
             ids.forEach { appendLine("#   $it") }
-            appendLine("hidden = []")
-            appendLine("order = []")
+            appendLine("tabs = []")
         }
         runCatching {
             file.parentFile?.mkdirs()
@@ -133,4 +151,6 @@ object CreativeTabsPlayerConfig {
             OmlLog.warn("OMLCreativeTabs", "could not write the creative-tabs.toml template (${it.message})")
         }
     }
+
+    private const val HIDDEN_PREFIX = "-"
 }

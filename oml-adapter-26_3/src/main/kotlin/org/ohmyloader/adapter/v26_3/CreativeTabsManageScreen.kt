@@ -88,8 +88,7 @@ class CreativeTabsManageScreen(private val parent: CreativeModeInventoryScreen) 
     }
 
     private fun saveAndClose() {
-        val order = rows.filter { !it.hidden }.map { it.id }
-        CreativeTabsPlayerConfig.save(rows.filter { it.hidden }.map { it.id }, order)
+        CreativeTabsPlayerConfig.save(rows.map { CreativeTabsPlayerConfig.Entry(it.id, it.hidden) })
         onClose()
     }
 
@@ -208,18 +207,21 @@ class CreativeTabsManageScreen(private val parent: CreativeModeInventoryScreen) 
 
     /**
      * The draft starts from what the player currently sees: the manager's resolved order (the
-     * registry order when nothing declared through it) with the player's saved reorder applied,
-     * and the saved hidden flags as the initial toggle states.
+     * registry order when nothing declared through it) with the player's saved arrangement
+     * applied. The config's entries are read back in file order with their hidden flags, so a
+     * hidden tab sits exactly where its `-` entry places it instead of sinking to the end;
+     * tabs the file doesn't place follow in default order, unhidden.
      */
     private fun buildDraft(): MutableList<Row> {
-        val config = CreativeTabsPlayerConfig.cached
         val base = baseArrangement()
         val byId = base.associateBy(::idOf)
-        val orderSet = config?.orderSet ?: emptySet()
-        val arranged = (config?.order?.mapNotNull(byId::get).orEmpty()) +
-            base.filter { idOf(it) !in orderSet }
-        return arranged.map { Row(it, idOf(it), idOf(it) in (config?.hidden ?: emptySet())) }
+        val config = CreativeTabsPlayerConfig.cached
+        val rows = config?.entries
+            ?.mapNotNull { entry -> byId[entry.id]?.let { Row(it, entry.id, entry.hidden) } }
+            .orEmpty()
             .toMutableList()
+        rows.addAll(base.filter { idOf(it) !in (config?.placedIds ?: emptySet()) }.map { Row(it, idOf(it), false) })
+        return rows
     }
 
     /** The flowing tabs in the manager's resolved (or registry) order — the default arrangement. */

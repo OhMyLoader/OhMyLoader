@@ -72,29 +72,24 @@ object CreativeScreenPagination {
 
     /**
      * The flowing-tab display order: the tab manager's constraint-resolved key order (mapped
-     * back to tabs post-freeze) with the player's hide/reorder applied; the registry order when
-     * no mod declared through the manager.
+     * back to tabs post-freeze) with the player's arrangement applied; the registry order when
+     * no mod declared through the manager. The config's entries are the arrangement in display
+     * order with per-entry hidden flags - a hidden entry is dropped from its slot (nothing can
+     * resurrect it: the flag travels with the entry), unplaced tabs keep their default order
+     * after the placed ones.
      */
     private fun flowingOrder(): List<CreativeModeTab> {
         val registryOrder = CreativeModeTabs.tabs().filter { !it.isAlignedRight() }
         val idOf = { tab: CreativeModeTab ->
             BuiltInRegistries.CREATIVE_MODE_TAB.getResourceKey(tab).orElseThrow().identifier()
         }
-        // The player's hidden filter runs FIRST: a tab in hidden is removed from the set before
-        // any ordering is applied, so order can never resurrect it.
-        val config = CreativeTabsPlayerConfig.cached
-        val hiddenSet = config?.hidden ?: emptySet()
-        val base = (org.ohmyloader.api26_3.OMLCreativeTabs.resolvedKeyOrder
+        val base = org.ohmyloader.api26_3.OMLCreativeTabs.resolvedKeyOrder
             ?.mapNotNull { key -> registryOrder.firstOrNull { idOf(it) == key } }
-            ?: registryOrder)
-            .filter { idOf(it) !in hiddenSet }
-        if (config == null || config.order.isEmpty()) {
-            return base
-        }
+            ?: registryOrder
+        val config = CreativeTabsPlayerConfig.cached ?: return base
         val byId = base.associateBy(idOf)
-        val listed = config.order.mapNotNull(byId::get)
-        val unlisted = base.filter { idOf(it) !in config.orderSet }
-        return listed + unlisted
+        val placed = config.entries.mapNotNull { entry -> byId[entry.id]?.takeUnless { entry.hidden } }
+        return placed + base.filter { idOf(it) !in config.placedIds }
     }
 
     private fun selectedTab(): CreativeModeTab = selectedTabField.get(null) as CreativeModeTab
