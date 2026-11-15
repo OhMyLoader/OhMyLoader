@@ -8,6 +8,7 @@ import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -51,6 +52,7 @@ public final class OMLBootstrap {
         }
 
         URL[] layer = discoverLayerJars(baseDir);
+        layer = withJnaLibraries(layer);
         URL self = OMLBootstrap.class.getProtectionDomain().getCodeSource().getLocation();
         LayerSplit split = split(layer, self);
         System.out.println(
@@ -140,6 +142,35 @@ public final class OMLBootstrap {
     }
 
     /**
+     * JNA's native dispatcher is loaded by {@code com.sun.jna.Native} through {@code System.load},
+     * which pins the calling loader. Authlib lives in the disposable session, so loading JNA there
+     * would keep the old session alive after the game stops. Put the JNA jars in the persistent
+     * supervisor layer instead; OMLClassLoader's parent-first prefixes already cover JNA.
+     */
+    static URL[] withJnaLibraries(URL[] layer) {
+        String libraryDir = System.getProperty("oml.library.dir");
+        if (libraryDir == null || libraryDir.isBlank()) return layer;
+        File jnaDir = new File(libraryDir, "net/java/dev/jna");
+        if (!jnaDir.isDirectory()) return layer;
+        List<URL> urls = new ArrayList<>(Arrays.asList(layer));
+        try (var paths = Files.walk(jnaDir.toPath())) {
+            paths.filter(Files::isRegularFile)
+                .filter(p -> p.getFileName().toString().endsWith(".jar"))
+                .forEach(p -> {
+                    try {
+                        URL url = p.toUri().toURL();
+                        if (!urls.contains(url)) urls.add(url);
+                    } catch (Exception ignored) {
+                        // A malformed library path is the game bootstrap's to report.
+                    }
+                });
+        } catch (Exception ignored) {
+            // No JNA on this install; leave the layer untouched.
+        }
+        return urls.toArray(new URL[0]);
+    }
+
+    /**
      * Loads the game's native libraries from this persistent loader before any session starts.
      *
      * <p>{@code System.load} associates a library with the calling classloader for the life of the
@@ -154,13 +185,66 @@ public final class OMLBootstrap {
         File dir = resolveNativesDir(baseDir);
         if (dir == null) return;
         setIfAbsent("org.lwjgl.librarypath", dir.getAbsolutePath());
-        File[] files = dir.listFiles((d, n) -> {
-            String lower = n.toLowerCase(Locale.ROOT);
-            boolean nativeFile = lower.endsWith(".dll") || lower.endsWith(".so") || lower.endsWith(".dylib");
-            // oml-native is opened through FFM's SymbolLookup, which carries no classloader pin.
-            return nativeFile && !lower.startsWith("oml-native");
-        });
-        if (files == null) return;
+        // LWJGL's system-library loader extracts to a per-user temp directory unless this path
+        // is set. Loading lwjgl.dll from temp binds the JNI native-library table to the calling
+        // session loader and pins it across a reboot; point it at the preloaded unified natives
+        // directory instead, so the session's System.load sees "already loaded" and adds no pin.
+        setIfAbsent("org.lwjgl.system.SharedLibraryExtractPath", dir.getAbsolutePath());
+        List<File> files = new ArrayList<>();
+        try (var paths = Files.walk(dir.toPath())) {
+            paths.filter(Files::isRegularFile)
+                .map(Path::toFile)
+                .filter(OMLBootstrap::isNativeFile)
+                .forEach(files::add);
+        } catch (Exception e) {
+            System.err.println("[OMLBootstrap] native scan failed: " + e.getMessage());
+            return;
+        }
+        // LWJGL's `Library.loadSystem` still extracts lwjgl.dll into its per-user temp tree even
+        // with SharedLibraryExtractPath set. Mirror the unified 3.4.3-snapshot tree there and
+        // preload it too; the session's System.load then sees "already loaded" instead of binding
+        // the JNI native-library table to the disposable loader.
+        File tmp = new File(
+            System.getProperty("java.io.tmpdir", "."),
+            "lwjgl_" + System.getProperty("user.name", "user"));
+        try (var paths = Files.walk(dir.toPath())) {
+            paths.filter(Files::isRegularFile)
+                .filter(p -> p.toString().contains(File.separator + "3.4.3-snapshot" + File.separator))
+                .forEach(p -> {
+                    try {
+                        Path target = tmp.toPath().resolve(dir.toPath().relativize(p));
+                        Files.createDirectories(target.getParent());
+                        Files.copy(p, target, StandardCopyOption.REPLACE_EXISTING);
+                    } catch (Exception ignored) {
+                        // The game will extract it itself; preload can still cover other files.
+                    }
+                });
+        } catch (Exception ignored) {
+            // Temp mirroring is an optimization; the unified preload above still applies.
+        }
+        try (var paths = Files.walk(tmp.toPath())) {
+            paths.filter(Files::isRegularFile)
+                .map(Path::toFile)
+                .filter(OMLBootstrap::isNativeFile)
+                .forEach(files::add);
+        } catch (Exception ignored) {
+            // No temp tree yet on a fresh machine; the game will create it on first launch.
+        }
+        // The game's working directory may hold a third LWJGL extraction (`.lwjgl`). It is a
+        // session-loaded path too; preloading it from the app loader removes the last System.load
+        // association the session could create.
+        File dotLwjgl = new File(System.getProperty("user.dir", "."), ".lwjgl");
+        if (dotLwjgl.isDirectory()) {
+            try (var paths = Files.walk(dotLwjgl.toPath())) {
+                paths.filter(Files::isRegularFile)
+                    .map(Path::toFile)
+                    .filter(OMLBootstrap::isNativeFile)
+                    .forEach(files::add);
+            } catch (Exception ignored) {
+                // The game will report a real load failure through its own bootstrap.
+            }
+        }
+        files.sort(java.util.Comparator.comparing(File::getAbsolutePath));
         int loaded = 0;
         for (File file : files) {
             try {
@@ -171,7 +255,14 @@ public final class OMLBootstrap {
             }
         }
         System.out.println(
-            "[OMLBootstrap] preloaded " + loaded + "/" + files.length + " native library file(s) from " + dir);
+            "[OMLBootstrap] preloaded " + loaded + "/" + files.size() + " native library file(s) from " + dir);
+    }
+
+    private static boolean isNativeFile(File file) {
+        String lower = file.getName().toLowerCase(Locale.ROOT);
+        boolean nativeFile = lower.endsWith(".dll") || lower.endsWith(".so") || lower.endsWith(".dylib");
+        // oml-native is opened through FFM's SymbolLookup, which carries no classloader pin.
+        return nativeFile && !lower.startsWith("oml-native");
     }
 
     private static File resolveNativesDir(File baseDir) {

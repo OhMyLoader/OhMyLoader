@@ -167,6 +167,7 @@ object OMLCore {
         declareContent(adapter, modsDir)
         launch(adapter, args)
         shutdownShaderCompileExecutor()
+        SessionTeardown.run(primaryLoader)
     }
 
     /**

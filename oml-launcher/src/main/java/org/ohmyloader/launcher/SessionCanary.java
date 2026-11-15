@@ -35,6 +35,7 @@ final class SessionCanary {
      * frame defined by it).
      */
     boolean awaitCollected(long timeoutMillis) {
+        releaseThreads();
         long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
         do {
             System.gc();
@@ -56,6 +57,88 @@ final class SessionCanary {
             System.err.println("[OMLSupervisor]   no thread names the session; a non-thread static or JNI callback holds it");
         } else {
             for (String line : leaks) System.err.println("[OMLSupervisor]   " + line);
+        }
+        return false;
+    }
+
+    /**
+     * Last-resort thread cleanup before the collection probe: threads that inherited the old
+     * session/main loader as their context loader are reset to the system loader and interrupted,
+     * and threads whose stack still names either loader are interrupted. Game executors are shut
+     * down by SessionTeardown first; this catches the parent-side daemons (JNA Cleaner, service
+     * discovery, test harness threads) that the game never owned.
+     */
+    void releaseThreads() {
+        ClassLoader target = session.get();
+        ClassLoader main = SessionControl.mainLoader();
+        if (target == null && main == null) return;
+        ClassLoader system = ClassLoader.getSystemClassLoader();
+        Thread current = Thread.currentThread();
+        for (Map.Entry<Thread, StackTraceElement[]> entry : Thread.getAllStackTraces().entrySet()) {
+            Thread thread = entry.getKey();
+            clearThreadLocals(thread, target, main);
+            if (thread == current) continue;
+            ClassLoader context = thread.getContextClassLoader();
+            boolean namesLoader = context == target || (main != null && context == main);
+            if (namesLoader) {
+                try {
+                    thread.setContextClassLoader(system);
+                } catch (SecurityException ignored) {
+                    // A protected system thread can still be interrupted below.
+                }
+            }
+            if (namesLoader || names(entry.getValue(), target, main)) {
+                thread.interrupt();
+            }
+        }
+    }
+
+    /**
+     * The render thread survives the session, and its ThreadLocalMap can still hold Session 1
+     * values (RenderSystem/GlStateManager caches, profiler state). Neither TCCL nor the stack
+     * diagnostics see those values, yet they keep the old loader reachable. Null the values whose
+     * runtime class came from the session/main loader; the map's weak keys and probing layout stay
+     * intact.
+     */
+    private static void clearThreadLocals(Thread thread, ClassLoader target, ClassLoader main) {
+        if (target == null && main == null) return;
+        for (String fieldName : new String[] {"threadLocals", "inheritableThreadLocals"}) {
+            try {
+                java.lang.reflect.Field mapField = Thread.class.getDeclaredField(fieldName);
+                mapField.setAccessible(true);
+                Object map = mapField.get(thread);
+                if (map == null) continue;
+                java.lang.reflect.Field tableField = map.getClass().getDeclaredField("table");
+                tableField.setAccessible(true);
+                Object[] table = (Object[]) tableField.get(map);
+                if (table == null) continue;
+                java.lang.reflect.Field valueField = null;
+                for (Object entry : table) {
+                    if (entry == null) continue;
+                    if (valueField == null) {
+                        valueField = entry.getClass().getDeclaredField("value");
+                        valueField.setAccessible(true);
+                    }
+                    if (fromLoader(valueField.get(entry), target, main)) {
+                        valueField.set(entry, null);
+                    }
+                }
+            } catch (Throwable ignored) {
+                // Tests and restricted JVMs may not open java.lang; the runtime launch does.
+            }
+        }
+    }
+
+    private static boolean fromLoader(Object value, ClassLoader target, ClassLoader main) {
+        if (value == null) return false;
+        Class<?> type = value.getClass();
+        ClassLoader loader = type.isArray() ? type.getComponentType().getClassLoader() : type.getClassLoader();
+        return loader == target || (main != null && loader == main);
+    }
+
+    private static boolean names(StackTraceElement[] stack, ClassLoader target, ClassLoader main) {
+        for (StackTraceElement element : stack) {
+            if (definedBy(element, target) || definedBy(element, main)) return true;
         }
         return false;
     }
