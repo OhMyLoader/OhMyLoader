@@ -166,6 +166,21 @@ object OMLCore {
 
         declareContent(adapter, modsDir)
         launch(adapter, args)
+        shutdownShaderCompileExecutor()
+    }
+
+    /**
+     * The adapter-common shader executor is session-owned; its four daemon threads must stop before
+     * the supervisor probes this session, or they pin the old loader through their context loader.
+     */
+    private fun shutdownShaderCompileExecutor() {
+        runCatching {
+            Class.forName(
+                "org.ohmyloader.adapter.common.ShaderCompileExecutor",
+                false,
+                primaryLoader,
+            ).getMethod("shutdown").invoke(null)
+        }
     }
 
     /**

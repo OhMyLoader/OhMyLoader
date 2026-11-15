@@ -43,6 +43,10 @@ class OMLAdapterV26_3 : IAdapter {
 
     override fun createTransformers(): List<IClassTransformer> = listOf(
         MinecraftHookTransformer(idPrefix = "v26_3", shapes = v26_3HookShapes),
+        // RenderPearl's async shader compile must not run on the game's shared ForkJoin worker:
+        // its FFM/stack-guard path crashes Zulu 27's second in-process session. The rule is
+        // frontend-specific, so it lives here rather than in the shared transformer.
+        ShaderCompileTransformer(),
         // The creative-screen pagination is 26.3 client behavior: the screen's own shape changes
         // between game versions, so the rules live with this adapter instead of the shared ones.
         CreativeScreenPaginationTransformer(),
