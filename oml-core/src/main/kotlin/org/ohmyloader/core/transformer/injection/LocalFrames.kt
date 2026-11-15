@@ -5,6 +5,7 @@ import org.objectweb.asm.Type
 import org.objectweb.asm.tree.*
 import org.objectweb.asm.tree.analysis.*
 import org.ohmyloader.api.inject.DslValue
+import java.util.IdentityHashMap
 
 /**
  * The **local-variable snapshot** at an injection point.
@@ -188,22 +189,29 @@ internal class AnchorLocals(private val frame: LocalFrame?, private val unavaila
  *
  * Multiple injection points per method are the norm ([InjectionSpec] is "each rule × each anchor"),
  * and `Analyzer.analyze` is whole-method-level cost, so the cache hangs on the method rather than
- * on each anchor. The cache must be re-run whenever the instruction list grew: injected blocks
- * **shift every later instruction index**, and the frame table is addressed by index
- * (`instructions.indexOf(anchor)`), so a table computed against the pre-insertion list answers
- * at the wrong instruction for every anchor after the insertion.
+ * on each anchor. The frames are keyed by **instruction node** (an identity map folded from the
+ * analyzer's index-addressed result), so queries are one map lookup with no position arithmetic;
+ * a mutation regenerates the generation via [invalidate], and the instruction-list size check is
+ * the lazy net for mutations that bypass it.
  */
 internal class MethodFrames(private val owner: String, private val method: MethodNode) {
 
     private var analyzedAtSize = -1
-    private var table: Array<Frame<BasicValue>?>? = null
+
+    /**
+     * The frames of the current analysis generation, **keyed by instruction node** — the analyzer's
+     * index-addressed array is folded into this map right after analysis, so every query is one
+     * identity-map lookup: no `instructions.indexOf` (O(n) per query), no position arithmetic, and
+     * the snapshot memos below ride on the same node identity. Cleared on [invalidate] and on every
+     * re-analysis — a mutation regenerates the whole generation.
+     */
+    private var framesByNode: IdentityHashMap<AbstractInsnNode, Frame<BasicValue>?>? = null
     private var failure: String? = null
 
     // Snapshots memoized per target instruction for the current analysis generation. One anchor's
     // frame is asked for several times within one generation (payload locals capture, FrameRepair,
-    // and re-resolution passes all land on the same node), and every un-memoized query paid an
-    // O(n) `instructions.indexOf` plus a fresh snapshot allocation. Cleared on [invalidate] and on
-    // every re-analysis — across generations the index-addressed table may answer differently.
+    // and re-resolution passes all land on the same node), and each memo saves a fresh snapshot
+    // allocation. Cleared on [invalidate] and on every re-analysis.
     private val localsByTarget = HashMap<AbstractInsnNode, AnchorLocals>()
     private val encodedLocalsByTarget = HashMap<AbstractInsnNode, Array<Any>?>()
 
@@ -233,14 +241,13 @@ internal class MethodFrames(private val owner: String, private val method: Metho
         // A frame describes the state "before executing that instruction"; when inserted before the anchor, it is
         // exactly the anchor's own frame.
         val target = firstExecutableFrom(node) ?: anchor
-        // The size check guards the memo the same way it guards the table: a mutation that bypassed
-        // invalidate() must not be answered from a pre-mutation snapshot.
+        // The size check guards the memos the same way it guards the map: a mutation that bypassed
+        // invalidate() must not be answered from a pre-mutation generation.
         if (analyzedAtSize == method.instructions.size()) {
             localsByTarget[target]?.let { return it }
         }
         ensure()
-        val frames = table
-        val result = when (val frame = frames?.getOrNull(method.instructions.indexOf(target))) {
+        val result = when (val frame = framesByNode?.get(target)) {
             null -> AnchorLocals.unavailable(failure)
             else -> AnchorLocals(LocalFrame(List(frame.locals) { i -> frame.getLocal(i) }), null)
         }
@@ -266,24 +273,21 @@ internal class MethodFrames(private val owner: String, private val method: Metho
      * `String`/`Integer` ⇒ the slot's type becomes `Object`).
      */
     fun stackTopAt(node: AbstractInsnNode): Type? {
-        ensure()
-        val frames = table ?: return null
         val target = firstExecutableFrom(node) ?: return null
-        val frame = frames.getOrNull(method.instructions.indexOf(target)) ?: return null
+        ensure()
+        val frame = framesByNode?.get(target) ?: return null
         if (frame.stackSize == 0) return null
         return frame.getStack(frame.stackSize - 1).type
     }
 
     /**
-     * Drops the cached table: the instruction list was mutated (a block inserted, an anchor removed)
-     * and the table is addressed by index. An insertion also changes the list size, so [ensure] would
-     * re-run anyway — but a removal can leave the size **unchanged** (insert-then-remove within one
-     * payload, e.g. a Redirect), which the size check cannot see. Mutation sites call this explicitly;
-     * the size check stays as the lazy path for code that bypasses them.
+     * Drops the current analysis generation: the instruction list was mutated (a block inserted, an
+     * anchor removed). Mutation sites call this explicitly; the size check stays as the lazy path for
+     * code that bypasses them.
      */
     fun invalidate() {
         analyzedAtSize = -1
-        table = null
+        framesByNode = null
         failure = null
         localsByTarget.clear()
         encodedLocalsByTarget.clear()
@@ -305,8 +309,7 @@ internal class MethodFrames(private val owner: String, private val method: Metho
             return encodedLocalsByTarget[target]
         }
         ensure()
-        val frames = table
-        val frame = frames?.getOrNull(method.instructions.indexOf(target)) ?: return null
+        val frame = framesByNode?.get(target) ?: return null
         // A long/double occupies **one entry** in a FrameNode array (it covers two slots); the slot it pads
         // with TOP must not be emitted, or the frame claims more locals than max_locals.
         val locals = ArrayList<Any>(frame.locals)
@@ -354,7 +357,7 @@ internal class MethodFrames(private val owner: String, private val method: Metho
         val size = method.instructions.size()
         if (analyzedAtSize == size) return
         analyzedAtSize = size
-        table = null
+        framesByNode = null
         failure = null
         localsByTarget.clear()
         encodedLocalsByTarget.clear()
@@ -362,7 +365,12 @@ internal class MethodFrames(private val owner: String, private val method: Metho
             val analyzer = Analyzer(PreciseInterpreter())
             analyzer.analyze(owner, method)
             @Suppress("UNCHECKED_CAST")
-            table = analyzer.frames as Array<Frame<BasicValue>?>
+            val table = analyzer.frames as Array<Frame<BasicValue>?>
+            // Fold the index-addressed result into the node-keyed map while the list still matches:
+            // every later query is an identity-map lookup at the node it names.
+            val map = IdentityHashMap<AbstractInsnNode, Frame<BasicValue>?>()
+            for (index in table.indices) map[method.instructions.get(index)] = table[index]
+            framesByNode = map
         } catch (e: AnalyzerException) {
             failure = "dataflow analysis failed (${e.message})"
         } catch (t: Throwable) {

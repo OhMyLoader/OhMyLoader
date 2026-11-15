@@ -41,8 +41,9 @@ class CreativeTabStrip(
 
     val pageCount: Int = pages.size
 
-    /** Every tab's slot, computed once: pinned specials first, then each page's flowing tabs. */
-    private val slots: Map<CreativeModeTab, Slot> = buildMap {
+    /** Every tab's slot, computed once: pinned specials first, then each page's flowing tabs.
+     * Identity keys — the per-frame lookups (draw, click, hover) should not pay hashCode. */
+    private val slots: Map<CreativeModeTab, Slot> = java.util.IdentityHashMap<CreativeModeTab, Slot>().apply {
         var topColumn = TOP_COLUMNS
         var bottomColumn = BOTTOM_COLUMNS
         for (tab in pinned) {

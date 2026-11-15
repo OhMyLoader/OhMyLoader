@@ -192,6 +192,17 @@ internal object ClassMerger {
         var renamed = 0
         var mutable = 0
 
+        // The target's members indexed by descriptor, in declaration order. Every mixin member used
+        // to pay a fresh full `name to desc` list allocation plus a linear scan over the whole target
+        // (shadow resolution, overwrite checks, unique-name candidates — M members × T target methods);
+        // the index answers each with one map lookup.
+        val targetMethodNames = HashMap<String, MutableList<String>>()
+        for (method in target.methods) targetMethodNames.getOrPut(method.desc) { mutableListOf() }.add(method.name)
+        val targetFieldNames = HashMap<String, MutableList<String>>()
+        for (field in target.fields) targetFieldNames.getOrPut(field.desc) { mutableListOf() }.add(field.name)
+        fun hasTargetMethod(name: String, desc: String): Boolean =
+            targetMethodNames[desc]?.contains(name) == true
+
         val mergedFields = mutableListOf<FieldNode>()
         for (field in mixin.node.fields) {
             val shadow = field.visibleAnnotations?.find { it.desc == BORROWED_DESC }
@@ -202,7 +213,7 @@ internal object ClassMerger {
                 continue
             }
             if (shadow != null) {
-                val hit = resolveShadow(field.name, shadow, field.desc, target.fields.map { it.name to it.desc })
+                val hit = resolveShadow(field.name, shadow, field.desc, targetFieldNames)
                 if (hit == null) {
                     problems += "$where —— the @Borrowed field could not find a member with the same name and descriptor in the target class:" +
                         "${field.name} ${field.desc}${shadowHint(shadow)}" +
@@ -255,10 +266,7 @@ internal object ClassMerger {
                         shadow != null -> {
                             // `@Borrowed <init>` = a declaration that "the target class already has this
                             // constructor"; it is not merged in itself
-                            val hit = resolveShadow(
-                                method.name, shadow, method.desc,
-                                target.methods.map { it.name to it.desc },
-                            )
+                            val hit = resolveShadow(method.name, shadow, method.desc, targetMethodNames)
                             if (hit == null) {
                                 problems += "$where —— the @Borrowed constructor could not find a member with the same descriptor in the target class:" +
                                     "${method.name}${method.desc}"
@@ -278,7 +286,7 @@ internal object ClassMerger {
                         problems += "$where ——  @Replace ${method.name}${method.desc} has no method body"
                         continue
                     }
-                    if (target.methods.none { it.name == method.name && it.desc == method.desc }) {
+                    if (!hasTargetMethod(method.name, method.desc)) {
                         problems += "$where ——  @Replace ${method.name}${method.desc} has no corresponding method in the target class" +
                             " (the descriptor must match the target method exactly)"
                         continue
@@ -296,7 +304,7 @@ internal object ClassMerger {
 
                 method.visibleAnnotations?.any { it.desc == BORROWED_DESC } == true -> {
                     val shadow = method.visibleAnnotations.first { it.desc == BORROWED_DESC }
-                    val hit = resolveShadow(method.name, shadow, method.desc, target.methods.map { it.name to it.desc })
+                    val hit = resolveShadow(method.name, shadow, method.desc, targetMethodNames)
                     if (hit == null) {
                         problems += "$where —— the @Borrowed method could not find a member with the same name and descriptor in the target class:" +
                             "${method.name}${method.desc}${shadowHint(shadow)}"
@@ -315,7 +323,7 @@ internal object ClassMerger {
                     if (pinned) {
                         // The handler name is **hard-referenced** by injection rules: it cannot be renamed, so
                         // a collision can only be reported as a problem
-                        if (target.methods.any { it.name == method.name && it.desc == method.desc }) {
+                        if (hasTargetMethod(method.name, method.desc)) {
                             problems += "$where —— injection handler ${method.name}${method.desc} shares the name and descriptor" +
                                 "with an existing target method: the handler name is referenced directly by the injection point and cannot be auto-renamed, please give it another name"
                         }
@@ -323,7 +331,7 @@ internal object ClassMerger {
                         method.access = (method.access and (Opcodes.ACC_PRIVATE or Opcodes.ACC_PROTECTED).inv()) or
                             Opcodes.ACC_PUBLIC
                     } else {
-                        val finalName = uniqueMethodName(method.name, method.desc, target, mergedMethods)
+                        val finalName = uniqueMethodName(method.name, method.desc, ::hasTargetMethod, mergedMethods)
                         if (finalName != method.name) {
                             methodRename[method.name] = finalName
                             renamed++
@@ -433,6 +441,9 @@ internal object ClassMerger {
         var accessors = 0
         var invokers = 0
 
+        // One index for the whole accessor pass, not a fresh full `name to desc` list per member.
+        val targetMethodNames = target.methods.groupBy({ it.desc }) { it.name }
+
         // Things that should not appear in an interface mixin: fields, default methods, `<clinit>`, misplaced
         // injection/merge annotations
         for (field in mixin.node.fields) {
@@ -468,12 +479,11 @@ internal object ClassMerger {
 
             val argTypes = Type.getArgumentTypes(method.desc)
             val retType = Type.getReturnType(method.desc)
-            val targetMethods = target.methods.map { it.name to it.desc }
 
             if (accessor != null) {
                 // The target class already has a method with this signature ⇒ the accessor is redundant
                 // (usually the field name was written as a method name)
-                if (!isStatic && targetMethods.any { it.first == method.name && it.second == method.desc }) {
+                if (!isStatic && targetMethodNames[method.desc]?.contains(method.name) == true) {
                     problems += "$whereM —— the target class already has a method with this signature, this @FieldAccess is redundant"
                     continue
                 }
@@ -571,7 +581,7 @@ internal object ClassMerger {
             // oml$-prefixed name (the target frequently owns a private method of the declared
             // signature — that is exactly what the accessor exists to reach), so a same-signature
             // target member never conflicts.
-            if (!isStatic && targetMethods.any { it.first == method.name && it.second == method.desc }) {
+            if (!isStatic && targetMethodNames[method.desc]?.contains(method.name) == true) {
                 problems += "$whereM —— the target class already has a method with this signature, this @MethodAccess is redundant"
                 continue
             }
@@ -1077,7 +1087,7 @@ internal object ClassMerger {
         ownName: String,
         shadow: AnnotationNode,
         desc: String,
-        members: List<Pair<String, String>>,
+        membersByDesc: Map<String, List<String>>,
     ): String? {
         val explicit = (annotationValue(shadow, "value") as? String)?.takeIf { it.isNotEmpty() }
         val aliases = when (val raw = annotationValue(shadow, "aliases")) {
@@ -1086,7 +1096,9 @@ internal object ClassMerger {
             else -> emptyList()
         }
         val wanted = listOfNotNull(ownName, explicit) + aliases
-        return members.firstOrNull { it.first in wanted && it.second == desc }?.first
+        // The descriptor bucket holds the member names in declaration order, so "the first member
+        // matching a wanted name at this descriptor" stays the declaration-order-first of the old scan.
+        return membersByDesc[desc]?.firstOrNull { it in wanted }
     }
 
     /** Diagnostic text: list the aliases as well, otherwise a "not found" looks like the aliases were omitted. */
@@ -1119,11 +1131,11 @@ internal object ClassMerger {
     private fun uniqueMethodName(
         name: String,
         desc: String,
-        target: ClassNode,
+        hasTargetMethod: (String, String) -> Boolean,
         pending: List<MethodNode>,
     ): String {
         val taken = { candidate: String ->
-            target.methods.any { it.name == candidate && it.desc == desc } ||
+            hasTargetMethod(candidate, desc) ||
                 pending.any { it.name == candidate && it.desc == desc }
         }
         if (!taken(name)) return name

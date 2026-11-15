@@ -129,13 +129,16 @@ class InjectionSpec internal constructor(
 
         // One shared-ref state per method, reused by every rule touching that method.
         val shareStates = HashMap<MethodNode, ShareState>()
+        // One method index per class: every rule's targeting is a bucket lookup instead of a scan
+        // of the whole class's methods.
+        val methodIndex = context.node.methods.groupBy { it.name }
         // Whole-method wraps run last: their body move must see every ordinary injection already applied.
         // Within each group a higher priority applies first, so stacked payloads follow an explicit
         // order rather than jar/declaration order; the sort is stable for equal priorities.
         for (rule in classRules.methods.sortedWith(
             compareBy({ if (it.isWholeMethodWrap()) 1 else 0 }, { -it.priority }),
         )) {
-            val named = targetMethods(context.node, rule.selector)
+            val named = targetMethods(context.node, methodIndex, rule.selector)
             // Abstract/native methods have no instruction body (`instructions.size() == 0`), so injection has nothing to target
             val injectable = named.filter { it.instructions.size() > 0 }
             var hits = 0
@@ -269,14 +272,25 @@ class InjectionSpec internal constructor(
      * implementation method its `LambdaMetafactory` invokedynamic points at. A **foreign** implementation
      * (a method reference into another class) was already registered as its own rule against that class
      * at scan time, so this class has no body to weave and the rule correctly misses nothing here.
+     *
+     * [methodIndex] is the class's methods grouped by name, built once per class per pass — a selector
+     * that scans `classNode.methods` directly costs O(methods × rules) over a pass; the index makes
+     * every rule's targeting a bucket lookup.
      */
-    private fun targetMethods(classNode: ClassNode, selector: MethodSelector): List<MethodNode> {
-        val lambda = selector.lambda ?: return classNode.methods.filter { selector.matches(it.name, it.desc) }
+    private fun targetMethods(
+        classNode: ClassNode,
+        methodIndex: Map<String, List<MethodNode>>,
+        selector: MethodSelector,
+    ): List<MethodNode> {
+        val lambda = selector.lambda ?: run {
+            val candidates = selector.names.flatMap { methodIndex[it].orEmpty() }
+            return candidates.filter { selector.matches(it.name, it.desc) }
+        }
         val impl = LambdaResolver.implementations(
             classNode, selector.names, selector.desc, lambda.interfaceInternal,
         ).getOrNull(lambda.ordinal) ?: return emptyList()
         if (impl.owner != classNode.name) return emptyList()
-        return listOfNotNull(classNode.methods.firstOrNull { it.name == impl.name && it.desc == impl.desc })
+        return listOfNotNull(methodIndex[impl.name]?.firstOrNull { it.desc == impl.desc })
     }
 
     private fun exclusiveKind(payload: Payload): Exclusive? = when (payload) {
@@ -317,10 +331,11 @@ class InjectionSpec internal constructor(
      */
     fun exclusiveClaims(context: TransformContext): List<ExclusiveClaim> {
         val classRules = ruleSet.classes[context.internalName] ?: return emptyList()
+        val methodIndex = context.node.methods.groupBy { it.name }
         val frames = HashMap<MethodNode, MethodFrames>()
         val claims = mutableListOf<ExclusiveClaim>()
         for (rule in classRules.methods) {
-            val named = targetMethods(context.node, rule.selector).filter { it.instructions.size() > 0 }
+            val named = targetMethods(context.node, methodIndex, rule.selector).filter { it.instructions.size() > 0 }
             for (method in named) {
                 for ((point, payload) in rule.points) {
                     when (exclusiveKind(payload)) {
@@ -374,8 +389,9 @@ class InjectionSpec internal constructor(
         val byInstruction = IdentityHashMap<MethodNode, MutableMap<AbstractInsnNode, MutableList<String>>>()
         val byMethod = HashMap<MethodNode, MutableList<String>>()
         val conflicts = mutableListOf<String>()
+        val methodIndex = context.node.methods.groupBy { it.name }
         for (rule in classRules.methods) {
-            val named = targetMethods(context.node, rule.selector).filter { it.instructions.size() > 0 }
+            val named = targetMethods(context.node, methodIndex, rule.selector).filter { it.instructions.size() > 0 }
             for (method in named) {
                 for ((point, payload) in rule.points) {
                     when (exclusiveKind(payload)) {
