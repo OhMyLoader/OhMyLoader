@@ -48,23 +48,25 @@ object CreativeScreenPagination {
         val strip = CreativeTabStrip(CreativeModeTabs.tabs(), flowingOrder())
         this.strip = strip
         if (strip.pageCount > 1) {
-            // Vanilla's own page-turn button (the book UI's): page sprites, turn sound, and it
-            // never takes focus after the interaction.
-            addWidget(screen, Button.builder(Component.literal("<")) { strip.page = (strip.page - 1).coerceAtLeast(0) }
-                .pos(leftPos(screen), topPos(screen) - 50).size(20, 20).build())
-            addWidget(screen, Button.builder(Component.literal(">")) { strip.page = (strip.page + 1).coerceAtMost(strip.pageCount - 1) }
-                .pos(leftPos(screen) + imageWidth(screen) - 20, topPos(screen) - 50).size(20, 20).build())
+            // UnfocusedButton, not Button: the arrows must keep the hover-only border — a plain
+            // button takes focus on press and keeps the white border after the mouse leaves.
+            addWidget(screen, UnfocusedButton(leftPos(screen), topPos(screen) - 50, 20, 20, Component.literal("<")) {
+                strip.page = (strip.page - 1).coerceAtLeast(0)
+            })
+            addWidget(
+                screen,
+                UnfocusedButton(
+                    leftPos(screen) + imageWidth(screen) - 20, topPos(screen) - 50, 20, 20, Component.literal(">"),
+                ) { strip.page = (strip.page + 1).coerceAtMost(strip.pageCount - 1) },
+            )
         }
         // The in-game tab manager (phase two of the player config): lists every flowing tab with
         // hide / reorder controls and writes creative-tabs.toml on Done.
         addWidget(
             screen,
-            Button.builder(Component.literal("Manage Tabs")) {
-                Minecraft.getInstance().setScreenAndShow(CreativeTabsManageScreen(screen))
-            }
-                .pos(leftPos(screen) + imageWidth(screen) / 2 - 50, topPos(screen) - 74)
-                .size(100, 20)
-                .build(),
+            UnfocusedButton(
+                leftPos(screen) + imageWidth(screen) / 2 - 50, topPos(screen) - 74, 100, 20, Component.literal("Manage Tabs"),
+            ) { Minecraft.getInstance().setScreenAndShow(CreativeTabsManageScreen(screen)) },
         )
     }
 

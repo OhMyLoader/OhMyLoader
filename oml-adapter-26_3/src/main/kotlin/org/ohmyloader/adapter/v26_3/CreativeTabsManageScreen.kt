@@ -40,7 +40,7 @@ class CreativeTabsManageScreen(private val parent: CreativeModeInventoryScreen) 
 
     private val rows: MutableList<Row> = buildDraft()
 
-    private val layout = HeaderAndFooterLayout(this)
+    private val layout = HeaderAndFooterLayout(this, 61, 33)
     private lateinit var tabList: TabList
     private lateinit var searchBox: EditBox
 
@@ -67,7 +67,12 @@ class CreativeTabsManageScreen(private val parent: CreativeModeInventoryScreen) 
         tabList = TabList()
         layout.addToContents(tabList)
         val footer = LinearLayout.horizontal().spacing(4)
-        footer.addChild(Button.builder(Component.translatable("gui.done")) { saveAndClose() }.width(200).build())
+        footer.addChild(
+            UnfocusedButton(0, 0, 150, 20, Component.translatable("controls.reset")) { resetToDefaults() },
+        )
+        footer.addChild(
+            UnfocusedButton(0, 0, 200, 20, Component.translatable("gui.done")) { saveAndClose() },
+        )
         layout.addToFooter(footer)
         layout.visitWidgets { addRenderableWidget(it) }
         repositionElements()
@@ -152,10 +157,8 @@ class CreativeTabsManageScreen(private val parent: CreativeModeInventoryScreen) 
                     row.hidden = value
                     screen.tabList.refreshEntries()
                 }
-        private val upButton = Button.builder(Component.literal("Up")) { screen.move(row, -1) }
-            .bounds(0, 0, MOVE_W, BUTTON_H).build()
-        private val downButton = Button.builder(Component.literal("Down")) { screen.move(row, +1) }
-            .bounds(0, 0, MOVE_W + 8, BUTTON_H).build()
+        private val upButton = UnfocusedButton(0, 0, MOVE_W, BUTTON_H, Component.literal("Up")) { screen.move(row, -1) }
+        private val downButton = UnfocusedButton(0, 0, MOVE_W + 8, BUTTON_H, Component.literal("Down")) { screen.move(row, +1) }
         private val widgets = listOf(hideButton, upButton, downButton)
 
         init {
@@ -167,6 +170,18 @@ class CreativeTabsManageScreen(private val parent: CreativeModeInventoryScreen) 
         override fun children(): List<AbstractWidget> = widgets
 
         override fun narratables(): List<net.minecraft.client.gui.narration.NarratableEntry> = widgets
+
+        /**
+         * The row's controls never hold focus, so the white border stays hover-only. Up/Down
+         * already opt out via [UnfocusedButton.shouldTakeFocusAfterInteraction]; the cycle
+         * button can't be subclassed (its constructor is private), so the entry refuses to
+         * focus any of its widgets here.
+         */
+        override fun setFocused(listener: net.minecraft.client.gui.components.events.GuiEventListener?) {
+            if (listener !in widgets) {
+                super.setFocused(listener)
+            }
+        }
 
         /**
          * The vanilla entry pattern: the content is drawn at the content origin, then the row
@@ -197,20 +212,32 @@ class CreativeTabsManageScreen(private val parent: CreativeModeInventoryScreen) 
      * and the saved hidden flags as the initial toggle states.
      */
     private fun buildDraft(): MutableList<Row> {
-        val registryOrder = CreativeModeTabs.tabs().filter { !it.isAlignedRight() }
-        val idOf = { tab: CreativeModeTab ->
-            BuiltInRegistries.CREATIVE_MODE_TAB.getResourceKey(tab).orElseThrow().identifier()
-        }
         val config = CreativeTabsPlayerConfig.cached
-        val base = OMLCreativeTabs.resolvedKeyOrder
-            ?.mapNotNull { key -> registryOrder.firstOrNull { idOf(it) == key } }
-            ?: registryOrder
-        val byId = base.associateBy(idOf)
+        val base = baseArrangement()
+        val byId = base.associateBy(::idOf)
         val orderSet = config?.orderSet ?: emptySet()
         val arranged = (config?.order?.mapNotNull(byId::get).orEmpty()) +
             base.filter { idOf(it) !in orderSet }
         return arranged.map { Row(it, idOf(it), idOf(it) in (config?.hidden ?: emptySet())) }
             .toMutableList()
+    }
+
+    /** The flowing tabs in the manager's resolved (or registry) order — the default arrangement. */
+    private fun baseArrangement(): List<CreativeModeTab> {
+        val registryOrder = CreativeModeTabs.tabs().filter { !it.isAlignedRight() }
+        return OMLCreativeTabs.resolvedKeyOrder
+            ?.mapNotNull { key -> registryOrder.firstOrNull { idOf(it) == key } }
+            ?: registryOrder
+    }
+
+    private fun idOf(tab: CreativeModeTab): Identifier =
+        BuiltInRegistries.CREATIVE_MODE_TAB.getResourceKey(tab).orElseThrow().identifier()
+
+    /** Throws the draft away and starts over from the default arrangement, nothing hidden. */
+    private fun resetToDefaults() {
+        rows.clear()
+        rows.addAll(baseArrangement().map { Row(it, idOf(it), false) })
+        tabList.refreshEntries()
     }
 
     private companion object {
