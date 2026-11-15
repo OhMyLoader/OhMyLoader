@@ -46,8 +46,13 @@ public final class OMLSupervisor {
             System.out.println("[OMLSupervisor] reboot requested: " + reason);
             boolean collected = stopSession();
             if (!collected) {
+                // A leaked session must not be papered over by starting another one: the old
+                // loader, its native callbacks and its class metadata would all survive. Refuse
+                // the in-process swap; the launcher/process owner has to restart the process.
                 System.err.println(
-                    "[OMLSupervisor] the old session is still reachable after close; continuing with the new session");
+                    "[OMLSupervisor] the old session is still reachable after close; refusing the in-process reboot");
+                throw new IllegalStateException(
+                    "session classloader was not collected within 5s; process restart is required");
             }
             session = startSession(args, sessionJars);
             activeSession = session;
