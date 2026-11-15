@@ -11,12 +11,13 @@ import org.ohmyloader.core.OMLCore
 import java.io.File
 
 /**
- * The player's creative-tab preferences: `config/creative-tabs.toml`, read at creative-screen
- * init and cached until the next screen (re)init. Purely a client-side display preference -
- * the manager's resolved order is the base, the player overrides arrangement/hiding on top,
- * and nothing here reaches the server.
+ * The player's creative-tab preferences, carried in `config/oml.toml` - OML's client config
+ * file, currently holding this one section. Read at creative-screen init and cached until the
+ * next screen (re)init. Purely a client-side display preference - the manager's resolved order
+ * is the base, the player overrides arrangement/hiding on top, and nothing here reaches the
+ * server.
  *
- * The file carries one root-table string array, in display order, with `-` marking a hidden tab:
+ * The `tabs` array is in display order, with `-` marking a hidden tab:
  *
  * ```toml
  * tabs = ["minecraft:building_blocks", "-minecraft:food", "ironchest:general"]
@@ -47,12 +48,12 @@ object CreativeTabsPlayerConfig {
     internal var cached: Config? = null
 
     /**
-     * Reads (and, on the first run, generates) `config/creative-tabs.toml`. Called from the
+     * Reads (and, on the first run, generates) `config/oml.toml`. Called from the
      * creative screen's init, so preferences apply when the screen opens; a config edit needs
      * the screen reopened.
      */
     fun onScreenInit(screen: CreativeModeInventoryScreen): Config? {
-        val file = File(OMLCore.configDirectory(), "creative-tabs.toml")
+        val file = configFile()
         if (!file.isFile) {
             writeTemplate(screen)
             cached = null
@@ -67,7 +68,7 @@ object CreativeTabsPlayerConfig {
 
     private fun load(file: File): Config? {
         val doc = runCatching { MinimalToml.parse(file.readText()) }.getOrElse {
-            OmlLog.warn("OMLCreativeTabs", "creative-tabs.toml is not valid TOML; using default tab layout (${it.message})")
+            OmlLog.warn("OMLCreativeTabs", "oml.toml is not valid TOML; using default tab layout (${it.message})")
             return null
         }
         val root = doc[""] ?: return null
@@ -93,7 +94,7 @@ object CreativeTabsPlayerConfig {
      * back. Applies on the next creative screen init, which re-reads this file.
      */
     fun save(entries: List<Entry>) {
-        val file = File(OMLCore.configDirectory(), "creative-tabs.toml")
+        val file = configFile()
         val body = buildString {
             appendLine("# Creative screen tab preferences (OML).")
             appendLine("#")
@@ -109,13 +110,13 @@ object CreativeTabsPlayerConfig {
             file.parentFile?.mkdirs()
             file.writeText(body)
         }.onFailure {
-            OmlLog.warn("OMLCreativeTabs", "could not save creative-tabs.toml (${it.message})")
+            OmlLog.warn("OMLCreativeTabs", "could not save oml.toml (${it.message})")
         }
     }
 
     /** Writes a commented template naming every configurable tab id, once, if the file is absent. */
     private fun writeTemplate(screen: CreativeModeInventoryScreen) {
-        val file = File(OMLCore.configDirectory(), "creative-tabs.toml")
+        val file = configFile()
         if (file.isFile) {
             return
         }
@@ -138,9 +139,13 @@ object CreativeTabsPlayerConfig {
             file.parentFile?.mkdirs()
             file.writeText(body)
         }.onFailure {
-            OmlLog.warn("OMLCreativeTabs", "could not write the creative-tabs.toml template (${it.message})")
+            OmlLog.warn("OMLCreativeTabs", "could not write the oml.toml template (${it.message})")
         }
     }
 
+    /** OML's client config file, currently carrying only the creative-tab section. */
+    private fun configFile(): File = File(OMLCore.configDirectory(), FILE_NAME)
+
+    private const val FILE_NAME = "oml.toml"
     private const val HIDDEN_PREFIX = "-"
 }
