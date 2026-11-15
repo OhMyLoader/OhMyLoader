@@ -158,10 +158,14 @@ object OMLCreativeTabs {
         private set
 
     private fun resolveOrder() {
-        // keySet() names every registered tab without touching the (still unbound) values.
-        val flowing: MutableList<Identifier> = BuiltInRegistries.CREATIVE_MODE_TAB.registryKeySet()
-            .map { it.identifier() }
+        // listElements() streams the byId list - registration order, which for the vanilla tabs
+        // is their own display order. registryKeySet() would NOT do: it wraps a hash map's
+        // keySet, and its order scrambles the vanilla tabs the moment the manager is active.
+        // Holder references answer key() without touching the (still unbound) values.
+        val flowing: MutableList<Identifier> = BuiltInRegistries.CREATIVE_MODE_TAB.listElements()
+            .map { it.key().identifier() }
             .filter { it !in pinnedKeys }
+            .toList()
             .toMutableList()
         val registrationOrder = flowing.toList()
 
