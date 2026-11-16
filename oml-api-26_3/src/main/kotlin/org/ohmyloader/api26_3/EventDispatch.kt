@@ -88,11 +88,77 @@ object EventDispatch {
     fun onDatapacksReloaded(server: MinecraftServer) =
         Events.DATAPACKS_RELOADED.fire(DatapacksReloadedEvent(server))
 
+    /**
+     * [PlayerList.placeNewPlayer tail] Suppressed while the session mask is up: a soft reboot's
+     * reconnect would otherwise look like a real join to every handler — exactly the state churn
+     * [org.ohmyloader.api26_3.event.OMLSessionEvents.RESUMED] exists to replace. The swallow is
+     * counted ([RebootRestore.maskedJoins]) so the gate can tell "masked on purpose" from "the hook
+     * never ran".
+     */
     @JvmStatic
-    fun onPlayerJoined(player: ServerPlayer) = Events.PLAYER_JOINED.fire(PlayerJoinedEvent(player))
+    fun onPlayerJoined(player: ServerPlayer) {
+        if (RebootRestore.maskingWindow) {
+            RebootRestore.noteMaskedJoin()
+            return
+        }
+        Events.PLAYER_JOINED.fire(PlayerJoinedEvent(player))
+    }
 
+    /**
+     * [PlayerList.remove head] Suppressed while the session mask is up, for the same reason as the
+     * join above: the retiring session's disconnect is not a leave, it is a handover.
+     */
     @JvmStatic
-    fun onPlayerLeft(player: ServerPlayer) = Events.PLAYER_LEFT.fire(PlayerLeftEvent(player))
+    fun onPlayerLeft(player: ServerPlayer) {
+        if (RebootRestore.maskingWindow) {
+            RebootRestore.noteMaskedLeft()
+            return
+        }
+        Events.PLAYER_LEFT.fire(PlayerLeftEvent(player))
+    }
+
+    /**
+     * [PlayerList.broadcastSystemMessage head] `true` makes the injected hook skip the whole body —
+     * the announcement reaches neither the chat nor the server console. Only the two join/leave
+     * keys are swallowable, and only while the mask is up: death messages, `/say` and everything
+     * else that funnels through the same method pass untouched, in any session.
+     */
+    @JvmStatic
+    fun onJoinLeaveBroadcast(message: net.minecraft.network.chat.Component): Boolean {
+        if (!RebootRestore.maskingWindow) return false
+        val key = broadcastKey(message) ?: return false
+        if (key in MASKED_BROADCAST_KEYS) {
+            RebootRestore.noteMaskedBroadcast(key)
+            return true
+        }
+        return false
+    }
+
+    /** The three announcements a soft reboot would otherwise put in the chat (`joined.renamed` is a join). */
+    private val MASKED_BROADCAST_KEYS =
+        setOf("multiplayer.player.joined", "multiplayer.player.joined.renamed", "multiplayer.player.left")
+
+    /**
+     * The translatable key behind a component, or null when it is not a plain translatable. The key
+     * field is private in the game jar, so the lookup is reflective — cached, because this runs at
+     * most once per broadcast and only while the mask is up.
+     */
+    private fun broadcastKey(message: net.minecraft.network.chat.Component): String? {
+        val contents = message.contents as? net.minecraft.network.chat.contents.TranslatableContents ?: return null
+        return translatableKey?.let { runCatching { it.get(contents) as? String }.getOrNull() }
+    }
+
+    private val translatableKey: java.lang.reflect.Field? by lazy {
+        runCatching {
+            net.minecraft.network.chat.contents.TranslatableContents::class.java
+                .getDeclaredField("key").apply { isAccessible = true }
+        }.getOrNull()
+    }
+
+    /** [RebootRestore.toDone] fires the soft-reboot session event on the client thread. */
+    @JvmStatic
+    fun onSessionResumed(outcome: String, summary: String) =
+        OMLSessionEvents.RESUMED.fire(OMLSessionResumedEvent(outcome, summary))
 
     @JvmStatic
     fun onLevelTick(level: Level) = Events.LEVEL_TICK.fire(LevelTickEvent(level))

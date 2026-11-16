@@ -80,6 +80,60 @@ object RebootRestore {
     var outcome: String = "none"
         private set
 
+    // ---------------------------------------------------------------- session mask
+
+    /**
+     * Whether this session is inside the **seamless masking window**: from the moment a reboot is
+     * requested (session 1) or a handover snapshot is found (session 2), until the restore state
+     * machine finishes. While it is up, the join/leave pair the underlying disconnect-reconnect
+     * would produce is suppressed at three points — the vanilla chat announcements (swallowed at
+     * `PlayerList.broadcastSystemMessage`, see the adapter's rule) and the OML
+     * [org.ohmyloader.api26_3.event.Events.PLAYER_JOINED]/[org.ohmyloader.api26_3.event.Events.PLAYER_LEFT]
+     * dispatches — so the player never sees themselves leave. [org.ohmyloader.api26_3.event.OMLSessionEvents.RESUMED]
+     * is what the window ends with.
+     */
+    @Volatile
+    var maskingWindow: Boolean = false
+        internal set
+
+    /** Dispatches of `PLAYER_JOINED` the window swallowed; the gate reads it as positive evidence. */
+    @Volatile
+    var maskedJoins: Int = 0
+        private set
+
+    /** Dispatches of `PLAYER_LEFT` the window swallowed; session 1's count dies with its process. */
+    @Volatile
+    var maskedLefts: Int = 0
+        private set
+
+    /** Vanilla chat announcements the broadcast hook swallowed; session 2 sees the join one itself. */
+    @Volatile
+    var maskedBroadcasts: Int = 0
+        private set
+
+    /** Whether the session has already fired [org.ohmyloader.api26_3.event.OMLSessionEvents.RESUMED]. */
+    @Volatile
+    var resumedFired: Boolean = false
+        private set
+
+    /** [EventDispatch] reports a masked dispatch; the counters are the gate's evidence. */
+    internal fun noteMaskedJoin() {
+        maskedJoins++
+        OmlLog.info("Reboot", "session mask: PLAYER_JOINED suppressed (${describe})")
+    }
+
+    /** [EventDispatch] reports a masked dispatch. */
+    internal fun noteMaskedLeft() {
+        maskedLefts++
+        OmlLog.info("Reboot", "session mask: PLAYER_LEFT suppressed")
+    }
+
+    /** [EventDispatch] reports a swallowed vanilla announcement; [key] names which one. */
+    internal fun noteMaskedBroadcast(key: String) {
+        maskedBroadcasts++
+        OmlLog.info("Reboot", "session mask: '$key' chat broadcast suppressed")
+    }
+
     /** Session 1 only: whether the farewell frame is still owed. */
     @Volatile
     private var farewellArmed = false
@@ -135,6 +189,9 @@ object RebootRestore {
      */
     fun capture(): Boolean {
         val client = OMLGame.client
+        // The mask goes up with the curtain: from here the leaving half of the join/leave pair is a
+        // fiction — nothing "leaves", the process is handing over.
+        maskingWindow = true
         overlayBegin("Saving world")
         if (client == null) return false
         val player = client.player
@@ -228,7 +285,7 @@ object RebootRestore {
         if (encoded == null) {
             // Not a reboot at all: drop whatever a previous session left, and stay out of the frame.
             overlayReset()
-            state = State.DONE
+            toDone()
             return
         }
         val parsed = decode(encoded)
@@ -236,9 +293,12 @@ object RebootRestore {
             OmlLog.warn("Reboot", "ignoring an unreadable reboot snapshot: ${sanitize(encoded)}")
             outcome = "failed=unreadable-snapshot"
             overlayReset()
-            state = State.DONE
+            toDone()
             return
         }
+        // The window is open before anything else can join or broadcast: opening the save below is
+        // what places the player, and that placeNewPlayer must already be inside the mask.
+        maskingWindow = true
         snapshot = parsed
         describe = parsed.summary()
         loadTicks = 0
@@ -298,7 +358,7 @@ object RebootRestore {
         if (failure != null) {
             OmlLog.error("Reboot", "openWorld('${parsed.save}') threw", failure)
             outcome = "failed=${failure.javaClass.simpleName}"
-            state = State.DONE
+            toDone()
             overlayFinish()
         }
     }
@@ -319,7 +379,7 @@ object RebootRestore {
         if (loadTicks > LOAD_TIMEOUT_TICKS) {
             OmlLog.error("Reboot", "the world did not load within $LOAD_TIMEOUT_TICKS ticks")
             outcome = "failed=load-timeout"
-            state = State.DONE
+            toDone()
             overlayFinish()
         }
     }
@@ -334,7 +394,7 @@ object RebootRestore {
      */
     private fun apply(client: Minecraft, target: Snapshot?) {
         if (target == null) {
-            state = State.DONE
+            toDone()
             overlayFinish()
             return
         }
@@ -343,6 +403,7 @@ object RebootRestore {
             outcome = "failed=no-server-player"
             state = State.FADING
             fadeTicks = 0
+            restoreAttemptFinished()
             return
         }
         val server = client.singleplayerServer
@@ -352,6 +413,7 @@ object RebootRestore {
             OmlLog.info("Reboot", "no integrated server; leaving the player where the server put it")
             state = State.FADING
             fadeTicks = 0
+            restoreAttemptFinished()
             return
         }
         val dimension = runCatching { ResourceKey.create(Registries.DIMENSION, Identifier.parse(target.dimension)) }
@@ -360,6 +422,7 @@ object RebootRestore {
             outcome = "failed=bad-dimension"
             state = State.FADING
             fadeTicks = 0
+            restoreAttemptFinished()
             return
         }
         server.executeIfPossible {
@@ -425,7 +488,29 @@ object RebootRestore {
                 }
                 state = State.FADING
                 fadeTicks = 0
+                restoreAttemptFinished()
             }
+        }
+    }
+
+    /**
+     * The restore attempt is over — the outcome is final and the curtain is on its way up. The
+     * masking window closes here and [org.ohmyloader.api26_3.event.OMLSessionEvents.RESUMED] fires.
+     *
+     * <p>The event fires at the restore, not at the lift: the snapshot's position, view angle and
+     * mode are final the moment [outcome] is, and a mod refreshing its caches one or two ticks
+     * *before* the reveal is what keeps the visible world free of late-arriving mod machinery. Even
+     * a failed restore fires — the world and player objects are new either way, and refreshing
+     * stale caches is exactly what the event exists for. [outcome] tells the handler which it was.
+     *
+     * <p>Called on the client thread, at every transition into FADING; the guards keep it once.
+     */
+    private fun restoreAttemptFinished() {
+        maskingWindow = false
+        if (snapshot != null && !resumedFired) {
+            resumedFired = true
+            OmlLog.info("Reboot", "session resumed: firing OMLSessionEvents.RESUMED ($outcome)")
+            EventDispatch.onSessionResumed(outcome, describe)
         }
     }
 
@@ -465,7 +550,7 @@ object RebootRestore {
             return
         }
         if (!transitionActive()) {
-            state = State.DONE
+            toDone()
             OmlLog.info("Reboot", "transition lifted; the player has the frame")
             return
         }
@@ -473,8 +558,17 @@ object RebootRestore {
             // A fade that never completes must not hold the state machine hostage; release and say so.
             OmlLog.warn("Reboot", "the transition did not lift within $FADE_TIMEOUT_TICKS ticks: ${overlayTrace()}")
             overlayReset()
-            state = State.DONE
+            toDone()
         }
+    }
+
+    /**
+     * Completes the state machine and makes sure the masking window is closed. The RESUMED event has
+     * already fired at the restore ([restoreAttemptFinished]); every path into here is after it.
+     */
+    private fun toDone() {
+        state = State.DONE
+        maskingWindow = false
     }
 
     // ---------------------------------------------------------------- transition frame

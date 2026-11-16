@@ -227,6 +227,15 @@ object EventBridge {
     }
 
     /**
+     * [PlayerList.broadcastSystemMessage head] `true` swallows the broadcast: the session mask
+     * filters the join/leave announcements out of the chat while a soft reboot is crossing the
+     * session boundary. See [EventDispatch.onJoinLeaveBroadcast] for the exact filter.
+     */
+    @JvmStatic
+    fun onSystemBroadcast(message: net.minecraft.network.chat.Component): Boolean =
+        EventDispatch.onJoinLeaveBroadcast(message)
+
+    /**
      * [PlayerList.respawn tail] Receives the player the game is about to return — the instance built for
      * this new life, not the argument it replaced — and hands back the very same object: the transform is
      * how the hook reaches a value that only exists at the return, not a way to change it.

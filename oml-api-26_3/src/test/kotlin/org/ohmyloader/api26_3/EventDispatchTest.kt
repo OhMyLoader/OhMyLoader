@@ -77,4 +77,40 @@ class EventDispatchTest {
         assertEquals(null, chatTextOf(ClientboundTickingStatePacket(1.0f, false)))
         assertFalse(EventDispatch.onChatReceived(ClientboundTickingStatePacket(1.0f, false)))
     }
+
+    /**
+     * The session mask's broadcast filter: exactly the join/leave keys, exactly while the mask is up.
+     * Everything else that funnels through `broadcastSystemMessage` — death messages, /say, whatever a
+     * future version adds — must pass untouched in every session.
+     */
+    @Test
+    fun `the join and leave announcements are swallowed only while the session mask is up`() {
+        val joined = Component.translatable("multiplayer.player.joined", Component.literal("Steve"))
+        val left = Component.translatable("multiplayer.player.left", Component.literal("Steve"))
+        val death = Component.translatable("death.attack.player", Component.literal("Steve"))
+        val literal = Component.literal("/say hello")
+
+        // Mask off: an ordinary session lets everything through, announcements included.
+        RebootRestore.maskingWindow = false
+        assertFalse(EventDispatch.onJoinLeaveBroadcast(joined))
+        assertFalse(EventDispatch.onJoinLeaveBroadcast(left))
+        assertFalse(EventDispatch.onJoinLeaveBroadcast(death))
+        assertFalse(EventDispatch.onJoinLeaveBroadcast(literal))
+
+        // Mask up: exactly the two announcements the handover fakes, in all their key spellings.
+        RebootRestore.maskingWindow = true
+        assertTrue(EventDispatch.onJoinLeaveBroadcast(joined), "the join announcement is the mask's target")
+        assertTrue(
+            EventDispatch.onJoinLeaveBroadcast(
+                Component.translatable("multiplayer.player.joined.renamed", Component.literal("Steve")),
+            ),
+            "a renamed join is still a join announcement",
+        )
+        assertTrue(EventDispatch.onJoinLeaveBroadcast(left), "the leave announcement is the mask's target")
+        assertFalse(EventDispatch.onJoinLeaveBroadcast(death), "death messages are not the mask's business")
+        assertFalse(EventDispatch.onJoinLeaveBroadcast(literal), "plain text is not the mask's business")
+
+        RebootRestore.maskingWindow = false
+        assertFalse(EventDispatch.onJoinLeaveBroadcast(joined), "the window closed: back to pass-through")
+    }
 }
