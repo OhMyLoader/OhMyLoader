@@ -52,6 +52,12 @@ object RebootRestore {
     /** How long the fade may take before the state machine stops waiting for it. */
     private const val FADE_TIMEOUT_TICKS = 100
 
+    /**
+     * How long the reveal may be held while the client still has a screen up. A chunk-loading screen
+     * lasts a handful of ticks; a minute is "something else is on screen, show it anyway".
+     */
+    private const val REVEAL_HOLD_TICKS = 60
+
     /** Where the restore is in its life cycle. */
     enum class State { IDLE, LOADING, APPLYING, FADING, DONE }
 
@@ -85,6 +91,9 @@ object RebootRestore {
     private var loadTicks = 0
     private var fadeTicks = 0
     private var applyAttempts = 0
+
+    /** True once the curtain's fade has been started; before that the reveal may still be held. */
+    private var liftStarted = false
 
     /** Where the world put the player on its own, before the snapshot moved them. */
     private var loadedAt: String = "unknown"
@@ -363,11 +372,27 @@ object RebootRestore {
             val mode = runCatching { GameType.byName(target.gameMode, GameType.SURVIVAL) }
                 .getOrNull() ?: GameType.SURVIVAL
             runCatching { player.setGameMode(mode) }
-            val moved = runCatching {
-                player.teleportTo(
-                    level, target.x, target.y, target.z,
-                    emptySet(), target.yaw, target.pitch, false,
-                )
+            // The usual case is that the save already put the player where the snapshot says: the
+            // retiring session wrote its playerdata on the way out, from the very state the snapshot
+            // was taken from (the log line then reads from == at). Teleporting anyway still pushes a
+            // position packet, and the client answers a jump it did not predict with its chunk-loading
+            // screen — the "Loading terrain.." flash the transition is supposed to cover. So move only
+            // when there is somewhere to move to.
+            val wanted = net.minecraft.world.phys.Vec3(target.x, target.y, target.z)
+            val before = runCatching { player.position() }.getOrNull()
+            val sameDimension =
+                runCatching { player.level().dimension().identifier().toString() == target.dimension }
+                    .getOrDefault(false)
+            val inPlace = sameDimension && before != null && before.distanceTo(wanted) <= 0.5
+            val moved = if (inPlace) {
+                Result.success(true)
+            } else {
+                runCatching {
+                    player.teleportTo(
+                        level, target.x, target.y, target.z,
+                        emptySet(), target.yaw, target.pitch, false,
+                    )
+                }
             }
             val actual = runCatching { player.position() }.getOrNull()
             val wrong = actual == null ||
@@ -380,7 +405,7 @@ object RebootRestore {
             }
             OmlLog.info(
                 "Reboot",
-                "restore applied from=$loadedAt moved=${moved.getOrNull()} at=${
+                "restore applied from=$loadedAt ${if (inPlace) "in-place" else "moved=${moved.getOrNull()}"} at=${
                     actual?.let { "(${"%.2f".format(it.x)}, ${"%.2f".format(it.y)}, ${"%.2f".format(it.z)})" }
                 } mode=${player.gameMode()} dim=${player.level().dimension().identifier()} -> $outcome",
             )
@@ -414,7 +439,26 @@ object RebootRestore {
      */
     private fun fade(client: Minecraft) {
         fadeTicks++
-        if (fadeTicks == 1) {
+        if (!liftStarted) {
+            // The client answers a position packet with its own chunk-loading screen, and that screen
+            // draws the **previous** frame blurred underneath — with the leased window, that picture is
+            // session 1's last frame. Lifting the curtain while such a screen is up hands the player
+            // "Loading terrain.." and then the world, which is the one flash this transition exists to
+            // prevent. So the curtain stays until the world itself is what would be on screen.
+            val screen = client.currentScreen
+            if (screen != null && fadeTicks <= REVEAL_HOLD_TICKS) {
+                if (fadeTicks == 1) {
+                    OmlLog.info("Reboot", "holding the transition: ${screen.javaClass.simpleName} is still up")
+                }
+                return
+            }
+            if (screen != null) {
+                OmlLog.warn(
+                    "Reboot",
+                    "${screen.javaClass.simpleName} was still up after $REVEAL_HOLD_TICKS ticks; lifting anyway",
+                )
+            }
+            liftStarted = true
             outcome = if (outcome == "none") "no-op" else outcome
             OmlLog.info("Reboot", "restore finished: $outcome (lifting the transition)")
             overlayFinish()

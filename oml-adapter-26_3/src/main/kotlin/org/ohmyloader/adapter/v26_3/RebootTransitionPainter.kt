@@ -49,11 +49,6 @@ object RebootTransitionPainter {
     /** Vanilla nudges each half by this to hide the seam where they meet. */
     private const val LOGO_OVERLAP = 0.0625f
 
-    /** Frames traced from the first painted frame; a stutter on this path must not cost a log line. */
-    private const val TRACE_FRAMES = 60
-
-    private var paintFrame = 0
-
     @JvmStatic
     fun paint(extractor: GuiGraphicsExtractor) {
         val frame = RebootRestore.transitionFrame() ?: return
@@ -61,15 +56,11 @@ object RebootTransitionPainter {
         val height = extractor.guiHeight()
         if (width <= 0 || height <= 0) return
 
-        paintFrame++
-        ptrace("begin frame=$paintFrame ${width}x$height fade=${frame.alpha} progress=${frame.progress}")
         // Vanilla opens the loading screen with `nextStratum()` so the red field sits above whatever
         // the frame already drew; here that is the retiring session's "Saving world" and the starting
         // session's level-loading screen, which must both end up underneath.
         extractor.nextStratum()
-        ptrace("nextStratum ok")
         extractor.fill(0, 0, width, height, replaceAlpha(0xFF000000.toInt() or LOGO_RED, Math.round(frame.alpha * 255f)))
-        ptrace("backdrop ok")
 
         val contentX = (width * 0.5).toInt()
         val logoY = (height * 0.5).toInt()
@@ -81,7 +72,6 @@ object RebootTransitionPainter {
         // Two halves, not one blit: the second samples the lower 120x60 of the texture and starts
         // where the first ends. This is how vanilla keeps the wordmark crisp at any GUI scale.
         if (logoReady()) {
-            ptrace("logo ready, blit left half")
             extractor.blit(
                 RenderPipelines.MOJANG_LOGO, logoTexture,
                 contentX - logoWidthHalf, logoY - logoHeightHalf,
@@ -90,7 +80,6 @@ object RebootTransitionPainter {
                 LOGO_TEX, LOGO_TEX_HALF, LOGO_TEX, LOGO_TEX,
                 color,
             )
-            ptrace("blit left ok, blit right half")
             extractor.blit(
                 RenderPipelines.MOJANG_LOGO, logoTexture,
                 contentX, logoY - logoHeightHalf,
@@ -99,9 +88,7 @@ object RebootTransitionPainter {
                 LOGO_TEX, LOGO_TEX_HALF, LOGO_TEX, LOGO_TEX,
                 color,
             )
-            ptrace("blit right ok")
         } else {
-            ptrace("logo not ready, skipping mark")
         }
 
         val barY = (height * BAR_Y).toInt()
@@ -111,13 +98,6 @@ object RebootTransitionPainter {
             width / 2 + logoWidthHalf, barY + BAR_HALF_HEIGHT,
             frame.alpha, frame.progress,
         )
-        ptrace("bar ok")
-    }
-
-    private fun ptrace(message: String) {
-        if (paintFrame > TRACE_FRAMES) return
-        println("[paint] $message")
-        System.out.flush()
     }
 
     /**
