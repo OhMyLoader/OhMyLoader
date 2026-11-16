@@ -50,10 +50,15 @@ runs:
           rm -rf "$RUNNER_TEMP/jdk"
           mv "$RUNNER_TEMP/jdk-x" "$RUNNER_TEMP/jdk"
         fi
-        home=$(dirname "$(find -L "$RUNNER_TEMP/jdk" -path '*/bin/java' | head -1)")
-        "$home/bin/java" -version
-        echo "JAVA_HOME=$home" >> "$GITHUB_ENV"
-        echo "$home/bin" >> "$GITHUB_PATH"
+        java_bin=$(find -L "$RUNNER_TEMP/jdk" -path '*/bin/java' -type f | head -1)
+        if [ -z "$java_bin" ]; then
+          echo "::error::The JDK bundle does not contain bin/java."
+          exit 1
+        fi
+        java_home=$(dirname "$(dirname "$java_bin")")
+        "$java_bin" -version
+        echo "JAVA_HOME=$java_home" >> "$GITHUB_ENV"
+        echo "$java_home/bin" >> "$GITHUB_PATH"
 
     - name: Install the JDK bundle (Windows)
       if: runner.os == 'Windows'
