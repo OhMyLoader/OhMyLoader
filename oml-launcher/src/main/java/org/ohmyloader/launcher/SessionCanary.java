@@ -125,10 +125,18 @@ final class SessionCanary {
             }
         }
         long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+        // A dying session thread can call Runtime.addShutdownHook after the sweep above, and the hook
+        // map is a JDK static, so that late registration is a strong root the first sweep never saw.
+        // Re-sweep while waiting instead of losing the whole reboot to a registration race.
+        long nextHookSweep = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(1_000);
         do {
             // The game's shutdown path can install its LoggedPrintStream again after the first
             // restore; System.out/err are sticky static roots, so repeat the restore every round.
             OMLBootstrap.restoreConsole();
+            if (reboot && System.nanoTime() >= nextHookSweep) {
+                sweepHooksOnFreshThread();
+                nextHookSweep = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(1_000);
+            }
             System.gc();
             if (collected()) return true;
             try {
@@ -141,7 +149,18 @@ final class SessionCanary {
 
         if (collected()) return true;
         OMLBootstrap.restoreConsole();
-        dumpHeapOnFailure();
+        String phase = reboot ? "gate" : "exit";
+        List<String> hooks = sessionShutdownHooks(session.get(), SessionControl.mainLoader());
+        if (!reboot && !hooks.isEmpty()) {
+            // Session.drain(false) keeps the session's shutdown hooks on purpose so the test verdict
+            // and the game's own hooks still run at process exit, and that keep-alive is a JDK static.
+            // The loader therefore cannot be collected here; calling it a leak turned every passing
+            // run red at exit and hid the one failure that matters.
+            RAW_ERR.println("[OMLSupervisor] canary(exit) session kept alive by " + hooks.size()
+                + " shutdown hook(s) the final shutdown must still run: " + String.join(", ", hooks));
+            return true;
+        }
+        dumpHeapOnFailure(phase);
         System.gc();
         try {
             Thread.sleep(200);
@@ -151,8 +170,11 @@ final class SessionCanary {
         RAW_ERR.println(
             "[OMLSupervisor] post-dump probe: session=" + session.get() + " main=" + SessionControl.mainLoader());
         RAW_ERR.println(
-            "[OMLSupervisor] session classloader was not collected within " + timeoutMillis + " ms" +
-                " (supervisor=" + (supervisor == null ? "platform" : supervisor) + ")");
+            "[OMLSupervisor] canary(" + phase + ") session classloader was not collected within "
+                + timeoutMillis + " ms" + " (supervisor=" + (supervisor == null ? "platform" : supervisor) + ")");
+        if (!hooks.isEmpty()) {
+            RAW_ERR.println("[OMLSupervisor]   shutdown hook(s) still naming the session: " + String.join(", ", hooks));
+        }
         for (Map.Entry<Thread, StackTraceElement[]> entry : Thread.getAllStackTraces().entrySet()) {
             Thread thread = entry.getKey();
             boolean namesAllocator = false;
@@ -192,12 +214,13 @@ final class SessionCanary {
     /**
      * Evidence for a canary failure: a live heap dump taken before the hard gate throws. The path
      * is overridable for CI (`-Doml.canary.dump=...`); the default lives under the game's
-     * working-directory build folder and is reported on the raw stderr.
+     * working-directory build folder and is per phase, because a routine exit probe must never
+     * overwrite the dump that explains a refused reboot.
      */
-    private static void dumpHeapOnFailure() {
+    private static void dumpHeapOnFailure(String phase) {
         String configured = System.getProperty("oml.canary.dump");
         File file = configured == null || configured.isBlank()
-            ? new File("build/canary-leak.hprof").getAbsoluteFile()
+            ? new File("build/canary-leak-" + phase + ".hprof").getAbsoluteFile()
             : new File(configured).getAbsoluteFile();
         File parent = file.getParentFile();
         if (parent != null) parent.mkdirs();
@@ -406,31 +429,78 @@ final class SessionCanary {
      * shutdown must keep the verdict/test hooks.
      */
     private static void removeOldShutdownHooks(ClassLoader target, ClassLoader main) {
+        List<Thread> old = new ArrayList<>();
+        for (Thread thread : registeredShutdownHooks()) {
+            if (threadInSession(thread, target, main)) old.add(thread);
+        }
+        for (Thread thread : old) {
+            try {
+                Runtime.getRuntime().removeShutdownHook(thread);
+            } catch (IllegalArgumentException | IllegalStateException ignored) {
+                // Already gone or shutdown is in progress.
+            }
+        }
+        if (!old.isEmpty()) {
+            List<String> names = new ArrayList<>();
+            for (Thread thread : old) names.add(describe(thread));
+            RAW_ERR.println("[OMLSupervisor] removed " + old.size() + " old shutdown hook(s): "
+                + String.join(", ", names));
+        }
+    }
+
+    /**
+     * Runs the hook sweep on its own thread. The sweep needs a strong loader reference, and the GC
+     * wait loop must not keep one in its own frame or in a C2 stack slot — that is exactly what the
+     * probe exists to avoid.
+     */
+    private void sweepHooksOnFreshThread() {
+        Thread sweep = new Thread(() -> {
+            ClassLoader target = session.get();
+            if (target == null) return;
+            removeOldShutdownHooks(target, SessionControl.mainLoader());
+        }, "oml-canary-hooks");
+        sweep.setDaemon(true);
+        sweep.setContextClassLoader(ClassLoader.getSystemClassLoader());
+        sweep.start();
+        try {
+            sweep.join();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /** The hooks currently registered on the JDK's static map; empty when the runtime hides it. */
+    private static List<Thread> registeredShutdownHooks() {
         try {
             Class<?> hooksClass = Class.forName("java.lang.ApplicationShutdownHooks");
-            java.lang.reflect.Field field = hooksClass.getDeclaredField("hooks");
+            Field field = hooksClass.getDeclaredField("hooks");
             field.setAccessible(true);
-            Object value = field.get(null);
-            if (!(value instanceof Map<?, ?> hooks)) return;
-            List<Thread> old = new ArrayList<>();
-            for (Object key : hooks.keySet()) {
-                if (key instanceof Thread thread && threadInSession(thread, target, main)) {
-                    old.add(thread);
+            if (field.get(null) instanceof Map<?, ?> hooks) {
+                List<Thread> threads = new ArrayList<>(hooks.size());
+                for (Object key : hooks.keySet()) {
+                    if (key instanceof Thread thread) threads.add(thread);
                 }
-            }
-            for (Thread thread : old) {
-                try {
-                    Runtime.getRuntime().removeShutdownHook(thread);
-                } catch (IllegalArgumentException | IllegalStateException ignored) {
-                    // Already gone or shutdown is in progress.
-                }
-            }
-            if (!old.isEmpty()) {
-                RAW_ERR.println("[OMLSupervisor] removed " + old.size() + " old shutdown hook(s)");
+                return threads;
             }
         } catch (Throwable ignored) {
             // A restricted runtime can hide ApplicationShutdownHooks; the thread sweep remains.
         }
+        return List.of();
+    }
+
+    /** Names the registered hooks that still belong to the session, for a failure that explains itself. */
+    private static List<String> sessionShutdownHooks(ClassLoader target, ClassLoader main) {
+        List<String> found = new ArrayList<>();
+        for (Thread thread : registeredShutdownHooks()) {
+            if (threadInSession(thread, target, main)) found.add(describe(thread));
+        }
+        return found;
+    }
+
+    private static String describe(Thread thread) {
+        ClassLoader context = thread.getContextClassLoader();
+        return thread.getName() + " (" + thread.getClass().getName()
+            + ", ccl=" + (context == null ? "bootstrap" : context.getName()) + ")";
     }
 
     private static boolean threadInSession(Thread thread, ClassLoader target, ClassLoader main) {
