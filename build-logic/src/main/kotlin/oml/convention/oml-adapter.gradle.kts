@@ -87,6 +87,15 @@ afterEvaluate {
         outputs.dir(gameLibraries)
         inputs.property("gameVersion", versionId)
     }
+    // compileOnly file dependencies under libs/<version>-libraries (netty/authlib) cannot carry
+    // builtBy, so the compile tasks must wait for the same fetch the tests already use. Without
+    // this a fresh checkout compiles before the library tree exists.
+    tasks.withType<JavaCompile>().configureEach {
+        dependsOn(fetchGameLibraries)
+    }
+    tasks.withType<KotlinCompile>().configureEach {
+        dependsOn(fetchGameLibraries)
+    }
     dependencies.add(
         "testRuntimeOnly",
         fileTree(gameLibraries) {

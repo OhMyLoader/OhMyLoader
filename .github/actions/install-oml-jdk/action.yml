@@ -41,7 +41,7 @@ runs:
         # The artifact may hold the JDK as a nested bundle archive or as a bare tree; open it
         # only when bin/java is not there yet.
         if ! find -L "$RUNNER_TEMP/jdk" -path '*/bin/java' | grep -q .; then
-          inner=$(find "$RUNNER_TEMP/jdk" -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.tgz' \) | head -1)
+          inner=$(find "$RUNNER_TEMP/jdk" -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.tgz' \) -print -quit)
           mkdir -p "$RUNNER_TEMP/jdk-x"
           case "$inner" in
             *.zip) unzip -q "$inner" -d "$RUNNER_TEMP/jdk-x" ;;
@@ -50,7 +50,7 @@ runs:
           rm -rf "$RUNNER_TEMP/jdk"
           mv "$RUNNER_TEMP/jdk-x" "$RUNNER_TEMP/jdk"
         fi
-        java_bin=$(find -L "$RUNNER_TEMP/jdk" -path '*/bin/java' -type f | head -1)
+        java_bin=$(find -L "$RUNNER_TEMP/jdk" -path '*/bin/java' -type f -print -quit)
         if [ -z "$java_bin" ]; then
           echo "::error::The JDK bundle does not contain bin/java."
           exit 1
