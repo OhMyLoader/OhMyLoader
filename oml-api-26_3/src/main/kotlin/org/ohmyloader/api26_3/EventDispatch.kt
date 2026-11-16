@@ -139,21 +139,13 @@ object EventDispatch {
         setOf("multiplayer.player.joined", "multiplayer.player.joined.renamed", "multiplayer.player.left")
 
     /**
-     * The translatable key behind a component, or null when it is not a plain translatable. The key
-     * field is private in the game jar, so the lookup is reflective — cached, because this runs at
-     * most once per broadcast and only while the mask is up.
+     * The translatable key behind a component, or null when it is not a plain translatable.
+     * {@code TranslatableContents.getKey()} is public in 26.3, so this stays a typed call: the
+     * broadcast hook runs on the server thread and reflection here would add another JEP 416
+     * accessor for a game class.
      */
-    private fun broadcastKey(message: net.minecraft.network.chat.Component): String? {
-        val contents = message.contents as? net.minecraft.network.chat.contents.TranslatableContents ?: return null
-        return translatableKey?.let { runCatching { it.get(contents) as? String }.getOrNull() }
-    }
-
-    private val translatableKey: java.lang.reflect.Field? by lazy {
-        runCatching {
-            net.minecraft.network.chat.contents.TranslatableContents::class.java
-                .getDeclaredField("key").apply { isAccessible = true }
-        }.getOrNull()
-    }
+    private fun broadcastKey(message: net.minecraft.network.chat.Component): String? =
+        (message.contents as? net.minecraft.network.chat.contents.TranslatableContents)?.key
 
     /** [RebootRestore.toDone] fires the soft-reboot session event on the client thread. */
     @JvmStatic

@@ -184,7 +184,7 @@ public final class OMLRebootOverlay {
      * <p>Read from the supervisor loader, so it is the same line both sessions and the in-between
      * code would produce — the gate can compare a session's claim against the resident truth.
      */
-    public static String trace() {
+    public static synchronized String trace() {
         pumpLocked();
         return "active=" + active
             + " shown=" + String.format(java.util.Locale.ROOT, "%.3f", shown)
