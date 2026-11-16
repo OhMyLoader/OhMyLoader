@@ -1,6 +1,7 @@
 package org.ohmyloader.adapter.common
 
 import com.mojang.renderpearl.api.device.GpuBackend
+import com.mojang.renderpearl.backend.opengl.GlBackend
 import com.mojang.renderpearl.backend.vulkan.VulkanBackend
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
@@ -18,11 +19,13 @@ class WindowHooksTest {
     fun resetShare() {
         System.setProperty("oml.window.lease", "on")
         WindowLease.finishShare()
+        WindowHooks.aliveProbe = { true }
     }
 
     @AfterEach
     fun clearLeaseSwitch() {
         System.clearProperty("oml.window.lease")
+        WindowHooks.aliveProbe = DEFAULT_PROBE
     }
 
     @Test
@@ -52,16 +55,33 @@ class WindowHooksTest {
     }
 
     @Test
-    fun `an OpenGL lease falls back to a fresh window`() {
-        WindowLease.record(42L, "com.mojang.renderpearl.backend.opengl.GlBackend")
+    fun `an OpenGL lease adopts the handle when SDL still knows it`() {
+        val gl = GlBackend()
+        WindowLease.record(42L, gl.javaClass.name)
         WindowLease.beginShare()
         val original = FakeOperation(9L)
 
-        assertFalse(WindowLease.shared(), "the OpenGL device creates a window before the adoption hook can run")
-        val handle = WindowHooks.createWindow(backend(), 800, 600, "window", original, 0)
+        assertTrue(WindowLease.shared(), "26.3 reaches Window.createWindow once per session, so GL can share too")
+        val handle = WindowHooks.createWindow(gl, 800, 600, "window", original, 0)
+
+        assertEquals(42L, handle)
+        assertEquals(0, original.calls, "an adopted window must not be created a second time")
+        assertFalse(WindowLease.shared())
+    }
+
+    @Test
+    fun `a lease whose window is gone is recreated`() {
+        val gl = GlBackend()
+        WindowLease.record(42L, gl.javaClass.name)
+        WindowLease.beginShare()
+        WindowHooks.aliveProbe = { false }
+        val original = FakeOperation(9L)
+
+        val handle = WindowHooks.createWindow(gl, 800, 600, "window", original, 0)
 
         assertEquals(9L, handle)
-        assertEquals(1, original.calls)
+        assertEquals(1, original.calls, "a dead handle must fall back to a fresh window instead of an Invalid window crash")
+        assertEquals(9L, WindowLease.handle())
         assertFalse(WindowLease.shared())
     }
 
@@ -119,6 +139,11 @@ class WindowHooksTest {
             @Suppress("UNCHECKED_CAST")
             return value as T
         }
+    }
+
+    private companion object {
+        /** The native liveness probe, restored after a test stubs it. */
+        val DEFAULT_PROBE: (Long) -> Boolean = WindowHooks.aliveProbe
     }
 
     private fun backend(): GpuBackend? = null

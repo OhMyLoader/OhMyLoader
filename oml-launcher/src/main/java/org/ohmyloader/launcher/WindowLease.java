@@ -69,14 +69,16 @@ public final class WindowLease {
     /**
      * Called by the reboot pipeline before the old session closes.
      *
-     * <p>26.3's OpenGL backend creates a hidden utility window during device creation, before
-     * {@code Window.createWindow} can adopt anything; a leased window cannot be reused there (the
-     * new session's GL device never reaches the adoption hook). The Vulkan backend creates its
-     * device without a window, so the next session can adopt the handle and build a fresh surface.
-     * Anything that cannot be reused safely falls back to the normal close/create path.
+     * <p>This used to refuse every backend except Vulkan, on the theory that 26.3's OpenGL device
+     * creates a hidden utility window before {@code Window.createWindow} can adopt anything. The
+     * lease trace disproved the second half: {@code Window.createWindow} is reached exactly once
+     * per session for the main window, because the GL utility window is created by
+     * {@code GlBackend.createWindow} directly and never passes the hook. What actually decides
+     * whether a handle can be reused is whether SDL still knows it, so the adoption probe checks
+     * that instead of a hard-coded backend name, and falls back to creating a window otherwise.
      */
     public static void beginShare() {
-        shared = enabled() && backend.contains("VulkanBackend");
+        shared = enabled() && hasHandle();
     }
 
     /** Called by the adopting session once it has taken the handle. */

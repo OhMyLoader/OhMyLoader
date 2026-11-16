@@ -30,6 +30,22 @@ object OMLReboot {
         val control = Class.forName("org.ohmyloader.launcher.SessionControl", true, OMLReboot::class.java.classLoader)
         control.getMethod("requestReboot", String::class.java).invoke(null, reason)
 
+        // beginShare decides whether the lease is actually shared (it refuses a handle SDL no longer
+        // knows), so report the decision at the moment it is made instead of inferring it from the
+        // next session's hooks. Only with the opt-in lease: the default path stays quiet.
+        runCatching {
+            val lease = Class.forName("org.ohmyloader.launcher.WindowLease", true, OMLReboot::class.java.classLoader)
+            val enabled = lease.getMethod("enabled").invoke(null) as Boolean
+            if (enabled) {
+                OmlLog.info(
+                    "Lease",
+                    "reboot requested: shared=${lease.getMethod("shared").invoke(null)} " +
+                        "handle=${lease.getMethod("handle").invoke(null)} " +
+                        "backend=${lease.getMethod("backend").invoke(null)}",
+                )
+            }
+        }
+
         OMLScheduler.client.schedule {
             runCatching {
                 // Minecraft.run owns the loop flag; the close path is the finally block, not a
