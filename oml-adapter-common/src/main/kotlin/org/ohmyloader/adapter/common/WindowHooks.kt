@@ -145,6 +145,12 @@ object WindowHooks {
      * `vkCreateSwapchainKHR` on the same handle fails with `VK_ERROR_NATIVE_WINDOW_IN_USE_KHR`.
      * Closing the surface leaves the `SDL_Window` untouched — measured with `SDL_GetWindowFlags`
      * before and after — so the lease survives and the next session builds a fresh surface on it.
+     *
+     * <p>Nothing accumulates on the OpenGL side, which is worth stating because the no-op invites
+     * the opposite conclusion: the hidden utility window and the GL context belong to `GlDevice`,
+     * and `GlDevice.close()` destroys both. `RenderSystem.shutdownRenderer()` calls it on every
+     * session's close, so each handover leaves neither behind — three consecutive handovers kept
+     * handle, GDI and USER object counts flat.
      */
     @JvmStatic
     fun surfaceClose(surface: com.mojang.renderpearl.api.device.GpuSurface?) {
