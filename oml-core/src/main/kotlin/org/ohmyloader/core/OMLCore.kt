@@ -38,6 +38,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
 import java.io.PrintStream
+import java.lang.ref.WeakReference
 import java.lang.reflect.InvocationTargetException
 import java.net.URL
 import java.net.URLClassLoader
@@ -166,7 +167,38 @@ object OMLCore {
 
         declareContent(adapter, modsDir)
         launch(adapter, args)
-        SessionTeardown.run(primaryLoader, adapter, !serverSide)
+        if (serverSide) {
+            teardownWhenServerExits(adapter)
+        } else {
+            SessionTeardown.run(primaryLoader, adapter, true)
+        }
+    }
+
+    /**
+     * Moves the session teardown to the end of the process on the dedicated-server side.
+     *
+     * <p>`net.minecraft.server.Main.main` returns as soon as the server thread is running: the thread
+     * keeps the process alive, the return value does not. Tearing the session down at that moment is
+     * what closed the server's executors underneath it — the first structure lookup after
+     * `Preparing level` died with `RejectedExecutionException` out of
+     * `ChunkGeneratorStructureState`, so a dedicated server could never finish loading a world.
+     *
+     * <p>This side has no reboot boundary (no window, no reboot signal), so the session really ends
+     * when the process does. Vanilla stops through `MinecraftServer.halt`, which is a `System.exit`,
+     * and that runs shutdown hooks. Both captures are weak on purpose: a strong reference would pin
+     * the disposable loader for the whole session and make the canary's verdict — "what did the game
+     * leave behind" — meaningless.
+     */
+    private fun teardownWhenServerExits(adapter: IAdapter) {
+        val loader = WeakReference<ClassLoader>(primaryLoader)
+        val sessionAdapter = WeakReference(adapter)
+        Runtime.getRuntime().addShutdownHook(
+            Thread({
+                val live = loader.get() ?: return@Thread
+                runCatching { SessionTeardown.run(live, sessionAdapter.get(), false) }
+                    .onFailure { OmlLog.warn("Teardown", "server teardown failed: $it") }
+            }, "oml-server-teardown"),
+        )
     }
 
     /**

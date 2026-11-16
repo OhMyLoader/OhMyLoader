@@ -9,10 +9,13 @@ package org.ohmyloader.launcher;
  * {@code Window.close}/SDL_Quit are skipped; the next session adopts the handle, then clears the
  * shared flag so a normal exit destroys the window and quits SDL as usual.
  *
- * <p>The lease is <b>opt-in</b> ({@code -Doml.window.lease=on}) because 26.3's graphics-device
- * shutdown still invalidates the native window even when the game's close paths are skipped. The
- * default reboot closes the old window normally and the next session creates a fresh one; the
- * adoption path stays here for the follow-up that preserves the handle through device teardown.
+ * <p>The lease is <b>on by default</b>. It was opt-in while 26.3's graphics-device shutdown was
+ * believed to invalidate the native window regardless of the close paths; the adoption trace showed
+ * otherwise — the handle survives as long as the retiring session releases its GPU surface and the
+ * renderer's context attributes are restored before the window is adopted — and the reboot gate now
+ * exercises that path on every reboot. {@code -Doml.window.lease=off} is the escape hatch: it brings
+ * back the older behaviour, where the retiring session closes its window and the next one builds a
+ * fresh one.
  *
  * <p>The class lives in the supervisor loader and is parent-first to the session, so the game hook
  * and the supervisor see one static lease.
@@ -22,6 +25,10 @@ public final class WindowLease {
     private static volatile long handle;
     private static volatile String backend = "";
     private static volatile boolean shared;
+    /** Whether the current session took the previous session's handle instead of creating one. */
+    private static volatile boolean adopted;
+    /** Whether the retiring session released its GPU surface before handing the window over. */
+    private static volatile boolean surfaceClosed;
 
     private WindowLease() {}
 
@@ -44,11 +51,34 @@ public final class WindowLease {
         if (windowHandle == 0L) return;
         handle = windowHandle;
         backend = backendName == null ? "" : backendName;
+        adopted = false;
     }
 
     /** Records without a backend name (tests and legacy callers). */
     public static void record(long windowHandle) {
         record(windowHandle, "");
+    }
+
+    /** The adopting session took the recorded handle; false means it created a new window. */
+    public static void markAdopted() {
+        adopted = true;
+    }
+
+    public static boolean adopted() {
+        return adopted;
+    }
+
+    /**
+     * Records that the retiring session released its GPU surface. The fact has to live here rather
+     * than in the hook: the session that closes the surface is gone by the time the next one can be
+     * asked whether the transition was clean, and this is the only layer both sessions share.
+     */
+    public static void recordSurfaceClose(boolean ok) {
+        surfaceClosed = ok;
+    }
+
+    public static boolean surfaceClosed() {
+        return surfaceClosed;
     }
 
     /** True between "reboot requested" and the next session's adoption of the handle. */
@@ -57,13 +87,13 @@ public final class WindowLease {
     }
 
     /**
-     * The lease is opt-in: 26.3's teardown still invalidates the SDL window even when the game's
-     * window, surface, backend-unload and SDL_Quit paths are skipped (the graphics device shutdown
-     * destroys the native window), so the default reboot recreates the window. Set
-     * {@code -Doml.window.lease=on} to exercise the adoption path while that is being solved.
+     * On unless {@code -Doml.window.lease=off}: keeping one OS window across the swap is what makes
+     * the reboot look like a scene change instead of a relaunch, and the gate covers it. Anything
+     * other than an explicit {@code off} keeps the adoption path live, so a typo cannot silently
+     * turn a feature off.
      */
     public static boolean enabled() {
-        return "on".equalsIgnoreCase(System.getProperty("oml.window.lease", "off"));
+        return !"off".equalsIgnoreCase(System.getProperty("oml.window.lease", "on"));
     }
 
     /**

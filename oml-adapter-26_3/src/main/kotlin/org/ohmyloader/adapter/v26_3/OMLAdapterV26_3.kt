@@ -91,6 +91,9 @@ class OMLAdapterV26_3 : IAdapter {
         if (serverSide) {
             net.minecraft.server.Main.main(args)
         } else {
+            // Before the first frame: the transition is painted at the GUI tail from the moment the
+            // session starts, and a session that began without a painter would show nothing at all.
+            RebootTransition.painter = RebootTransitionPainter::paint
             net.minecraft.client.main.Main.main(args)
         }
     }

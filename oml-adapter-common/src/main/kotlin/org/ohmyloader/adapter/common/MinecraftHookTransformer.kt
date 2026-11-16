@@ -153,8 +153,11 @@ class MinecraftHookTransformer(private val idPrefix: String, private val shapes:
             method("disconnectFromWorld", desc = "(Lnet/minecraft/network/chat/Component;)V") {
                 atHead { call("org/ohmyloader/adapter/common/EventBridge", "onWorldDisconnect", "()V") }
             }
-            // The Vulkan surface owns the SDL window and its close() destroys it; a leased window
-            // must survive into the next session, where the new device builds a fresh surface.
+            // The surface is released every reboot, leased window or not: GlSurface.close() is a
+            // no-op and VulkanGpuSurface.close() only destroys the swapchain, its semaphores and
+            // the VkSurfaceKHR — neither touches the SDL window, which only Window.close destroys.
+            // Skipping it would strand a swapchain on the leased handle and make the next session's
+            // vkCreateSwapchainKHR fail with VK_ERROR_NATIVE_WINDOW_IN_USE_KHR.
             method("close", desc = "()V") {
                 beforeCall(
                     owner = "com/mojang/renderpearl/api/device/GpuSurface",
@@ -250,6 +253,24 @@ class MinecraftHookTransformer(private val idPrefix: String, private val shapes:
                     extras = listOf(DslValue.IntVal(0)),
                 )
                 require(1)
+            }
+            // SDL's event queue is process state, not session state: a window event queued while the
+            // retiring session was tearing down is delivered to the next one, and a size event there
+            // silently redefines the adopted window. Traced on the lease path.
+            //
+            // This is the whole fix, and it is deliberately the only one: the event is dropped
+            // *before* the game applies it, so the cache is never wrong in the first place. An
+            // after-the-fact correction was tried and removed — re-deriving the size from SDL and
+            // pushing it back through `onFramebufferResize` measured the native call wrong often
+            // enough to write nonsense (a 1443037184-pixel-wide framebuffer) into the window, which
+            // is a worse failure than the one it was meant to paper over.
+            method("handleEvent", desc = "(Lorg/lwjgl/sdl/SDL_Event;)V") {
+                atHead {
+                    call(
+                        "org/ohmyloader/adapter/common/WindowHooks", "onWindowEvent", "(Ljava/lang/Object;Ljava/lang/Object;)V",
+                        args = listOf(DslValue.Arg(0), DslValue.This),
+                    )
+                }
             }
             // The old session's close must not destroy the leased window.
             method("close", desc = "()V") {
@@ -494,6 +515,27 @@ class MinecraftHookTransformer(private val idPrefix: String, private val shapes:
                         "org/ohmyloader/adapter/common/EventBridge", "onHudRender",
                         shapes.onHudRenderDesc,
                         args = shapes.hudRenderArgs,
+                    )
+                }
+            }
+        }
+        classTarget("net/minecraft/client/gui/Gui") {
+            // The reboot transition's only draw site, and the reason it is one screen instead of
+            // three. `extractRenderState` builds the frame's whole GUI in a fixed order — the HUD,
+            // then the vanilla overlay (the loading screen), then the screen (the level-loading
+            // screen), then the saving indicator — so the tail of this method is the single point
+            // that is above all of them. Painting there means the retiring session's "Saving world"
+            // and the starting session's loading screens are all drawn underneath the transition,
+            // and neither session has to suppress anything.
+            //
+            // The extractor is captured as a local rather than fetched from a field: it is created
+            // inside this method and is not reachable from anywhere else.
+            method("extractRenderState", desc = "(Lnet/minecraft/client/DeltaTracker;ZZ)V") {
+                atTail {
+                    call(
+                        "org/ohmyloader/adapter/common/EventBridge", "onGuiTail",
+                        "(Lnet/minecraft/client/gui/GuiGraphicsExtractor;)V",
+                        args = listOf(local(type = "Lnet/minecraft/client/gui/GuiGraphicsExtractor;")),
                     )
                 }
             }
