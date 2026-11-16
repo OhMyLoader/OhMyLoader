@@ -150,6 +150,11 @@ object WindowHooks {
     fun surfaceClose(surface: com.mojang.renderpearl.api.device.GpuSurface?) {
         val name = surface?.javaClass?.name
         trace("surfaceClose APPLIED surface=$name shared=${WindowLease.shared()} ${leaseState()}")
+        // A leased session keeps the process alive after this call, so a pipeline build still in
+        // flight on the shader pool would keep calling into a device that is about to be destroyed.
+        // That is an access violation in the driver with no Java frame (seen on Vulkan), not an
+        // exception the game could handle — the teardown waits for the pool instead.
+        if (WindowLease.shared()) drainCompilePool()
         val failure = runCatching { surface?.close() }.exceptionOrNull()
         if (failure != null) {
             // A surface that refuses to close must not turn the normal shutdown into a crash: the
@@ -161,6 +166,29 @@ object WindowHooks {
         WindowLease.recordSurfaceClose(failure == null)
         trace("surfaceClose DONE surface=$name ok=${failure == null} ${leaseState()}")
     }
+
+    /**
+     * Waits for the session's shader pool to go idle before anything it is calling into is freed.
+     *
+     * <p>Bounded rather than open-ended: a pipeline build that never returns must not turn a reboot
+     * into a hang, and the log line is what tells a timed-out drain apart from a clean one.
+     */
+    private fun drainCompilePool() {
+        val started = System.nanoTime()
+        val idle = ShaderCompileExecutor.awaitQuiescent(COMPILE_DRAIN_MILLIS)
+        val elapsed = (System.nanoTime() - started) / 1_000_000
+        if (!idle) {
+            OmlLog.warn(
+                "Shader",
+                "shader compile pool still busy after ${elapsed}ms; tearing the GPU down anyway",
+            )
+        } else if (elapsed > 0) {
+            OmlLog.info("Shader", "waited ${elapsed}ms for the shader compile pool before teardown")
+        }
+    }
+
+    /** Long enough for a pipeline build that is already inside the driver; short enough to fail visibly. */
+    private const val COMPILE_DRAIN_MILLIS = 20_000L
 
     @JvmStatic
     fun close(original: Operation<Void>, id: Int) {

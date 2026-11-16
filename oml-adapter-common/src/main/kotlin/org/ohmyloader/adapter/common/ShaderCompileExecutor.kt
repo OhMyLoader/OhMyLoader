@@ -65,6 +65,37 @@ object ShaderCompileExecutor {
     ): CompletableFuture<*> =
         original.call(pipeline, source, pool.value) as CompletableFuture<*>
 
+    /**
+     * Waits until no compile is running and none is queued, or the timeout expires.
+     *
+     * <p>A reboot tears the GPU surface, and the device behind it, down while this pool may still
+     * be inside `vkCreateGraphicsPipelines`. That call cannot be cancelled — `shutdownNow()` only
+     * interrupts Java code, and the worker is in native code — so the teardown has to wait for it
+     * instead. Measured on 26.3 + Vulkan: closing the surface under an in-flight pipeline build
+     * exits the process with an access violation in the driver, no Java frame, and the game then
+     * treats the next launch as a crash and resets the graphics backend to OpenGL.
+     *
+     * <p>The pool is *not* shut down here. This runs before the game has finished closing, and a
+     * rejection would surface as a `RejectedExecutionException` inside the renderer; draining is
+     * all the teardown needs. Zero cost when the pool was never used or is already idle.
+     */
+    @JvmStatic
+    fun awaitQuiescent(timeoutMillis: Long): Boolean =
+        if (!pool.isInitialized()) true else awaitIdle(pool.value, timeoutMillis)
+
+    /**
+     * The wait rule itself, over any pool: a JVM that never compiled a shader must not create the
+     * four 16 MiB threads just to answer "idle", and the rule is worth testing without them.
+     */
+    internal fun awaitIdle(executor: ThreadPoolExecutor, timeoutMillis: Long): Boolean {
+        val deadline = System.nanoTime() + timeoutMillis * 1_000_000L
+        while (System.nanoTime() < deadline) {
+            if (executor.queue.isEmpty() && executor.activeCount == 0) return true
+            Thread.sleep(10)
+        }
+        return executor.queue.isEmpty() && executor.activeCount == 0
+    }
+
     /** Called by OMLCore when the game returns, before the session canary. */
     @JvmStatic
     fun shutdown() {
