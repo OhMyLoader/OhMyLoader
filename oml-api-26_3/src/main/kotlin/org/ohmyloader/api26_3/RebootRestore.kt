@@ -447,33 +447,47 @@ object RebootRestore {
                 runCatching { player.level().dimension().identifier().toString() == target.dimension }
                     .getOrDefault(false)
             val inPlace = sameDimension && before != null && before.distanceTo(wanted) <= 0.5
-            val moved = if (inPlace) {
-                Result.success(true)
-            } else {
-                runCatching {
-                    player.teleportTo(
-                        level, target.x, target.y, target.z,
-                        emptySet(), target.yaw, target.pitch, false,
-                    )
-                }
+            if (inPlace) {
+                outcome = "restored=1"
+                OmlLog.info(
+                    "Reboot",
+                    "restore applied in-place from=$loadedAt at=${
+                        actualAt(before)
+                    } mode=${player.gameMode()} dim=${player.level().dimension().identifier()} -> $outcome",
+                )
+                return@executeIfPossible
             }
-            val actual = runCatching { player.position() }.getOrNull()
-            val wrong = actual == null ||
-                actual.distanceTo(net.minecraft.world.phys.Vec3(target.x, target.y, target.z)) > 1.0
-            outcome = when {
-                moved.isFailure -> "failed=teleport"
-                wrong -> "failed=position-mismatch"
-                player.level().dimension().identifier() != dimension.identifier() -> "failed=dimension-mismatch"
-                else -> "restored=1"
+            val moved = runCatching {
+                player.teleportTo(
+                    level, target.x, target.y, target.z,
+                    emptySet(), target.yaw, target.pitch, false,
+                )
             }
+            if (moved.isFailure) {
+                outcome = "failed=teleport"
+                OmlLog.warn(
+                    "Reboot",
+                    "restore teleport to=${actualAt(wanted)} threw ${moved.exceptionOrNull()}",
+                )
+                return@executeIfPossible
+            }
+            // The teleport request is out, but the entity position cannot be judged this tick: the
+            // same-dimension path goes through the connection (a queued position confirm, and the
+            // level tick that still moves the player after spawn), so a read-back now returns the
+            // position the player had *before* the request. Re-enter on the next tick instead: a
+            // move that took shows up as in-place and reports `restored=1`; one that did not is
+            // re-requested until the attempt budget runs out and fails loudly.
+            outcome = "retry"
             OmlLog.info(
                 "Reboot",
-                "restore applied from=$loadedAt ${if (inPlace) "in-place" else "moved=${moved.getOrNull()}"} at=${
-                    actual?.let { "(${"%.2f".format(it.x)}, ${"%.2f".format(it.y)}, ${"%.2f".format(it.z)})" }
-                } mode=${player.gameMode()} dim=${player.level().dimension().identifier()} -> $outcome",
+                "restore teleport requested from=$loadedAt to=${actualAt(wanted)} mode=${player.gameMode()} dim=${player.level().dimension().identifier()}",
             )
         }
     }
+
+    /** One-line position for the restore log lines. */
+    private fun actualAt(v: net.minecraft.world.phys.Vec3?): String =
+        v?.let { "(${"%.2f".format(it.x)}, ${"%.2f".format(it.y)}, ${"%.2f".format(it.z)})" } ?: "(unknown)"
 
     private fun awaitApplied(client: Minecraft) {
         when {
@@ -550,6 +564,13 @@ object RebootRestore {
             return
         }
         if (!transitionActive()) {
+            // The overlay is gone, but the player still does not have the frame while one of the
+            // game's own screens (a level-load or reconnect screen) is up — and a fast restore can
+            // land here while that screen is mid-life. Holding is what "the player has the frame"
+            // means; the timeout below releases with a warning if the screen never closes.
+            if (client.currentScreen != null && fadeTicks <= FADE_TIMEOUT_TICKS) {
+                return
+            }
             toDone()
             OmlLog.info("Reboot", "transition lifted; the player has the frame")
             return

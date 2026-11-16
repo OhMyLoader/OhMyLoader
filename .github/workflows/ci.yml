@@ -23,10 +23,35 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-java@v6
-        with:
-          distribution: zulu
-          java-version: '27'
+      # The JVM floor is 27.0.2 (JDK-8394484, fixed by PR 33729): no distro carries that build, so
+      # the JVM is the raneashay/jdk-27 CI bundle pinned below. See the e2e-release install step
+      # for the full note — including the artifact expiry caveat.
+      - name: Install the 27.0.2-internal JDK bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JDK_RUN_ID: '43782257129'
+          JDK_BUNDLE: 'bundles-linux-x64'
+        run: |
+          set -euo pipefail
+          id=$(gh api "repos/raneashay/jdk-27/actions/runs/$JDK_RUN_ID/artifacts?per_page=100" \
+            --jq "map(select(.name == \"$JDK_BUNDLE\" and .expired == false) | .id)[0]")
+          gh api "repos/raneashay/jdk-27/actions/artifacts/$id/zip" > "$RUNNER_TEMP/jdk-bundle.zip"
+          mkdir -p "$RUNNER_TEMP/jdk"
+          unzip -q "$RUNNER_TEMP/jdk-bundle.zip" -d "$RUNNER_TEMP/jdk"
+          if ! find -L "$RUNNER_TEMP/jdk" -path '*/bin/java' | grep -q .; then
+            inner=$(find "$RUNNER_TEMP/jdk" -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.tgz' \) | head -1)
+            mkdir -p "$RUNNER_TEMP/jdk-x"
+            case "$inner" in
+              *.zip) unzip -q "$inner" -d "$RUNNER_TEMP/jdk-x" ;;
+              *) tar -xzf "$inner" -C "$RUNNER_TEMP/jdk-x" ;;
+            esac
+            rm -rf "$RUNNER_TEMP/jdk"
+            mv "$RUNNER_TEMP/jdk-x" "$RUNNER_TEMP/jdk"
+          fi
+          home=$(dirname "$(find -L "$RUNNER_TEMP/jdk" -path '*/bin/java' | head -1)")
+          "$home/bin/java" -version
+          echo "JAVA_HOME=$home" >> "$GITHUB_ENV"
+          echo "$home/bin" >> "$GITHUB_PATH"
       # oml-native is built from source as part of `build` (the installer embeds it)
       - uses: mlugg/setup-zig@v2
         with:
@@ -123,10 +148,45 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-java@v6
-        with:
-          distribution: zulu
-          java-version: '27'
+      # OML's JVM floor is 27.0.2 (Java 27.0.1 carries the Windows stack-probe defect JDK-8394484:
+      # a random 0xC0000005 with no hs_err, fixed by JDK PR 33729). No distro carries that build,
+      # so the JVM comes from the raneashay/jdk-27 CI run pinned below — the same bundle the
+      # development gates run locally. GitHub artifacts expire (this run: 2026-11-21); when the
+      # lookup comes back empty, point JDK_RUN_ID at the latest green run of
+      # https://github.com/raneashay/jdk-27/actions.
+      - name: Install the 27.0.2-internal JDK bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JDK_RUN_ID: '43782257129'
+          JDK_BUNDLE: 'bundles-windows-x64'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $id = gh api "repos/raneashay/jdk-27/actions/runs/$env:JDK_RUN_ID/artifacts?per_page=100" `
+            --jq "map(select(.name == '$env:JDK_BUNDLE' and .expired == false) | .id)[0]"
+          gh api "repos/raneashay/jdk-27/actions/artifacts/$id/zip" > "$env:RUNNER_TEMP\jdk-bundle.zip"
+          Expand-Archive "$env:RUNNER_TEMP\jdk-bundle.zip" -DestinationPath "$env:RUNNER_TEMP\jdk"
+          $java = Get-ChildItem "$env:RUNNER_TEMP\jdk" -Recurse -Filter java.exe |
+            Where-Object { $_.DirectoryName -like '*\bin' } | Select-Object -First 1
+          if (-not $java) {
+            # The artifact may hold the JDK as a nested bundle archive; open it and look again.
+            $inner = Get-ChildItem "$env:RUNNER_TEMP\jdk" -Recurse -Include *.zip, *.tar.gz, *.tgz |
+              Select-Object -First 1
+            New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\jdk-x" | Out-Null
+            if ($inner.Extension -eq '.zip') {
+              Expand-Archive $inner.FullName -DestinationPath "$env:RUNNER_TEMP\jdk-x"
+            } else {
+              tar -xzf $inner.FullName -C "$env:RUNNER_TEMP\jdk-x"
+            }
+            Remove-Item -Recurse -Force "$env:RUNNER_TEMP\jdk"
+            Rename-Item "$env:RUNNER_TEMP\jdk-x" "jdk"
+            $java = Get-ChildItem "$env:RUNNER_TEMP\jdk" -Recurse -Filter java.exe |
+              Where-Object { $_.DirectoryName -like '*\bin' } | Select-Object -First 1
+          }
+          $h = Split-Path $java.DirectoryName -Parent
+          & "$h\bin\java.exe" -version
+          "JAVA_HOME=$h" >> $env:GITHUB_ENV
+          "$h\bin" >> $env:GITHUB_PATH
       - uses: mlugg/setup-zig@v2
         with:
           version: 0.17.0
@@ -208,10 +268,41 @@ jobs:
           cp -R org "$HOME/.m2/repository/"
           mkdir -p "$GITHUB_WORKSPACE/OhMyLoaderTestMod/build"
           cp SHA256SUMS "$GITHUB_WORKSPACE/OhMyLoaderTestMod/build/loader-staging-SHA256SUMS"
-      - uses: actions/setup-java@v6
-        with:
-          distribution: zulu
-          java-version: '27'
+      # OML's JVM floor is 27.0.2 (Java 27.0.1 carries the Windows stack-probe defect JDK-8394484:
+      # a random 0xC0000005 with no hs_err, fixed by JDK PR 33729). No distro carries that build,
+      # so the JVM comes from the raneashay/jdk-27 CI run pinned below — the same bundle the
+      # development gates run locally. GitHub artifacts expire (this run: 2026-11-21); when the
+      # lookup comes back empty, point JDK_RUN_ID at the latest green run of
+      # https://github.com/raneashay/jdk-27/actions. The ubuntu jobs take the linux-x64 bundle of
+      # the same run; the windows job takes bundles-windows-x64.
+      - name: Install the 27.0.2-internal JDK bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JDK_RUN_ID: '43782257129'
+          JDK_BUNDLE: 'bundles-linux-x64'
+        run: |
+          set -euo pipefail
+          id=$(gh api "repos/raneashay/jdk-27/actions/runs/$JDK_RUN_ID/artifacts?per_page=100" \
+            --jq "map(select(.name == \"$JDK_BUNDLE\" and .expired == false) | .id)[0]")
+          gh api "repos/raneashay/jdk-27/actions/artifacts/$id/zip" > "$RUNNER_TEMP/jdk-bundle.zip"
+          mkdir -p "$RUNNER_TEMP/jdk"
+          unzip -q "$RUNNER_TEMP/jdk-bundle.zip" -d "$RUNNER_TEMP/jdk"
+          # The artifact may hold the JDK as a nested bundle archive or as a bare tree; open it
+          # only when bin/java is not there yet.
+          if ! find -L "$RUNNER_TEMP/jdk" -path '*/bin/java' | grep -q .; then
+            inner=$(find "$RUNNER_TEMP/jdk" -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.tgz' \) | head -1)
+            mkdir -p "$RUNNER_TEMP/jdk-x"
+            case "$inner" in
+              *.zip) unzip -q "$inner" -d "$RUNNER_TEMP/jdk-x" ;;
+              *) tar -xzf "$inner" -C "$RUNNER_TEMP/jdk-x" ;;
+            esac
+            rm -rf "$RUNNER_TEMP/jdk"
+            mv "$RUNNER_TEMP/jdk-x" "$RUNNER_TEMP/jdk"
+          fi
+          home=$(dirname "$(find -L "$RUNNER_TEMP/jdk" -path '*/bin/java' | head -1)")
+          "$home/bin/java" -version
+          echo "JAVA_HOME=$home" >> "$GITHUB_ENV"
+          echo "$home/bin" >> "$GITHUB_PATH"
       - uses: mlugg/setup-zig@v2
         with:
           version: 0.17.0
@@ -293,10 +384,33 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-java@v6
-        with:
-          distribution: zulu
-          java-version: '27'
+      # Same JVM bundle as the other jobs (see the e2e-release install step for the full note).
+      - name: Install the 27.0.2-internal JDK bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JDK_RUN_ID: '43782257129'
+          JDK_BUNDLE: 'bundles-linux-x64'
+        run: |
+          set -euo pipefail
+          id=$(gh api "repos/raneashay/jdk-27/actions/runs/$JDK_RUN_ID/artifacts?per_page=100" \
+            --jq "map(select(.name == \"$JDK_BUNDLE\" and .expired == false) | .id)[0]")
+          gh api "repos/raneashay/jdk-27/actions/artifacts/$id/zip" > "$RUNNER_TEMP/jdk-bundle.zip"
+          mkdir -p "$RUNNER_TEMP/jdk"
+          unzip -q "$RUNNER_TEMP/jdk-bundle.zip" -d "$RUNNER_TEMP/jdk"
+          if ! find -L "$RUNNER_TEMP/jdk" -path '*/bin/java' | grep -q .; then
+            inner=$(find "$RUNNER_TEMP/jdk" -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.tgz' \) | head -1)
+            mkdir -p "$RUNNER_TEMP/jdk-x"
+            case "$inner" in
+              *.zip) unzip -q "$inner" -d "$RUNNER_TEMP/jdk-x" ;;
+              *) tar -xzf "$inner" -C "$RUNNER_TEMP/jdk-x" ;;
+            esac
+            rm -rf "$RUNNER_TEMP/jdk"
+            mv "$RUNNER_TEMP/jdk-x" "$RUNNER_TEMP/jdk"
+          fi
+          home=$(dirname "$(find -L "$RUNNER_TEMP/jdk" -path '*/bin/java' | head -1)")
+          "$home/bin/java" -version
+          echo "JAVA_HOME=$home" >> "$GITHUB_ENV"
+          echo "$home/bin" >> "$GITHUB_PATH"
       # `publish` at the root includes :oml-native, whose natives jars dependOn buildOmlNative — the
       # publish shells out to zig. Depending on a remote build-cache hit from the build job would make
       # the release fail on one cache eviction.

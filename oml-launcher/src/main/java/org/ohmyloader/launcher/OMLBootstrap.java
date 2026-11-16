@@ -40,6 +40,16 @@ public final class OMLBootstrap {
     private static final String LAYER_DIR = "lib";
     private static final String CONFIG_FILE = "launch.properties";
 
+    /**
+     * The JVM floor, 27.0.2. Zulu 27.0.1 carries the Windows stack-probe defect JDK-8394484: an
+     * FFM upcall's JIT nmethod probes the thread's stack guard while the thread is already deep in
+     * the frame, and on that build the guard hit is not turned into a {@code StackOverflowError} —
+     * the process dies with {@code 0xC0000005} and no {@code hs_err}, indistinguishable from a
+     * native crash in SDL/OpenGL. 27.0.2 fixed it (JDK PR 33729), so the loader refuses anything
+     * older rather than running a client that crashes at random, hours in.
+     */
+    static final Runtime.Version MINIMUM_JVM = Runtime.Version.parse("27.0.2");
+
     // The game replaces System.out/err with log4j-backed streams. Those streams belong to the
     // disposable session and are also a ThreadLocal root; the supervisor must print its canary
     // diagnostics through the original process streams after the session stops. This class is
@@ -57,7 +67,15 @@ public final class OMLBootstrap {
     }
 
     public static void main(String[] args) throws Exception {
-        System.out.println("[OMLBootstrap] JVM version: " + Runtime.version());
+        Runtime.Version running = Runtime.version();
+        System.out.println("[OMLBootstrap] JVM version: " + running);
+        if (!isSupportedJvm(running)) {
+            System.err.println(
+                "[OMLBootstrap] FATAL: this JVM (" + running + ") is below OML's minimum " + MINIMUM_JVM
+                    + ". Java 27.0.1 has the Windows stack-probe defect JDK-8394484, which kills the"
+                    + " process with 0xC0000005 and no crash log; upgrade to 27.0.2 or newer and try again.");
+            System.exit(2);
+        }
         File baseDir = resolveBaseDir();
         System.out.println("[OMLBootstrap] Runtime directory: " + baseDir);
 
@@ -86,6 +104,16 @@ public final class OMLBootstrap {
         Class<?> supervisorClass = Class.forName("org.ohmyloader.launcher.OMLSupervisor", true, supervisor);
         Method run = supervisorClass.getMethod("run", String[].class, URL[].class);
         run.invoke(null, (Object) args, (Object) split.session);
+    }
+
+    /**
+     * The version rule behind {@link #MINIMUM_JVM}: any feature above 27 passes, 27 itself needs an
+     * update of at least 2. Package-private so the contract is testable without a process.
+     */
+    static boolean isSupportedJvm(Runtime.Version running) {
+        if (running.feature() > MINIMUM_JVM.feature()) return true;
+        if (running.feature() < MINIMUM_JVM.feature()) return false;
+        return running.update() >= MINIMUM_JVM.update();
     }
 
     /**

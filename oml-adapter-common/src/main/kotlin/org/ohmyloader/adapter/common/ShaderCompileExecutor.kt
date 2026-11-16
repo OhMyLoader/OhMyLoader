@@ -16,18 +16,22 @@ import java.util.concurrent.atomic.AtomicInteger
  * <p>26.3's RenderPearl frontend compiles shaders through a shared ForkJoin worker. That worker
  * reaches Shaderc through an FFM downcall whose include resolver is an FFM upcall back into Java;
  * the JIT nmethod for the FFM string conversion probes the worker's stack guard while the worker is
- * already ~100 KB deep. On Zulu 27 that guard hit is not turned into a StackOverflowError, and
- * the process dies with 0xC0000005.
+ * already ~100 KB deep. On Java 27.0.1 that guard hit is not turned into a StackOverflowError and
+ * the process dies with 0xC0000005 — but 27.0.2 (the loader's JVM floor, see OMLBootstrap) fixed the
+ * guard handling, so the deep-stack path is now a thrown error like everywhere else. There was a
+ * mitigation here for a while: the pool's threads were created with a 16 MiB stack to keep the
+ * guard far from the call chain. With the floor raised it serves no purpose and was removed; the
+ * threads use the default stack size.
  *
- * <p>Running those tasks on a small pool whose threads are created with a 16 MiB stack moves the
- * guard far away from the shader-compilation call chain without any JVM launch option. The pool is
- * session-scoped (this class is loaded by the session's OML loader) and is shut down when the game
- * returns, before the supervisor probes the session.
+ * <p>The pool itself stays, for what the workaround never provided: the game's shared background
+ * executor is not ours to drain or shut down, and a reboot has to wait for in-flight
+ * `vkCreateGraphicsPipelines` calls before tearing the GPU surface down. The pool is session-scoped
+ * (this class is loaded by the session's OML loader) and is shut down when the game returns, before
+ * the supervisor probes the session.
  */
 object ShaderCompileExecutor {
 
     private const val THREADS = 4
-    private const val STACK_BYTES = 16L * 1024 * 1024
     private val threadIds = AtomicInteger()
 
     private val pool = lazy {
@@ -38,16 +42,13 @@ object ShaderCompileExecutor {
             TimeUnit.MILLISECONDS,
             LinkedBlockingQueue(),
             ThreadFactory { task ->
-                Thread(null, task, "OML-Shader-Compile-${threadIds.incrementAndGet()}", STACK_BYTES).apply {
+                Thread(null, task, "OML-Shader-Compile-${threadIds.incrementAndGet()}").apply {
                     isDaemon = true
                     contextClassLoader = ShaderCompileExecutor::class.java.classLoader
                 }
             },
         ).also {
-            OmlLog.info(
-                "Shader",
-                "dedicated shader compile executor: $THREADS thread(s), ${STACK_BYTES / (1024 * 1024)} MiB stack",
-            )
+            OmlLog.info("Shader", "dedicated shader compile executor: $THREADS thread(s)")
         }
     }
 
@@ -85,7 +86,7 @@ object ShaderCompileExecutor {
 
     /**
      * The wait rule itself, over any pool: a JVM that never compiled a shader must not create the
-     * four 16 MiB threads just to answer "idle", and the rule is worth testing without them.
+     * four threads just to answer "idle", and the rule is worth testing without them.
      */
     internal fun awaitIdle(executor: ThreadPoolExecutor, timeoutMillis: Long): Boolean {
         val deadline = System.nanoTime() + timeoutMillis * 1_000_000L
