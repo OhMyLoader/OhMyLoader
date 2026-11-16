@@ -1,25 +1,16 @@
 name: Install the OML JDK bundle
 description: >
   Installs the 27.0.2-internal JDK the whole OML layer requires (JDK-8394484).
-  The bundle is a GitHub Actions artifact of raneashay/jdk-27. The workflow's
-  GITHUB_TOKEN is scoped to the repository that runs the workflow, so it cannot
-  download another repository's artifact: the token input must be a PAT (or
-  GitHub App token) with Actions read permission on raneashay/jdk-27.
+  The bundle is a public release asset, so this action needs no token and works
+  for fork pull requests; the sha256 input pins the bytes.
 
 inputs:
-  token:
-    description: Token with actions:read on raneashay/jdk-27 (OML_JDK_ARTIFACT_TOKEN).
-    required: true
-  run-id:
-    description: raneashay/jdk-27 workflow run id that produced the bundle.
-    required: true
-  bundle:
-    description: Artifact name, bundles-linux-x64 or bundles-windows-x64.
+  url:
+    description: Public release asset URL for the platform's JDK bundle.
     required: true
   sha256:
-    description: Expected SHA-256 of the downloaded artifact zip; optional but recommended.
-    required: false
-    default: ''
+    description: Expected SHA-256 of the downloaded release asset zip.
+    required: true
 
 runs:
   using: composite
@@ -28,26 +19,15 @@ runs:
       if: runner.os != 'Windows'
       shell: bash
       env:
-        GH_TOKEN: ${{ inputs.token }}
-        JDK_RUN_ID: ${{ inputs.run-id }}
-        JDK_BUNDLE: ${{ inputs.bundle }}
+        JDK_URL: ${{ inputs.url }}
         EXPECTED_SHA256: ${{ inputs.sha256 }}
       run: |
         set -euo pipefail
-        if [ -z "${GH_TOKEN:-}" ]; then
-          echo "::error::OML_JDK_ARTIFACT_TOKEN is empty. Create a fine-grained PAT with Actions:read on raneashay/jdk-27 and store it as that repository secret."
+        if [ -z "${JDK_URL:-}" ]; then
+          echo "::error::JDK_URL is empty."
           exit 1
         fi
-        if ! id=$(gh api "repos/raneashay/jdk-27/actions/runs/$JDK_RUN_ID/artifacts?per_page=100" \
-          --jq "map(select(.name == \"$JDK_BUNDLE\" and .expired == false) | .id)[0]"); then
-          echo "::error::Could not list raneashay/jdk-27 artifacts. OML_JDK_ARTIFACT_TOKEN needs Actions:read on that repository."
-          exit 1
-        fi
-        if [ -z "$id" ] || [ "$id" = "null" ]; then
-          echo "::error::No unexpired '$JDK_BUNDLE' artifact in raneashay/jdk-27 run $JDK_RUN_ID. Artifacts expire after five days; point JDK_RUN_ID at a newer run and update the digest."
-          exit 1
-        fi
-        gh api "repos/raneashay/jdk-27/actions/artifacts/$id/zip" > "$RUNNER_TEMP/jdk-bundle.zip"
+        curl -fL --retry 3 --retry-delay 2 -o "$RUNNER_TEMP/jdk-bundle.zip" "$JDK_URL"
         expected="${EXPECTED_SHA256#sha256:}"
         if [ -n "$expected" ]; then
           actual=$(sha256sum "$RUNNER_TEMP/jdk-bundle.zip" | awk '{print $1}')
@@ -79,25 +59,13 @@ runs:
       if: runner.os == 'Windows'
       shell: pwsh
       env:
-        GH_TOKEN: ${{ inputs.token }}
-        JDK_RUN_ID: ${{ inputs.run-id }}
-        JDK_BUNDLE: ${{ inputs.bundle }}
+        JDK_URL: ${{ inputs.url }}
         EXPECTED_SHA256: ${{ inputs.sha256 }}
       run: |
         $ErrorActionPreference = 'Stop'
-        if (-not $env:GH_TOKEN) {
-          throw "OML_JDK_ARTIFACT_TOKEN is empty. Create a fine-grained PAT with Actions:read on raneashay/jdk-27 and store it as that repository secret."
-        }
-        $id = gh api "repos/raneashay/jdk-27/actions/runs/$env:JDK_RUN_ID/artifacts?per_page=100" `
-          --jq "map(select(.name == '$env:JDK_BUNDLE' and .expired == false) | .id)[0]"
-        if ($LASTEXITCODE -ne 0) {
-          throw "Could not list raneashay/jdk-27 artifacts. OML_JDK_ARTIFACT_TOKEN needs Actions:read on that repository."
-        }
-        if (-not $id -or $id -eq 'null') {
-          throw "No unexpired '$env:JDK_BUNDLE' artifact in raneashay/jdk-27 run $env:JDK_RUN_ID. Artifacts expire after five days; point JDK_RUN_ID at a newer run and update the digest."
-        }
-        gh api "repos/raneashay/jdk-27/actions/artifacts/$id/zip" > "$env:RUNNER_TEMP\jdk-bundle.zip"
-        if ($LASTEXITCODE -ne 0) { throw "Artifact download failed." }
+        if (-not $env:JDK_URL) { throw "JDK_URL is empty." }
+        curl.exe -fL --retry 3 --retry-delay 2 -o "$env:RUNNER_TEMP\jdk-bundle.zip" $env:JDK_URL
+        if ($LASTEXITCODE -ne 0) { throw "JDK bundle download failed: $env:JDK_URL" }
         $expected = ($env:EXPECTED_SHA256 -replace '^sha256:', '').ToLowerInvariant()
         if ($expected) {
           $actual = (Get-FileHash "$env:RUNNER_TEMP\jdk-bundle.zip" -Algorithm SHA256).Hash.ToLowerInvariant()

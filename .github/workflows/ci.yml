@@ -24,14 +24,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       # The JVM floor is 27.0.2 (JDK-8394484, fixed by PR 33729): no distro carries that build, so
-      # the JVM is the raneashay/jdk-27 CI bundle. The action needs OML_JDK_ARTIFACT_TOKEN because
-      # the workflow token cannot download another repository's artifact; the digest pins the bundle.
+      # the JVM is the public jdk-27.0.2-internal release asset; the digest pins the bundle.
       - name: Install the 27.0.2-internal JDK bundle
         uses: ./.github/actions/install-oml-jdk
         with:
-          token: ${{ secrets.OML_JDK_ARTIFACT_TOKEN }}
-          run-id: '43782257129'
-          bundle: bundles-linux-x64
+          url: https://github.com/OhMyLoader/OhMyLoader/releases/download/jdk-27.0.2-internal/bundles-linux-x64.zip
           sha256: ce2052f923109e165e531c1ceada67e583347a4de757c40db5edcf46fc7270a8
       # oml-native is built from source as part of `build` (the installer embeds it)
       - uses: mlugg/setup-zig@v2
@@ -131,13 +128,11 @@ jobs:
       - uses: actions/checkout@v7
       # OML's JVM floor is 27.0.2 (Java 27.0.1 carries the Windows stack-probe defect JDK-8394484:
       # a random 0xC0000005 with no hs_err, fixed by JDK PR 33729). The action fetches the pinned
-      # raneashay/jdk-27 bundle with OML_JDK_ARTIFACT_TOKEN and verifies its digest.
+      # public release asset and verifies its digest.
       - name: Install the 27.0.2-internal JDK bundle
         uses: ./.github/actions/install-oml-jdk
         with:
-          token: ${{ secrets.OML_JDK_ARTIFACT_TOKEN }}
-          run-id: '43782257129'
-          bundle: bundles-windows-x64
+          url: https://github.com/OhMyLoader/OhMyLoader/releases/download/jdk-27.0.2-internal/bundles-windows-x64.zip
           sha256: 196cb71a10b9ab9e0f90360c7ce8600019c302b11b74708ef354cb1b47e3964b
       - uses: mlugg/setup-zig@v2
         with:
@@ -222,14 +217,12 @@ jobs:
           cp SHA256SUMS "$GITHUB_WORKSPACE/OhMyLoaderTestMod/build/loader-staging-SHA256SUMS"
       # OML's JVM floor is 27.0.2 (Java 27.0.1 carries the Windows stack-probe defect JDK-8394484:
       # a random 0xC0000005 with no hs_err, fixed by JDK PR 33729). The action fetches the pinned
-      # raneashay/jdk-27 bundle with OML_JDK_ARTIFACT_TOKEN and verifies its digest.
+      # public release asset and verifies its digest.
       - name: Install the 27.0.2-internal JDK bundle
         # This job's root checkout is the testmod; the action lives in the loader checkout below it.
         uses: ./OhMyLoaderTestMod/OhMyLoader/.github/actions/install-oml-jdk
         with:
-          token: ${{ secrets.OML_JDK_ARTIFACT_TOKEN }}
-          run-id: '43782257129'
-          bundle: bundles-linux-x64
+          url: https://github.com/OhMyLoader/OhMyLoader/releases/download/jdk-27.0.2-internal/bundles-linux-x64.zip
           sha256: ce2052f923109e165e531c1ceada67e583347a4de757c40db5edcf46fc7270a8
       - uses: mlugg/setup-zig@v2
         with:
@@ -312,13 +305,11 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v7
-      # Same JVM bundle as the other jobs.
+      # Same public JDK release asset as the other jobs.
       - name: Install the 27.0.2-internal JDK bundle
         uses: ./.github/actions/install-oml-jdk
         with:
-          token: ${{ secrets.OML_JDK_ARTIFACT_TOKEN }}
-          run-id: '43782257129'
-          bundle: bundles-linux-x64
+          url: https://github.com/OhMyLoader/OhMyLoader/releases/download/jdk-27.0.2-internal/bundles-linux-x64.zip
           sha256: ce2052f923109e165e531c1ceada67e583347a4de757c40db5edcf46fc7270a8
       # `publish` at the root includes :oml-native, whose natives jars dependOn buildOmlNative — the
       # publish shells out to zig. Depending on a remote build-cache hit from the build job would make
