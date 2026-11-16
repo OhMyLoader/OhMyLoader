@@ -1,6 +1,8 @@
 package org.ohmyloader.launcher;
 
 import java.io.File;
+import java.io.FileDescriptor;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.PrintStream;
 import java.lang.reflect.Method;
@@ -40,9 +42,14 @@ public final class OMLBootstrap {
 
     // The game replaces System.out/err with log4j-backed streams. Those streams belong to the
     // disposable session and are also a ThreadLocal root; the supervisor must print its canary
-    // diagnostics through the original process streams after the session stops.
-    private static final PrintStream ORIGINAL_OUT = System.out;
-    private static final PrintStream ORIGINAL_ERR = System.err;
+    // diagnostics through the original process streams after the session stops. This class is
+    // loaded twice (app and supervisor loader), and the supervisor copy initializes only after
+    // the game installed LoggedPrintStream — capturing System.out here would make the restore a
+    // no-op and leave a session class as a sticky System.out root. Bind the process descriptors.
+    private static final PrintStream ORIGINAL_OUT =
+        new PrintStream(new FileOutputStream(FileDescriptor.out), true);
+    private static final PrintStream ORIGINAL_ERR =
+        new PrintStream(new FileOutputStream(FileDescriptor.err), true);
 
     static void restoreConsole() {
         System.setOut(ORIGINAL_OUT);
@@ -64,7 +71,7 @@ public final class OMLBootstrap {
         }
 
         URL[] layer = discoverLayerJars(baseDir);
-        layer = withJnaLibraries(layer);
+        layer = withProcessLibraries(layer);
         URL self = OMLBootstrap.class.getProtectionDomain().getCodeSource().getLocation();
         LayerSplit split = split(layer, self);
         System.out.println(
@@ -154,18 +161,30 @@ public final class OMLBootstrap {
     }
 
     /**
-     * JNA's native dispatcher is loaded by {@code com.sun.jna.Native} through {@code System.load},
-     * which pins the calling loader. Authlib lives in the disposable session, so loading JNA there
-     * would keep the old session alive after the game stops. Put the JNA jars in the persistent
-     * supervisor layer instead; OMLClassLoader's parent-first prefixes already cover JNA.
+     * Native-backed library classes must be defined by the persistent supervisor, because native
+     * registrations outlive a session and can hold JNI globals into them. JNA's dispatcher pins the
+     * calling loader through {@code System.load}; LWJGL's SDL/OpenGL/OpenAL callbacks register
+     * process-wide upcall stubs whose JNI-global method handles reference the callback interface
+     * class ({@code DirectMethodHandle$Interface.refc}). If that interface was defined by the
+     * disposable session, the old loader can never be collected after a reboot. OMLClassLoader's
+     * parent-first prefixes already cover both packages; this only puts their jars in front of it.
      */
-    static URL[] withJnaLibraries(URL[] layer) {
+    static URL[] withProcessLibraries(URL[] layer) {
         String libraryDir = System.getProperty("oml.library.dir");
         if (libraryDir == null || libraryDir.isBlank()) return layer;
-        File jnaDir = new File(libraryDir, "net/java/dev/jna");
-        if (!jnaDir.isDirectory()) return layer;
         List<URL> urls = new ArrayList<>(Arrays.asList(layer));
-        try (var paths = Files.walk(jnaDir.toPath())) {
+        addLibraryJars(urls, new File(libraryDir, "net/java/dev/jna"));
+        addLibraryJars(urls, new File(libraryDir, "org/lwjgl"));
+        // JNA's persistent Native.typeOptions cache values strongly reference the cached type's
+        // Class. oshi's JNA structures are such cached types; defining them in the session made
+        // that static cache the next canary root after the LWJGL callbacks moved here.
+        addLibraryJars(urls, new File(libraryDir, "com/github/oshi"));
+        return urls.toArray(new URL[0]);
+    }
+
+    private static void addLibraryJars(List<URL> urls, File dir) {
+        if (!dir.isDirectory()) return;
+        try (var paths = Files.walk(dir.toPath())) {
             paths.filter(Files::isRegularFile)
                 .filter(p -> p.getFileName().toString().endsWith(".jar"))
                 .forEach(p -> {
@@ -177,9 +196,8 @@ public final class OMLBootstrap {
                     }
                 });
         } catch (Exception ignored) {
-            // No JNA on this install; leave the layer untouched.
+            // This library family is absent; leave the layer untouched.
         }
-        return urls.toArray(new URL[0]);
     }
 
     /**

@@ -5,8 +5,13 @@ import java.io.File;
 import java.io.FileDescriptor;
 import java.io.FileOutputStream;
 import java.io.PrintStream;
+import java.lang.invoke.MethodHandle;
 import java.lang.management.ManagementFactory;
+import java.lang.ref.Reference;
 import java.lang.ref.WeakReference;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -32,12 +37,63 @@ final class SessionCanary {
     private static final PrintStream RAW_ERR =
         new PrintStream(new FileOutputStream(FileDescriptor.err), true);
 
+    /**
+     * Bootstrap classes that keep static {@link MethodHandle}s used by language bootstraps
+     * (record equals/hashCode/toString, pattern switches, lambdas, string concat). Once a bootstrap
+     * adapts one of those handles to a session record's method type, {@code MethodHandle} caches the
+     * adapted view in an {@code asTypeSoftCache} SoftReference. A soft reference survives ordinary
+     * GCs (HotSpot only clears it under memory pressure), so that single cached MethodType pins the
+     * session class, and through it the whole loader, long after the game stopped.
+     */
+    private static final String[] BOOTSTRAP_METHOD_HANDLE_HOLDERS = {
+        "java.lang.runtime.ObjectMethods",
+        "java.lang.runtime.SwitchBootstraps",
+        "java.lang.invoke.LambdaMetafactory",
+        "java.lang.invoke.StringConcatFactory",
+        "java.lang.invoke.ConstantBootstraps",
+    };
+
     private final WeakReference<ClassLoader> session;
     private final ClassLoader supervisor;
 
     SessionCanary(ClassLoader session, ClassLoader supervisor) {
-        this.session = new WeakReference<>(session);
+        this(new WeakReference<>(session), supervisor);
+    }
+
+    private SessionCanary(WeakReference<ClassLoader> session, ClassLoader supervisor) {
+        this.session = session;
         this.supervisor = supervisor;
+    }
+
+    /** The weak probe, for callers that must run the GC wait after their own frames returned. */
+    WeakReference<ClassLoader> probe() {
+        return session;
+    }
+
+    /**
+     * Runs the whole probe on a fresh thread that only ever names the {@link WeakReference}.
+     *
+     * <p>The caller of an in-process reboot still has its frames on the stack while this waits
+     * (blocked in {@code join}), and a C2-compiled caller can keep an old loader oop in a register
+     * or stack slot across the call. Those oops are roots for the concurrent GC, so the wait loop
+     * must not share a thread with them. This thread's stack contains the weak reference, the
+     * timeout and the supervisor loader — nothing from the retired session.
+     */
+    static boolean awaitCollected(
+        WeakReference<ClassLoader> session, long timeoutMillis, boolean reboot, ClassLoader supervisor) {
+        SessionCanary canary = new SessionCanary(session, supervisor);
+        boolean[] verdict = new boolean[1];
+        Thread probe = new Thread(() -> verdict[0] = canary.runProbe(timeoutMillis, reboot), "oml-canary-probe");
+        probe.setDaemon(true);
+        probe.setContextClassLoader(ClassLoader.getSystemClassLoader());
+        probe.start();
+        try {
+            probe.join();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+        return verdict[0];
     }
 
     /**
@@ -50,9 +106,29 @@ final class SessionCanary {
     }
 
     boolean awaitCollected(long timeoutMillis, boolean reboot) {
+        return runProbe(timeoutMillis, reboot);
+    }
+
+    private boolean runProbe(long timeoutMillis, boolean reboot) {
         releaseThreads(reboot);
+        releaseBootstrapMethodHandleCaches();
+        runFinalizationOnce(2_000);
+        String pauseAfterRelease = System.getProperty("oml.canary.pauseAfterRelease");
+        if (pauseAfterRelease != null && !pauseAfterRelease.isBlank()) {
+            try {
+                RAW_ERR.println("[OMLSupervisor] canary pause after release " + pauseAfterRelease + " ms");
+                Thread.sleep(Long.parseLong(pauseAfterRelease));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (NumberFormatException ignored) {
+                // Diagnostic property only.
+            }
+        }
         long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
         do {
+            // The game's shutdown path can install its LoggedPrintStream again after the first
+            // restore; System.out/err are sticky static roots, so repeat the restore every round.
+            OMLBootstrap.restoreConsole();
             System.gc();
             if (collected()) return true;
             try {
@@ -64,15 +140,51 @@ final class SessionCanary {
         } while (System.nanoTime() < deadline);
 
         if (collected()) return true;
+        OMLBootstrap.restoreConsole();
         dumpHeapOnFailure();
+        System.gc();
+        try {
+            Thread.sleep(200);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        RAW_ERR.println(
+            "[OMLSupervisor] post-dump probe: session=" + session.get() + " main=" + SessionControl.mainLoader());
         RAW_ERR.println(
             "[OMLSupervisor] session classloader was not collected within " + timeoutMillis + " ms" +
                 " (supervisor=" + (supervisor == null ? "platform" : supervisor) + ")");
+        for (Map.Entry<Thread, StackTraceElement[]> entry : Thread.getAllStackTraces().entrySet()) {
+            Thread thread = entry.getKey();
+            boolean namesAllocator = false;
+            for (StackTraceElement element : entry.getValue()) {
+                if (element.getClassName().contains("AdaptivePoolingAllocator")) {
+                    namesAllocator = true;
+                    break;
+                }
+            }
+            if (namesAllocator || thread.getName().toLowerCase().contains("finalizer")) {
+                RAW_ERR.println(
+                    "[OMLSupervisor] thread '" + thread.getName() + "' state=" + thread.getState() +
+                        " contextClassLoader=" + thread.getContextClassLoader());
+                for (StackTraceElement element : entry.getValue()) RAW_ERR.println("    at " + element);
+            }
+        }
         List<String> leaks = leakedThreads();
         if (leaks.isEmpty()) {
             RAW_ERR.println("[OMLSupervisor]   no thread names the session; a non-thread static or JNI callback holds it");
         } else {
             for (String line : leaks) RAW_ERR.println("[OMLSupervisor]   " + line);
+        }
+        String pause = System.getProperty("oml.canary.pause");
+        if (pause != null && !pause.isBlank()) {
+            try {
+                RAW_ERR.println("[OMLSupervisor] canary pause " + pause + " ms");
+                Thread.sleep(Long.parseLong(pause));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (NumberFormatException ignored) {
+                // A malformed diagnostic property must not change the verdict.
+            }
         }
         return false;
     }
@@ -96,10 +208,86 @@ final class SessionCanary {
                 RAW_ERR.println("[OMLSupervisor] heap dump unavailable: no HotSpotDiagnosticMXBean");
                 return;
             }
+            if (file.exists() && !file.delete()) {
+                RAW_ERR.println("[OMLSupervisor] heap dump target is not replaceable: " + file.getAbsolutePath());
+                return;
+            }
             bean.dumpHeap(file.getAbsolutePath(), true);
             RAW_ERR.println("[OMLSupervisor] heap dump: " + file.getAbsolutePath());
         } catch (Throwable t) {
             RAW_ERR.println("[OMLSupervisor] heap dump failed: " + t);
+        }
+    }
+
+    /**
+     * Drops the soft MethodHandle caches that language bootstraps filled with session types.
+     *
+     * <p>The fields live in java.base and are private, and {@code java.lang.invoke} is not opened to
+     * the launcher, so this uses {@code sun.misc.Unsafe} only for its field offsets (the {@code
+     * theUnsafe} field itself is reflectively reachable because {@code jdk.unsupported} opens {@code
+     * sun.misc}). Clearing the reference is ordinary {@link Reference#clear()} — no JVM flag, and
+     * the handles themselves stay valid; only the cached adapted views are recomputed on demand.
+     */
+    private static void releaseBootstrapMethodHandleCaches() {
+        try {
+            Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
+            Field theUnsafe = unsafeClass.getDeclaredField("theUnsafe");
+            theUnsafe.setAccessible(true);
+            Object unsafe = theUnsafe.get(null);
+            Method objectFieldOffset = unsafeClass.getMethod("objectFieldOffset", Field.class);
+            Method staticFieldBase = unsafeClass.getMethod("staticFieldBase", Field.class);
+            Method staticFieldOffset = unsafeClass.getMethod("staticFieldOffset", Field.class);
+            Method getObject = unsafeClass.getMethod("getObject", Object.class, long.class);
+            long cacheOffset =
+                (Long) objectFieldOffset.invoke(unsafe, MethodHandle.class.getDeclaredField("asTypeSoftCache"));
+            int cleared = 0;
+            for (String holderName : BOOTSTRAP_METHOD_HANDLE_HOLDERS) {
+                Class<?> holder;
+                try {
+                    holder = Class.forName(holderName);
+                } catch (ClassNotFoundException e) {
+                    continue;
+                }
+                for (Field field : holder.getDeclaredFields()) {
+                    if (!Modifier.isStatic(field.getModifiers())) continue;
+                    if (!MethodHandle.class.isAssignableFrom(field.getType())) continue;
+                    Object handle = getObject.invoke(
+                        unsafe, staticFieldBase.invoke(unsafe, field), staticFieldOffset.invoke(unsafe, field));
+                    if (!(handle instanceof MethodHandle)) continue;
+                    Object cache = getObject.invoke(unsafe, handle, cacheOffset);
+                    if (cache instanceof Reference<?> reference) {
+                        reference.clear();
+                        cleared++;
+                    }
+                }
+            }
+            if (cleared > 0) {
+                RAW_ERR.println("[OMLSupervisor] cleared " + cleared + " bootstrap MethodHandle cache(s)");
+            }
+        } catch (Throwable t) {
+            // A different JDK may rename the private cache field; the probe still reports honestly.
+            RAW_ERR.println("[OMLSupervisor] bootstrap MethodHandle cache release skipped: " + t);
+        }
+    }
+
+    /**
+     * Netty's AdaptivePoolingAllocator overrides finalize(); an unfinalized allocator holds its
+     * session-defined class, and through it the whole loader, for as long as it sits on the
+     * finalizer queue. The game never runs finalization itself, so ask for it explicitly. A
+     * blocked finalizer must not hang the reboot: the helper is a daemon with a bounded join.
+     */
+    private static void runFinalizationOnce(long timeoutMillis) {
+        Thread thread = new Thread(System::runFinalization, "oml-canary-finalization");
+        thread.setDaemon(true);
+        thread.start();
+        try {
+            thread.join(timeoutMillis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return;
+        }
+        if (thread.isAlive()) {
+            RAW_ERR.println("[OMLSupervisor] finalization did not finish within " + timeoutMillis + " ms");
         }
     }
 
@@ -115,6 +303,24 @@ final class SessionCanary {
     }
 
     void releaseThreads(boolean reboot) {
+        // Run the sweep on a short-lived supervisor thread: every strong `target`/`main` local
+        // then dies with that thread's stack before the GC loop starts. Keeping the sweep on the
+        // canary thread leaves those oops live in C2's stack slots across the probe.
+        Thread cleaner = new Thread(() -> releaseThreadsOnCleaner(reboot), "oml-canary-release");
+        cleaner.setDaemon(true);
+        cleaner.setContextClassLoader(ClassLoader.getSystemClassLoader());
+        cleaner.start();
+        try {
+            cleaner.join(10_000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private void releaseThreadsOnCleaner(boolean reboot) {
+        // The cleaner inherited the render thread's map; clear its own entries before doing
+        // anything else so the thread object itself cannot become a session root.
+        clearThreadLocals(Thread.currentThread(), session.get(), SessionControl.mainLoader());
         // The game's log4j stream is itself a session object and its formatter state lives in a
         // ThreadLocal we are about to clear; print from the original process streams first.
         OMLBootstrap.restoreConsole();
@@ -144,6 +350,10 @@ final class SessionCanary {
                 thread.interrupt();
             }
         }
+        // Do not leave the probe's strong locals in the caller's frame; C2 may inline this method
+        // and keep the oop live in a stack slot across the following System.gc() loop.
+        target = null;
+        main = null;
     }
 
     /**
@@ -321,7 +531,7 @@ final class SessionCanary {
      * its child. The child is registered weakly, so this check never keeps it alive.
      */
     private boolean collected() {
-        return session.get() == null && SessionControl.mainLoader() == null;
+        return session.refersTo(null) && SessionControl.mainLoaderCleared();
     }
 
     /**

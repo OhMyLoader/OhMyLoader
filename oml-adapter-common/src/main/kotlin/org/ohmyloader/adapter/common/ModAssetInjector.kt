@@ -30,17 +30,6 @@ object ModAssetInjector {
     private val mountedRepos: MutableSet<Any> = java.util.Collections.newSetFromMap(java.util.IdentityHashMap())
 
     /**
-     * `(getNamespace, getPath)` accessors for the identifier class the game passes into `getResource`,
-     * cached per class: every resource request would otherwise repeat the `getMethod` lookup.
-     */
-    private val identifierAccessCache = ConcurrentHashMap<Class<*>, Pair<Method, Method>>()
-
-    private fun identifierAccess(clazz: Class<*>): Pair<Method, Method> =
-        identifierAccessCache.getOrPut(clazz) {
-            clazz.getMethod("getNamespace") to clazz.getMethod("getPath")
-        }
-
-    /**
      * Idempotent injection: mount the mod resource pack into PackRepository's sources and add it
      * to the selection list. Called by [EventBridge.onPackRepositoryReload] at the head of
      * `PackRepository.openAllSelected()`. `PackRepository.sources` is a `Set` immutable in
@@ -95,7 +84,6 @@ object ModAssetInjector {
         val positionClass = Class.forName($$"net.minecraft.server.packs.repository.Pack$Position", true, loader)
         val supplierClass =
             Class.forName($$"net.minecraft.server.packs.repository.Pack$ResourcesSupplier", true, loader)
-        val packResourcesClass = Class.forName("net.minecraft.server.packs.PackResources", true, loader)
         val optional = java.util.Optional::class.java
 
         val clientResources = packTypeClass.getField("CLIENT_RESOURCES").get(null)
@@ -117,19 +105,8 @@ object ModAssetInjector {
             Boolean::class.javaPrimitiveType, positionClass, Boolean::class.javaPrimitiveType,
         ).newInstance(false, positionClass.getField("TOP").get(null), false)
 
-        val resources = createPackResources(loader, packResourcesClass, location, packTypeClass, clientResources)
-
-        val supplier = Proxy.newProxyInstance(loader, arrayOf(supplierClass)) { proxy, method, args ->
-            when (method.name) {
-                // In 26.3 a PackResources *is* the metadata carrier, so the same object answers both.
-                "openMetadata" -> resources
-                "openResources" -> java.util.stream.Stream.of(resources)
-                "hashCode" -> System.identityHashCode(proxy)
-                "equals" -> args[0] === proxy
-                "toString" -> "OMLResourcesSupplier@" + System.identityHashCode(proxy)
-                else -> null
-            }
-        }
+        val resources = createPackResources(loader, location, packTypeClass, clientResources)
+        val supplier = MinecraftContentRegistry.registryAccessor.resourcesSupplier(resources)
 
         val pack = packClass.getMethod(
             "readMetaAndCreate", locationClass, supplierClass, packTypeClass, selectionClass,
@@ -149,12 +126,10 @@ object ModAssetInjector {
      */
     private fun createPackResources(
         loader: ClassLoader,
-        packResourcesClass: Class<*>,
         location: Any,
         packTypeClass: Class<*>,
         clientResources: Any,
     ): Any {
-        val ioSupplierClass = Class.forName("net.minecraft.server.packs.resources.IoSupplier", true, loader)
         val metadataClass =
             Class.forName("net.minecraft.server.packs.metadata.pack.PackMetadataSection", true, loader)
         val componentClass = Class.forName("net.minecraft.network.chat.Component", true, loader)
@@ -180,75 +155,46 @@ object ModAssetInjector {
             "unexpected PackMetadataSection type set: $sectionTypes"
         }
 
-        return Proxy.newProxyInstance(loader, arrayOf(packResourcesClass)) { proxy, method, args ->
-            when (method.name) {
-                "hashCode" -> System.identityHashCode(proxy)
-                "equals" -> args[0] === proxy
-                "toString" -> "OMLPackResources@" + System.identityHashCode(proxy)
-                "packId" -> PACK_ID
-                "knownPackInfo" -> java.util.Optional.empty<Any>()
-                // getNamespaces(PackType): every namespace the mod jars ship assets for (including
-                // `minecraft` when a mod overrides vanilla assets) plus the mod ids themselves —
-                // computed by oml-content's ModAssetIndex. 26.3 passes the pack type in, but a mod jar
-                // holds `assets/` only, so the answer is the same for either type.
-                "getNamespaces" -> {
-                    val base = assetIndex().namespaces()
-                    // The minecraft namespace must be listed for the SERVER datapack reload when the pack
-                    // carries data for it — declared ores merge into vanilla biome files, a vanilla
-                    // block's loot override lands in the minecraft folder, and a vanilla tag
-                    // augmentation (declareTag("minecraft:…") against an original tag, with no ore or
-                    // loot of its own) writes data/minecraft/tags/… — otherwise the reload never looks
-                    // inside the pack and the augmentation dies in silence. For CLIENT_RESOURCES it
-                    // must NOT be listed, ever: the pack sits at Position.TOP, and a minecraft-claiming
-                    // pack would shadow every vanilla asset with whatever
-                    // loader.getResource("assets/minecraft/…") finds — the game jar's own copy, which
-                    // ships 69-byte placeholder panorama textures where the real ones come from the
-                    // downloaded asset index (the missing title-screen background).
-                    if (args.getOrNull(0) == serverData &&
-                        (MinecraftContentRegistry.oreTargetedBiomes().isNotEmpty() ||
-                            MinecraftContentRegistry.lootIdsFor("minecraft").isNotEmpty() ||
-                            MinecraftContentRegistry.tagPathsFor("minecraft").isNotEmpty()) &&
-                        "minecraft" !in base
-                    ) {
-                        base + "minecraft"
-                    } else {
-                        base
-                    }
-                }
-                // no root file: pack.mcmeta is answered through getMetadataSection, not read as a file
-                "getRootResource" -> null
-                "location" -> location
-                "close" -> null
-                "getResource" -> {
-                    // Both pack types are served: assets/ for the client reload, data/ (recipes,
-                    // loot tables, tags...) for the server reload — the integrated server that
-                    // loads singleplayer datapacks asks with SERVER_RESOURCES from the same
-                    // repository pipeline.
-                    val identifier = args[1]
-                    val [getNamespace, getPath] = identifierAccess(identifier.javaClass)
-                    val namespace = getNamespace.invoke(identifier) as String
-                    val path = getPath.invoke(identifier) as String
-                    resolveResource(namespace, path, loader)?.let { bytes ->
-                        ioSupplierOf(ioSupplierClass, loader, bytes)
-                    }
-                }
+        val bridge = object : PackResourcesBridge {
+            override fun packId(): String = PACK_ID
 
-                // The section is asked for by *type object*, so identity comparison against the
-                // three PackMetadataSection types is the match. Everything else (FeatureFlags,
-                // Overlays) answers null, which vanilla treats as "use defaults".
-                "getMetadataSection" -> metadataByType[args[0]]
+            override fun location(): Any = location
 
-                "listResources" -> {
-                    emitListedResources(
-                        args[1] as String, args[2] as String, args[3],
-                        loader, ioSupplierClass,
-                    )
-                    null
+            override fun getNamespaces(packType: Any?): Set<String> {
+                val base = assetIndex().namespaces()
+                return if (packType == serverData &&
+                    (MinecraftContentRegistry.oreTargetedBiomes().isNotEmpty() ||
+                        MinecraftContentRegistry.lootIdsFor("minecraft").isNotEmpty() ||
+                        MinecraftContentRegistry.tagPathsFor("minecraft").isNotEmpty()) &&
+                    "minecraft" !in base
+                ) {
+                    base + "minecraft"
+                } else {
+                    base
                 }
+            }
 
-                else -> null
+            override fun getResource(identifier: Any): ByteArray? {
+                val accessor = MinecraftContentRegistry.registryAccessor
+                return resolveResource(
+                    accessor.identifierNamespace(identifier),
+                    accessor.identifierPath(identifier),
+                    loader,
+                )
+            }
+
+            override fun getMetadataSection(type: Any): Any? = metadataByType[type]
+
+            override fun listResources(
+                packType: Any?,
+                namespace: String,
+                directory: String,
+                emit: (Any, ByteArray) -> Unit,
+            ) {
+                emitListedResources(namespace, directory, loader, emit)
             }
         }
+        return MinecraftContentRegistry.registryAccessor.packResources(bridge)
     }
 
     /**
@@ -452,17 +398,6 @@ object ModAssetInjector {
         }?.toByteArray(Charsets.UTF_8)
     }
 
-    private fun ioSupplierOf(ioSupplierClass: Class<*>, loader: ClassLoader, bytes: ByteArray): Any =
-        Proxy.newProxyInstance(loader, arrayOf(ioSupplierClass)) { proxy, method, args ->
-            when (method.name) {
-                "get" -> ByteArrayInputStream(bytes)
-                "hashCode" -> System.identityHashCode(proxy)
-                "equals" -> args[0] === proxy
-                "toString" -> "OMLIoSupplier@" + System.identityHashCode(proxy)
-                else -> null
-            }
-        }
-
     /**
      * listResources implementation: "what does this pack have under `<namespace>/<directory>`". The directory argument is whatever the
      * caller passes to the resource manager — `FileToIdConverter.json("blockstates")`, `.json("items")` (item definitions),
@@ -475,26 +410,16 @@ object ModAssetInjector {
     private fun emitListedResources(
         namespace: String,
         path: String,
-        output: Any,
         loader: ClassLoader,
-        ioSupplierClass: Class<*>,
+        sink: (Any, ByteArray) -> Unit,
     ) {
-        val accept = java.util.function.BiConsumer::class.java
-            .getMethod("accept", Any::class.java, Any::class.java)
-        val identifierClass = try {
-            Class.forName("net.minecraft.resources.Identifier", true, loader)
-        } catch (t: Throwable) {
-            OmlLog.error("ModAssets", "unable to load Identifier class", t)
-            return
-        }
-        val identifierOf = identifierClass.getMethod("fromNamespaceAndPath", String::class.java, String::class.java)
+        val accessor = MinecraftContentRegistry.registryAccessor
         val emitted = HashSet<String>()
 
         fun emit(fullPath: String) {
             if (!emitted.add(fullPath)) return
             val bytes = resolveResource(namespace, fullPath, loader) ?: return
-            val identifier = identifierOf.invoke(null, namespace, fullPath)
-            accept.invoke(output, identifier, ioSupplierOf(ioSupplierClass, loader, bytes))
+            sink(accessor.identifier(namespace, fullPath), bytes)
         }
 
         // Synthetic datapack files: the datapack loader only reads what a pack LISTS, and these
@@ -593,14 +518,12 @@ object ModAssetInjector {
      * carries namespace and path through `getNamespace()` / `getPath()` — there is no unwrapping
      * step in between.
      */
+    @Suppress("UNUSED_PARAMETER")
     private fun registryIdsOf(namespace: String, loader: ClassLoader, registryField: String): List<String> = try {
-        val builtin = Class.forName("net.minecraft.core.registries.BuiltInRegistries", true, loader)
-        val registry = builtin.getField(registryField).get(null)
-        val keySet = registry.javaClass.getMethod("keySet").invoke(registry) as Set<*>
-        keySet.mapNotNull { identifier ->
+        val accessor = MinecraftContentRegistry.registryAccessor
+        accessor.registryKeySet(registryField).mapNotNull { identifier ->
             if (identifier == null) return@mapNotNull null
-            val ns = identifier.javaClass.getMethod("getNamespace").invoke(identifier) as String
-            if (ns == namespace) identifier.javaClass.getMethod("getPath").invoke(identifier) as String else null
+            if (accessor.identifierNamespace(identifier) == namespace) accessor.identifierPath(identifier) else null
         }
     } catch (t: Throwable) {
         OmlLog.error("ModAssets", "querying the $registryField registry failed", t)
@@ -621,24 +544,7 @@ object ModAssetInjector {
     private fun itemOnlyIdsOf(namespace: String, loader: ClassLoader): List<String> =
         registryIdsOf(namespace, loader, "ITEM").filter { it !in blockIdsCached(namespace, loader) }
 
-    private fun createRepositorySource(loader: ClassLoader, pack: Any): Any {
-        val sourceClass = Class.forName("net.minecraft.server.packs.repository.RepositorySource", true, loader)
-        return Proxy.newProxyInstance(loader, arrayOf(sourceClass)) { proxy, method, args ->
-            when (method.name) {
-                "loadPacks" -> {
-                    val consumer = args[0]
-                    // after type erasure Consumer<Pack> always has accept(Object); use the interface
-                    // method directly to avoid failing to find it on the lambda's concrete class
-                    java.util.function.Consumer::class.java
-                        .getMethod("accept", Any::class.java)
-                        .invoke(consumer, pack)
-                }
-
-                "hashCode" -> System.identityHashCode(proxy)
-                "equals" -> args[0] === proxy
-                "toString" -> "OMLRepositorySource@" + System.identityHashCode(proxy)
-                else -> null
-            }
-        }
-    }
+    @Suppress("UNUSED_PARAMETER")
+    private fun createRepositorySource(loader: ClassLoader, pack: Any): Any =
+        MinecraftContentRegistry.registryAccessor.repositorySource(pack)
 }

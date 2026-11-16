@@ -19,6 +19,13 @@ import org.ohmyloader.core.OMLCore
  */
 object MinecraftContentRegistry : AbstractContentRegistry() {
 
+    /**
+     * Installed by the version adapter before materialization. The 26.3 adapter uses direct game
+     * fields; the fallback is retained only for adapters that have not installed one yet.
+     */
+    @Volatile
+    var registryAccessor: RegistryAccessor = ReflectiveRegistryAccessor
+
     /** The feature step every underground ore lives in (vanilla `Decoration.UNDERGROUND_ORES`). */
     private const val UNDERGROUND_ORES_STEP = 6
 
@@ -34,15 +41,7 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
         val blockClass = Class.forName("net.minecraft.world.level.block.Block", true, loader)
         val itemClass = Class.forName("net.minecraft.world.item.Item", true, loader)
         val blockItemClass = Class.forName("net.minecraft.world.item.BlockItem", true, loader)
-        val identifierClass = Class.forName("net.minecraft.resources.Identifier", true, loader)
         val resourceKeyClass = Class.forName("net.minecraft.resources.ResourceKey", true, loader)
-        // The registry keys of the two registries an entry is keyed by — a block's id and its block
-        // item's id are keys in *different* registries, so they are built from different registry keys
-        // even though both end up carrying the same identifier.
-        val registriesClass = Class.forName("net.minecraft.core.registries.Registries", true, loader)
-        val blockRegistryKey = registriesClass.getField("BLOCK").get(null)
-        val itemRegistryKey = registriesClass.getField("ITEM").get(null)
-        val keyCreate = resourceKeyClass.getMethod("create", resourceKeyClass, identifierClass)
         // 26.3: the id is required on both sides of the pair. `Properties.drops` and
         // `.descriptionId` are `DependantName`s — values *derived from* the entry's key rather than
         // stored — so `effectiveDrops()` does `Objects.requireNonNull(id, "Block id not set")` and
@@ -54,14 +53,11 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
         val itemPropertiesClass = itemClass.classes.first { it.simpleName == "Properties" }
         val setItemId = itemPropertiesClass.getMethod("setId", resourceKeyClass)
 
-        val identifierOf =
-            identifierClass.getMethod("fromNamespaceAndPath", String::class.java, String::class.java)
-
         for (decl in collected) {
             val [namespace, id] = decl.namespace to decl.id
-            val identifier = identifierOf.invoke(null, namespace, id)
+            val identifier = registryAccessor.identifier(namespace, id)
             val properties = propertiesClass.getMethod("of").invoke(null)
-            setBlockId.invoke(properties, keyCreate.invoke(null, blockRegistryKey, identifier))
+            setBlockId.invoke(properties, registryAccessor.resourceKey("BLOCK", identifier))
             applyBlockProperties(properties, propertiesClass, decl)
 
             val blockEntitySpec = decl.spec.blockEntityDeclaration
@@ -88,7 +84,7 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
 
                     else -> blockClass.getConstructor(propertiesClass).newInstance(properties)
                 }
-            registerIn("net.minecraft.core.registries.BuiltInRegistries", "BLOCK", identifier, block)
+            registerIn("BLOCK", identifier, block)
 
             // Block states must also be registered into Block.BLOCK_STATE_REGISTRY: network packets
             // such as block_update encode states to ids through it, and an unregistered state throws
@@ -99,7 +95,7 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
             // createContents(), while we materialize at the redirected freeze()). initCache() fills
             // occlusionShapesByFace; without it every modded state is null there and the chunk
             // renderer NPEs in getFaceOcclusionShape when the block is placed.
-            val blockStateRegistry = blockClass.getField("BLOCK_STATE_REGISTRY").get(null)
+            val blockStateRegistry = registryAccessor.blockStateRegistry()
             val addState = blockStateRegistry.javaClass.methods
                 .first { it.name == "add" && it.parameterCount == 1 }
             val stateDefinition = blockClass.getMethod("getStateDefinition").invoke(block)
@@ -123,21 +119,16 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
                     setOf(machineBlock),
                 )
                 machineBlock.attachEntityType(entityType)
-                registerIn(
-                    "net.minecraft.core.registries.BuiltInRegistries",
-                    "BLOCK_ENTITY_TYPE",
-                    identifier,
-                    entityType,
-                )
+                registerIn("BLOCK_ENTITY_TYPE", identifier, entityType)
             }
 
             // A fresh `Item$Properties` per block, not one shared instance: it now carries the id, and
             // a shared instance would leave every item keyed by the last block the loop wrote.
             val itemProperties = itemPropertiesClass.getDeclaredConstructor().newInstance()
-            setItemId.invoke(itemProperties, keyCreate.invoke(null, itemRegistryKey, identifier))
+            setItemId.invoke(itemProperties, registryAccessor.resourceKey("ITEM", identifier))
             val item =
                 blockItemClass.getConstructor(blockClass, itemPropertiesClass).newInstance(block, itemProperties)
-            registerIn("net.minecraft.core.registries.BuiltInRegistries", "ITEM", identifier, item)
+            registerIn("ITEM", identifier, item)
             creativeItems.add(item as ItemLike)
 
             val handle = OMLBlock("$namespace:$id") { block }
@@ -146,13 +137,13 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
 
         for (decl in collectedItems) {
             val [namespace, id] = decl.namespace to decl.id
-            val identifier = identifierOf.invoke(null, namespace, id)
+            val identifier = registryAccessor.identifier(namespace, id)
             val itemProperties = itemPropertiesClass.getDeclaredConstructor().newInstance()
-            setItemId.invoke(itemProperties, keyCreate.invoke(null, itemRegistryKey, identifier))
-            applyItemComponents(itemProperties, itemPropertiesClass, decl, identifierOf, loader)
+            setItemId.invoke(itemProperties, registryAccessor.resourceKey("ITEM", identifier))
+            applyItemComponents(itemProperties, itemPropertiesClass, decl, loader)
 
             val item = itemClass.getConstructor(itemPropertiesClass).newInstance(itemProperties)
-            registerIn("net.minecraft.core.registries.BuiltInRegistries", "ITEM", identifier, item)
+            registerIn("ITEM", identifier, item)
             creativeItems.add(item as ItemLike)
 
             val handle = OMLItem("$namespace:$id") { item }
@@ -255,12 +246,7 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
         spec.lightLevel?.let { level ->
             // lightLevel takes the game's ToIntFunction<BlockState>; a constant emits the same
             // brightness in every state, which is all a declaration can ask for.
-            val functionClass = Class.forName("java.util.function.ToIntFunction")
-            val constant = java.lang.reflect.Proxy.newProxyInstance(
-                propertiesClass.classLoader,
-                arrayOf(functionClass),
-            ) { _, _, _ -> level }
-            propertiesClass.getMethod("lightLevel", functionClass).invoke(properties, constant)
+            registryAccessor.blockPropertiesLightLevel(properties, level)
         }
     }
 
@@ -272,7 +258,6 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
         itemProperties: Any,
         itemPropertiesClass: Class<*>,
         decl: ItemDecl,
-        identifierOf: java.lang.reflect.Method,
         loader: ClassLoader,
     ) {
         val component = itemPropertiesClass.methods
@@ -284,9 +269,9 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
         // size trips the game's /give-time validation — "Malformed item: Item cannot be both
         // damageable and stackable" — because the item keeps the default max stack size of 64.
         spec.maxDurability?.let { durability ->
-            component.invoke(itemProperties, dataComponent(loader, "MAX_DAMAGE"), durability)
-            component.invoke(itemProperties, dataComponent(loader, "MAX_STACK_SIZE"), 1)
-            component.invoke(itemProperties, dataComponent(loader, "DAMAGE"), 0)
+            component.invoke(itemProperties, dataComponent("MAX_DAMAGE"), durability)
+            component.invoke(itemProperties, dataComponent("MAX_STACK_SIZE"), 1)
+            component.invoke(itemProperties, dataComponent("DAMAGE"), 0)
         }
 
         // DataComponents.ATTRIBUTE_MODIFIERS — ItemAttributeModifiers (attack damage / attack speed, main hand)
@@ -297,35 +282,32 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
                 it.name == "add" && it.parameterCount == 3 && it.parameterTypes[2].simpleName == "EquipmentSlotGroup"
             }
             val build = builder.javaClass.methods.first { it.name == "build" && it.parameterCount == 0 }
-            val modifierCtor = Class.forName("net.minecraft.world.entity.ai.attributes.AttributeModifier", true, loader)
-                .getConstructor(identifierOf.returnType, java.lang.Double.TYPE, operationClass(loader))
-            val attributesClass = Class.forName("net.minecraft.world.entity.ai.attributes.Attributes", true, loader)
 
             spec.attackDamage?.let { amount ->
                 add.invoke(
                     builder,
-                    attributesClass.getField("ATTACK_DAMAGE").get(null),
-                    modifierCtor.newInstance(
-                        identifierOf.invoke(null, decl.namespace, "${decl.id}.attack_damage"),
+                    registryAccessor.attribute("ATTACK_DAMAGE"),
+                    registryAccessor.attributeModifier(
+                        registryAccessor.identifier(decl.namespace, "${decl.id}.attack_damage"),
                         amount,
-                        operationAddValue(loader),
+                        operationAddValue(),
                     ),
-                    mainHandGroup(loader),
+                    mainHandGroup(),
                 )
             }
             spec.attackSpeed?.let { amount ->
                 add.invoke(
                     builder,
-                    attributesClass.getField("ATTACK_SPEED").get(null),
-                    modifierCtor.newInstance(
-                        identifierOf.invoke(null, decl.namespace, "${decl.id}.attack_speed"),
+                    registryAccessor.attribute("ATTACK_SPEED"),
+                    registryAccessor.attributeModifier(
+                        registryAccessor.identifier(decl.namespace, "${decl.id}.attack_speed"),
                         amount,
-                        operationAddValue(loader),
+                        operationAddValue(),
                     ),
-                    mainHandGroup(loader),
+                    mainHandGroup(),
                 )
             }
-            component.invoke(itemProperties, dataComponent(loader, "ATTRIBUTE_MODIFIERS"), build.invoke(builder))
+            component.invoke(itemProperties, dataComponent("ATTRIBUTE_MODIFIERS"), build.invoke(builder))
         }
 
         // DataComponents.TOOL — Tool(rules, defaultMiningSpeed, damagePerBlock, canDestroyBlocksInCreative)
@@ -336,17 +318,12 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
             val direct = holderSetClass.methods.first {
                 it.name == "direct" && it.parameterCount == 1 && it.parameterTypes[0] == List::class.java
             }
-            val blockRegistry = Class.forName("net.minecraft.core.registries.BuiltInRegistries", true, loader)
-                .getField("BLOCK").get(null)
-            val blockByid = blockRegistry.javaClass.methods
-                .first { it.name == "get" && it.parameterCount == 1 && it.parameterTypes[0] == identifierOf.returnType }
-
             fun holderSetOf(blockName: String): Any {
                 val [ns, path] = splitBlockName(blockName)
-                val identifier = identifierOf.invoke(null, ns, path)
+                val identifier = registryAccessor.identifier(ns, path)
                 // Fail loudly rather than silently mining at vanilla speed forever: an unknown block
                 // name in a tool rule is a mod bug, and the freeze point is the cheapest place to say so.
-                val holder = (blockByid.invoke(blockRegistry, identifier) as java.util.Optional<*>)
+                val holder = (registryAccessor.registryGet("BLOCK", identifier) as java.util.Optional<*>)
                     .orElseThrow { IllegalStateException("tool rule references unknown block [$blockName]") }
                 return direct.invoke(null, listOf(holder))
             }
@@ -377,7 +354,7 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
                 spec.toolDamagePerBlock,
                 spec.breaksBlocksInCreative,
             )
-            component.invoke(itemProperties, dataComponent(loader, "TOOL"), tool)
+            component.invoke(itemProperties, dataComponent("TOOL"), tool)
         }
     }
 
@@ -389,30 +366,13 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
         ) to blockName.substring(colon + 1)
     }
 
-    private fun dataComponent(loader: ClassLoader, fieldName: String): Any =
-        Class.forName("net.minecraft.core.component.DataComponents", true, loader).getField(fieldName).get(null)
+    private fun dataComponent(fieldName: String): Any = registryAccessor.dataComponent(fieldName)
 
-    private fun operationClass(loader: ClassLoader): Class<*> =
-        Class.forName($$"net.minecraft.world.entity.ai.attributes.AttributeModifier$Operation", true, loader)
+    private fun operationAddValue(): Any = registryAccessor.attributeOperation("ADD_VALUE")
 
-    private fun operationAddValue(loader: ClassLoader): Any =
-        operationClass(loader).getField("ADD_VALUE").get(null)
+    private fun mainHandGroup(): Any = registryAccessor.equipmentSlotGroup("MAINHAND")
 
-    private fun mainHandGroup(loader: ClassLoader): Any =
-        Class.forName("net.minecraft.world.entity.EquipmentSlotGroup", true, loader).getField("MAINHAND").get(null)
-
-    private fun registerIn(registryClass: String, fieldName: String, identifier: Any, value: Any) {
-        val loader = OMLCore.gameClassLoader()
-        val registry = Class.forName(registryClass, true, loader).getField(fieldName).get(null)
-        // 26.3's MappedRegistry.register is private; the public entry point is the static
-        // Registry.register(Registry, Identifier, T). Three 3-argument overloads exist
-        // (String / Identifier / ResourceKey key types) — the Identifier one is selected by matching
-        // the key's actual class rather than by position.
-        val registryClassObj = Class.forName("net.minecraft.core.Registry", true, loader)
-        registryClassObj.methods
-            .filter { java.lang.reflect.Modifier.isStatic(it.modifiers) && it.name == "register" && it.parameterCount == 3 }
-            .firstOrNull { it.parameterTypes[1] == identifier.javaClass }
-            ?.invoke(null, registry, identifier, value)
-            ?: throw IllegalStateException("registry $registryClass.$fieldName lacks a static register entry point")
+    private fun registerIn(fieldName: String, identifier: Any, value: Any) {
+        registryAccessor.register(fieldName, identifier, value)
     }
 }

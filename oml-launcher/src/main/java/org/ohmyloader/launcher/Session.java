@@ -1,6 +1,7 @@
 package org.ohmyloader.launcher;
 
 import java.io.IOException;
+import java.lang.ref.WeakReference;
 
 /**
  * One Supervisor-owned session: the disposable classloader graph plus the probe that decides
@@ -8,8 +9,10 @@ import java.io.IOException;
  *
  * <p>The session keeps the only supervisor-side strong reference to the loader. {@link #drain()}
  * drops that reference before asking the canary, so the probe measures what the game/core left
- * behind, not the supervisor itself. {@link #close()} is the real reboot boundary: the game must
+ * behind, not the supervisor itself. {@link #retire()} is the real reboot boundary: the game must
  * already have stopped, otherwise closing its jar handles would break its remaining resource reads.
+ * It returns only a {@link WeakReference} so the caller can start the GC probe after every frame
+ * that named the old loader has returned.
  */
 final class Session {
 
@@ -47,12 +50,20 @@ final class Session {
     }
 
     /**
-     * Full teardown for an in-process reboot: close the session's jar handles, then drop the
-     * reference and run the canary. The game must have stopped before this is called.
+     * Full teardown for an in-process reboot: close the session's jar handles and drop the last
+     * strong loader reference. The game must have stopped before this is called.
+     *
+     * <p>Returns the canary's weak probe instead of running it here: this frame (and the
+     * {@code closeLoader} frame inside it) may still hold an oop in a stack slot or register, and
+     * an inlined caller can keep it live for the whole GC wait. The caller must discard this
+     * session and run {@link SessionCanary#awaitCollected(WeakReference, long, boolean, ClassLoader)}
+     * afterwards.
      */
-    synchronized boolean close() {
+    synchronized WeakReference<ClassLoader> retire() {
         closeLoader();
-        return drain(true);
+        loader = null;
+        drained = true;
+        return canary.probe();
     }
 
     private void closeLoader() {
@@ -64,5 +75,8 @@ final class Session {
             // The canary's reachability verdict is the signal; a jar handle that refuses to close
             // must not turn a reboot into a process exit.
         }
+        // Drop the local before close() enters the GC probe; an inlined closeLoader can otherwise
+        // leave this oop live in a stack slot for the whole wait loop.
+        current = null;
     }
 }

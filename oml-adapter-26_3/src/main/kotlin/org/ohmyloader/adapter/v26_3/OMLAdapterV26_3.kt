@@ -1,9 +1,15 @@
 package org.ohmyloader.adapter.v26_3
 
+import com.mojang.authlib.services.MinecraftServicesDiscoveryService
+import net.minecraft.client.Minecraft
+import net.minecraft.util.Util
 import org.ohmyloader.adapter.common.*
+import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.inject.DslValue
 import org.ohmyloader.core.spi.IAdapter
 import org.ohmyloader.core.transformer.IClassTransformer
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.TimeUnit
 
 /** The anchor shapes the 26.3 jar has — the facts the shared hook declarations branch on. */
 internal val v26_3HookShapes = HookShapes(
@@ -47,6 +53,12 @@ class OMLAdapterV26_3 : IAdapter {
         // its FFM/stack-guard path crashes Zulu 27's second in-process session. The rule is
         // frontend-specific, so it lives here rather than in the shared transformer.
         ShaderCompileTransformer(),
+        // Thread objects held by JNI globals must not carry the disposable loader through their
+        // context loader, target or class; replace game/Netty worker factories at creation.
+        ThreadHygieneTransformer(),
+        // Register the two executors without public accessors while their owner class initializes;
+        // teardown then calls them directly instead of creating a reflective field accessor.
+        SessionTeardownTransformer(),
         // The creative-screen pagination is 26.3 client behavior: the screen's own shape changes
         // between game versions, so the rules live with this adapter instead of the shared ones.
         CreativeScreenPaginationTransformer(),
@@ -58,15 +70,70 @@ class OMLAdapterV26_3 : IAdapter {
 
     override fun createServerTransformers(): List<IClassTransformer> = listOf(
         ServerHookTransformer(idPrefix = "v26_3", shapes = v26_3HookShapes),
+        ThreadHygieneTransformer(),
+        SessionTeardownTransformer(),
         NetworkCompressionTransformer(idPrefix = "v26_3"),
         NetworkPayloadTransformer(idPrefix = "v26_3"),
     )
 
-    override fun createContentRegistry() = MinecraftContentRegistry
+    override fun createContentRegistry(): MinecraftContentRegistry {
+        MinecraftContentRegistry.registryAccessor = V26_3RegistryAccessor
+        return MinecraftContentRegistry
+    }
 
     override fun createNetworkSender() = OMLNetworkBridge
 
     override fun onGameReady() {
         recordRunningServer()
     }
+
+    override fun launch(args: Array<String>, serverSide: Boolean) {
+        if (serverSide) {
+            net.minecraft.server.Main.main(args)
+        } else {
+            net.minecraft.client.main.Main.main(args)
+        }
+    }
+
+    override fun disarmClientShutdownWatchdog() {
+        ThreadHygieneBridge.disarmWatchdog()
+    }
+
+    override fun shutdownSessionResources(clientSide: Boolean) {
+        runCatching {
+            Util.nonCriticalIoPool().shutdownAndAwait(3, TimeUnit.SECONDS)
+            OmlLog.info("Teardown", "download executor shut down")
+        }.onFailure { OmlLog.warn("Teardown", "download executor shutdown failed") }
+
+        runCatching {
+            val service = MinecraftServicesDiscoveryService::class.java
+            if (service.classLoader !== javaClass.classLoader) return@runCatching
+            val executor = MinecraftServicesDiscoveryService.DISCOVERY_EXECUTOR
+            executor.shutdownNow()
+            executor.awaitTermination(2, TimeUnit.SECONDS)
+            OmlLog.info("Teardown", "auth discovery executor shut down")
+        }.onFailure { OmlLog.warn("Teardown", "auth discovery executor shutdown failed") }
+
+        runCatching { ThreadHygieneBridge.shutdownEventLoopGroup() }
+            .onFailure { OmlLog.warn("Teardown", "local event loop group shutdown failed") }
+
+        runCatching { ShaderCompileExecutor.shutdown() }
+            .onFailure { OmlLog.warn("Teardown", "shader executor shutdown failed") }
+
+        if (clientSide) {
+            runCatching { Minecraft.getInstance().getSoundManager().destroy() }
+                .onFailure { OmlLog.warn("Teardown", "sound engine shutdown failed") }
+            runCatching { ThreadHygieneBridge.shutdownSoundExecutor() }
+                .onFailure { OmlLog.warn("Teardown", "sound executor shutdown failed") }
+        }
+    }
+
+    override fun telemetryExecutor(clientSide: Boolean): ExecutorService? =
+        if (clientSide) ThreadHygieneBridge.takeTelemetryExecutor() else null
+
+    override fun jfrPeriodicTasks(): List<Runnable> = ThreadHygieneBridge.takeJfrTasks()
+
+    override fun jfrCustomEvents(): List<Class<*>> = ThreadHygieneBridge.takeJfrCustomEvents()
+
+    override fun openAlEventTypes(): IntArray? = ThreadHygieneBridge.takeOpenAlEventTypes()
 }

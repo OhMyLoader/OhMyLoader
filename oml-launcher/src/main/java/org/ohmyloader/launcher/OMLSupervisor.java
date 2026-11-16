@@ -1,5 +1,6 @@
 package org.ohmyloader.launcher;
 
+import java.lang.ref.WeakReference;
 import java.lang.reflect.Method;
 import java.net.URL;
 
@@ -44,6 +45,9 @@ public final class OMLSupervisor {
             }
             String reason = SessionControl.reason();
             System.out.println("[OMLSupervisor] reboot requested: " + reason);
+            // Drop the local before the probe: this frame stays on the stack (blocked in join)
+            // for the whole GC wait, so any reference left in its slot is a live root.
+            session = null;
             boolean collected = stopSession();
             if (!collected) {
                 // A leaked session must not be papered over by starting another one: the old
@@ -65,10 +69,15 @@ public final class OMLSupervisor {
      * session's jar handles, drops the supervisor reference and runs the canary.
      */
     static boolean stopSession() {
-        Session session = activeSession;
-        if (session == null) return true;
+        Session retiring = activeSession;
         activeSession = null;
-        return session.close();
+        if (retiring == null) return true;
+        // Retire first (close jars, drop the loader) and keep only the weak probe in this frame.
+        // The GC wait then runs on a fresh thread, so neither this frame nor a C2 register that
+        // once held the loader can pin it across System.gc().
+        WeakReference<ClassLoader> probe = retiring.retire();
+        retiring = null;
+        return SessionCanary.awaitCollected(probe, 5_000, true, OMLSupervisor.class.getClassLoader());
     }
 
     /** Shutdown observation: drop the reference and probe, but leave jar handles to process exit. */

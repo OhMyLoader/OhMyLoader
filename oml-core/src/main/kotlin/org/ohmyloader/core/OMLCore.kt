@@ -166,22 +166,7 @@ object OMLCore {
 
         declareContent(adapter, modsDir)
         launch(adapter, args)
-        shutdownShaderCompileExecutor()
-        SessionTeardown.run(primaryLoader)
-    }
-
-    /**
-     * The adapter-common shader executor is session-owned; its four daemon threads must stop before
-     * the supervisor probes this session, or they pin the old loader through their context loader.
-     */
-    private fun shutdownShaderCompileExecutor() {
-        runCatching {
-            Class.forName(
-                "org.ohmyloader.adapter.common.ShaderCompileExecutor",
-                false,
-                primaryLoader,
-            ).getMethod("shutdown").invoke(null)
-        }
+        SessionTeardown.run(primaryLoader, adapter, !serverSide)
     }
 
     /**
@@ -548,13 +533,11 @@ object OMLCore {
         }
 
         try {
-            val mcMainClass = Class.forName(entryClass, true, primaryLoader)
-            val mainMethod = mcMainClass.getMethod("main", Array<String>::class.java)
             OmlLog.info(
                 "OMLCore",
                 "${loadedMods.size} mod(s) loaded, handing over to the ${if (serverSide) "dedicated server" else "client"}...",
             )
-            mainMethod.invoke(null, args)
+            adapter.launch(args, serverSide)
         } catch (e: ClassNotFoundException) {
             val message = "entry class $entryClass not found!\n" +
                 "Please check that the game jar exists in oml-adapter-*/libs/ and matches the adapter layer version."
@@ -569,7 +552,7 @@ object OMLCore {
             OmlLog.error("OMLCore", "Failed to start Minecraft!", t)
             throw t
         }
-        disarmShutdownWatchdogOnReboot()
+        disarmShutdownWatchdogOnReboot(adapter)
     }
 
     /**
@@ -591,7 +574,7 @@ object OMLCore {
      * in-process reboot returns from main deliberately; the old watchdog would kill the session the
      * supervisor is about to start. Invalidating its counter makes the wake-up a no-op.
      */
-    private fun disarmShutdownWatchdogOnReboot() {
+    private fun disarmShutdownWatchdogOnReboot(adapter: IAdapter) {
         val requested = runCatching {
             Class.forName("org.ohmyloader.launcher.SessionControl", true, OMLCore::class.java.classLoader)
                 .getMethod("rebootRequested")
@@ -599,14 +582,7 @@ object OMLCore {
         }.getOrDefault(false)
         if (!requested) return
         runCatching {
-            val watchdog = Class.forName(
-                "com.mojang.blaze3d.platform.ClientShutdownWatchdog",
-                true,
-                primaryLoader,
-            )
-            val counter = watchdog.getDeclaredField("THREAD_COUNTER")
-            counter.isAccessible = true
-            (counter.get(null) as java.util.concurrent.atomic.AtomicInteger).set(Int.MIN_VALUE)
+            adapter.disarmClientShutdownWatchdog()
             // The thread is sleeping for its 15 seconds and pins this session through its context
             // loader; wake it so it returns instead of holding the loader until the next session is up.
             for (thread in Thread.getAllStackTraces().keys) {

@@ -52,6 +52,11 @@ public final class SessionControl {
         return mainLoader.get();
     }
 
+    /** Probe without materializing a strong local that could survive across the canary's GC loop. */
+    static boolean mainLoaderCleared() {
+        return mainLoader.refersTo(null);
+    }
+
     static String reason() {
         return reason;
     }

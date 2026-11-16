@@ -2,18 +2,22 @@ package org.ohmyloader.launcher;
 
 import org.junit.jupiter.api.Test;
 
+import java.lang.ref.WeakReference;
 import java.net.URL;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** The session teardown contract: close() drops the supervisor reference and the loader is collectable. */
+/** The session teardown contract: retire() drops the supervisor reference and the loader is collectable. */
 class SessionLifecycleTest {
 
     @Test
-    void closingSessionReleasesItsLoader() {
+    void retiringSessionReleasesItsLoader() {
         Session session = sessionWithDetachedLoader();
 
-        assertTrue(session.close(), "close() must close and release the session loader");
+        WeakReference<ClassLoader> probe = session.retire();
+        assertTrue(
+            SessionCanary.awaitCollected(probe, 5_000, true, SessionLifecycleTest.class.getClassLoader()),
+            "retire() must close and release the session loader");
     }
 
     private static Session sessionWithDetachedLoader() {
