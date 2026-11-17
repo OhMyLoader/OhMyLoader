@@ -127,10 +127,10 @@ afterEvaluate {
         jvmArgs(stdoutEnc)
 
         val ourProjects = listOf(
-            project(":oml-launcher"), project(":oml-core"), project(":oml-api"),
+            project(":oml-launcher"), project(":oml-core"), project(":oml-api-core"),
             // The game-facing mod API names game classes, so the main loader must define it (its
             // child-first carve-out) — it still travels on the app classpath like every layer jar.
-            project(":oml-api-game"),
+            project(":oml-api"),
             project,
         )
         dependsOn(ourProjects.map { it.tasks.named("jar") })

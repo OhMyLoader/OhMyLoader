@@ -12,7 +12,7 @@ import org.ohmyloader.api.content.OMLBlockTickEvent
 import org.ohmyloader.api.content.OMLStepOnEvent
 
 /**
- * Typed accessors for the surfaces that have to stay version-agnostic in `oml-api`: the behavior
+ * Typed accessors for the surfaces that have to stay version-agnostic in `oml-api-core`: the behavior
  * payloads carry `Any` fields there because that module cannot name a game type, and a command source
  * hides the raw stack behind `platform`. These extensions are the official way to unwrap them — a mod
  * using them never touches a raw version object or a cast of one.

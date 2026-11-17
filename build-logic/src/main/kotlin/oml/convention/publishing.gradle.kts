@@ -1,7 +1,7 @@
 package oml.convention
 
 // Publishing convention for modules consumed from outside this build, by Maven coordinate.
-// from(components["java"]) keeps oml-core's api(project(":oml-api")) edge in the POM as a
+// from(components["java"]) keeps oml-core's api(project(":oml-api-core")) edge in the POM as a
 // compile-scope dependency. Build-time tools (oml-installer, oml-testmod) do not apply it.
 
 plugins {

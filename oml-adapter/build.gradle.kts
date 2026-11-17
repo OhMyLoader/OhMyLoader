@@ -33,7 +33,7 @@ dependencies {
 
     // The game-facing mod API: the event payloads this bridge fires are its types, and it is defined
     // by the same loader as the game classes, which is the only arrangement that keeps one game type.
-    implementation(project(":oml-api-game"))
+    implementation(project(":oml-api"))
 
     // The window lease is supervisor state; the handlers reference it, the launch supplies it.
     compileOnly(project(":oml-launcher"))

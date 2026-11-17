@@ -212,7 +212,7 @@ internal object ModRuleSets {
         for (name in referencedTypes(item.node)) {
             if (isAllowed(name, item)) continue
             problems += "$where references $name -- rule classes are loaded before game classes, may only depend on JDK / " +
-                "Kotlin runtime / oml-api and itself; game classes may only appear in rules as strings"
+                "Kotlin runtime / oml-api-core and itself; game classes may only appear in rules as strings"
         }
         return problems
     }

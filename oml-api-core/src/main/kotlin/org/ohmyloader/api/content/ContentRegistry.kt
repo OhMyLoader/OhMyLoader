@@ -91,7 +91,7 @@ interface ContentRegistry {
 
     /**
      * Declares a damage type, which the game loads from OML's injected content pack: the version
-     * adapter's `LivingEntity.hurt` extension (in `oml-api-<game version>`) takes its id, and a
+     * adapter's `LivingEntity.hurt` extension (in `oml-api-core-<game version>`) takes its id, and a
      * `LIVING_HURT` handler reports [messageId] as the damage type of the hit.
      * [scaling] is how the game multiplies the amount by difficulty (`never`,
      * `when_caused_by_living_non_player`, `always`), [effects] the vanilla sounds and particles that come

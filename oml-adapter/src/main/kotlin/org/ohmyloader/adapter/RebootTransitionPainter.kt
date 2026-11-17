@@ -13,7 +13,7 @@ import org.ohmyloader.api.game.RebootRestore
  * <p>This lives in the version module because the GUI drawing surface is the one place 26.x is not
  * source-stable: `GuiGraphicsExtractor.blit`'s parameter list, `TextureManager.getTexture`'s return
  * type and the pipeline holder the mark is drawn with all differ between the shipped 26.3 jar and
- * the next snapshot, while `oml-api-game` is checked against both. The state machine that decides
+ * the next snapshot, while `oml-api` is checked against both. The state machine that decides
  * *whether* to paint stays there; only the calls that touch those three shapes are here.
  *
  * <p>The look is a transcription of `LoadingOverlay.extractRenderState`, including the awkward

@@ -1,14 +1,63 @@
+import oml.convention.omlGameVersion
+
+// The game-facing mod API: every public type here names game classes directly, which is why it is a
+// module of its own rather than more packages in `oml-api-core` — a mod that wants version-neutral code
+// keeps compiling against `oml-api-core` alone, and one that embraces the tracked game line adds this
+// artifact.
+//
+// Its classes MUST be defined by the OML main loader (see OMLClassLoader.CHILD_FIRST_PREFIXES): a
+// parent-first module naming `net.minecraft.*` would resolve a second, untransformed copy of the game
+// classes and every hand-off between mod and game would fail to cast.
 plugins {
     id("oml.convention.kotlin-jvm")
-    // oml-api is the one module a third-party mod compiles against, so it must exist as a real
-    // Maven coordinate (org.ohmyloader:oml-api) rather than only as a project path.
     id("oml.convention.publishing")
 }
 
+// The same jar the game adapter compiles against, fetched by that module's task — one local copy of a
+// 40 MB jar instead of two. compileOnly: at run time the game supplies these classes, and a mod gets
+// them from its own launcher-provided game jar (the oml-gradle plugin wires that side).
+val gameVersion = omlGameVersion()
+val gameJar = file("$rootDir/oml-adapter/libs/$gameVersion-client.jar")
+
 dependencies {
-    // Only the escape hatch Payload.Raw needs it: its parameters are ASM's instruction list and
-    // method node. compileOnly ⇒ mods that do not use the escape hatch do not get ASM, and it is
-    // provided by the loader at runtime.
-    compileOnly(libs.asmTree)
+    // The version-neutral base this builds on: Event / EventDefinition, the injection and content DSLs.
+    api(project(":oml-api-core"))
+
+    compileOnly(files(gameJar))
+    // The game supplies these at run time; they are on the compile path only because game types reach
+    // into them — `Component` is a `com.mojang.brigadier.Message`, and every registry interface extends
+    // `com.mojang.serialization.Keyable`. Without them the game types here do not resolve their own
+    // supertypes.
+    compileOnly(libs.brigadier)
+    compileOnly(libs.datafixerupper)
     testImplementation(kotlin("test"))
+    testImplementation(files(gameJar))
+    testImplementation(libs.brigadier)
+    testImplementation(libs.datafixerupper)
+    // Building a packet instance runs its static STREAM_CODEC, whose types come from netty — the game
+    // supplies them at run time, and the test JVM has to as well.
+    testImplementation(libs.nettyCodecBase)
+    testImplementation(libs.nettyTransport)
+    testRuntimeOnly(libs.joml)
+}
+
+// `Identifier`'s static init links brigadier, DataFixerUpper, JOML and Mojang's util, so a test that
+// parses a real id needs the game's own library tree. It is the copy the game adapter already
+// fetches — one download per version, and the version JSON is the authoritative list rather than a
+// hand-pinned one.
+val gameLibraries = file("$rootDir/oml-adapter/libs/$gameVersion-libraries")
+dependencies.add(
+    "testRuntimeOnly",
+    fileTree(gameLibraries) {
+        include("**/*.jar")
+        exclude("**/io/netty/**")
+    },
+)
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    dependsOn(":oml-adapter:fetchClientJar")
+}
+
+tasks.withType<Test>().configureEach {
+    dependsOn(":oml-adapter:fetchGameLibraries")
 }

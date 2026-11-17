@@ -12,7 +12,7 @@ import java.net.URLClassLoader;
  * process entry point and must remain loadable from the supervisor side.
  *
  * <p>The game loader OMLCore creates is a child of this loader. Its own child-first prefixes still
- * define the adapters and {@code oml-api-game} in the game loader (those signatures name game
+ * define the adapters and {@code oml-api} in the game loader (those signatures name game
  * types); it reaches their bytes through this loader's resources, so the package ownership is
  * unchanged from the pre-split layout.
  */

@@ -66,7 +66,7 @@ dependencies {
     embedShared(project(":oml-launcher"))
     // The game-facing API travels in the shared layer: a mod compiles against it and the adapter's
     // event payloads ARE its types, so it must be the one copy the session loader defines.
-    embedShared(project(":oml-api-game"))
+    embedShared(project(":oml-api"))
     for ((version, adapter) in bundledAdapters) {
         add(adapterEmbeds.getValue(version).name, project(":$adapter"))
     }

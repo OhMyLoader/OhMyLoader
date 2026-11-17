@@ -104,7 +104,7 @@ class RuleSet(
  * Declares that "this class hands over a rule set"; annotated classes must implement
  * [RuleSetProvider]. The loader discovers them by reading bytecode only (without loading the
  * class), then loads them up to fetch the value — hence a hard constraint: **annotated classes
- * may depend only on JDK, Kotlin runtime, `oml-api`, and the classes of their own mod**, and must
+ * may depend only on JDK, Kotlin runtime, `oml-api-core`, and the classes of their own mod**, and must
  * not reference game classes (see [RuleSetProvider]). [value] is a human-readable name appearing
  * in startup logs and diagnostics, falling back to the class name when blank.
  */

@@ -11,7 +11,7 @@ that matter when an agent works in this repository.
   Do not treat a unit test as a substitute for a runtime change.
 - Keep the loader build and tag gate intact. Do not weaken `HookShapeTest`, injection verification,
   hit counts, or the staged-artifact hash comparison to make a run pass.
-- Read `oml-api/README.md` and `oml-api/API-STYLE.md` before changing public API. A breaking API change is
+- Read `oml-api-core/README.md` and `oml-api-core/API-STYLE.md` before changing public API. A breaking API change is
   a separate `!` commit with the migration in the body.
 - Comments state constraints, not history. Keep KDoc to one or two sentences; test KDoc states the
   reproduced shape, the failure, and the assertion. `TODO`, `FIXME`, and `@Deprecated` stay at zero.

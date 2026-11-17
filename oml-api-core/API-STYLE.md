@@ -1,6 +1,6 @@
-# oml-api Style Guide
+# oml-api-core Style Guide
 
-This file constrains the public API shape of `oml-api` and `oml-api-game`. Use Kotlin idioms: design new
+This file constrains the public API shape of `oml-api-core` and `oml-api`. Use Kotlin idioms: design new
 capabilities against this guide, and move existing ones toward it. If code and this file conflict, this file
 is the target.
 
@@ -29,7 +29,7 @@ lambdas. Callback parameters carry game objects, not wrappers.
 ### 3. Actions are extension functions on game types
 
 A single action on a game object (spawn an entity, teleport, ignite, read or write a block state) belongs in
-`oml-api-game` as an extension function or property. Do not allocate a wrapper. Extension names use game
+`oml-api` as an extension function or property. Do not allocate a wrapper. Extension names use game
 vocabulary that players and mod authors know, not internal class method names.
 
 ### 4. Prefer typed handles over string lookup
@@ -41,8 +41,8 @@ for genuinely dynamic cases only, such as config keys and block-entity data keys
 
 ### 5. Stable-layer vocabulary does not reference vanilla internals
 
-Names in `oml-api` (the version-neutral layer) must use OML or game semantics. Vanilla class names, method
-names, and component keys may appear only in KDoc as mapping notes and in `oml-api-game` or adapter
+Names in `oml-api-core` (the version-neutral layer) must use OML or game semantics. Vanilla class names, method
+names, and component keys may appear only in KDoc as mapping notes and in `oml-api` or adapter
 implementations. A counterexample is `destroyTime`, a `BlockBehaviour.Properties` method name: a 26.x rename
 would break the stable layer's source-level stability promise. The ore declaration shows the intended form:
 the API name is `veinSize`, and the KDoc notes the vanilla name `size`.
@@ -61,6 +61,6 @@ A DSL is a tool, not a goal. Use a normal function in these cases:
 ## Stability boundary
 
 The division between style and stability is in [README.md](README.md). One boundary applies here:
-`oml-api` promises source-level stability within the 26.x line, so these five rules are hard constraints in
-`oml-api`. In `oml-api-game` they are a preference; that layer may follow the game's shape, but the extension
+`oml-api-core` promises source-level stability within the 26.x line, so these five rules are hard constraints in
+`oml-api-core`. In `oml-api` they are a preference; that layer may follow the game's shape, but the extension
 style in rule 3 is still preferred.

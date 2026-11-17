@@ -68,7 +68,7 @@ class MyMod : OMLModInitializer {
 }
 ```
 
-The Gradle plugin supplies `oml-api`, `oml-api-game`, the game jar,
+The Gradle plugin supplies `oml-api-core`, `oml-api`, the game jar,
 and the version's libraries. Mod classes must not use the `org.ohmyloader.` prefix. That prefix is
 parent-first: the launcher layer defines those classes without the game libraries, so the first
 `net.minecraft.*` reference fails with `NoClassDefFoundError`. The loader rejects and skips such a jar while
@@ -132,9 +132,9 @@ compiler; this is valid.
 ### Modules
 
 - `oml-core`: loader core (class loading, injection executor, Mixin front end and class merging, SPI).
-- `oml-api`: version-neutral mod API (event primitives, content declarations, scheduling, config, network,
+- `oml-api-core`: version-neutral mod API (event primitives, content declarations, scheduling, config, network,
   injection, and Mixin).
-- `oml-api-game`: game-facing API; event payloads and extensions name game types directly. The main loader
+- `oml-api`: game-facing API; event payloads and extensions name game types directly. The main loader
   must define it child-first.
 - `oml-content`: version-neutral content registration and `.oml`/TOML loading.
 - `oml-launcher`: bootstrap header.

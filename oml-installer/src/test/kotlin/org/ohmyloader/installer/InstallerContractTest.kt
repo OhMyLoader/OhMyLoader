@@ -696,7 +696,7 @@ class InstallerContractTest {
         val artifacts = listOf(
             "annotations-13.0", "asm-9.10.1", "asm-analysis-9.10.1", "asm-commons-9.10.1",
             "asm-tree-9.10.1", "asm-util-9.10.1", "kotlin-stdlib-2.4.20",
-            "oml-adapter", "oml-api", "oml-core", "oml-launcher",
+            "oml-adapter", "oml-api-core", "oml-core", "oml-launcher",
         )
         for (base in artifacts) {
             val coordinate = LayerLayout.coordinate(base, "26.3-OML")

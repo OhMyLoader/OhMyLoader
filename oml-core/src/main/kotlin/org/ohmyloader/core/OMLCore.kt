@@ -357,7 +357,7 @@ object OMLCore {
     /**
      * Registers the side's bytecode transformers, then the mixin front end. Mod rule sets are loaded
      * only after read-only bytecode discovery and static verification (rule classes are loaded before
-     * game classes, so they may only depend on JDK / Kotlin / oml-api and themselves).
+     * game classes, so they may only depend on JDK / Kotlin / oml-api-core and themselves).
      */
     private fun registerTransformers(
         adapter: IAdapter,

@@ -6,7 +6,7 @@ plugins {
 }
 
 dependencies {
-    implementation(project(":oml-api"))
+    implementation(project(":oml-api-core"))
 
     testImplementation(kotlin("test"))
 }

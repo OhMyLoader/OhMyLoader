@@ -1,7 +1,7 @@
 plugins {
     id("oml.convention.kotlin-jvm")
     // Published because oml-core is what a build tool (and a launcher outside this repository) links
-    // against; its `api(project(":oml-api"))` below must survive into the POM as a compile dependency.
+    // against; its `api(project(":oml-api-core"))` below must survive into the POM as a compile dependency.
     id("oml.convention.publishing")
     // Shared test wiring (NativeTestLibraries) travels as test fixtures instead of a drifting copy.
     `java-test-fixtures`
@@ -10,7 +10,7 @@ plugins {
 }
 
 dependencies {
-    api(project(":oml-api"))
+    api(project(":oml-api-core"))
 
     // The content track (declaration parsing, asset index) lives in its own module; core owns the
     // wiring (when packs are collected, where their namespaces land) but not the machinery.

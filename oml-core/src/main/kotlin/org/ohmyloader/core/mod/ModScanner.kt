@@ -122,7 +122,7 @@ object ModScanner {
                 "skipping ${jarFile.name}: it packs $listed under $RESERVED_NAMESPACE, which the launcher " +
                     "layer defines parent-first — a mod-supplied copy replaces OML's own classes there, and " +
                     "the mod's game references fail to resolve in that layer. Ship the mod under its own " +
-                    "namespace and keep oml-api on the compile classpath instead of bundling it (the official " +
+                    "namespace and keep oml-api-core on the compile classpath instead of bundling it (the official " +
                     "Gradle plugin provides it).",
             )
             return ScanResult(emptyList(), reservedHit = true)

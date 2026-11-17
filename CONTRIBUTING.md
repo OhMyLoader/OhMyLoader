@@ -10,7 +10,7 @@ test-mod run there.
 - Open an issue before a large behavior or API change.
 - Do not add cross-repository file references. The Gradle plugin and test mod consume this repository
   through Maven coordinates only.
-- Read `oml-api/README.md` and `oml-api/API-STYLE.md` before changing the public API.
+- Read `oml-api-core/README.md` and `oml-api-core/API-STYLE.md` before changing the public API.
 - Read `docs/forensics.md` in the workspace documentation repository for historical evidence; do not add
   incident history to code comments.
 
@@ -71,9 +71,9 @@ The E2E scripts target Linux with Xvfb; CI uses software rendering. Windows deve
 - Keep KDoc to one or two sentences; the limit is about 10 lines. Test KDoc states the reproduced shape,
   the error without the fix, and what the assertion proves.
 - `TODO`, `FIXME`, and `@Deprecated` have a zero baseline. Do not introduce them.
-- Version-neutral code belongs in `oml-api`; code that names a game type belongs in `oml-api-game` or the
+- Version-neutral code belongs in `oml-api-core`; code that names a game type belongs in `oml-api` or the
   version adapter. Do not add a wrapper layer or a `platform` escape hatch to the stable layer.
-- A breaking `oml-api` change is a separate `!` commit with the migration in the body. Do not mix it with
+- A breaking `oml-api-core` change is a separate `!` commit with the migration in the body. Do not mix it with
   feature work.
 
 ## Tests
