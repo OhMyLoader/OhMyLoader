@@ -27,6 +27,10 @@ dependencies {
     // The discovery service owns a static ScheduledThreadPoolExecutor whose worker survives the
     // game close; teardown calls it directly instead of creating a reflective field accessor.
     compileOnly(files("libs/26.3-libraries/com/mojang/authlib/10.0.77/authlib-10.0.77.jar"))
+    // ShaderSpvCache rebuilds a cached SPIR-V module: SPIRVModule frees its buffer natively in
+    // close(), so the buffer must be an LWJGL allocation at position 0. LWJGL itself lives on the
+    // supervisor loader at run time; this is compile-only.
+    compileOnly(files("libs/26.3-libraries/org/lwjgl/lwjgl/3.4.3/lwjgl-3.4.3.jar"))
     // The pagination consults the tab manager's resolved order; the manager jar ships in the
     // same installer layer, so this only needs to be on the compile path.
     compileOnly(project(":oml-api-26_3"))

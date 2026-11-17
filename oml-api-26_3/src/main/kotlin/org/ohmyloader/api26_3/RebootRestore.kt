@@ -40,14 +40,24 @@ object RebootRestore {
 
     private const val VERSION = "v1"
 
-    /** Frames session 1 keeps drawing after the request, so the overlay is really presented. */
-    private const val FAREWELL_TICKS = 3
+    /**
+     * Frames session 1 keeps drawing after the request, so the overlay is really presented. One is
+     * enough: the request already painted the frame it ran in, and this holds the next one, so the
+     * stop never races the first presented frame. Every extra tick is another frame of the measured
+     * shutdown.
+     */
+    private const val FAREWELL_TICKS = 1
 
     /** Caps the wait for a world session 2 never gets, so a failure ends visible, not as a hang. */
     private const val LOAD_TIMEOUT_TICKS = 600
 
-    /** How many ticks the server player may lag the client's first world tick before giving up. */
-    private const val APPLY_ATTEMPTS = 100
+    /**
+     * How long the server player may lag the client's first world tick before giving up. A tick
+     * count is not a duration: while the world is loading the client catches up at well over 20
+     * ticks per second (measured ~120), so 100 ticks elapsed in under a second and a server still
+     * preparing the spawn area lost the restore. The wait is a wall-clock timeout.
+     */
+    private const val APPLY_TIMEOUT_NANOS = 5_000_000_000L
 
     /** How long the fade may take before the state machine stops waiting for it. */
     private const val FADE_TIMEOUT_TICKS = 100
@@ -144,7 +154,7 @@ object RebootRestore {
 
     private var loadTicks = 0
     private var fadeTicks = 0
-    private var applyAttempts = 0
+    private var applyDeadline = 0L
 
     /** True once the curtain's fade has been started; before that the reveal may still be held. */
     private var liftStarted = false
@@ -240,6 +250,9 @@ object RebootRestore {
         val delay = if (farewellArmed) FAREWELL_TICKS else 1
         OmlLog.info("Reboot", "holding the transition for $delay ticks")
         OMLScheduler.client.schedule(delay) {
+            // The farewell budget is over; whatever the close path costs from here (the integrated
+            // server's save, the loop unwind) is the second half of the same segment in the bill.
+            clockMark("overlay.loop.stop")
             runCatching {
                 // Minecraft.run owns the loop flag; the close path is the finally block, not a
                 // public stop method. Reflection keeps this single field version-facing.
@@ -314,6 +327,7 @@ object RebootRestore {
             // A launch argument already opened a world; the snapshot still owns the position.
             openedFromSnapshot = false
             state = State.APPLYING
+            applyDeadline = System.nanoTime() + APPLY_TIMEOUT_NANOS
             apply(client, parsed)
             return
         }
@@ -372,7 +386,7 @@ object RebootRestore {
                 ?: "unknown"
             overlayMilestone("Restoring position", RESTORED)
             state = State.APPLYING
-            applyAttempts = 0
+            applyDeadline = System.nanoTime() + APPLY_TIMEOUT_NANOS
             apply(client, snapshot)
             return
         }
@@ -398,7 +412,7 @@ object RebootRestore {
             overlayFinish()
             return
         }
-        if (applyAttempts++ > APPLY_ATTEMPTS) {
+        if (System.nanoTime() > applyDeadline) {
             OmlLog.warn("Reboot", "the server player never appeared; giving up on the position restore")
             outcome = "failed=no-server-player"
             state = State.FADING
@@ -448,6 +462,15 @@ object RebootRestore {
                     .getOrDefault(false)
             val inPlace = sameDimension && before != null && before.distanceTo(wanted) <= 0.5
             if (inPlace) {
+                // The save already put the player at the recorded place; only the view angle is
+                // written back, and a rotation change costs no position packet (so no chunk-loading
+                // screen). This is the "inject at placement" half of the restore: no teleport means
+                // no extra round trip after the world is already up.
+                runCatching {
+                    player.setYRot(target.yaw)
+                    player.setXRot(target.pitch)
+                    player.setYHeadRot(target.yaw)
+                }
                 outcome = "restored=1"
                 OmlLog.info(
                     "Reboot",
@@ -520,6 +543,9 @@ object RebootRestore {
      * <p>Called on the client thread, at every transition into FADING; the guards keep it once.
      */
     private fun restoreAttemptFinished() {
+        // The restore itself is over here; anything after this mark is the fade waiting for the
+        // game's own level-loading screen, not the position/view application.
+        clockMark("overlay.Restore applied")
         maskingWindow = false
         if (snapshot != null && !resumedFired) {
             resumedFired = true
@@ -727,6 +753,16 @@ object RebootRestore {
     }
 
     // ---------------------------------------------------------------- supervisor bridge
+
+    /** The supervisor's stopwatch, for the two boundaries this module owns: farewell end and restore end. */
+    private val clock: Class<*>?
+        get() = runCatching {
+            Class.forName("org.ohmyloader.launcher.RebootClock", true, RebootRestore::class.java.classLoader)
+        }.getOrNull()
+
+    private fun clockMark(name: String) {
+        runCatching { clock?.getMethod("mark", String::class.java)?.invoke(null, name) }
+    }
 
     private val store: Class<*>?
         get() = runCatching {

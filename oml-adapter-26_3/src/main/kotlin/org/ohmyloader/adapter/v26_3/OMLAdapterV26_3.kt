@@ -118,7 +118,12 @@ class OMLAdapterV26_3 : IAdapter {
             if (service.classLoader !== javaClass.classLoader) return@runCatching
             val executor = MinecraftServicesDiscoveryService.DISCOVERY_EXECUTOR
             executor.shutdownNow()
-            executor.awaitTermination(2, TimeUnit.SECONDS)
+            // The worker is a daemon blocked in the discovery HTTP call; interrupting it does not
+            // end that call, so waiting for termination is waiting for a network timeout (2s in the
+            // measured bill) and buys nothing. ThreadHygiene already keeps the retired loader
+            // unreachable from it, which is what the canary checks; a short grace is all a healthy
+            // worker needs.
+            executor.awaitTermination(50, TimeUnit.MILLISECONDS)
             RebootMark.mark("teardown.auth")
         }.onFailure { OmlLog.warn("Teardown", "auth discovery executor shutdown failed") }
 

@@ -69,8 +69,14 @@ object ThreadHygieneBridge {
     fun shutdownEventLoopGroup() {
         val group = eventLoopGroup
         eventLoopGroup = null
-        group?.shutdownGracefully()
-        runCatching { group?.awaitTermination(3, TimeUnit.SECONDS) }
+        // The no-argument `shutdownGracefully()` waits Netty's default 2 s quiet period before it
+        // even starts closing — that wait was the 2027 ms `teardown.auth -> teardown.eventloop`
+        // segment of the reboot bill, and it bought nothing: the local channel this group serves is
+        // torn down with the session either way. A zero quiet period with a short timeout closes it
+        // as soon as its in-flight tasks yield; ThreadHygiene keeps the retired loader unreachable
+        // from a straggler, which is what the canary checks.
+        group?.shutdownGracefully(0, 100, TimeUnit.MILLISECONDS)
+        runCatching { group?.awaitTermination(300, TimeUnit.MILLISECONDS) }
     }
 
     private val jfrTasks = mutableListOf<Runnable>()

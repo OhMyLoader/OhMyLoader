@@ -32,6 +32,47 @@ class ShaderCompileTransformer : InjectingTransformer(
                 require(1)
             }
         }
+        // The SPIR-V cache. `compileToSpv` is the one place shaderc runs; caching its output turns
+        // the second session's ~200 native compiles into memory copies. The include texts are
+        // recorded as the source loader reads them, because the loaded `CachedIncludeSource` keeps
+        // only a native pointer and the cache key must cover the expanded source.
+        classTarget("com/mojang/renderpearl/frontend/shaders/GlslCompiler") {
+            method(
+                "compileToSpv",
+                desc = "(Ljava/lang/String;Ljava/lang/String;" +
+                    "Lcom/mojang/renderpearl/api/pipeline/ShaderType;" +
+                    "Lnet/minecraft/client/renderer/ShaderDefines;" +
+                    "Lcom/mojang/renderpearl/api/pipeline/ShaderSource;)" +
+                    "Lcom/mojang/renderpearl/backend/api/SpvModule;",
+            ) {
+                wrapMethod(
+                    owner = "org/ohmyloader/adapter/v26_3/ShaderSpvCache",
+                    method = "compileToSpv",
+                    desc = "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Object;Ljava/lang/Object;" +
+                        "Ljava/lang/Object;Lorg/ohmyloader/api/hook/Operation;I)" +
+                        "Lcom/mojang/renderpearl/backend/api/SpvModule;",
+                    extras = listOf(DslValue.IntVal(0)),
+                    coerceParams = setOf(2, 3, 4),
+                )
+                require(1)
+            }
+        }
+        classTarget("com/mojang/renderpearl/api/pipeline/ShaderSource\$CachedIncludeSource") {
+            method(
+                "create",
+                desc = "(Lnet/minecraft/resources/Identifier;Ljava/lang/String;)" +
+                    "Lcom/mojang/renderpearl/api/pipeline/ShaderSource\$CachedIncludeSource;",
+            ) {
+                atHead {
+                    call(
+                        "org/ohmyloader/adapter/v26_3/ShaderSpvCache", "noteInclude",
+                        "(Ljava/lang/Object;Ljava/lang/String;)V",
+                        listOf(DslValue.Arg(0), DslValue.Arg(1)),
+                    )
+                }
+                require(1)
+            }
+        }
     },
     id = "v26_3:shader-compile-executor",
 )

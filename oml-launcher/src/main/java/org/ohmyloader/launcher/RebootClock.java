@@ -50,6 +50,7 @@ public final class RebootClock {
         COUNTS.clear();
         t0 = 0;
         TransformCache.resetStats();
+        SpirvCache.resetStats();
     }
 
     /**
@@ -68,14 +69,15 @@ public final class RebootClock {
 
     /**
      * Records (or advances) a mark whose natural semantics are "latest": the last atlas stitch
-     * completion, the last async shader batch. The name keeps its original position in the bill;
-     * only the timestamp moves forward.
+     * completion, the last async shader batch. The entry moves to the end of the bill, so it never
+     * drags an earlier neighbour's delta negative when its timestamp advances.
      */
     public static synchronized void markLatest(String name) {
         long now = System.nanoTime();
         if (t0 == 0) t0 = now;
         long at = now - t0;
-        boolean first = MARKS.put(name, at) == null;
+        boolean first = MARKS.remove(name) == null;
+        MARKS.put(name, at);
         RAW_OUT.println("[OML-Clock] +" + TimeUnit.NANOSECONDS.toMillis(at) + " ms  " + name
             + (first ? "" : "  (latest)"));
     }
@@ -120,6 +122,9 @@ public final class RebootClock {
             }
         }
         for (String line : TransformCache.statsLine()) {
+            RAW_OUT.println("  " + line);
+        }
+        for (String line : SpirvCache.statsLine()) {
             RAW_OUT.println("  " + line);
         }
         RAW_OUT.println("[OML-Clock] =============== end soft-reboot bill ==============");
