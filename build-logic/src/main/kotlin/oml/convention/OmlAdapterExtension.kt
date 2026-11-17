@@ -12,7 +12,7 @@ import org.gradle.api.provider.Property
  */
 interface OmlAdapterExtension {
     /**
-     * Version id, e.g. `26.4-snapshot-8`; also the version the installer and launcher are pointed
+     * Version id, e.g. `26.4-snapshot-9`; also the version the installer and launcher are pointed
      * at. Defaults to the root `gradle.properties`' `oml_game_version` — the one place the tracked
      * game version is written.
      */

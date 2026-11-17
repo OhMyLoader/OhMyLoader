@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit
  * `ParseBox.fromFullTree`.
  */
 class OMLAdapter : IAdapter {
-    override val versionId = "26.4-snapshot-8"
+    override val versionId = "26.4-snapshot-9"
 
     override val mainClass = "net.minecraft.client.main.Main"
 
@@ -48,6 +48,9 @@ class OMLAdapter : IAdapter {
         // The creative-screen pagination is client behavior; the screen's shape lives with the
         // adapter, so the rules do too.
         CreativeScreenPaginationTransformer(),
+        // Mod screens and block entity renderers: the client's own registries are frozen before
+        // mods run, so the two lookups consult OML's map first (see ClientRegistrationBridge).
+        ClientRegistrationTransformer(),
         // The reboot bill's game-side probes: entry/exit marks on bootstrap, device, close and
         // reload sites. Measurement only, nothing reads the marks to decide anything.
         RebootTimingTransformer(),

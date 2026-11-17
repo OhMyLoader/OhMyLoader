@@ -520,31 +520,6 @@ class MinecraftHookTransformer(private val idPrefix: String) : InjectingTransfor
                 }
             }
         }
-        classTarget("net/minecraft/client/gui/screens/inventory/CreativeModeInventoryScreen") {
-            // The tab-button sprites hold one entry per vanilla column (seven in each row), and the
-            // lookup clamps the column with `sprites.length` as its upper bound rather than
-            // `length - 1`. Both rows are full, so any mod tab necessarily sits past that range and the
-            // screen throws ArrayIndexOutOfBoundsException while rendering it. Narrowing the bound to
-            // the last entry keeps the button on the final vanilla sprite, which is still drawn with the
-            // tab's own icon item.
-            method(
-                "extractTabButton",
-                desc = "(Lnet/minecraft/client/gui/GuiGraphicsExtractor;Lnet/minecraft/world/item/CreativeModeTab;)V",
-            ) {
-                beforeCall(owner = "java/lang/Math", name = "clamp", desc = "(JII)I") {
-                    modifyArg(
-                        owner = "org/ohmyloader/adapter/OMLCreativeTabs",
-                        method = "spriteBound",
-                        desc = "(I)I",
-                        index = 2,
-                    )
-                }
-                // The point rewrites every clamp(III) call in the method, so pin the count to exactly
-                // one: a second call site must fail install loudly, not take the narrowed bound too.
-                require(1)
-                allow(1)
-            }
-        }
         classTarget("net/minecraft/client/multiplayer/ClientLevel") {
             // The client's own level tick, so `Events.LEVEL_TICK` covers whichever side ticks; a handler
             // tells the two apart through `Level.isClientSide`.

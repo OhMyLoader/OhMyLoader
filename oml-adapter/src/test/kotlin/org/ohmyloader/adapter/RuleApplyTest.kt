@@ -23,7 +23,7 @@ import kotlin.test.fail
 class RuleApplyTest {
 
     private val clientJar: File =
-        File(System.getProperty("oml.clientJar", "libs/26.4-snapshot-8-client.jar"))
+        File(System.getProperty("oml.clientJar", "libs/26.4-snapshot-9-client.jar"))
 
     private val transformers: List<InjectingTransformer> = listOf(
         MinecraftHookTransformer(idPrefix = "test"),

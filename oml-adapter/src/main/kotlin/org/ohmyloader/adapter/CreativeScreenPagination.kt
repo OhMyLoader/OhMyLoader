@@ -1,13 +1,12 @@
 package org.ohmyloader.adapter
 
-import com.mojang.blaze3d.platform.cursor.CursorTypes
 import net.minecraft.client.Minecraft
-import net.minecraft.client.gui.GuiPipeline
 import net.minecraft.client.gui.GuiGraphicsExtractor
+import net.minecraft.client.gui.components.TabButton
+import net.minecraft.client.gui.components.tabs.TabNavigationBar
 import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.network.chat.Component
-import net.minecraft.util.Mth
 import net.minecraft.world.item.CreativeModeTab
 import net.minecraft.world.item.CreativeModeTabs
 import org.ohmyloader.core.adapter.Refl
@@ -15,23 +14,19 @@ import org.ohmyloader.core.adapter.Refl
 /**
  * The screen-facing half of the creative-tab takeover: owns the [CreativeTabStrip] (rebuilt on
  * every screen init from the registry, the tab manager's resolved order and the player's config)
- * and answers, from the strip model alone, everything the vanilla strip code used to compute
- * from `tab.row()` / `tab.column()`:
+ * and lays vanilla's own tab buttons onto the strip's slots:
  *
- * - [drawTab] replaces `extractTabButton`: draws a tab at its strip slot, or nothing when the
- *   tab has no slot on this page (hidden by the player - hidden tabs are never placed in the
- *   flow at all - or on another page);
- * - [tabClicked] / [tabHovered] replace `checkTabClicked` / `checkTabHovering`: hit tests against
- *   the strip slot;
- * - [onScreenInit] also creates the two vanilla `PageButton`s when the strip spans multiple
- *   pages (the book UI's page-turn button: page sprites, turn sound, never takes focus after
- *   the interaction).
+ * - [applyStripLayout] moves every `ItemTabButton` the screen's `TabNavigationBar`s own onto the
+ *   slot the strip model gives its tab, and hides the buttons of tabs that have no slot on this
+ *   page (hidden by the player, or on another page). Vanilla still draws, hit-tests and narrates
+ *   the buttons, so their sprites, icons, tooltips and focus handling stay the game's own;
+ * - [onScreenInit] rebuilds the strip and creates the two page arrows and the Manage Tabs entry
+ *   when the strip spans multiple pages;
+ * - [drawPageIndicator] draws the `i / n` page indicator at the labels tail.
  *
- * The vanilla loops still drive all of this - they iterate every registered tab and hand each to
- * the handlers, which decide visibility from the strip. No vanilla layout state is read per
- * frame: the panel geometry (`leftPos` / `topPos` / `imageWidth` / `imageHeight`) is captured
- * once per init - init also runs on resize, so the cache stays fresh - and the render path is
- * map lookups and arithmetic only. The reflection helpers are init-time only.
+ * No vanilla layout state is read per frame: the panel geometry (`leftPos` / `topPos` /
+ * `imageWidth` / `imageHeight`) is captured once per init - init also runs on resize, so the cache
+ * stays fresh - and the render path is arithmetic only.
  */
 object CreativeScreenPagination {
 
@@ -45,6 +40,14 @@ object CreativeScreenPagination {
     private var panelTop = 0
     private var panelWidth = 0
     private var panelHeight = 0
+
+    /** Vanilla's tab pitch and the two rows' offsets from the panel, in screen pixels. */
+    private const val COLUMN_WIDTH = 27
+    private const val TOP_OFFSET = 28
+    private const val BOTTOM_OFFSET = 4
+
+    /** Where a button with no slot on this page is parked (the draw pass ignores visibility). */
+    private const val HIDDEN = -10_000
 
     // The page indicator's text, rebuilt only when the page or page count changes.
     private var indicator: Component? = null
@@ -84,6 +87,9 @@ object CreativeScreenPagination {
                 panelLeft + panelWidth / 2 - 50, panelTop - 74, 100, 20, Component.literal("Manage Tabs"),
             ) { Minecraft.getInstance().setScreenAndShow(CreativeTabsManageScreen(screen)) },
         )
+        // The bars were built and arranged earlier in init; put the buttons where the strip wants
+        // them before the first frame, not one frame later.
+        applyStripLayout(screen)
     }
 
     /**
@@ -108,92 +114,63 @@ object CreativeScreenPagination {
         return placed + base.filter { idOf(it) !in config.placedIds }
     }
 
-    private fun selectedTab(): CreativeModeTab = selectedTabField.get(null) as CreativeModeTab
-
-    private val selectedTabField by lazy {
-        CreativeModeInventoryScreen::class.java.getDeclaredField("selectedTab").apply { isAccessible = true }
-    }
-
-    private val spriteArrays by lazy {
-        val screen = CreativeModeInventoryScreen::class.java
-        fun array(name: String): Array<out Any> {
-            val field = screen.getDeclaredField(name)
-            field.isAccessible = true
-            return field.get(null) as Array<out Any>
-        }
-        arrayOf(
-            array("SELECTED_TOP_TABS"), array("UNSELECTED_TOP_TABS"),
-            array("SELECTED_BOTTOM_TABS"), array("UNSELECTED_BOTTOM_TABS"),
-        )
-    }
-
-    /** [CreativeModeInventoryScreen.extractTabButton] replacement: draws the tab at its strip slot. */
+    /**
+     * `extractBackground` head: put vanilla's tab buttons where the strip model wants them. The
+     * screen draws the unselected buttons in that pass and the bars draw all of them again later,
+     * so this runs before both and every frame (a resize re-arranges the bars behind our back).
+     *
+     * A tab with no slot on the current page is hidden *and* moved off-screen: the unselected pass
+     * calls `TabButton.extractRenderState` directly, which ignores the widget's visibility flag.
+     */
     @JvmStatic
-    fun drawTab(
-        screen: CreativeModeInventoryScreen,
-        graphics: GuiGraphicsExtractor,
-        tab: CreativeModeTab,
-    ) {
-        // No hidden check here: hidden tabs are never placed in the flow, so slotOf already
-        // answers null for them - the extra registry-key lookup per tab per frame was waste.
-        val slot = strip?.slotOf(tab) ?: return
-        val selected = selectedTab() === tab
-        val top = slot.top
-        val x = panelLeft + 27 * slot.column
-        val y = panelTop - if (top) 28 else -(panelHeight - 4)
-        val mouseX = graphics.mouseX()
-        val mouseY = graphics.mouseY()
-        val sprites = when {
-            top && selected -> spriteArrays[0]
-            top -> spriteArrays[1]
-            selected -> spriteArrays[2]
-            else -> spriteArrays[3]
+    fun applyStripLayout(screen: CreativeModeInventoryScreen) {
+        val currentStrip = strip ?: return
+        for ((index, bar) in tabBars(screen).withIndex()) {
+            val topBar = index == 0
+            for (button in tabButtons(bar)) {
+                val slot = slotOf(currentStrip, button)?.takeIf { it.top == topBar }
+                if (slot == null) {
+                    button.setVisible(false)
+                    button.setX(HIDDEN)
+                    button.setY(HIDDEN)
+                    continue
+                }
+                button.setVisible(true)
+                button.setX(panelLeft + COLUMN_WIDTH * slot.column)
+                button.setY(if (slot.top) panelTop - TOP_OFFSET else panelTop + panelHeight - BOTTOM_OFFSET)
+            }
         }
-        if (!selected && mouseX > x && mouseY > y && mouseX < x + 26 && mouseY < y + 32) {
-            graphics.requestCursor(CursorTypes.POINTING_HAND)
-        }
-        graphics.blitSprite(
-            GuiPipeline.TEXTURED,
-            sprites[slot.column.coerceIn(0, sprites.size - 1)] as net.minecraft.resources.Identifier,
-            x,
-            y,
-            26,
-            32,
-        )
-        graphics.item(tab.getIconItem(), x + 13 - 8, y + 16 - 8 + if (top) 1 else -1)
     }
 
-    /** [CreativeModeInventoryScreen.checkTabClicked] replacement: strip-slot hit test. */
-    @JvmStatic
-    fun tabClicked(
-        screen: CreativeModeInventoryScreen,
-        tab: CreativeModeTab,
-        xm: Double,
-        ym: Double,
-    ): Boolean {
-        val slot = strip?.slotOf(tab) ?: return false
-        val relY = if (slot.top) -32 else panelHeight
-        val relX = 27 * slot.column
-        return xm >= relX && xm <= relX + 26 && ym >= relY && ym <= relY + 32
+    private fun tabBars(screen: CreativeModeInventoryScreen): List<TabNavigationBar> =
+        listOfNotNull(tabBarTopField.get(screen) as TabNavigationBar?, tabBarBottomField.get(screen) as TabNavigationBar?)
+
+    @Suppress("UNCHECKED_CAST")
+    private fun tabButtons(bar: TabNavigationBar): List<TabButton> =
+        tabButtonsField.get(bar) as List<TabButton>
+
+    private fun slotOf(currentStrip: CreativeTabStrip, button: TabButton): CreativeTabStrip.Slot? {
+        val tab = tabOfMethod.invoke(button.tab()) as CreativeModeTab
+        return currentStrip.slotOf(tab)
     }
 
-    /** [CreativeModeInventoryScreen.checkTabHovering] replacement: strip-slot hover + tooltip. */
-    @JvmStatic
-    fun tabHovered(
-        screen: CreativeModeInventoryScreen,
-        graphics: GuiGraphicsExtractor,
-        tab: CreativeModeTab,
-        xm: Int,
-        ym: Int,
-    ): Boolean {
-        val slot = strip?.slotOf(tab) ?: return false
-        val relX = 27 * slot.column
-        val relY = if (slot.top) -32 else panelHeight
-        if (xm >= relX + 3 && xm <= relX + 24 && ym >= relY + 3 && ym <= relY + 30) {
-            graphics.setTooltipForNextFrame(screen.getFont(), tab.getDisplayName(), xm, ym)
-            return true
-        }
-        return false
+    private val tabBarTopField by lazy {
+        CreativeModeInventoryScreen::class.java.getDeclaredField("tabBarTop").apply { isAccessible = true }
+    }
+
+    private val tabBarBottomField by lazy {
+        CreativeModeInventoryScreen::class.java.getDeclaredField("tabBarBottom").apply { isAccessible = true }
+    }
+
+    private val tabButtonsField by lazy {
+        TabNavigationBar::class.java.getDeclaredField("tabButtons").apply { isAccessible = true }
+    }
+
+    /** The tab behind a button: `CreativeModeTabAdapter` is package-private, its reader is public. */
+    private val tabOfMethod by lazy {
+        Class.forName("net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen\$CreativeModeTabAdapter")
+            .getDeclaredMethod("tab")
+            .apply { isAccessible = true }
     }
 
     /**

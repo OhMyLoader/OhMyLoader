@@ -53,7 +53,7 @@ dependencies {
     )
     // The discovery service owns a static ScheduledThreadPoolExecutor whose worker survives the
     // game close; teardown calls it directly instead of creating a reflective field accessor.
-    compileOnly(files("libs/$gameVersion-libraries/com/mojang/authlib/12.0.81/authlib-12.0.81.jar"))
+    compileOnly(files("libs/$gameVersion-libraries/com/mojang/authlib/12.0.82/authlib-12.0.82.jar"))
     // ShaderSpvCache rebuilds a cached SPIR-V module: SPIRVModule frees its buffer natively in
     // close(), so the buffer must be an LWJGL allocation at position 0. LWJGL itself lives on the
     // supervisor loader at run time; this is compile-only.

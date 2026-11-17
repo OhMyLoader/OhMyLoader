@@ -18,22 +18,14 @@ import org.ohmyloader.core.OMLCore
 object OMLCreativeTabs {
 
     /**
-     * The tab's grid position is a hard constraint on two counts. `CreativeModeTabs.validate()` throws on
-     * any duplicate (row, column) and vanilla fills columns 0–6 of both rows, so [TAB_COLUMN] sits past
-     * them; and the creative screen lays a right-aligned tab at `imageWidth - 27 * (7 - column) + 1`,
-     * which puts column [TAB_COLUMN] immediately after the last vanilla button of the row.
+     * The tab's grid position is a hard constraint on one count: `CreativeModeTabs.validate()` throws
+     * on any duplicate (row, column), and vanilla fills columns 0–6 of both rows, so [TAB_COLUMN] sits
+     * past them. The screen clamps a tab's column into `0..6` when it picks the button sprite, so a
+     * column past vanilla's own draws with the last vanilla sprite and needs no hook.
      * [CreativeTabPositionTest] fails the build the day that slot is taken.
      */
     internal val TAB_ROW = CreativeModeTab.Row.TOP
     internal const val TAB_COLUMN = 7
-
-    /**
-     * The upper bound of the game's own tab-sprite clamp. Vanilla passes `sprites.length`, which lets a
-     * column past vanilla's seven index one element out of the array; the rule on
-     * `CreativeModeInventoryScreen.extractTabButton` routes that bound through here.
-     */
-    @JvmStatic
-    fun spriteBound(bound: Int): Int = (bound - 1).coerceAtLeast(0)
 
     /** The reflective `Output.accept(ItemLike)` resolved once per output class (see the displayItems lambda). */
     private val acceptMethods = java.util.concurrent.ConcurrentHashMap<Class<*>, java.lang.reflect.Method>()

@@ -3,7 +3,6 @@ package org.ohmyloader.adapter
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.*
-import org.ohmyloader.core.transformer.TransformContext
 import java.io.File
 import java.util.jar.JarFile
 import kotlin.test.Test
@@ -19,12 +18,7 @@ import kotlin.test.fail
  */
 class CreativeTabPositionTest {
 
-    private companion object {
-        const val SPRITE_ARRAY = "net/minecraft/resources/Identifier"
-        const val OML_CREATIVE_TABS = "org/ohmyloader/adapter/OMLCreativeTabs"
-    }
-
-    private val clientJar: File = File(System.getProperty("oml.clientJar", "libs/26.4-snapshot-8-client.jar"))
+    private val clientJar: File = File(System.getProperty("oml.clientJar", "libs/26.4-snapshot-9-client.jar"))
 
     @Test
     fun `vanilla occupies no creative tab slot where OML registers its own`() {
@@ -69,61 +63,83 @@ class CreativeTabPositionTest {
     }
 
     /**
-     * The other half of the slot's story: the screen's tab-button sprites hold one entry per vanilla
-     * column, so [OMLCreativeTabs.TAB_COLUMN] is out of their range by construction, and the only thing
-     * standing between a mod tab and an `ArrayIndexOutOfBoundsException` in "Rendering screen" is the
-     * bound rule. This applies the live rules to the real class and asks that the handler sit on the
-     * value the vanilla code feeds to `Mth.clamp`.
+     * The other half of the strip's story: the takeover reaches into the screen's two
+     * `TabNavigationBar`s, their `tabButtons` list and each `ItemTabButton`'s `Tab` adapter, and it
+     * assumes the button is 26 px wide with a 1 px gap (the 27 px column pitch). If any of that
+     * moves, the feature would silently leave vanilla's own strip on screen; the build fails here
+     * instead.
      */
     @Test
-    fun `the creative screen clamps a mod tab onto a sprite it owns`() {
-        val target = "net/minecraft/client/gui/screens/inventory/CreativeModeInventoryScreen"
+    fun `the tab strip the layout takes over still has the shape it reflects`() {
+        val screenType = "net/minecraft/client/gui/screens/inventory/CreativeModeInventoryScreen"
         JarFile(clientJar).use { jar ->
-            val entry = jar.getJarEntry("$target.class") ?: fail("$target missing from the client jar")
-            val node = ClassNode()
-            jar.getInputStream(entry).use { ClassReader(it.readAllBytes()).accept(node, 0) }
-
-            val clinit = instructionsOf(node.methods.first { it.name == "<clinit>" })
-            // `bipush <n>; anewarray Identifier` — anewarray carries the element type, and the length is
-            // the push ahead of it.
-            val spriteWidths: List<Int> = clinit.mapIndexedNotNull { index, insn ->
-                if (insn is TypeInsnNode && insn.desc == SPRITE_ARRAY) {
-                    (clinit.getOrNull(index - 1) as? IntInsnNode)?.operand
-                } else {
-                    null
-                }
+            val screen = classNode(jar, screenType)
+            for (name in listOf("tabBarTop", "tabBarBottom")) {
+                val field = screen.fields.firstOrNull { it.name == name }
+                    ?: fail("$screenType no longer declares $name — the strip layout reflects it")
+                assertTrue(
+                    field.desc == "Lnet/minecraft/client/gui/components/tabs/TabNavigationBar;",
+                    "$name is ${field.desc}, not the TabNavigationBar the layout walks",
+                )
             }
-            assertTrue(spriteWidths.isNotEmpty(), "no tab sprite array is built in <clinit> — the read is off")
+
+            val bar = classNode(jar, "net/minecraft/client/gui/components/tabs/TabNavigationBar")
+            val buttons = bar.fields.firstOrNull { it.name == "tabButtons" }
+                ?: fail("TabNavigationBar no longer declares tabButtons — the strip layout reflects it")
             assertTrue(
-                OMLCreativeTabs.TAB_COLUMN > spriteWidths.min() - 1,
-                "column ${OMLCreativeTabs.TAB_COLUMN} now fits the ${spriteWidths.min()}-entry tab sprite " +
-                    "arrays, so the bound rule is no longer what keeps the creative screen alive — recheck both",
+                buttons.desc == "Lcom/google/common/collect/ImmutableList;",
+                "tabButtons is ${buttons.desc}, not the ImmutableList the layout walks",
             )
 
-            MinecraftHookTransformer(idPrefix = "test").transform(TransformContext(target, node))
-            val button = node.methods.first { it.name == "extractTabButton" }
-            val insns = instructionsOf(button)
-            val clampAt = insns.indexOfFirst {
-                it is MethodInsnNode && it.owner == "java/lang/Math" && it.name == "clamp"
-            }
+            val button = classNode(jar, "net/minecraft/client/gui/components/TabButton")
+            button.methods.firstOrNull {
+                it.name == "tab" && it.desc == "()Lnet/minecraft/client/gui/components/tabs/Tab;"
+            } ?: fail("TabButton.tab() is gone — the layout cannot map a button back to its tab")
+
+            val item = classNode(jar, "net/minecraft/client/gui/components/ItemTabButton")
             assertTrue(
-                clampAt > 0,
-                "extractTabButton no longer clamps a column into the sprite array — the vanilla lookup " +
-                    "moved, so this rule anchors on nothing",
+                item.superName == "net/minecraft/client/gui/components/TabButton",
+                "ItemTabButton no longer extends TabButton — the bars' children are not the buttons assumed",
             )
-            val handlerAt = insns.take(clampAt).indexOfLast {
-                it is MethodInsnNode && it.owner == OML_CREATIVE_TABS && it.name == "spriteBound"
+
+            val adapterType = "$screenType\$CreativeModeTabAdapter"
+            classNode(jar, adapterType).methods.firstOrNull {
+                it.name == "tab" && it.desc == "()Lnet/minecraft/world/item/CreativeModeTab;"
+            } ?: fail("$adapterType.tab() is gone — the layout cannot read the tab behind a button")
+
+            // 26 px buttons with the bar's 1 px spacing are what the 27 px column pitch encodes.
+            val insns = instructionsOf(screen.methods.first { it.name == "init" })
+            val sizeAt = insns.indexOfFirst {
+                it is MethodInsnNode && it.owner == "net/minecraft/client/gui/components/ItemTabButton\$Builder" &&
+                    it.name == "size"
             }
+            assertTrue(sizeAt > 1, "init no longer sizes ItemTabButton — the 27 px column pitch is unverified")
             assertTrue(
-                handlerAt >= 0,
-                "nothing narrows the clamp bound before Mth.clamp: a column past vanilla's sprites indexes " +
-                    "one past the array and the creative screen crashes while rendering",
+                pushedBefore(insns, sizeAt, 2) == 26 && pushedBefore(insns, sizeAt, 1) == 32,
+                "the tab button is no longer 26x32 — the 27 px column pitch is stale",
             )
         }
     }
 
+    private fun classNode(jar: JarFile, type: String): ClassNode {
+        val entry = jar.getJarEntry("$type.class") ?: fail("$type missing from the client jar")
+        val node = ClassNode()
+        jar.getInputStream(entry).use { ClassReader(it.readAllBytes()).accept(node, 0) }
+        return node
+    }
+
     private fun instructionsOf(method: MethodNode): List<AbstractInsnNode> =
         List(method.instructions.size()) { method.instructions[it] }
+
+    /** The [back]-th real instruction before [index], skipping labels / line numbers / frames. */
+    private fun pushedBefore(insns: List<AbstractInsnNode>, index: Int, back: Int): Int? {
+        var remaining = back
+        for (i in index - 1 downTo 0) {
+            if (insns[i].opcode < 0) continue
+            if (--remaining == 0) return intPushed(insns[i])
+        }
+        return null
+    }
 
     private fun intPushed(insn: AbstractInsnNode?): Int? = when (insn) {
         is InsnNode -> when (insn.opcode) {

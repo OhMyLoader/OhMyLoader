@@ -27,13 +27,19 @@ import org.ohmyloader.api.core.RegistrationPhase
  *
  * The declare-phase helpers refuse to run outside `onDeclareRegistries` — outside the phase the
  * vanilla registries are frozen and the namespace would be a guess. The client helpers run from
- * `OMLModInitializer.onInitialize` guarded to the client side; they reach client-only entry
- * points through reflection because 26.3 privatized them (`MenuScreens.register`,
- * `BlockEntityRenderers.register`, the `MenuType` constructor) and Fabric mods reach them
- * through access wideners OML does not carry — the bridges live here so every mod shares one
- * maintained copy instead of growing its own.
+ * `OMLModInitializer.onInitialize` guarded to the client side. They cannot write into the client's
+ * own registries: `ClientBootstrap` builds and freezes them before the client (and therefore any
+ * mod) is constructed. So the client helpers keep the mod's entry in a map here, and the adapter's
+ * client bridge consults it before the vanilla registry — the same maintained copy for every mod.
  */
 object OMLRegistration {
+
+    /** Client-only: screen factories registered out of [registerMenuScreen]. */
+    private val menuScreens =
+        java.util.concurrent.ConcurrentHashMap<MenuType<*>, net.minecraft.client.gui.screens.MenuScreens.ScreenConstructor<*, *>>()
+
+    /** Client-only: block-entity renderer providers, keyed by the same key the client registry uses. */
+    private val blockEntityRenderers = java.util.concurrent.ConcurrentHashMap<ResourceKey<*>, Any>()
 
     private fun namespace(): String =
         RegistrationPhase.currentModId()
@@ -110,9 +116,10 @@ object OMLRegistration {
     // ---------------------------------------------------------------------------------------------
 
     /**
-     * Registers the screen factory for [menuType] (the vanilla `MenuScreens.register` path,
-     * privatized in 26.3). [factory] receives the menu, the player inventory and the title —
-     * the same shape the vanilla `ScreenConstructor` hands its screen.
+     * Registers the screen factory for [menuType] (the vanilla `MenuScreens` path). [factory]
+     * receives the menu, the player inventory and the title — the same shape the vanilla
+     * `ScreenConstructor` hands its screen. The entry is served by the adapter's client bridge,
+     * because the client's screen registry is frozen before mods are constructed.
      */
     fun <M : AbstractContainerMenu, U : net.minecraft.client.gui.screens.Screen> registerMenuScreen(
         menuType: MenuType<M>,
@@ -140,15 +147,15 @@ object OMLRegistration {
                 else -> null
             }
         }
-        val register = net.minecraft.client.gui.screens.MenuScreens::class.java.declaredMethods
-            .first { it.name == "register" }
-        register.isAccessible = true
-        register.invoke(null, menuType, constructor)
+        @Suppress("UNCHECKED_CAST")
+        menuScreens[menuType] =
+            constructor as net.minecraft.client.gui.screens.MenuScreens.ScreenConstructor<*, *>
     }
 
     /**
-     * Registers the block entity renderer for [blockEntityType] (the vanilla
-     * `BlockEntityRenderers.register` path, privatized in 26.3).
+     * Registers the block entity renderer for [blockEntityType] (the vanilla `BlockEntityRenderers`
+     * path). The entry is served by the adapter's client bridge, because the client's renderer
+     * registry is frozen before mods are constructed.
      */
     fun <T : BlockEntity, S : net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState>
         registerBlockEntityRenderer(
@@ -161,9 +168,22 @@ object OMLRegistration {
                 context: net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider.Context,
             ): net.minecraft.client.renderer.blockentity.BlockEntityRenderer<T, S> = factory(context)
         }
-        val register = net.minecraft.client.renderer.blockentity.BlockEntityRenderers::class.java.declaredMethods
-            .first { it.name == "register" }
-        register.isAccessible = true
-        register.invoke(null, blockEntityType, provider)
+        // The client registry keys renderers by the block entity type's registry key (see
+        // BlockEntityRenderers.blockEntityKey), so the bridge can look the entry up from inside the
+        // vanilla map build without knowing the type. An unregistered type has no key and no
+        // renderer either; vanilla would fail the same way at map-build time.
+        val id = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(blockEntityType)
+            ?: error("registerBlockEntityRenderer: $blockEntityType is not in the block-entity registry")
+        val key = ResourceKey.create(net.minecraft.client.core.registries.ClientRegistries.BLOCK_ENTITY_RENDERER, id)
+        blockEntityRenderers[key] = provider
     }
+
+    /** The adapter bridge: a mod's screen factory for [menuType], when one was registered. */
+    @JvmStatic
+    fun menuScreenOrNull(menuType: MenuType<*>): net.minecraft.client.gui.screens.MenuScreens.ScreenConstructor<*, *>? =
+        menuScreens[menuType]
+
+    /** The adapter bridge: a mod's renderer provider for the client registry [key], when one was registered. */
+    @JvmStatic
+    fun blockEntityRendererOrNull(key: ResourceKey<*>): Any? = blockEntityRenderers[key]
 }

@@ -344,7 +344,7 @@ class InstallerContractTest {
     @Test
     fun `the catalog bundles the one pinned adapter`() {
         val entry = VersionCatalog.versions().single()
-        assertEquals("26.4-snapshot-8", entry.version)
+        assertEquals("26.4-snapshot-9", entry.version)
         assertEquals("oml-adapter", entry.adapterArtifact)
     }
 
@@ -445,11 +445,11 @@ class InstallerContractTest {
         }
 
         assertTrue(
-            loggedFor("26.4-snapshot-9").any { it.contains("26.4-snapshot-8") },
+            loggedFor("26.4-snapshot-10").any { it.contains("26.4-snapshot-9") },
             "the snapshot install must state the adapter's verification scope",
         )
         assertTrue(
-            loggedFor("26.3").none { it.contains("26.4-snapshot-8") },
+            loggedFor("26.3").none { it.contains("26.4-snapshot-9") },
             "a release-version install must not carry the snapshot notice",
         )
     }
