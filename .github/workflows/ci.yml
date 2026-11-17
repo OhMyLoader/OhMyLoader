@@ -263,7 +263,6 @@ jobs:
           OML_E2E_USE_STAGED_LOADER: '1'
           LIBGL_ALWAYS_SOFTWARE: '1'
           MESA_LOADER_DRIVER_OVERRIDE: llvmpipe
-          OML_E2E_GRAPHICS_API: opengl
           OML_E2E_TIMEOUT: '900'
           OML_E2E_WATCHDOG: '840'
           OML_E2E_GRACE_SECONDS: '720'
