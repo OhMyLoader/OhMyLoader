@@ -419,7 +419,7 @@ class RebootTimingTransformer : InjectingTransformer(
         classTarget("com/mojang/renderpearl/backend/opengl/GlPipelineRecompiler") {
             method(
                 "decompileShaders",
-                desc = "(Lcom/mojang/renderpearl/backend/api/BackendRenderPipeline\$CreateInfo;)Ljava/util/Map;",
+                desc = "(Lcom/mojang/renderpearl/api/pipeline/CompiledRenderPipeline\$CreateInfo;)Ljava/util/Map;",
             ) {
                 wrapMethod(
                     owner = "org/ohmyloader/adapter/RebootProbe",
@@ -433,5 +433,5 @@ class RebootTimingTransformer : InjectingTransformer(
             }
         }
     },
-    id = "v26_3:reboot-timing",
+    id = "oml:reboot-timing",
 )
