@@ -12,6 +12,9 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.security.DigestInputStream
 import java.security.MessageDigest
+import java.io.InputStream
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.time.Duration
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
@@ -691,14 +694,52 @@ object AssetDownloader {
                 val entry = zip.nextEntry ?: break
                 if (extensions.any { entry.name.endsWith(it) }) {
                     val out = File(nativesDir, entry.name.substringAfterLast('/'))
-                    out.outputStream().use { zip.copyTo(it) }
-                    written += out
+                    if (deployNativeAtomically(zip, out)) written += out
                 }
             }
         }
         return written
     }
 
+
+    /**
+     * Streams [data] to [target] through a uniquely named temp file and an atomic move, skipping
+     * the write entirely when the target already carries the same bytes. The old in-place
+     * `outputStream()` truncate-and-rewrite here caused real SIGBUS crashes in multi-process dev
+     * runs: the e2e multiplayer script boots the server and client JVMs against one shared
+     * `natives/` directory, and a JVM that had already `dlopen`-ed a library died with
+     * `SIGBUS BUS_ADRERR` when the other process truncated the mapped text segment mid-run.
+     * A rename keeps any mapped inode of a live reader intact; the byte-identical skip also
+     * preserves the Gradle `@OutputDirectory` incrementality of `OmlExtractNatives` (rewriting
+     * unchanged files would churn mtimes every run). Returns whether the target changed.
+     */
+    private fun deployNativeAtomically(data: InputStream, target: File): Boolean {
+        val tmp = Files.createTempFile(
+            requireNotNull(target.parentFile).toPath(),
+            "${target.name}.",
+            ".oml-tmp",
+        ).toFile()
+        try {
+            data.use { input -> tmp.outputStream().buffered().use { input.copyTo(it) } }
+            if (target.isFile && sameBytes(target, tmp)) return false
+            try {
+                Files.move(
+                    tmp.toPath(),
+                    target.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE,
+                )
+            } catch (e: java.nio.file.AtomicMoveNotSupportedException) {
+                Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
+            return true
+        } finally {
+            tmp.delete()
+        }
+    }
+
+    private fun sameBytes(a: File, b: File): Boolean =
+        a.length() == b.length() && a.readBytes().contentEquals(b.readBytes())
 
     // -----------------------------------------------------------------------------------------------
     // Shared plumbing
