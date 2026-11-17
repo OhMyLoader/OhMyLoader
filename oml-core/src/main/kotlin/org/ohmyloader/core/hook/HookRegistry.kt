@@ -2,6 +2,7 @@ package org.ohmyloader.core.hook
 
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Handle
+import org.objectweb.asm.Label
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.ohmyloader.api.OmlLog
@@ -34,6 +35,24 @@ import java.util.concurrent.atomic.AtomicInteger
  * The bridge class itself is generated once at startup, one method per handler (cancelable return `Z`, else
  * `V`), because the capture descriptor is only known after scanning.
  */
+private class BridgeClassWriter(flags: Int, private val loader: ClassLoader) : ClassWriter(flags) {
+    override fun getCommonSuperClass(type1: String, type2: String): String {
+        if (type1 == type2) return type1
+        val first = runCatching { Class.forName(type1.replace('/', '.'), false, loader) }.getOrNull()
+        val second = runCatching { Class.forName(type2.replace('/', '.'), false, loader) }.getOrNull()
+        if (first == null || second == null) return "java/lang/Object"
+        if (first.isAssignableFrom(second)) return type1
+        if (second.isAssignableFrom(first)) return type2
+        if (first.isInterface || second.isInterface) return "java/lang/Object"
+        var parent = first.superclass
+        while (parent != null) {
+            if (parent.isAssignableFrom(second)) return Type.getInternalName(parent)
+            parent = parent.superclass
+        }
+        return "java/lang/Object"
+    }
+}
+
 object HookRegistry {
 
     internal const val BRIDGE_CLASS = "org/ohmyloader/core/hook/GeneratedHookBridge"
@@ -218,7 +237,10 @@ object HookRegistry {
     @Synchronized
     fun ensureBridgeGenerated() {
         if (bridgeLoaded) return
-        val cw = ClassWriter(ClassWriter.COMPUTE_MAXS or ClassWriter.COMPUTE_FRAMES)
+        val cw = BridgeClassWriter(
+            ClassWriter.COMPUTE_MAXS or ClassWriter.COMPUTE_FRAMES,
+            loader ?: ClassLoader.getSystemClassLoader(),
+        )
         cw.visit(
             Opcodes.V1_8, Opcodes.ACC_PUBLIC or Opcodes.ACC_FINAL or Opcodes.ACC_SYNTHETIC,
             BRIDGE_CLASS, null, "java/lang/Object", null,
@@ -255,6 +277,22 @@ object HookRegistry {
     internal fun resetForTests() {
         synchronized(this) {
             nextId.set(0)
+            handlers.clear()
+            resolvedMethods.clear()
+            resolvedCalls.clear()
+            mixinInstances.clear()
+            bridgeClass = null
+            bridgeLoaded = false
+        }
+    }
+
+    /**
+     * Release the session-owned handler caches at teardown. The resolved `Method` accessors and the
+     * generated bridge/call-site targets are VM metadata; keeping them here leaves a hidden
+     * `LambdaForm` (and its bound mixin) alive after the game stops.
+     */
+    internal fun releaseForTeardown() {
+        synchronized(this) {
             handlers.clear()
             resolvedMethods.clear()
             resolvedCalls.clear()
@@ -308,7 +346,11 @@ object HookRegistry {
         val kind = BridgeKind.entries[kindOrdinal]
         val target = try {
             when (kind) {
-                BridgeKind.CANCELABLE, BridgeKind.RETURNABLE -> directHandleReadback(handler, kind, type)
+                // CANCELABLE/RETURNABLE used to bind a handler MethodHandle. The bound handle's
+                // LambdaForm is a JVM-hidden class rooted outside the heap, and its method type
+                // names HookValue; that metadata pins the session after the game stops. The
+                // reflective stub preserves the same semantics without a bound handle.
+                BridgeKind.CANCELABLE, BridgeKind.RETURNABLE -> reflectiveCallSite(handler, kind, type)
                 else -> directCallSite(handler, kind, type)
             }
         } catch (_: Throwable) {
@@ -548,10 +590,17 @@ object HookRegistry {
     private fun methodTypeOf(method: Method): MethodType =
         MethodType.methodType(method.returnType, method.parameterTypes)
 
-    /** Generate the bridge method for a single handler: one `invokedynamic`, linked at first execution. */
+    /**
+     * Generate the bridge method for a single handler. A directly resolvable handler becomes typed
+     * bytecode calling the mixin method; only unresolved/private shapes fall back to the lazy
+     * `invokedynamic` path. The direct path is what keeps a bound handler MethodHandle (and its
+     * JVM-hidden LambdaForm) out of the session's metadata.
+     */
     private fun emitBridgeMethod(cw: ClassWriter, handler: Handler) {
         val kind = kindOf(handler)
         val desc = bridgeDesc(handler.id, kind)
+        if (emitDirectBridge(cw, handler, kind, desc)) return
+
         val mv = cw.visitMethod(
             Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC or Opcodes.ACC_SYNTHETIC,
             bridgeMethodName(handler.id, kind), desc, null, null,
@@ -567,6 +616,141 @@ object HookRegistry {
         mv.visitInsn(Type.getReturnType(desc).getOpcode(Opcodes.IRETURN))
         mv.visitMaxs(0, 0)
         mv.visitEnd()
+    }
+
+    /**
+     * Emit a direct handler invocation with the bridge's exact descriptor. Returns false when the
+     * handler shape is not safely callable from the generated class (private/protected, missing,
+     * or a descriptor that disagrees with the declaration), leaving the lazy path in charge.
+     */
+    private fun emitDirectBridge(cw: ClassWriter, handler: Handler, kind: BridgeKind, desc: String): Boolean {
+        val call = runCatching { resolvedCall(handler) }.getOrNull() ?: return false
+        val method = call.method
+        if (!Modifier.isPublic(method.modifiers) || !Modifier.isPublic(method.declaringClass.modifiers)) {
+            return false
+        }
+
+        val bridgeArgs = Type.getArgumentTypes(desc)
+        val captures = handler.captureTypes.size
+        val hasCallback = kind == BridgeKind.NOTIFY || kind == BridgeKind.CANCELABLE || kind == BridgeKind.RETURNABLE
+        val expectedParams = captures + if (hasCallback) 1 else 0
+        if (method.parameterTypes.size != expectedParams) return false
+        for (i in 0 until captures) {
+            if (Type.getDescriptor(method.parameterTypes[i]) != bridgeArgs[i].descriptor) return false
+        }
+        val bridgeReturn = Type.getReturnType(desc)
+        if (hasCallback) {
+            val callbackDesc = if (kind == BridgeKind.RETURNABLE) {
+                "Lorg/ohmyloader/api/hook/HookValue;"
+            } else {
+                "Lorg/ohmyloader/api/hook/HookContext;"
+            }
+            if (Type.getDescriptor(method.parameterTypes[captures]) != callbackDesc) return false
+            if (method.returnType != Void.TYPE) return false
+        } else if (Type.getDescriptor(method.returnType) != bridgeReturn.descriptor) {
+            return false
+        }
+
+        val owner = Type.getInternalName(method.declaringClass)
+        val methodDesc = Type.getMethodDescriptor(method)
+        val isStatic = Modifier.isStatic(method.modifiers)
+        val mv = cw.visitMethod(
+            Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC or Opcodes.ACC_SYNTHETIC,
+            bridgeMethodName(handler.id, kind), desc, null, null,
+        )
+        mv.visitCode()
+
+        val isolated = kind == BridgeKind.NOTIFY || kind == BridgeKind.CANCELABLE || kind == BridgeKind.RETURNABLE
+        val start = Label()
+        val end = Label()
+        val failure = Label()
+        if (isolated) mv.visitTryCatchBlock(start, end, failure, "java/lang/Throwable")
+        mv.visitLabel(start)
+
+        val captureSlots = (0 until captures).sumOf { bridgeArgs[it].size }
+        val callbackSlot = captureSlots + 1
+        val contextSlot = if (kind == BridgeKind.NOTIFY || kind == BridgeKind.CANCELABLE) callbackSlot else -1
+
+        // Emit the argument sequence in call order: [receiver,] captures..., callback.
+        if (!isStatic) {
+            mv.visitLdcInsn(handler.id)
+            mv.visitMethodInsn(
+                Opcodes.INVOKESTATIC, REGISTRY, "instanceFor", "(I)Ljava/lang/Object;", false,
+            )
+            mv.visitTypeInsn(Opcodes.CHECKCAST, owner)
+        }
+        for (i in 0 until captures) {
+            val type = bridgeArgs[i]
+            mv.visitVarInsn(type.getOpcode(Opcodes.ILOAD), slotOf(bridgeArgs, i))
+        }
+        if (contextSlot >= 0) {
+            mv.visitLdcInsn(handler.id)
+            mv.visitInsn(if (kind == BridgeKind.CANCELABLE) Opcodes.ICONST_1 else Opcodes.ICONST_0)
+            mv.visitMethodInsn(
+                Opcodes.INVOKESTATIC, REGISTRY, "newContext",
+                "(IZ)Lorg/ohmyloader/api/hook/HookContext;", false,
+            )
+            mv.visitVarInsn(Opcodes.ASTORE, contextSlot)
+            mv.visitVarInsn(Opcodes.ALOAD, contextSlot)
+        } else if (kind == BridgeKind.RETURNABLE) {
+            mv.visitVarInsn(Opcodes.ALOAD, callbackSlot)
+        }
+        mv.visitMethodInsn(
+            if (isStatic) Opcodes.INVOKESTATIC else Opcodes.INVOKEVIRTUAL,
+            owner, method.name, methodDesc, false,
+        )
+
+        when (kind) {
+            BridgeKind.NOTIFY -> mv.visitInsn(Opcodes.RETURN)
+            BridgeKind.CANCELABLE -> {
+                mv.visitVarInsn(Opcodes.ALOAD, contextSlot)
+                mv.visitMethodInsn(
+                    Opcodes.INVOKEVIRTUAL, "org/ohmyloader/api/hook/HookContext",
+                    "getCanceled", "()Z", false,
+                )
+                mv.visitInsn(Opcodes.IRETURN)
+            }
+            BridgeKind.RETURNABLE -> {
+                mv.visitLdcInsn(handler.id)
+                mv.visitVarInsn(Opcodes.ALOAD, callbackSlot)
+                mv.visitMethodInsn(
+                    Opcodes.INVOKESTATIC, REGISTRY, "checkReturnable",
+                    "(ILorg/ohmyloader/api/hook/HookValue;)V", false,
+                )
+                mv.visitInsn(Opcodes.RETURN)
+            }
+            BridgeKind.MODIFY, BridgeKind.MIRROR ->
+                mv.visitInsn(bridgeReturn.getOpcode(Opcodes.IRETURN))
+            else -> error("unreachable")
+        }
+
+        if (isolated) {
+            mv.visitLabel(end)
+            mv.visitLabel(failure)
+            val throwableSlot = callbackSlot + 1
+            mv.visitVarInsn(Opcodes.ASTORE, throwableSlot)
+            mv.visitLdcInsn(handler.id)
+            mv.visitVarInsn(Opcodes.ALOAD, throwableSlot)
+            mv.visitMethodInsn(
+                Opcodes.INVOKESTATIC, REGISTRY, "reportDirectFailure",
+                "(ILjava/lang/Throwable;)V", false,
+            )
+            if (kind == BridgeKind.CANCELABLE) {
+                mv.visitInsn(Opcodes.ICONST_0)
+                mv.visitInsn(Opcodes.IRETURN)
+            } else {
+                mv.visitInsn(Opcodes.RETURN)
+            }
+        }
+        mv.visitMaxs(0, 0)
+        mv.visitEnd()
+        return true
+    }
+
+    private fun slotOf(types: Array<Type>, index: Int): Int {
+        var slot = 0
+        for (i in 0 until index) slot += types[i].size
+        return slot
     }
 
 
@@ -620,6 +804,29 @@ object HookRegistry {
     }
 
     /** Warn on "canceled without a return value": the engine would return the zero value (0/false/null). */
+    /** Direct bridge helpers: no MethodHandle or reflective accessor is created on a session class. */
+    @JvmStatic
+    fun instanceFor(handlerId: Int): Any {
+        val handler = handlers[handlerId] ?: throw IllegalStateException("unknown hook handler id $handlerId")
+        resolveHandlerCall(handler).receiver?.let { return it }
+        throw IllegalStateException("hook handler $handlerId has no receiver")
+    }
+
+    @JvmStatic
+    fun newContext(handlerId: Int, cancelable: Boolean): HookContext {
+        val handler = handlers[handlerId] ?: throw IllegalStateException("unknown hook handler id $handlerId")
+        return HookContext(handler.targetMethod, cancelable)
+    }
+
+    @JvmStatic
+    fun reportDirectFailure(handlerId: Int, t: Throwable) {
+        val handler = handlers[handlerId] ?: return
+        reportHandlerFailure(handler, t)
+    }
+
+    /** Narrow alias that returns the cached call without exposing the private wrapper type. */
+    private fun resolveHandlerCall(handler: Handler): ResolvedCall = resolvedCall(handler)
+
     @JvmStatic
     fun checkReturnable(handlerId: Int, callback: HookValue<*>) {
         if (!callback.canceled || callback.returnValue != null) return

@@ -20,6 +20,10 @@ dependencies {
     // the same loader as the game classes, which is the only arrangement that keeps one game type.
     implementation(project(":oml-api-26_3"))
 
+    // The window lease is supervisor state; the handlers reference it, the launch supplies it.
+    compileOnly(project(":oml-launcher"))
+    testImplementation(project(":oml-launcher"))
+
     compileOnly(files("libs/26.3-client.jar"))
     testImplementation(files("libs/26.3-client.jar"))
 

@@ -76,9 +76,40 @@ object EventBridge {
 
     @JvmStatic
     fun onClientTick() {
+        clientTicks++
+        // The second session's restore, before anything else this tick looks at the world: it is
+        // what opens the save the snapshot names and lifts the red transition when the player is back.
+        org.ohmyloader.api26_3.RebootRestore.tick()
+        val target = autoRebootAt
+        // One-shot, and not merely because the property is cleared: the farewell frame budget keeps
+        // the loop alive for a few more ticks, so `clientTicks >= target` stays true and would
+        // request the reboot again on each of them.
+        if (!autoRebootIssued && target != null && clientTicks >= target) {
+            autoRebootIssued = true
+            // One-shot: SessionControl clears the property for the next session.
+            System.clearProperty("oml.reboot.afterTicks")
+            org.ohmyloader.api26_3.OMLReboot.restart("automatic after $clientTicks ticks")
+        }
         OMLKeyBindingsBridge.applyPending()
         EventDispatch.onClientTick()
     }
+
+    /**
+     * The client loop has stopped but the integrated server may still be saving. The reboot path
+     * starts the next session as soon as this returns, so wait for the server's shutdown here; a
+     * half-written world would be read by the next session and crash the native chunk IO.
+     */
+    @JvmStatic
+    fun onGameClosing() {
+        val client = runCatching { net.minecraft.client.Minecraft.getInstance() }.getOrNull() ?: return
+        if (!client.hasSingleplayerServer()) return
+        runCatching { client.disconnectWithSavingScreen() }
+            .onFailure { OmlLog.error("Reboot", "waiting for the integrated server to save failed", it) }
+    }
+
+    private var clientTicks = 0
+    private var autoRebootIssued = false
+    private val autoRebootAt = System.getProperty("oml.reboot.afterTicks")?.toIntOrNull()
 
     /**
      * [keyPress head] Dispatches declared key bindings. Vanilla's own gating is re-applied here
@@ -101,11 +132,36 @@ object EventBridge {
     fun onHudRender(
         extractor: GuiGraphicsExtractor,
         @Suppress("UNUSED_PARAMETER") delta: net.minecraft.client.DeltaTracker,
-    ) = EventDispatch.onHudRender(extractor)
+    ) = onHudRender(extractor)
 
-    /** [Hud.extractRenderState head] Snapshot-5 dropped the frame's `DeltaTracker` from the extraction pass. */
+    /**
+     * [Hud.extractRenderState head] Snapshot-5 dropped the frame's `DeltaTracker` from the extraction pass.
+     *
+     * <p>Only the mod handlers run here. The reboot transition is deliberately **not** drawn at this
+     * point: the GUI pass still has the vanilla overlay, the screen and the saving indicator to come,
+     * and anything drawn here ends up underneath them. See [onGuiTail].
+     */
     @JvmStatic
-    fun onHudRender(extractor: GuiGraphicsExtractor) = EventDispatch.onHudRender(extractor)
+    fun onHudRender(extractor: GuiGraphicsExtractor) {
+        EventDispatch.onHudRender(extractor)
+    }
+
+    /**
+     * [net.minecraft.client.gui.Gui.extractRenderState tail] The reboot transition, above everything.
+     *
+     * <p>`Gui.extractRenderState` assembles the frame's whole GUI in one order — HUD, then the
+     * vanilla overlay (the Mojang loading screen), then the screen (the level-loading screen), then
+     * the saving indicator — so its tail is the only point in that pass that sits above all of them.
+     * Both sessions paint here and nowhere else, which is what makes a reboot's transition one
+     * continuous screen: the retiring session's "Saving world" and the starting session's loading
+     * screens are drawn *underneath* it and are never seen, with no suppression anywhere.
+     *
+     * <p>Cost when no reboot is in flight is one reflective boolean read.
+     */
+    @JvmStatic
+    fun onGuiTail(extractor: GuiGraphicsExtractor) {
+        RebootTransition.painter?.invoke(extractor)
+    }
 
     /**
      * [MinecraftServer.tickServer head] Carries the ticking server so the core can tell one server
@@ -169,6 +225,15 @@ object EventBridge {
         org.ohmyloader.api26_3.OMLPermissionGrants.forget(player.uuid)
         EventDispatch.onPlayerLeft(player)
     }
+
+    /**
+     * [PlayerList.broadcastSystemMessage head] `true` swallows the broadcast: the session mask
+     * filters the join/leave announcements out of the chat while a soft reboot is crossing the
+     * session boundary. See [EventDispatch.onJoinLeaveBroadcast] for the exact filter.
+     */
+    @JvmStatic
+    fun onSystemBroadcast(message: net.minecraft.network.chat.Component): Boolean =
+        EventDispatch.onJoinLeaveBroadcast(message)
 
     /**
      * [PlayerList.respawn tail] Receives the player the game is about to return — the instance built for
@@ -369,7 +434,13 @@ object EventBridge {
         EventDispatch.onMenuClosed(player, menu)
     }
 
-    /** [Minecraft.setScreenAndShow head] */
+    /**
+     * [Minecraft.setScreenAndShow head]
+     *
+     * <p>The reboot transition no longer interferes with screen swaps: it is painted above the whole
+     * GUI pass (see [onGuiTail]), so the title screen and the level-loading screen can come and go
+     * normally underneath it. Suppressing them would have hidden a real failure behind the curtain.
+     */
     @JvmStatic
     fun onGuiOpen(screen: Screen?): Boolean = EventDispatch.onGuiOpen(screen)
 

@@ -63,18 +63,6 @@ object OMLCreativeTabs {
             Registries.CREATIVE_MODE_TAB,
             Identifier.fromNamespaceAndPath("oml", "main"),
         )
-        // The registry handle and the static register entry point are resolved reflectively: naming
-        // the `Registry` type here drags its serialization-library supertypes (com.mojang.serialization)
-        // onto the adapter's compile classpath, which only the game supplies at run time.
-        val loader = OMLCore.gameClassLoader()
-        val tabRegistry = Class.forName("net.minecraft.core.registries.BuiltInRegistries", true, loader)
-            .getField("CREATIVE_MODE_TAB").get(null)
-        val register = Class.forName("net.minecraft.core.Registry", true, loader).methods
-            .filter {
-                java.lang.reflect.Modifier.isStatic(it.modifiers) &&
-                    it.name == "register" && it.parameterCount == 3
-            }
-            .first { it.parameterTypes[1] == key.javaClass }
-        register.invoke(null, tabRegistry, key, tab)
+        MinecraftContentRegistry.registryAccessor.register("CREATIVE_MODE_TAB", key, tab)
     }
 }

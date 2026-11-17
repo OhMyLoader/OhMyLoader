@@ -1,6 +1,7 @@
 package org.ohmyloader.core.spi
 
 import org.ohmyloader.core.transformer.IClassTransformer
+import java.util.concurrent.ExecutorService
 
 /**
  * Version-adapter SPI: each supported game version provides one implementation; core
@@ -56,4 +57,34 @@ interface IAdapter {
      * before mods initialize.
      */
     fun onGameReady() {}
+
+    /**
+     * Version-specific teardown of game-owned executors and sound/network resources. The core
+     * version-neutral teardown cannot name these classes; doing it here keeps the calls typed
+     * instead of creating reflection accessors that the VM can keep in its metadata.
+     */
+    fun shutdownSessionResources(clientSide: Boolean) {}
+
+    /** The telemetry executor, when this version owns one in the current session. */
+    fun telemetryExecutor(clientSide: Boolean): ExecutorService? = null
+
+    /** Periodic JFR tasks registered by this version's profiler, for withdrawal at teardown. */
+    fun jfrPeriodicTasks(): List<Runnable> = emptyList()
+
+    /** JFR event classes registered by this version's profiler. */
+    fun jfrCustomEvents(): List<Class<*>> = emptyList()
+
+    /** OpenAL event types subscribed by this version's device tracker. */
+    fun openAlEventTypes(): IntArray? = null
+
+    /** Hands control to the version's client or dedicated-server entry point. */
+    fun launch(args: Array<String>, serverSide: Boolean) {
+        val entry = (if (serverSide) serverMainClass else mainClass)
+            ?: error("server startup is not supported for $versionId")
+        val type = Class.forName(entry, true, javaClass.classLoader)
+        type.getMethod("main", Array<String>::class.java).invoke(null, args)
+    }
+
+    /** Invalidates the vanilla client's post-main shutdown watchdog for an in-process reboot. */
+    fun disarmClientShutdownWatchdog() {}
 }

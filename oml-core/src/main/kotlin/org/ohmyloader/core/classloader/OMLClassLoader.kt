@@ -4,7 +4,9 @@ import org.objectweb.asm.ClassReader
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.ClassNode
+import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.inject.InjectionError
+import org.ohmyloader.core.cache.TransformCache
 import org.ohmyloader.core.diagnostics.Diagnostics
 import org.ohmyloader.core.transformer.IClassTransformer
 import org.ohmyloader.core.transformer.IExclusiveClaimSource
@@ -38,8 +40,20 @@ class OMLClassLoader(
     /** Written once at startup, read on every class load — a copy-on-write snapshot keeps reads lock-free. */
     private val transformers = CopyOnWriteArrayList<IClassTransformer>()
 
+    /** Installed after the rule set is loaded; null means the cache is disabled for this run. */
+    @Volatile
+    private var transformCache: TransformCache? = null
+
+    @Volatile
+    private var transformCacheNamespace: String? = null
+
     fun registerTransformer(transformer: IClassTransformer) {
         transformers.add(transformer)
+    }
+
+    internal fun installTransformCache(cache: TransformCache, namespace: String) {
+        transformCache = cache
+        transformCacheNamespace = namespace
     }
 
     override fun loadClass(name: String, resolve: Boolean): Class<*> {
@@ -105,6 +119,19 @@ class OMLClassLoader(
             return finished({ defineClass(name, bytes, 0, bytes.size) }, false)
         }
 
+        // 1b) The cache is consulted only for classes a transformer claims. A hit is the exact
+        //     post-transform bytes from a previous run with the same fingerprint; it bypasses the
+        //     parse, conflict pre-pass and transformers on purpose.
+        val cache = transformCache
+        val cacheNamespace = transformCacheNamespace
+        if (cache != null && cacheNamespace != null) {
+            val cached = runCatching { cache.get(cacheNamespace, internalName) }.getOrNull()
+            if (cached != null) {
+                Diagnostics.recordPhase("transform cache hit", 0)
+                return finished({ defineClass(name, cached, 0, cached.size) }, true)
+            }
+        }
+
         // 2) Parse — only classes some transformer claimed
         val parseStarted = System.nanoTime()
         val node = ClassNode(Opcodes.ASM9)
@@ -157,6 +184,10 @@ class OMLClassLoader(
         val writer = ClassWriter(ClassWriter.COMPUTE_MAXS)
         node.accept(writer)
         val transformed = writer.toByteArray()
+        if (cache != null && cacheNamespace != null) {
+            runCatching { cache.put(cacheNamespace, internalName, transformed) }
+                .onFailure { OmlLog.warn("TransformCache", "could not store $internalName: ${it.message}") }
+        }
         Diagnostics.recordPhase("write-back", System.nanoTime() - writeStarted)
         return finished({ defineClass(name, transformed, 0, transformed.size) }, true)
     }

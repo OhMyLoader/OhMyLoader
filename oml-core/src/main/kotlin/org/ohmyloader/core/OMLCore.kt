@@ -16,7 +16,9 @@ import org.ohmyloader.content.AbstractContentRegistry
 import org.ohmyloader.content.TomlContentLoader
 import org.ohmyloader.core.OMLCore.contentPackFiles
 import org.ohmyloader.core.OMLCore.installLogFile
+import org.ohmyloader.core.cache.LauncherTransformCache
 import org.ohmyloader.core.cache.StartupCache
+import org.ohmyloader.core.cache.TransformCacheKey
 import org.ohmyloader.core.classloader.OMLClassLoader
 import org.ohmyloader.core.client.KeyBindingDeclarations
 import org.ohmyloader.core.command.CommandDeclarations
@@ -36,8 +38,10 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
 import java.io.PrintStream
+import java.lang.ref.WeakReference
 import java.lang.reflect.InvocationTargetException
 import java.net.URL
+import java.net.URLClassLoader
 import java.nio.file.Paths
 import java.util.*
 import java.util.concurrent.atomic.AtomicBoolean
@@ -144,12 +148,14 @@ object OMLCore {
         // would exist as two copies, each with its own adapter-side singletons — declarations
         // collected in one, materialization run against the other's empty state.
         val omlLoader = createMainLoader(parent, mods)
+        registerSessionLoader(omlLoader)
         val adapter = discoverAdapter(omlLoader)
         this.adapter = adapter
         // Installed before mod init: a mod may send during its own initialization.
         OMLNetwork.sender = adapter.createNetworkSender()
 
         val transformers = registerTransformers(adapter, omlLoader, mods)
+        installTransformCache(omlLoader, adapter, mods)
 
         // All subsequent threads resolve classes through the OML main loader (placed before the
         // self-check: the self-check resolves handlers through it — the runtime-generated bridge
@@ -161,6 +167,38 @@ object OMLCore {
 
         declareContent(adapter, modsDir)
         launch(adapter, args)
+        if (serverSide) {
+            teardownWhenServerExits(adapter)
+        } else {
+            SessionTeardown.run(primaryLoader, adapter, true)
+        }
+    }
+
+    /**
+     * Moves the session teardown to the end of the process on the dedicated-server side.
+     *
+     * <p>`net.minecraft.server.Main.main` returns as soon as the server thread is running: the thread
+     * keeps the process alive, the return value does not. Tearing the session down at that moment is
+     * what closed the server's executors underneath it — the first structure lookup after
+     * `Preparing level` died with `RejectedExecutionException` out of
+     * `ChunkGeneratorStructureState`, so a dedicated server could never finish loading a world.
+     *
+     * <p>This side has no reboot boundary (no window, no reboot signal), so the session really ends
+     * when the process does. Vanilla stops through `MinecraftServer.halt`, which is a `System.exit`,
+     * and that runs shutdown hooks. Both captures are weak on purpose: a strong reference would pin
+     * the disposable loader for the whole session and make the canary's verdict — "what did the game
+     * leave behind" — meaningless.
+     */
+    private fun teardownWhenServerExits(adapter: IAdapter) {
+        val loader = WeakReference<ClassLoader>(primaryLoader)
+        val sessionAdapter = WeakReference(adapter)
+        Runtime.getRuntime().addShutdownHook(
+            Thread({
+                val live = loader.get() ?: return@Thread
+                runCatching { SessionTeardown.run(live, sessionAdapter.get(), false) }
+                    .onFailure { OmlLog.warn("Teardown", "server teardown failed: $it") }
+            }, "oml-server-teardown"),
+        )
     }
 
     /**
@@ -260,6 +298,42 @@ object OMLCore {
         (buildRuntimeUrls() + mods.distinctBy { it.file }.map { it.file.toURI().toURL() }).toTypedArray(),
         parent,
     )
+
+    /**
+     * Installs the supervisor-owned transform cache. The fingerprint covers every input that can
+     * change transformed bytecode; a missing input disables the cache instead of risking a stale
+     * hit. The cache directory is set before the launcher class reads it lazily.
+     */
+    private fun installTransformCache(loader: OMLClassLoader, adapter: IAdapter, mods: List<ModContainer>) {
+        val setting = System.getProperty("oml.transform.cache", "on").lowercase()
+        if (setting == "off" || setting == "false") return
+        val gameJar = System.getProperty("oml.game.jar")?.let(::File)
+        if (gameJar == null || !gameJar.isFile) {
+            OmlLog.info("TransformCache", "disabled: oml.game.jar is not set")
+            return
+        }
+        val namespace = TransformCacheKey.compute(
+            gameJar = gameJar,
+            loaderVersion = VERSION,
+            adapterId = adapter.versionId,
+            adapterLocation = adapter.javaClass.protectionDomain?.codeSource?.location,
+            layerLocations = (OMLCore::class.java.classLoader as? URLClassLoader)?.urLs?.toList().orEmpty(),
+            modJars = mods.map { it.file },
+            side = if (serverSide) "server" else "client",
+            jdkFeature = Runtime.version().feature(),
+        ) ?: run {
+            OmlLog.warn("TransformCache", "disabled: the fingerprint has a missing input")
+            return
+        }
+        val directory = File(cacheDirectory(), "transformed")
+        System.setProperty("oml.transform.cache.dir", directory.absolutePath)
+        val cache = LauncherTransformCache.create(OMLCore::class.java.classLoader) ?: run {
+            OmlLog.info("TransformCache", "disabled: the launcher cache is not on the supervisor classpath")
+            return
+        }
+        loader.installTransformCache(cache, namespace)
+        OmlLog.info("TransformCache", "enabled namespace=${namespace.take(12)} dir=$directory")
+    }
 
     /**
      * Registers the side's bytecode transformers, then the mixin front end. Mod rule sets are loaded
@@ -491,13 +565,11 @@ object OMLCore {
         }
 
         try {
-            val mcMainClass = Class.forName(entryClass, true, primaryLoader)
-            val mainMethod = mcMainClass.getMethod("main", Array<String>::class.java)
             OmlLog.info(
                 "OMLCore",
                 "${loadedMods.size} mod(s) loaded, handing over to the ${if (serverSide) "dedicated server" else "client"}...",
             )
-            mainMethod.invoke(null, args)
+            adapter.launch(args, serverSide)
         } catch (e: ClassNotFoundException) {
             val message = "entry class $entryClass not found!\n" +
                 "Please check that the game jar exists in oml-adapter-*/libs/ and matches the adapter layer version."
@@ -512,6 +584,44 @@ object OMLCore {
             OmlLog.error("OMLCore", "Failed to start Minecraft!", t)
             throw t
         }
+        disarmShutdownWatchdogOnReboot(adapter)
+    }
+
+    /**
+     * The supervisor's canary only knows the session URL loader; the game and mods live in this
+     * child loader. Register it (weakly, on the supervisor side) as soon as it exists so a failed
+     * collection can name threads that pin the session through the child rather than the parent.
+     */
+    private fun registerSessionLoader(loader: ClassLoader) {
+        runCatching {
+            Class.forName("org.ohmyloader.launcher.SessionControl", true, OMLCore::class.java.classLoader)
+                .getMethod("registerMainLoader", ClassLoader::class.java)
+                .invoke(null, loader)
+        }
+    }
+
+    /**
+     * The vanilla client starts a 15-second post-main watchdog that calls `System.exit(-8)` when the
+     * JVM is still alive after `Main.main` returned. That is correct for a process exit, but an
+     * in-process reboot returns from main deliberately; the old watchdog would kill the session the
+     * supervisor is about to start. Invalidating its counter makes the wake-up a no-op.
+     */
+    private fun disarmShutdownWatchdogOnReboot(adapter: IAdapter) {
+        val requested = runCatching {
+            Class.forName("org.ohmyloader.launcher.SessionControl", true, OMLCore::class.java.classLoader)
+                .getMethod("rebootRequested")
+                .invoke(null) as Boolean
+        }.getOrDefault(false)
+        if (!requested) return
+        runCatching {
+            adapter.disarmClientShutdownWatchdog()
+            // The thread is sleeping for its 15 seconds and pins this session through its context
+            // loader; wake it so it returns instead of holding the loader until the next session is up.
+            for (thread in Thread.getAllStackTraces().keys) {
+                if (thread.name.startsWith("Client shutdown watchdog #")) thread.interrupt()
+            }
+            OmlLog.info("Reboot", "client shutdown watchdog disarmed for the next session")
+        }.onFailure { OmlLog.warn("Reboot", "could not disarm the client shutdown watchdog") }
     }
 
     /**

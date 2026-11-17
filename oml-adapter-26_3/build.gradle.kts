@@ -16,6 +16,17 @@ dependencies {
     // module's SnapshotEventBridge uses.
     implementation(project(":oml-adapter-common"))
     compileOnly(files("libs/26.3-client.jar"))
+    // EventLoopGroupHolder's group type: the game jar only carries the holder, Netty ships in
+    // the installer's libraries layer.
+    compileOnly(
+        files(
+            "libs/26.3-libraries/io/netty/netty-common/4.2.16.Final/netty-common-4.2.16.Final.jar",
+            "libs/26.3-libraries/io/netty/netty-transport/4.2.16.Final/netty-transport-4.2.16.Final.jar",
+        ),
+    )
+    // The discovery service owns a static ScheduledThreadPoolExecutor whose worker survives the
+    // game close; teardown calls it directly instead of creating a reflective field accessor.
+    compileOnly(files("libs/26.3-libraries/com/mojang/authlib/10.0.77/authlib-10.0.77.jar"))
     // The pagination consults the tab manager's resolved order; the manager jar ships in the
     // same installer layer, so this only needs to be on the compile path.
     compileOnly(project(":oml-api-26_3"))

@@ -162,6 +162,23 @@ internal fun InjectionBuilder.serverEventRules() {
             }
             require(1)
         }
+        // The funnel both join/leave announcements go through: `placeNewPlayer` broadcasts
+        // "multiplayer.player.joined[.renamed]" and the disconnect path
+        // (`ServerGamePacketListenerImpl.removePlayerFromWorld`) broadcasts "multiplayer.player.left",
+        // both via the two-argument overload. HEAD with a cancel: while a soft reboot masks the
+        // session window, the bridge swallows exactly those keys and neither the chat nor the console
+        // ever sees them — the join/leave pair the handover produces is not a real join or leave.
+        // Death messages, /say and every other user of this method pass through untouched.
+        method("broadcastSystemMessage", desc = "(Lnet/minecraft/network/chat/Component;Z)V") {
+            atHead {
+                cancelableCall(
+                    BRIDGE, "onSystemBroadcast",
+                    "(Lnet/minecraft/network/chat/Component;)Z",
+                    args = listOf(DslValue.Arg(0)),
+                )
+            }
+            require(1)
+        }
     }
 
     classTarget("net/minecraft/server/level/ServerPlayerGameMode") {
