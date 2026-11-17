@@ -152,7 +152,10 @@ final class SessionCanary {
                 sweepHooksOnFreshThread();
                 nextHookSweep = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(1_000);
             }
+            long gcStart = System.nanoTime();
             System.gc();
+            RebootClock.add("canary.gc", System.nanoTime() - gcStart);
+            RebootClock.count("canary.gc");
             if (collected()) return true;
             try {
                 Thread.sleep(50);

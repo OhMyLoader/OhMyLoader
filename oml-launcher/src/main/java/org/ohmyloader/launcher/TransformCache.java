@@ -34,6 +34,30 @@ public final class TransformCache {
     private static final Map<String, byte[]> L1 = new ConcurrentHashMap<>();
     private static final AtomicLong L1_BYTES = new AtomicLong();
 
+    // Reboot-bill instrumentation: which tier answered, and what disk reads cost. Cleared by
+    // RebootClock.reset() when a new measurement window opens.
+    private static final AtomicLong L1_HITS = new AtomicLong();
+    private static final AtomicLong L1_MISSES = new AtomicLong();
+    private static final AtomicLong L2_HITS = new AtomicLong();
+    private static final AtomicLong L2_READ_NANOS = new AtomicLong();
+
+    /** The cache's contribution to the reboot bill; one line per tier. */
+    static java.util.List<String> statsLine() {
+        java.util.List<String> lines = new java.util.ArrayList<>(3);
+        lines.add("transformcache L1 hits=" + L1_HITS.get() + " misses=" + L1_MISSES.get());
+        long l2 = L2_HITS.get();
+        lines.add("transformcache L2 hits=" + l2 + " read=" + L2_READ_NANOS.get() / 1_000_000 + " ms");
+        return lines;
+    }
+
+    /** Starts a fresh measurement window (called from RebootClock.reset). */
+    static void resetStats() {
+        L1_HITS.set(0);
+        L1_MISSES.set(0);
+        L2_HITS.set(0);
+        L2_READ_NANOS.set(0);
+    }
+
     private TransformCache() {}
 
     /**
@@ -45,15 +69,21 @@ public final class TransformCache {
             String key = key(namespace, internalName);
             if (key == null) return null;
             byte[] cached = L1.get(key);
-            if (cached != null) return cached;
-
+            if (cached != null) {
+                L1_HITS.incrementAndGet();
+                return cached;
+            }
+            L1_MISSES.incrementAndGet();
             Path path = l2Path(namespace, internalName);
             if (path == null) return null;
+            long readStart = System.nanoTime();
             byte[] decoded = decode(read(path));
+            L2_READ_NANOS.addAndGet(System.nanoTime() - readStart);
             if (decoded == null) {
                 deleteQuietly(path);
                 return null;
             }
+            L2_HITS.incrementAndGet();
             remember(key, decoded);
             return decoded;
         } catch (Throwable ignored) {

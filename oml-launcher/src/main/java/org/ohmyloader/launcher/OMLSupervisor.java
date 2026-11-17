@@ -50,6 +50,7 @@ public final class OMLSupervisor {
             }
             String reason = SessionControl.reason();
             System.out.println("[OMLSupervisor] reboot requested: " + reason);
+            RebootClock.mark("supervisor.reboot.requested");
             // The transition is already on the window — the retiring session put it up and its last
             // presented frame is the one the leased window keeps. These two milestones are the only
             // thing this layer contributes to it, and they are what makes the bar move while no
@@ -73,6 +74,7 @@ public final class OMLSupervisor {
             // The next session's first frame takes the bar from here; the milestone is set before
             // the session is even given control so the bar never stalls between the two phases.
             OMLRebootOverlay.milestone("Starting the next session", OMLRebootOverlay.RELOADING);
+            RebootClock.mark("supervisor.session2.started");
             System.out.println("[OMLSupervisor] rebooted session started");
         }
     }
@@ -121,6 +123,7 @@ public final class OMLSupervisor {
      * session's jar handles, drops the supervisor reference and runs the canary.
      */
     static boolean stopSession() {
+        RebootClock.mark("supervisor.canary.begin");
         Session retiring = activeSession;
         activeSession = null;
         if (retiring == null) return true;
@@ -129,11 +132,14 @@ public final class OMLSupervisor {
         // once held the loader can pin it across System.gc().
         WeakReference<ClassLoader> probe = retiring.retire();
         retiring = null;
+        RebootClock.mark("supervisor.retired");
         // LWJGL lives on this loader, not the session's, so its static bindings survive the swap and
         // the next session inherits entry points that belong to a context that no longer exists.
         // Clear them while the retiring session is provably dead and before anything is collected.
         LwjglStatics.reset(OMLSupervisor.class.getClassLoader());
-        return SessionCanary.awaitCollected(probe, 5_000, true, OMLSupervisor.class.getClassLoader());
+        boolean collected = SessionCanary.awaitCollected(probe, 5_000, true, OMLSupervisor.class.getClassLoader());
+        RebootClock.mark("supervisor.canary.done");
+        return collected;
     }
 
     /** Shutdown observation: drop the reference and probe, but leave jar handles to process exit. */
@@ -151,13 +157,17 @@ public final class OMLSupervisor {
     private static Session startSession(String[] args, URL[] sessionJars) throws Exception {
         ClassLoader original = Thread.currentThread().getContextClassLoader();
         ClassLoader supervisor = OMLSupervisor.class.getClassLoader();
+        RebootClock.mark("supervisor.loader.begin");
         SessionClassLoader sessionLoader = new SessionClassLoader(sessionJars, supervisor);
+        RebootClock.mark("supervisor.loader.created");
         Session session = new Session(sessionLoader, supervisor);
         Thread.currentThread().setContextClassLoader(sessionLoader);
         try {
             Class<?> core = Class.forName("org.ohmyloader.core.OMLCore", true, sessionLoader);
             Method start = core.getMethod("start", String[].class);
+            RebootClock.mark("supervisor.core.start");
             start.invoke(null, (Object) args);
+            RebootClock.mark("supervisor.session.main.returned");
         } finally {
             Thread.currentThread().setContextClassLoader(original);
         }

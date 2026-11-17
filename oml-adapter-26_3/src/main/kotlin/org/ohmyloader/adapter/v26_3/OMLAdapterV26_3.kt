@@ -6,6 +6,7 @@ import net.minecraft.util.Util
 import org.ohmyloader.adapter.common.*
 import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.inject.DslValue
+import org.ohmyloader.core.RebootMark
 import org.ohmyloader.core.spi.IAdapter
 import org.ohmyloader.core.transformer.IClassTransformer
 import java.util.concurrent.ExecutorService
@@ -62,6 +63,9 @@ class OMLAdapterV26_3 : IAdapter {
         // The creative-screen pagination is 26.3 client behavior: the screen's own shape changes
         // between game versions, so the rules live with this adapter instead of the shared ones.
         CreativeScreenPaginationTransformer(),
+        // The reboot bill's game-side probes: entry/exit marks on bootstrap, device, close and
+        // reload sites. Measurement only, nothing reads the marks to decide anything.
+        RebootTimingTransformer(),
         // Network compression and mod payloads are shared bootstrap code (both sides run the same
         // unified jar), so the same transformers register on the client and the server path.
         NetworkCompressionTransformer(idPrefix = "v26_3"),
@@ -88,6 +92,7 @@ class OMLAdapterV26_3 : IAdapter {
     }
 
     override fun launch(args: Array<String>, serverSide: Boolean) {
+        RebootMark.mark("game.main.begin")
         if (serverSide) {
             net.minecraft.server.Main.main(args)
         } else {
@@ -105,7 +110,7 @@ class OMLAdapterV26_3 : IAdapter {
     override fun shutdownSessionResources(clientSide: Boolean) {
         runCatching {
             Util.nonCriticalIoPool().shutdownAndAwait(3, TimeUnit.SECONDS)
-            OmlLog.info("Teardown", "download executor shut down")
+            RebootMark.mark("teardown.download")
         }.onFailure { OmlLog.warn("Teardown", "download executor shutdown failed") }
 
         runCatching {
@@ -114,20 +119,28 @@ class OMLAdapterV26_3 : IAdapter {
             val executor = MinecraftServicesDiscoveryService.DISCOVERY_EXECUTOR
             executor.shutdownNow()
             executor.awaitTermination(2, TimeUnit.SECONDS)
-            OmlLog.info("Teardown", "auth discovery executor shut down")
+            RebootMark.mark("teardown.auth")
         }.onFailure { OmlLog.warn("Teardown", "auth discovery executor shutdown failed") }
 
-        runCatching { ThreadHygieneBridge.shutdownEventLoopGroup() }
-            .onFailure { OmlLog.warn("Teardown", "local event loop group shutdown failed") }
+        runCatching {
+            ThreadHygieneBridge.shutdownEventLoopGroup()
+            RebootMark.mark("teardown.eventloop")
+        }.onFailure { OmlLog.warn("Teardown", "local event loop group shutdown failed") }
 
-        runCatching { ShaderCompileExecutor.shutdown() }
-            .onFailure { OmlLog.warn("Teardown", "shader executor shutdown failed") }
+        runCatching {
+            ShaderCompileExecutor.shutdown()
+            RebootMark.mark("teardown.shaderexec")
+        }.onFailure { OmlLog.warn("Teardown", "shader executor shutdown failed") }
 
         if (clientSide) {
-            runCatching { Minecraft.getInstance().getSoundManager().destroy() }
-                .onFailure { OmlLog.warn("Teardown", "sound engine shutdown failed") }
-            runCatching { ThreadHygieneBridge.shutdownSoundExecutor() }
-                .onFailure { OmlLog.warn("Teardown", "sound executor shutdown failed") }
+            runCatching {
+                Minecraft.getInstance().getSoundManager().destroy()
+                RebootMark.mark("teardown.sound.destroy")
+            }.onFailure { OmlLog.warn("Teardown", "sound engine shutdown failed") }
+            runCatching {
+                ThreadHygieneBridge.shutdownSoundExecutor()
+                RebootMark.mark("teardown.sound.executor")
+            }.onFailure { OmlLog.warn("Teardown", "sound executor shutdown failed") }
         }
     }
 

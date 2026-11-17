@@ -20,14 +20,22 @@ import java.util.concurrent.TimeUnit
 internal object SessionTeardown {
 
     fun run(loader: ClassLoader, adapter: IAdapter? = null, clientSide: Boolean = true) {
-        adapter?.shutdownSessionResources(clientSide)
-        HookRegistry.releaseForTeardown()
-        shutdownGameExecutors(loader)
-        releaseTelemetryExecutor(adapter, clientSide)
-        releaseJfr(loader, adapter)
-        releaseLwjglCallbacks(loader, adapter)
-        resetLwjglDebugStream(loader)
-        interruptTimerHack()
+        RebootMark.mark("teardown.begin")
+        timed("teardown.adapter") { adapter?.shutdownSessionResources(clientSide) }
+        timed("teardown.hooks") { HookRegistry.releaseForTeardown() }
+        timed("teardown.executors") { shutdownGameExecutors(loader) }
+        timed("teardown.telemetry") { releaseTelemetryExecutor(adapter, clientSide) }
+        timed("teardown.jfr") { releaseJfr(loader, adapter) }
+        timed("teardown.lwjgl") { releaseLwjglCallbacks(loader, adapter) }
+        timed("teardown.debugstream") { resetLwjglDebugStream(loader) }
+        timed("teardown.timerhack") { interruptTimerHack() }
+        RebootMark.mark("teardown.end")
+    }
+
+    /** Marks the step's completion; consecutive marks give each step's duration in the bill. */
+    private inline fun timed(name: String, block: () -> Unit) {
+        block()
+        RebootMark.mark(name)
     }
 
     /**

@@ -105,6 +105,8 @@ public final class OMLRebootOverlay {
         label = phase == null ? "" : phase;
         fadeStartedAt = 0L;
         pumpedAt = System.nanoTime();
+        RebootClock.reset();
+        RebootClock.mark("reboot.request");
     }
 
     /**
@@ -116,7 +118,10 @@ public final class OMLRebootOverlay {
      */
     public static synchronized void milestone(String phase, float progress) {
         if (!active) return;
-        if (phase != null && !phase.isEmpty()) label = phase;
+        if (phase != null && !phase.isEmpty()) {
+            label = phase;
+            RebootClock.mark("overlay." + phase);
+        }
         if (progress > ceiling) {
             // A new ceiling is a new stretch of bar; restart the clock so the step is measured from
             // here rather than from whenever the last phase happened to report.
@@ -134,6 +139,8 @@ public final class OMLRebootOverlay {
      */
     public static synchronized void finish() {
         if (!active) return;
+        RebootClock.mark("transition.fade.begin");
+        RebootClock.summary();
         pumpLocked();
         ceiling = DONE;
     }

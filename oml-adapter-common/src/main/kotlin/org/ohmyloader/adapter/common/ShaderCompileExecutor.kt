@@ -2,6 +2,7 @@ package org.ohmyloader.adapter.common
 
 import org.ohmyloader.api.OmlLog
 import org.ohmyloader.api.hook.Operation
+import org.ohmyloader.core.RebootMark
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
 import java.util.concurrent.LinkedBlockingQueue
@@ -63,8 +64,21 @@ object ShaderCompileExecutor {
         executor: Executor?,
         original: Operation<*>,
         id: Int,
-    ): CompletableFuture<*> =
-        original.call(pipeline, source, pool.value) as CompletableFuture<*>
+    ): CompletableFuture<*> {
+        val start = System.nanoTime()
+        val future = original.call(pipeline, source, pool.value) as CompletableFuture<Any?>
+        // Bill instrumentation: the compile is async, so its cost shows up as an accumulator over
+        // the segments rather than a position on the timeline.
+        return future.whenComplete { _, _ ->
+            try {
+                RebootMark.add("game.shaderCompile.ms", System.nanoTime() - start)
+                RebootMark.count("game.shaderCompile")
+                RebootMark.markLatest("game.shaderCompile.done")
+            } catch (_: Throwable) {
+                // Bill instrumentation must never change a compile completion.
+            }
+        } as CompletableFuture<*>
+    }
 
     /**
      * Waits until no compile is running and none is queued, or the timeout expires.

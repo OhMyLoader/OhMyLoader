@@ -140,6 +140,7 @@ object OMLCore {
         // no main loader built, no transformer run, no game class loaded. initMods reuses this exact
         // order later.
         val mods = ModGraph.order(ModScanner.scan(modsDir))
+        RebootMark.mark("core.scan")
         loadedMods.addAll(mods)
 
         // The main loader is built before the adapter is discovered, and the adapter is discovered
@@ -148,6 +149,7 @@ object OMLCore {
         // would exist as two copies, each with its own adapter-side singletons — declarations
         // collected in one, materialization run against the other's empty state.
         val omlLoader = createMainLoader(parent, mods)
+        RebootMark.mark("core.mainloader")
         registerSessionLoader(omlLoader)
         val adapter = discoverAdapter(omlLoader)
         this.adapter = adapter
@@ -155,7 +157,9 @@ object OMLCore {
         OMLNetwork.sender = adapter.createNetworkSender()
 
         val transformers = registerTransformers(adapter, omlLoader, mods)
+        RebootMark.mark("core.transformers")
         installTransformCache(omlLoader, adapter, mods)
+        RebootMark.mark("core.transformcache")
 
         // All subsequent threads resolve classes through the OML main loader (placed before the
         // self-check: the self-check resolves handlers through it — the runtime-generated bridge
@@ -164,8 +168,11 @@ object OMLCore {
         Thread.currentThread().contextClassLoader = omlLoader
 
         verifyInjectionRules(transformers)
+        RebootMark.mark("core.verify")
 
         declareContent(adapter, modsDir)
+        RebootMark.mark("core.content")
+        RebootMark.mark("core.launch")
         launch(adapter, args)
         if (serverSide) {
             teardownWhenServerExits(adapter)
