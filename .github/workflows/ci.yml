@@ -99,15 +99,19 @@ jobs:
       - name: The installer fat jar must run and install offline
         run: |
           set -e
+          # The bundled game version is gradle.properties' oml_game_version — the same file the
+          # adapter and the installer catalog read. No literal here.
+          version=$(sed -n 's/[[:space:]]//g; s/^oml_game_version=//p' gradle.properties | head -1)
+          [ -n "$version" ] || { echo "::error::oml_game_version missing from gradle.properties"; exit 1; }
           jar=$(ls dist/oml-installer-*.jar)
           java -jar "$jar" --help > /dev/null
           mkdir -p "$RUNNER_TEMP/oml-smoke"
           java -jar "$jar" --target standard --dir "$RUNNER_TEMP/oml-smoke" \
-            --version 26.3 --isolation true --side client
-          json="$RUNNER_TEMP/oml-smoke/versions/26.3-OML/26.3-OML.json"
+            --version "$version" --isolation true --side client
+          json="$RUNNER_TEMP/oml-smoke/versions/$version-OML/$version-OML.json"
           grep -q '"mainClass": "org.ohmyloader.launcher.OMLBootstrap"' "$json"
-          compgen -G "$RUNNER_TEMP/oml-smoke/versions/26.3-OML/natives/*" > /dev/null
-          test -d "$RUNNER_TEMP/oml-smoke/versions/26.3-OML/mods"
+          compgen -G "$RUNNER_TEMP/oml-smoke/versions/$version-OML/natives/*" > /dev/null
+          test -d "$RUNNER_TEMP/oml-smoke/versions/$version-OML/mods"
       - uses: actions/upload-artifact@v7
         with:
           name: oml-installer
@@ -233,13 +237,20 @@ jobs:
           key: gradle-build-cache-${{ runner.os }}-${{ hashFiles('OhMyLoaderTestMod/**/*.kt', 'OhMyLoaderTestMod/**/*.kts', 'OhMyLoaderTestMod/**/*.java', 'OhMyLoaderTestMod/gradle/libs.versions.toml', 'OhMyLoaderTestMod/gradle.properties') }}
           restore-keys: |
             gradle-build-cache-${{ runner.os }}-
+      - name: The game version under test
+        working-directory: OhMyLoaderTestMod
+        run: |
+          # Single source: the TestMod's own gradle.properties (a `-P` cannot move it).
+          version=$(sed -n 's/[[:space:]]//g; s/^oml_game_version=//p' gradle.properties | head -1)
+          [ -n "$version" ] || { echo "::error::oml_game_version missing from OhMyLoaderTestMod/gradle.properties"; exit 1; }
+          echo "OML_GAME_VERSION=$version" >> "$GITHUB_ENV"
       - uses: actions/cache@v6
         with:
           path: |
-            OhMyLoaderTestMod/run/${{ vars.OML_GAME_VERSION || '26.3' }}/minecraft
-            OhMyLoaderTestMod/run/${{ vars.OML_GAME_VERSION || '26.3' }}/libraries
-            OhMyLoaderTestMod/run/${{ vars.OML_GAME_VERSION || '26.3' }}/natives
-          key: game-files-${{ vars.OML_GAME_VERSION || '26.3' }}-${{ hashFiles('OhMyLoaderTestMod/gradle.properties', 'OhMyLoaderTestMod/build.gradle.kts') }}
+            OhMyLoaderTestMod/run/${{ env.OML_GAME_VERSION }}/minecraft
+            OhMyLoaderTestMod/run/${{ env.OML_GAME_VERSION }}/libraries
+            OhMyLoaderTestMod/run/${{ env.OML_GAME_VERSION }}/natives
+          key: game-files-${{ env.OML_GAME_VERSION }}-${{ hashFiles('OhMyLoaderTestMod/gradle.properties', 'OhMyLoaderTestMod/build.gradle.kts') }}
       - name: Headless rendering stack
         run: |
           sudo apt-get update
@@ -248,11 +259,11 @@ jobs:
       - name: Release gate end-to-end
         working-directory: OhMyLoaderTestMod
         env:
-          OML_GAME_VERSION: ${{ vars.OML_GAME_VERSION || '26.3' }}
           OML_GATE_VERSION: ${{ github.ref_name }}
           OML_E2E_USE_STAGED_LOADER: '1'
           LIBGL_ALWAYS_SOFTWARE: '1'
           MESA_LOADER_DRIVER_OVERRIDE: llvmpipe
+          OML_E2E_GRAPHICS_API: opengl
           OML_E2E_TIMEOUT: '900'
           OML_E2E_WATCHDOG: '840'
           OML_E2E_GRACE_SECONDS: '720'
