@@ -83,6 +83,7 @@ final class SessionCanary {
         WeakReference<ClassLoader> session, long timeoutMillis, boolean reboot, ClassLoader supervisor) {
         SessionCanary canary = new SessionCanary(session, supervisor);
         boolean[] verdict = new boolean[1];
+        long started = System.nanoTime();
         Thread probe = new Thread(() -> verdict[0] = canary.runProbe(timeoutMillis, reboot), "oml-canary-probe");
         probe.setDaemon(true);
         probe.setContextClassLoader(ClassLoader.getSystemClassLoader());
@@ -93,6 +94,9 @@ final class SessionCanary {
             Thread.currentThread().interrupt();
             return false;
         }
+        long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+        RAW_ERR.println("[OMLSupervisor] canary(" + (reboot ? "reboot" : "exit")
+            + ") collected=" + verdict[0] + " in " + elapsedMillis + " ms");
         return verdict[0];
     }
 
@@ -110,9 +114,20 @@ final class SessionCanary {
     }
 
     private boolean runProbe(long timeoutMillis, boolean reboot) {
+        // Nothing may be left to release: the game's close path drops its own references before
+        // the session main returns, and when it did, every step below is wasted work.
+        if (collected()) return true;
         releaseThreads(reboot);
         releaseBootstrapMethodHandleCaches();
-        runFinalizationOnce(2_000);
+        // Finalization runs concurrently with the GC rounds instead of in front of them. A
+        // finalizable object pins its class's loader until it is finalized, so both must finish
+        // before the loader can go — but neither needs the other's completion, and serializing
+        // them paid up to 2s of runFinalization on every clean reboot. The polling loop below
+        // naturally sees "collected" only once both have made progress; if the deadline runs out
+        // first, the pending finalization gets a bounded extra wait before the verdict.
+        Thread finalization = new Thread(System::runFinalization, "oml-canary-finalization");
+        finalization.setDaemon(true);
+        finalization.start();
         String pauseAfterRelease = System.getProperty("oml.canary.pauseAfterRelease");
         if (pauseAfterRelease != null && !pauseAfterRelease.isBlank()) {
             try {
@@ -147,6 +162,20 @@ final class SessionCanary {
             }
         } while (System.nanoTime() < deadline);
 
+        if (collected()) return true;
+        // The deadline passed with the loader still referenced: give the pending finalization a
+        // bounded last chance (it may simply not be done yet) before the failure diagnostics run.
+        try {
+            finalization.join(500);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        System.gc();
+        try {
+            Thread.sleep(200);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
         if (collected()) return true;
         OMLBootstrap.restoreConsole();
         String phase = reboot ? "gate" : "exit";
@@ -290,27 +319,6 @@ final class SessionCanary {
         } catch (Throwable t) {
             // A different JDK may rename the private cache field; the probe still reports honestly.
             RAW_ERR.println("[OMLSupervisor] bootstrap MethodHandle cache release skipped: " + t);
-        }
-    }
-
-    /**
-     * Netty's AdaptivePoolingAllocator overrides finalize(); an unfinalized allocator holds its
-     * session-defined class, and through it the whole loader, for as long as it sits on the
-     * finalizer queue. The game never runs finalization itself, so ask for it explicitly. A
-     * blocked finalizer must not hang the reboot: the helper is a daemon with a bounded join.
-     */
-    private static void runFinalizationOnce(long timeoutMillis) {
-        Thread thread = new Thread(System::runFinalization, "oml-canary-finalization");
-        thread.setDaemon(true);
-        thread.start();
-        try {
-            thread.join(timeoutMillis);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return;
-        }
-        if (thread.isAlive()) {
-            RAW_ERR.println("[OMLSupervisor] finalization did not finish within " + timeoutMillis + " ms");
         }
     }
 
