@@ -2,7 +2,7 @@
 
 package org.ohmyloader.content
 
-import org.ohmyloader.api.content.*
+import org.ohmyloader.api.core.content.*
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import kotlin.test.Test

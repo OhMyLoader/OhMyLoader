@@ -1,9 +1,9 @@
 package org.ohmyloader.core.network
 
-import org.ohmyloader.api.network.OMLNetworkContext
-import org.ohmyloader.api.network.OMLPacketBuffer
-import org.ohmyloader.api.network.OMLPayloadCodec
-import org.ohmyloader.api.network.OMLPayloadType
+import org.ohmyloader.api.core.network.OMLNetworkContext
+import org.ohmyloader.api.core.network.OMLPacketBuffer
+import org.ohmyloader.api.core.network.OMLPayloadCodec
+import org.ohmyloader.api.core.network.OMLPayloadType
 import kotlin.test.*
 
 /**

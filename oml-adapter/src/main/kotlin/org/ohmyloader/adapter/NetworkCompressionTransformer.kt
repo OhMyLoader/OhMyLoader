@@ -1,7 +1,7 @@
 package org.ohmyloader.adapter
 
-import org.ohmyloader.api.inject.DslValue
-import org.ohmyloader.api.inject.injection
+import org.ohmyloader.api.core.inject.DslValue
+import org.ohmyloader.api.core.inject.injection
 import org.ohmyloader.core.transformer.injection.InjectingTransformer
 
 /**

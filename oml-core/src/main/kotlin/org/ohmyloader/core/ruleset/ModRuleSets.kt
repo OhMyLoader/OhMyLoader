@@ -4,11 +4,11 @@ import org.objectweb.asm.ClassReader
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.*
-import org.ohmyloader.api.OmlLog
-import org.ohmyloader.api.inject.MergeSource
-import org.ohmyloader.api.inject.Payload
-import org.ohmyloader.api.inject.RuleSet
-import org.ohmyloader.api.inject.RuleSetProvider
+import org.ohmyloader.api.core.OmlLog
+import org.ohmyloader.api.core.inject.MergeSource
+import org.ohmyloader.api.core.inject.Payload
+import org.ohmyloader.api.core.inject.RuleSet
+import org.ohmyloader.api.core.inject.RuleSetProvider
 import org.ohmyloader.core.cache.StartupCache
 import org.ohmyloader.core.hook.ClassMerger
 import org.ohmyloader.core.mod.ModContainer
@@ -40,11 +40,11 @@ internal object ModRuleSets {
     private val ALLOWED_PREFIXES = listOf(
         "java/", "javax/", "jdk/", "sun/", "com/sun/",
         "kotlin/", "kotlinx/",
-        "org/ohmyloader/api/",
+        "org/ohmyloader/api/core/",
     )
 
-    private const val RULE_SOURCE_DESC = "Lorg/ohmyloader/api/inject/RuleSource;"
-    private const val PROVIDER_INTERNAL = "org/ohmyloader/api/inject/RuleSetProvider"
+    private const val RULE_SOURCE_DESC = "Lorg/ohmyloader/api/core/inject/RuleSource;"
+    private const val PROVIDER_INTERNAL = "org/ohmyloader/api/core/inject/RuleSetProvider"
     private const val INSTANCE_FIELD = "INSTANCE"
 
     /**

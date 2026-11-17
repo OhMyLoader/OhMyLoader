@@ -1,7 +1,7 @@
 package org.ohmyloader.adapter
 
-import org.ohmyloader.api.inject.DslValue
-import org.ohmyloader.api.inject.injection
+import org.ohmyloader.api.core.inject.DslValue
+import org.ohmyloader.api.core.inject.injection
 import org.ohmyloader.core.transformer.injection.InjectingTransformer
 
 /**
@@ -107,7 +107,7 @@ class RebootTimingTransformer : InjectingTransformer(
                     owner = "org/ohmyloader/adapter/RebootProbe",
                     method = "loadAndStitch",
                     desc = "(Ljava/lang/Object;Ljava/lang/Object;ILjava/lang/Object;Ljava/lang/Object;" +
-                        "Lorg/ohmyloader/api/hook/Operation;I)Ljava/util/concurrent/CompletableFuture;",
+                        "Lorg/ohmyloader/api/core/hook/Operation;I)Ljava/util/concurrent/CompletableFuture;",
                     extras = listOf(DslValue.IntVal(0)),
                     coerceParams = setOf(0, 1, 3, 4),
                 )
@@ -126,7 +126,7 @@ class RebootTimingTransformer : InjectingTransformer(
                     owner = "org/ohmyloader/adapter/RebootProbe",
                     method = "shaderReload",
                     desc = "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;" +
-                        "Lorg/ohmyloader/api/hook/Operation;I)Ljava/util/concurrent/CompletableFuture;",
+                        "Lorg/ohmyloader/api/core/hook/Operation;I)Ljava/util/concurrent/CompletableFuture;",
                     extras = listOf(DslValue.IntVal(0)),
                     coerceParams = setOf(0, 1, 2, 3),
                 )
@@ -169,7 +169,7 @@ class RebootTimingTransformer : InjectingTransformer(
                 wrapMethod(
                     owner = "org/ohmyloader/adapter/RebootProbe",
                     method = "friendsDisabled",
-                    desc = "(Lorg/ohmyloader/api/hook/Operation;I)Z",
+                    desc = "(Lorg/ohmyloader/api/core/hook/Operation;I)Z",
                     extras = listOf(DslValue.IntVal(0)),
                 )
                 require(1)
@@ -178,7 +178,7 @@ class RebootTimingTransformer : InjectingTransformer(
                 wrapMethod(
                     owner = "org/ohmyloader/adapter/RebootProbe",
                     method = "friendsDisabled",
-                    desc = "(Lorg/ohmyloader/api/hook/Operation;I)Z",
+                    desc = "(Lorg/ohmyloader/api/core/hook/Operation;I)Z",
                     extras = listOf(DslValue.IntVal(0)),
                 )
                 require(1)
@@ -407,7 +407,7 @@ class RebootTimingTransformer : InjectingTransformer(
                 wrapMethod(
                     owner = "org/ohmyloader/adapter/RebootProbe",
                     method = "programLink",
-                    desc = "(Ljava/lang/Object;Ljava/lang/Object;Lorg/ohmyloader/api/hook/Operation;I)" +
+                    desc = "(Ljava/lang/Object;Ljava/lang/Object;Lorg/ohmyloader/api/core/hook/Operation;I)" +
                         "Ljava/lang/Object;",
                     extras = listOf(DslValue.IntVal(0)),
                     coerceParams = setOf(0, 1),
@@ -424,7 +424,7 @@ class RebootTimingTransformer : InjectingTransformer(
                 wrapMethod(
                     owner = "org/ohmyloader/adapter/RebootProbe",
                     method = "decompileShaders",
-                    desc = "(Ljava/lang/Object;Lorg/ohmyloader/api/hook/Operation;I)Ljava/lang/Object;",
+                    desc = "(Ljava/lang/Object;Lorg/ohmyloader/api/core/hook/Operation;I)Ljava/lang/Object;",
                     extras = listOf(DslValue.IntVal(0)),
                     coerceParams = setOf(0),
                     coerceReturn = true,

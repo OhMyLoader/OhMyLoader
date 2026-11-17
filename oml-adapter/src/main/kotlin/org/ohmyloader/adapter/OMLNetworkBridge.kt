@@ -12,11 +12,11 @@ import net.minecraft.resources.Identifier
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.server.network.ServerGamePacketListenerImpl
-import org.ohmyloader.api.OmlLog
-import org.ohmyloader.api.network.OMLNetworkContext
-import org.ohmyloader.api.network.OMLNetworkSender
-import org.ohmyloader.api.network.OMLPacketBuffer
-import org.ohmyloader.api.network.OMLPayloadType
+import org.ohmyloader.api.core.OmlLog
+import org.ohmyloader.api.core.network.OMLNetworkContext
+import org.ohmyloader.api.core.network.OMLNetworkSender
+import org.ohmyloader.api.core.network.OMLPacketBuffer
+import org.ohmyloader.api.core.network.OMLPayloadType
 import org.ohmyloader.core.OMLCore
 import org.ohmyloader.core.adapter.Refl
 import org.ohmyloader.core.network.PayloadDeclarations

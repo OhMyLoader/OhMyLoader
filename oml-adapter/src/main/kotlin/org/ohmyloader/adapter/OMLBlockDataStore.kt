@@ -2,8 +2,8 @@ package org.ohmyloader.adapter
 
 import net.minecraft.world.level.storage.ValueInput
 import net.minecraft.world.level.storage.ValueOutput
-import org.ohmyloader.api.content.OMLBlockData
-import org.ohmyloader.api.content.OMLDataItemStack
+import org.ohmyloader.api.core.content.OMLBlockData
+import org.ohmyloader.api.core.content.OMLDataItemStack
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream

@@ -1,7 +1,7 @@
 package org.ohmyloader.adapter
 
-import org.ohmyloader.api.inject.DslValue
-import org.ohmyloader.api.inject.injection
+import org.ohmyloader.api.core.inject.DslValue
+import org.ohmyloader.api.core.inject.injection
 import org.ohmyloader.core.transformer.injection.InjectingTransformer
 
 /**
@@ -24,7 +24,7 @@ class ShaderCompileTransformer : InjectingTransformer(
                     method = "compilePipeline",
                     desc = "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;" +
                         "Ljava/util/concurrent/Executor;" +
-                        "Lorg/ohmyloader/api/hook/Operation;I)Ljava/util/concurrent/CompletableFuture;",
+                        "Lorg/ohmyloader/api/core/hook/Operation;I)Ljava/util/concurrent/CompletableFuture;",
                     extras = listOf(DslValue.IntVal(0)),
                     coerceParams = setOf(0, 1, 2),
                 )
@@ -49,7 +49,7 @@ class ShaderCompileTransformer : InjectingTransformer(
                     owner = "org/ohmyloader/adapter/ShaderSpvCache",
                     method = "compileToSpv",
                     desc = "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Object;Ljava/lang/Object;" +
-                        "Ljava/lang/Object;Ljava/lang/Object;Lorg/ohmyloader/api/hook/Operation;I)" +
+                        "Ljava/lang/Object;Ljava/lang/Object;Lorg/ohmyloader/api/core/hook/Operation;I)" +
                         "Ljava/nio/ByteBuffer;",
                     extras = listOf(DslValue.IntVal(0)),
                     coerceParams = setOf(2, 3, 4, 5),

@@ -1,7 +1,7 @@
 package org.ohmyloader.core.ruleset.fixtures
 
 import org.objectweb.asm.tree.ClassNode
-import org.ohmyloader.api.inject.*
+import org.ohmyloader.api.core.inject.*
 
 /**
  * Fixtures for rule-set scanning: **only** bundled into a temp jar in tests, never auto-discovered.

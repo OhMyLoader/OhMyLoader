@@ -11,10 +11,10 @@ import org.objectweb.asm.tree.MethodInsnNode
 import org.objectweb.asm.tree.MethodNode
 import org.objectweb.asm.tree.TypeInsnNode
 import org.objectweb.asm.tree.VarInsnNode
-import org.ohmyloader.api.hook.HookContext
-import org.ohmyloader.api.hook.HookValue
-import org.ohmyloader.api.hook.Operation
-import org.ohmyloader.api.inject.DslValue
+import org.ohmyloader.api.core.hook.HookContext
+import org.ohmyloader.api.core.hook.HookValue
+import org.ohmyloader.api.core.hook.Operation
+import org.ohmyloader.api.core.inject.DslValue
 import org.ohmyloader.core.transformer.TransformContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -372,7 +372,7 @@ class InjectionWrapOperationTest {
             }
         }
 
-        val failure = assertFailsWith<org.ohmyloader.api.inject.InjectionError> {
+        val failure = assertFailsWith<org.ohmyloader.api.core.inject.InjectionError> {
             spec.transform(TransformContext(owner, targetWithInstantiation()))
         }
         assertTrue(failure.message!!.contains("constructed type"), failure.message)
@@ -390,7 +390,7 @@ class InjectionWrapOperationTest {
                         ) {
                             wrapOperation(
                                 WrapOpHandlers.OWNER, "coerceEcho",
-                                "(Ljava/lang/Object;Lorg/ohmyloader/api/hook/Operation;)Ljava/lang/Object;",
+                                "(Ljava/lang/Object;Lorg/ohmyloader/api/core/hook/Operation;)Ljava/lang/Object;",
                                 coerceParams = setOf(0),
                                 coerceReturn = true,
                             )
@@ -413,7 +413,7 @@ class InjectionWrapOperationTest {
                         beforeCall(owner = Ops.OWNER, name = "times2", desc = "(I)I") {
                             wrapOperation(
                                 WrapOpHandlers.OWNER, "coerceTimes",
-                                "(Ljava/lang/Object;Lorg/ohmyloader/api/hook/Operation;)Ljava/lang/Object;",
+                                "(Ljava/lang/Object;Lorg/ohmyloader/api/core/hook/Operation;)Ljava/lang/Object;",
                                 coerceParams = setOf(0),
                                 coerceReturn = true,
                             )
@@ -429,9 +429,9 @@ class InjectionWrapOperationTest {
 
     // ---------- fixtures ----------
 
-    private val OPERATION_DESC = "Lorg/ohmyloader/api/hook/Operation;"
-    private val HOOK_CONTEXT_DESC = "Lorg/ohmyloader/api/hook/HookContext;"
-    private val HOOK_VALUE_DESC = "Lorg/ohmyloader/api/hook/HookValue;"
+    private val OPERATION_DESC = "Lorg/ohmyloader/api/core/hook/Operation;"
+    private val HOOK_CONTEXT_DESC = "Lorg/ohmyloader/api/core/hook/HookContext;"
+    private val HOOK_VALUE_DESC = "Lorg/ohmyloader/api/core/hook/HookValue;"
 
     private fun classNode(vararg methods: MethodNode): ClassNode =
         ClassNode(Opcodes.ASM9).apply {

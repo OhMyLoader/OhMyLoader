@@ -1,8 +1,8 @@
 package org.ohmyloader.core.compression
 
-import org.ohmyloader.api.OmlLog
-import org.ohmyloader.api.natives.NativeManager
-import org.ohmyloader.api.natives.downcall
+import org.ohmyloader.api.core.OmlLog
+import org.ohmyloader.api.core.natives.NativeManager
+import org.ohmyloader.api.core.natives.downcall
 import java.lang.foreign.Arena
 import java.lang.foreign.MemorySegment
 import java.lang.foreign.SymbolLookup

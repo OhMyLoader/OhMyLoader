@@ -11,8 +11,8 @@ import net.minecraft.client.gui.narration.NarratableEntry
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.client.gui.screens.TitleScreen
 import net.minecraft.network.chat.Component
-import org.ohmyloader.api.game.OMLReboot
-import org.ohmyloader.api.game.closeScreen
+import org.ohmyloader.api.OMLReboot
+import org.ohmyloader.api.closeScreen
 
 /**
  * The Mods screen: what this session actually loaded, where it lives, and the two ways out of it.

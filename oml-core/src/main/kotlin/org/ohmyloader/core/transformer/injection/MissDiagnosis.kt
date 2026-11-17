@@ -2,10 +2,10 @@ package org.ohmyloader.core.transformer.injection
 
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.*
-import org.ohmyloader.api.inject.InjectionPoint
-import org.ohmyloader.api.inject.LambdaSelector
-import org.ohmyloader.api.inject.MethodRule
-import org.ohmyloader.api.inject.MethodSelector
+import org.ohmyloader.api.core.inject.InjectionPoint
+import org.ohmyloader.api.core.inject.LambdaSelector
+import org.ohmyloader.api.core.inject.MethodRule
+import org.ohmyloader.api.core.inject.MethodSelector
 import org.ohmyloader.core.transformer.injection.MissDiagnosis.MAX_SAMPLES
 
 /**

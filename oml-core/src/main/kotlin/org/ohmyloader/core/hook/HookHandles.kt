@@ -8,40 +8,40 @@ package org.ohmyloader.core.hook
  * `NEW`/`checkcast` and the local-frame map use the internal name, and a pair that disagrees yields a
  * `NoSuchMethodError` or a corrupted frame at injection time — far from the typo that caused it.
  */
-internal const val CALLBACK_INFO = "org/ohmyloader/api/hook/HookContext"
+internal const val CALLBACK_INFO = "org/ohmyloader/api/core/hook/HookContext"
 
 /** [CALLBACK_INFO]'s type descriptor. Never spell it out separately; see the reason above. */
 internal const val CALLBACK_INFO_DESC = "L$CALLBACK_INFO;"
 
 /** Internal name of `HookValue`, the handle carried by a returnable-target bridge. */
-internal const val CALLBACK_RETURNABLE = "org/ohmyloader/api/hook/HookValue"
+internal const val CALLBACK_RETURNABLE = "org/ohmyloader/api/core/hook/HookValue"
 
 /** [CALLBACK_RETURNABLE]'s type descriptor. */
 internal const val CALLBACK_RETURNABLE_DESC = "L$CALLBACK_RETURNABLE;"
 
 /** Internal name of `Args`, the all-arguments handle (`@ModifyArgs`' handler parameter). */
-internal const val ARGS = "org/ohmyloader/api/hook/Args"
+internal const val ARGS = "org/ohmyloader/api/core/hook/Args"
 
 /** [ARGS]'s type descriptor. */
 internal const val ARGS_DESC = "L$ARGS;"
 
 /** Internal name of `Operation`, the original-operation handle (`@WrapOperation` / `@WrapMethod`). */
-internal const val OPERATION = "org/ohmyloader/api/hook/Operation"
+internal const val OPERATION = "org/ohmyloader/api/core/hook/Operation"
 
 /** [OPERATION]'s type descriptor. */
 internal const val OPERATION_DESC = "L$OPERATION;"
 
 /** Internal name of `LocalRef`, the writable local handle (`@Local` on a `LocalRef<T>` parameter). */
-internal const val LOCAL_REF = "org/ohmyloader/api/hook/LocalRef"
+internal const val LOCAL_REF = "org/ohmyloader/api/core/hook/LocalRef"
 
 /** [LOCAL_REF]'s type descriptor. */
 internal const val LOCAL_REF_DESC = "L$LOCAL_REF;"
 
 /** The engine-created [LOCAL_REF] implementation. */
-internal const val LOCAL_REF_IMPL = "org/ohmyloader/api/hook/LocalRefImpl"
+internal const val LOCAL_REF_IMPL = "org/ohmyloader/api/core/hook/LocalRefImpl"
 
 /** Factory whose return type makes the shared-ref local slot exactly `LocalRef`. */
-internal const val LOCAL_REFS = "org/ohmyloader/api/hook/LocalRefs"
+internal const val LOCAL_REFS = "org/ohmyloader/api/core/hook/LocalRefs"
 
 /** A primitive-specialized local ref: interface, engine-created impl, local type, ctor and getter. */
 internal class TypedRef(
@@ -60,7 +60,7 @@ internal val TYPED_REFS: Map<String, TypedRef> = buildMap {
         ctorDesc: String,
         getterDesc: String,
     ) {
-        val internal = "org/ohmyloader/api/hook/$name"
+        val internal = "org/ohmyloader/api/core/hook/$name"
         put("L$internal;", TypedRef(internal, "$internal" + "Impl", primitive, ctorDesc, getterDesc))
     }
     reg("LocalBooleanRef", org.objectweb.asm.Type.BOOLEAN_TYPE, "(Z)V", "()Z")

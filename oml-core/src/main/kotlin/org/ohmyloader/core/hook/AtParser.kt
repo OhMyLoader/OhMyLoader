@@ -3,7 +3,7 @@ package org.ohmyloader.core.hook
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.AnnotationNode
-import org.ohmyloader.api.inject.InjectionPoint
+import org.ohmyloader.api.core.inject.InjectionPoint
 
 /**
  * Translator of an `@At` into an [InjectionPoint]. Kept in its own file so the annotation front-end has
@@ -13,7 +13,7 @@ import org.ohmyloader.api.inject.InjectionPoint
  * (matched by owner) or `(args)V` (matched by ctor descriptor). Mixin's legacy dotted form
  * `owner.name(args)ret` is **not** supported — package-name dots make it ambiguous, and guessing wrong is
  * costlier than erroring; use the `L…;` form for an owner. `args` (named arguments, for CONSTANT, e.g.
- * `args = ["intValue=42"]`) shares the field names of [org.ohmyloader.api.hook.Constant].
+ * `args = ["intValue=42"]`) shares the field names of [org.ohmyloader.api.core.hook.Constant].
  */
 internal object AtParser {
 

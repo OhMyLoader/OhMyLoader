@@ -1,7 +1,7 @@
 package org.ohmyloader.adapter
 
 import net.minecraft.world.level.chunk.storage.RegionFileVersion
-import org.ohmyloader.api.OmlLog
+import org.ohmyloader.api.core.OmlLog
 import org.ohmyloader.core.compression.OmlNativeZstd
 import org.ohmyloader.core.compression.OmlZstdInputStream
 import org.ohmyloader.core.compression.OmlZstdOutputStream

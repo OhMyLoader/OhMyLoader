@@ -3,7 +3,7 @@ package org.ohmyloader.adapter
 import com.mojang.authlib.services.MinecraftServicesDiscoveryService
 import net.minecraft.client.Minecraft
 import net.minecraft.util.Util
-import org.ohmyloader.api.OmlLog
+import org.ohmyloader.api.core.OmlLog
 import org.ohmyloader.core.RebootMark
 import org.ohmyloader.core.spi.IAdapter
 import org.ohmyloader.core.transformer.IClassTransformer

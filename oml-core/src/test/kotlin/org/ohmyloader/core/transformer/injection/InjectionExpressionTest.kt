@@ -11,15 +11,15 @@ import org.objectweb.asm.tree.LabelNode
 import org.objectweb.asm.tree.MethodInsnNode
 import org.objectweb.asm.tree.MethodNode
 import org.objectweb.asm.tree.VarInsnNode
-import org.ohmyloader.api.hook.Args
-import org.ohmyloader.api.hook.HookContext
-import org.ohmyloader.api.hook.HookValue
-import org.ohmyloader.api.hook.Operation
-import org.ohmyloader.api.inject.Anchor
-import org.ohmyloader.api.inject.DslValue
-import org.ohmyloader.api.inject.InjectionError
-import org.ohmyloader.api.inject.InjectionPoint
-import org.ohmyloader.api.inject.Payload
+import org.ohmyloader.api.core.hook.Args
+import org.ohmyloader.api.core.hook.HookContext
+import org.ohmyloader.api.core.hook.HookValue
+import org.ohmyloader.api.core.hook.Operation
+import org.ohmyloader.api.core.inject.Anchor
+import org.ohmyloader.api.core.inject.DslValue
+import org.ohmyloader.api.core.inject.InjectionError
+import org.ohmyloader.api.core.inject.InjectionPoint
+import org.ohmyloader.api.core.inject.Payload
 import org.ohmyloader.core.expression.point.ExpressionContext
 import org.ohmyloader.core.transformer.TransformContext
 import kotlin.test.Test
@@ -274,7 +274,7 @@ class InjectionExpressionTest {
                         atExpression("? > 5") {
                             wrapOperation(
                                 ExpressionHandlers.OWNER, "invert",
-                                "(IILorg/ohmyloader/api/hook/Operation;)Z",
+                                "(IILorg/ohmyloader/api/core/hook/Operation;)Z",
                             )
                         }
                     }
@@ -296,8 +296,8 @@ class InjectionExpressionTest {
                         atExpression("? > 5") {
                             wrapOperation(
                                 ExpressionHandlers.OWNER, "cancelComparison",
-                                "(IILorg/ohmyloader/api/hook/Operation;Lorg/ohmyloader/api/hook/HookValue;)Z",
-                                extras = listOf(DslValue.CancelableHandle("Lorg/ohmyloader/api/hook/HookValue;")),
+                                "(IILorg/ohmyloader/api/core/hook/Operation;Lorg/ohmyloader/api/core/hook/HookValue;)Z",
+                                extras = listOf(DslValue.CancelableHandle("Lorg/ohmyloader/api/core/hook/HookValue;")),
                             )
                         }
                     }
@@ -320,8 +320,8 @@ class InjectionExpressionTest {
                         atExpression("? > 5") {
                             wrapOperation(
                                 ExpressionHandlers.OWNER, "cancelComparisonVoid",
-                                "(IILorg/ohmyloader/api/hook/Operation;Lorg/ohmyloader/api/hook/HookContext;)Z",
-                                extras = listOf(DslValue.CancelableHandle("Lorg/ohmyloader/api/hook/HookContext;")),
+                                "(IILorg/ohmyloader/api/core/hook/Operation;Lorg/ohmyloader/api/core/hook/HookContext;)Z",
+                                extras = listOf(DslValue.CancelableHandle("Lorg/ohmyloader/api/core/hook/HookContext;")),
                             )
                         }
                     }
@@ -425,7 +425,7 @@ class InjectionExpressionTest {
                                 ),
                             ),
                         ) {
-                            modifyArgs(ExpressionHandlers.OWNER, "raiseFirst", "(Lorg/ohmyloader/api/hook/Args;)V")
+                            modifyArgs(ExpressionHandlers.OWNER, "raiseFirst", "(Lorg/ohmyloader/api/core/hook/Args;)V")
                         }
                     }
                 }
@@ -445,7 +445,7 @@ class InjectionExpressionTest {
                         atExpression("'Hi ' + ?") {
                             wrapOperation(
                                 ExpressionHandlers.OWNER, "wrapConcat",
-                                "(Ljava/lang/String;Lorg/ohmyloader/api/hook/Operation;)Ljava/lang/String;",
+                                "(Ljava/lang/String;Lorg/ohmyloader/api/core/hook/Operation;)Ljava/lang/String;",
                             )
                         }
                     }
@@ -522,7 +522,7 @@ class InjectionExpressionTest {
                         atExpression("? > 5.0") {
                             wrapOperation(
                                 ExpressionHandlers.OWNER, "invertDouble",
-                                "(DDLorg/ohmyloader/api/hook/Operation;)Z",
+                                "(DDLorg/ohmyloader/api/core/hook/Operation;)Z",
                             )
                         }
                     }
@@ -563,7 +563,7 @@ class InjectionExpressionTest {
                         atExpression("?.length") {
                             wrapOperation(
                                 ExpressionHandlers.OWNER, "arrayLengthPlus",
-                                "([ILorg/ohmyloader/api/hook/Operation;)I",
+                                "([ILorg/ohmyloader/api/core/hook/Operation;)I",
                             )
                         }
                     }
@@ -584,7 +584,7 @@ class InjectionExpressionTest {
                         atExpression("? * 7") {
                             wrapOperation(
                                 ExpressionHandlers.OWNER, "timesNext",
-                                "(IILorg/ohmyloader/api/hook/Operation;)I",
+                                "(IILorg/ohmyloader/api/core/hook/Operation;)I",
                             )
                         }
                     }
@@ -605,7 +605,7 @@ class InjectionExpressionTest {
                         atExpression("? << 2") {
                             wrapOperation(
                                 ExpressionHandlers.OWNER, "shiftNext",
-                                "(JILorg/ohmyloader/api/hook/Operation;)J",
+                                "(JILorg/ohmyloader/api/core/hook/Operation;)J",
                             )
                         }
                     }
@@ -626,7 +626,7 @@ class InjectionExpressionTest {
                         atExpression("(long) ?") {
                             wrapOperation(
                                 ExpressionHandlers.OWNER, "widenPlusOne",
-                                "(ILorg/ohmyloader/api/hook/Operation;)J",
+                                "(ILorg/ohmyloader/api/core/hook/Operation;)J",
                             )
                         }
                     }
@@ -843,7 +843,7 @@ class InjectionExpressionTest {
                             wrapOperation(
                                 ExpressionHandlers.OWNER, "invertCoerced",
                                 "(Ljava/lang/Object;Ljava/lang/Object;" +
-                                    "Lorg/ohmyloader/api/hook/Operation;)Ljava/lang/Object;",
+                                    "Lorg/ohmyloader/api/core/hook/Operation;)Ljava/lang/Object;",
                                 coerceParams = setOf(0, 1),
                                 coerceReturn = true,
                             )

@@ -5,9 +5,9 @@ import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.*
 import org.objectweb.asm.tree.analysis.BasicValue
-import org.ohmyloader.api.inject.DslValue
-import org.ohmyloader.api.inject.InjectionError
-import org.ohmyloader.api.inject.local
+import org.ohmyloader.api.core.inject.DslValue
+import org.ohmyloader.api.core.inject.InjectionError
+import org.ohmyloader.api.core.inject.local
 import org.ohmyloader.core.transformer.TransformContext
 import kotlin.test.*
 

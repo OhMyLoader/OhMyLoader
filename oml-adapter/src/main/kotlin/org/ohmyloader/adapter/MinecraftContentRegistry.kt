@@ -3,10 +3,10 @@ package org.ohmyloader.adapter
 import net.minecraft.world.level.ItemLike
 import net.minecraft.world.level.block.entity.BlockEntityType
 import net.minecraft.world.level.block.state.BlockBehaviour
-import org.ohmyloader.api.OmlLog
-import org.ohmyloader.api.content.OMLBlock
-import org.ohmyloader.api.content.OMLItem
-import org.ohmyloader.api.content.OMLItemDeclaration
+import org.ohmyloader.api.core.OmlLog
+import org.ohmyloader.api.core.content.OMLBlock
+import org.ohmyloader.api.core.content.OMLItem
+import org.ohmyloader.api.core.content.OMLItemDeclaration
 import org.ohmyloader.content.AbstractContentRegistry
 import org.ohmyloader.core.OMLCore
 
@@ -229,7 +229,7 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
     @Volatile
     private var cachedVanillaBiomes: List<String>? = null
 
-    /** Applies [org.ohmyloader.api.content.OMLBlockDeclaration] values onto `BlockBehaviour.Properties`. */
+    /** Applies [org.ohmyloader.api.core.content.OMLBlockDeclaration] values onto `BlockBehaviour.Properties`. */
     private fun applyBlockProperties(properties: Any, propertiesClass: Class<*>, decl: BlockDecl) {
         val spec = decl.spec
         val hardness = spec.hardness
@@ -251,7 +251,7 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
     }
 
     /**
-     * Applies the native data components of [org.ohmyloader.api.content.OMLItemDeclaration] onto
+     * Applies the native data components of [org.ohmyloader.api.core.content.OMLItemDeclaration] onto
      * `Item$Properties` through `component(DataComponentType, T)`.
      */
     private fun applyItemComponents(

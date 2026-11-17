@@ -1,7 +1,7 @@
 package org.ohmyloader.adapter
 
 import net.minecraft.server.MinecraftServer
-import org.ohmyloader.api.game.OMLGame
+import org.ohmyloader.api.OMLGame
 import org.ohmyloader.core.OMLCore
 
 /**

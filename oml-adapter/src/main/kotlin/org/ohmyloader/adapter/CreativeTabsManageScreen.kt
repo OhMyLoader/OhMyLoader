@@ -18,7 +18,7 @@ import net.minecraft.network.chat.Component
 import net.minecraft.resources.Identifier
 import net.minecraft.world.item.CreativeModeTab
 import net.minecraft.world.item.CreativeModeTabs
-import org.ohmyloader.api.game.OMLCreativeTabs
+import org.ohmyloader.api.OMLCreativeTabs
 
 /**
  * The in-game creative-tab manager — phase two of the player config — modeled on the vanilla

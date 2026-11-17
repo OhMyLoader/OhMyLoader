@@ -1,17 +1,17 @@
 package org.ohmyloader.core
 
-import org.ohmyloader.api.ModContext
-import org.ohmyloader.api.OMLModInitializer
-import org.ohmyloader.api.OMLRegistryInitializer
-import org.ohmyloader.api.OmlLog
-import org.ohmyloader.api.client.OMLKeyBindingProvider
-import org.ohmyloader.api.client.OMLKeyBindingRegistry
-import org.ohmyloader.api.command.OMLCommandDeclaration
-import org.ohmyloader.api.command.OMLCommandProvider
-import org.ohmyloader.api.command.OMLCommandRegistry
-import org.ohmyloader.api.content.ContentRegistryFactory
-import org.ohmyloader.api.content.OMLContentProvider
-import org.ohmyloader.api.network.*
+import org.ohmyloader.api.core.ModContext
+import org.ohmyloader.api.core.OMLModInitializer
+import org.ohmyloader.api.core.OMLRegistryInitializer
+import org.ohmyloader.api.core.OmlLog
+import org.ohmyloader.api.core.client.OMLKeyBindingProvider
+import org.ohmyloader.api.core.client.OMLKeyBindingRegistry
+import org.ohmyloader.api.core.command.OMLCommandDeclaration
+import org.ohmyloader.api.core.command.OMLCommandProvider
+import org.ohmyloader.api.core.command.OMLCommandRegistry
+import org.ohmyloader.api.core.content.ContentRegistryFactory
+import org.ohmyloader.api.core.content.OMLContentProvider
+import org.ohmyloader.api.core.network.*
 import org.ohmyloader.content.AbstractContentRegistry
 import org.ohmyloader.content.TomlContentLoader
 import org.ohmyloader.core.OMLCore.contentPackFiles
@@ -861,9 +861,9 @@ object OMLCore {
     /**
      * [Hook injection point] The call injected by the adapter's registry-freeze handler, before
      * content packs materialize: the one moment mod code may register into the vanilla registries
-     * (see [org.ohmyloader.api.OMLRegistryInitializer]). Mod entries are instantiated here and
+     * (see [org.ohmyloader.api.core.OMLRegistryInitializer]). Mod entries are instantiated here and
      * cached in [modInstances] — the same instance [initMods] later hands
-     * [OMLModInitializer.onInitialize] to, so [org.ohmyloader.api.OMLRegistryInitializer.onDeclareRegistries]
+     * [OMLModInitializer.onInitialize] to, so [org.ohmyloader.api.core.OMLRegistryInitializer.onDeclareRegistries]
      * always runs first. A failing mod is logged and recorded in [initFailures] (surfaced by
      * `/oml mods`) but does not abort the freeze — the game must still start.
      */
@@ -876,11 +876,11 @@ object OMLCore {
                 val instance = modInstance(mod)
                 if (instance is OMLRegistryInitializer) {
                     val config = org.ohmyloader.core.config.OMLConfigImpl(mod.id, File(gameDir, "config"))
-                    org.ohmyloader.api.RegistrationPhase.enter(mod.id)
+                    org.ohmyloader.api.core.RegistrationPhase.enter(mod.id)
                     try {
                         instance.onDeclareRegistries(ModContext(mod.id, mod.name, mod.version, config))
                     } finally {
-                        org.ohmyloader.api.RegistrationPhase.exit()
+                        org.ohmyloader.api.core.RegistrationPhase.exit()
                     }
                 }
             } catch (t: Throwable) {
@@ -889,7 +889,7 @@ object OMLCore {
             }
         }
         // Every mod has declared: cross-mod orderings (creative-tab constraints, ...) resolve here.
-        org.ohmyloader.api.RegistrationPhase.completeAllDeclarations()
+        org.ohmyloader.api.core.RegistrationPhase.completeAllDeclarations()
     }
 
     private fun initMods() {
@@ -925,7 +925,7 @@ object OMLCore {
     }
 
     /**
-     * Mods whose [org.ohmyloader.api.OMLRegistryInitializer.onDeclareRegistries] or
+     * Mods whose [org.ohmyloader.api.core.OMLRegistryInitializer.onDeclareRegistries] or
      * [OMLModInitializer.onInitialize] threw, by id — surfaced by the `/oml mods` command.
      *
      * Thread contract: written only during the registry-declare phase and mod initialization,

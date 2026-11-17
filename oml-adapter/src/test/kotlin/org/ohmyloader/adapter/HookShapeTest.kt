@@ -7,7 +7,7 @@ import org.objectweb.asm.tree.MethodInsnNode
 import org.ohmyloader.adapter.MinecraftHookTransformer
 import org.ohmyloader.adapter.NetworkPayloadTransformer
 import org.ohmyloader.adapter.ServerHookTransformer
-import org.ohmyloader.api.inject.InjectionPoint
+import org.ohmyloader.api.core.inject.InjectionPoint
 import java.io.File
 import java.util.jar.JarFile
 import kotlin.test.*
@@ -123,7 +123,7 @@ class HookShapeTest {
             for ([side, target, classRules] in allClasses(jar)) {
                 val node = classNode(jar, target)
                 for (rule in classRules.accessRules) {
-                    if (rule.kind != org.ohmyloader.api.inject.MemberKind.FIELD) continue
+                    if (rule.kind != org.ohmyloader.api.core.inject.MemberKind.FIELD) continue
                     for (name in rule.names) {
                         val field = node.fields.firstOrNull { it.name == name }
                         if (field == null) {

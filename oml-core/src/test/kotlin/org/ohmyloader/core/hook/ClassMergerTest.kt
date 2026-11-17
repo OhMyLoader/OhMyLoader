@@ -23,8 +23,8 @@ class ClassMergerTest {
     private val mixinName = "omltest/MergeMixin"
 
     private companion object {
-        const val ACCESSOR = "Lorg/ohmyloader/api/hook/FieldAccess;"
-        const val INVOKER = "Lorg/ohmyloader/api/hook/MethodAccess;"
+        const val ACCESSOR = "Lorg/ohmyloader/api/core/hook/FieldAccess;"
+        const val INVOKER = "Lorg/ohmyloader/api/core/hook/MethodAccess;"
     }
 
     // ---------- @Shadow ----------
@@ -443,7 +443,7 @@ class ClassMergerTest {
         // A wholesale replacement would also replace the target's delegation call — surely not desired
         val bad = plainMixin().apply {
             methods.first { it.name == "<init>" }.visibleAnnotations =
-                listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Replace;"))
+                listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/core/hook/Replace;"))
         }
 
         val [_, result] = mergeInto(ctorCarrier(), bad)
@@ -459,7 +459,7 @@ class ClassMergerTest {
         val bad = plainMixin().apply {
             methods.first { it.name == "<init>" }.apply {
                 desc = "(I)V"
-                visibleAnnotations = listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Borrowed;"))
+                visibleAnnotations = listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/core/hook/Borrowed;"))
             }
         }
 
@@ -476,7 +476,7 @@ class ClassMergerTest {
         val ok = plainMixin().apply {
             methods.first { it.name == "<init>" }.apply {
                 desc = "(I)V"
-                visibleAnnotations = listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Borrowed;"))
+                visibleAnnotations = listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/core/hook/Borrowed;"))
             }
         }
 
@@ -1005,12 +1005,12 @@ class ClassMergerTest {
     private fun shadowAnnotation(aliases: List<String>): AnnotationNode {
         val pairs = mutableListOf<Any?>()
         if (aliases.isNotEmpty()) pairs.addAll(listOf("aliases", aliases))
-        return AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Borrowed;").apply { values = pairs }
+        return AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/core/hook/Borrowed;").apply { values = pairs }
     }
 
     private fun overwriteMethod(name: String, desc: String, build: InsnList.() -> Unit): MethodNode =
         instanceMethod(name, desc, build = build).apply {
-            visibleAnnotations = listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Replace;"))
+            visibleAnnotations = listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/core/hook/Replace;"))
         }
 
     private fun instanceMethod(

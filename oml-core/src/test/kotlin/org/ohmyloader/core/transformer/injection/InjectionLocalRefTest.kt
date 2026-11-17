@@ -9,9 +9,9 @@ import org.objectweb.asm.tree.IntInsnNode
 import org.objectweb.asm.tree.MethodInsnNode
 import org.objectweb.asm.tree.MethodNode
 import org.objectweb.asm.tree.VarInsnNode
-import org.ohmyloader.api.hook.LocalIntRef
-import org.ohmyloader.api.hook.LocalRef
-import org.ohmyloader.api.inject.DslValue
+import org.ohmyloader.api.core.hook.LocalIntRef
+import org.ohmyloader.api.core.hook.LocalRef
+import org.ohmyloader.api.core.inject.DslValue
 import org.ohmyloader.core.transformer.TransformContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -36,7 +36,7 @@ class InjectionLocalRefTest {
                     method("target", desc = "(I)I") {
                         afterStore(index = 1, type = "I") {
                             call(
-                                LocalRefHandlers.OWNER, "bump", "(Lorg/ohmyloader/api/hook/LocalRef;)V",
+                                LocalRefHandlers.OWNER, "bump", "(Lorg/ohmyloader/api/core/hook/LocalRef;)V",
                                 args = listOf(DslValue.RefLocal(index = 1, type = "I")),
                             )
                         }
@@ -63,7 +63,7 @@ class InjectionLocalRefTest {
                     method("target", desc = "(I)I") {
                         afterStore(index = 1, type = "I") {
                             call(
-                                LocalRefHandlers.OWNER, "force", "(Lorg/ohmyloader/api/hook/LocalRef;)V",
+                                LocalRefHandlers.OWNER, "force", "(Lorg/ohmyloader/api/core/hook/LocalRef;)V",
                                 args = listOf(DslValue.RefLocal(index = 1, type = "I")),
                             )
                         }
@@ -89,12 +89,12 @@ class InjectionLocalRefTest {
                         afterStore(index = 1, type = "I") {
                             call(
                                 LocalRefHandlers.OWNER, "bumpInt",
-                                "(Lorg/ohmyloader/api/hook/LocalIntRef;)V",
+                                "(Lorg/ohmyloader/api/core/hook/LocalIntRef;)V",
                                 args = listOf(
                                     DslValue.RefLocal(
                                         index = 1,
                                         type = "I",
-                                        refType = "Lorg/ohmyloader/api/hook/LocalIntRef;",
+                                        refType = "Lorg/ohmyloader/api/core/hook/LocalIntRef;",
                                     ),
                                 ),
                             )
@@ -121,7 +121,7 @@ class InjectionLocalRefTest {
                         beforeCall(owner = LocalRefSink.OWNER, name = "record", desc = "(I)V") {
                             modifyArg(
                                 LocalRefHandlers.OWNER, "bumpArg",
-                                "(ILorg/ohmyloader/api/hook/LocalRef;)I",
+                                "(ILorg/ohmyloader/api/core/hook/LocalRef;)I",
                                 index = 0,
                                 extras = listOf(DslValue.RefLocal(index = 1, type = "I")),
                             )
@@ -150,7 +150,7 @@ class InjectionLocalRefTest {
                             desc = "(II)I",
                             handlerOwner = LocalRefHandlers.OWNER,
                             handlerMethod = "replaceMax",
-                            handlerDesc = "(IILorg/ohmyloader/api/hook/LocalRef;)I",
+                            handlerDesc = "(IILorg/ohmyloader/api/core/hook/LocalRef;)I",
                             extras = listOf(DslValue.RefLocal(index = 1, type = "I")),
                         )
                     }

@@ -3,7 +3,7 @@ package org.ohmyloader.adapter
 import com.mojang.renderpearl.api.pipeline.ShaderType
 import net.minecraft.client.renderer.ShaderDefines
 import org.lwjgl.system.MemoryUtil
-import org.ohmyloader.api.hook.Operation
+import org.ohmyloader.api.core.hook.Operation
 import java.nio.ByteBuffer
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap

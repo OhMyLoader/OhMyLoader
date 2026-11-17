@@ -99,7 +99,7 @@ object CreativeScreenPagination {
         val idOf = { tab: CreativeModeTab ->
             BuiltInRegistries.CREATIVE_MODE_TAB.getResourceKey(tab).orElseThrow().identifier()
         }
-        val base = org.ohmyloader.api.game.OMLCreativeTabs.resolvedKeyOrder
+        val base = org.ohmyloader.api.OMLCreativeTabs.resolvedKeyOrder
             ?.mapNotNull { key -> registryOrder.firstOrNull { idOf(it) == key } }
             ?: registryOrder
         val config = CreativeTabsPlayerConfig.cached ?: return base

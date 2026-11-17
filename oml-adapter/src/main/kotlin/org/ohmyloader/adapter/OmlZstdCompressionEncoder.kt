@@ -4,7 +4,7 @@ import io.netty.buffer.ByteBuf
 import io.netty.channel.ChannelHandlerContext
 import io.netty.handler.codec.MessageToByteEncoder
 import net.minecraft.network.VarInt
-import org.ohmyloader.api.OmlLog
+import org.ohmyloader.api.core.OmlLog
 import org.ohmyloader.core.compression.OmlNativeZstd
 import java.lang.foreign.Arena
 import java.lang.foreign.MemorySegment

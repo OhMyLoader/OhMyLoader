@@ -3,8 +3,8 @@ package org.ohmyloader.core.transformer.injection
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.*
-import org.ohmyloader.api.OmlLog
-import org.ohmyloader.api.inject.InjectionPoint
+import org.ohmyloader.api.core.OmlLog
+import org.ohmyloader.api.core.inject.InjectionPoint
 import org.ohmyloader.core.transformer.injection.AnchorResolver.NOT_CONSTANT
 import org.ohmyloader.core.transformer.injection.AnchorResolver.applyOrdinal
 import org.ohmyloader.core.transformer.injection.AnchorResolver.constantValueOf

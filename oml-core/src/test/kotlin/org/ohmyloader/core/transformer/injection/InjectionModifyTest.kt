@@ -4,9 +4,9 @@ import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.*
-import org.ohmyloader.api.inject.DslValue
-import org.ohmyloader.api.inject.InjectionError
-import org.ohmyloader.api.hook.Args
+import org.ohmyloader.api.core.inject.DslValue
+import org.ohmyloader.api.core.inject.InjectionError
+import org.ohmyloader.api.core.hook.Args
 import org.ohmyloader.core.transformer.TransformContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -155,7 +155,7 @@ class InjectionModifyTest {
             classTarget(owner) {
                 method("target", desc = "(I)I") {
                     beforeCall(owner = CallSink.OWNER, name = "record") {
-                        modifyArgs(ModifyHandlers.OWNER, "allArgs", "(Lorg/ohmyloader/api/hook/Args;)V")
+                        modifyArgs(ModifyHandlers.OWNER, "allArgs", "(Lorg/ohmyloader/api/core/hook/Args;)V")
                     }
                 }
             }
@@ -174,7 +174,7 @@ class InjectionModifyTest {
             classTarget(owner) {
                 method("target", desc = "(I)I") {
                     beforeCall(owner = CallSink.OWNER, name = "record") {
-                        modifyArgs(ModifyHandlers.OWNER, "noopArgs", "(Lorg/ohmyloader/api/hook/Args;)V")
+                        modifyArgs(ModifyHandlers.OWNER, "noopArgs", "(Lorg/ohmyloader/api/core/hook/Args;)V")
                     }
                 }
             }
@@ -201,7 +201,7 @@ class InjectionModifyTest {
                         name = "append",
                         desc = "(I)Ljava/lang/StringBuilder;",
                     ) {
-                        modifyArgs(ModifyHandlers.OWNER, "setFirst", "(Lorg/ohmyloader/api/hook/Args;)V", emptyList())
+                        modifyArgs(ModifyHandlers.OWNER, "setFirst", "(Lorg/ohmyloader/api/core/hook/Args;)V", emptyList())
                     }
                 }
             }
@@ -451,7 +451,7 @@ class InjectionModifyTest {
             classTarget(owner) {
                 method("target", desc = "(I)I") {
                     beforeCall(owner = CallSink.OWNER, name = "record") {
-                        modifyArgs(ModifyHandlers.OWNER, "patchInt", "(Lorg/ohmyloader/api/hook/Args;)I")
+                        modifyArgs(ModifyHandlers.OWNER, "patchInt", "(Lorg/ohmyloader/api/core/hook/Args;)I")
                     }
                 }
             }

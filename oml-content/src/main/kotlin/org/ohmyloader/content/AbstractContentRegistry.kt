@@ -1,7 +1,7 @@
 package org.ohmyloader.content
 
-import org.ohmyloader.api.OmlLog
-import org.ohmyloader.api.content.*
+import org.ohmyloader.api.core.OmlLog
+import org.ohmyloader.api.core.content.*
 
 /**
  * The **two-phase template** for content registration (the version-independent mechanics).

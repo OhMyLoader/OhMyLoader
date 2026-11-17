@@ -4,7 +4,7 @@ import org.junit.jupiter.api.Test
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.*
-import org.ohmyloader.api.inject.*
+import org.ohmyloader.api.core.inject.*
 import org.ohmyloader.core.transformer.TransformContext
 import java.lang.reflect.Modifier
 import kotlin.test.*

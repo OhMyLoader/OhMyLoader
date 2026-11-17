@@ -3,9 +3,9 @@ package org.ohmyloader.core.transformer.injection
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.*
-import org.ohmyloader.api.inject.Anchor
-import org.ohmyloader.api.inject.DslValue
-import org.ohmyloader.api.inject.InjectionBuilder
+import org.ohmyloader.api.core.inject.Anchor
+import org.ohmyloader.api.core.inject.DslValue
+import org.ohmyloader.api.core.inject.InjectionBuilder
 import org.ohmyloader.core.transformer.TransformContext
 import kotlin.test.Test
 import kotlin.test.assertEquals

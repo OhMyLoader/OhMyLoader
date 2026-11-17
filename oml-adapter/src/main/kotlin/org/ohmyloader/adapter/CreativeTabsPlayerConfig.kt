@@ -5,7 +5,7 @@ import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.resources.Identifier
 import net.minecraft.world.item.CreativeModeTab
 import net.minecraft.world.item.CreativeModeTabs
-import org.ohmyloader.api.OmlLog
+import org.ohmyloader.api.core.OmlLog
 import org.ohmyloader.content.MinimalToml
 import org.ohmyloader.core.OMLCore
 import java.io.File

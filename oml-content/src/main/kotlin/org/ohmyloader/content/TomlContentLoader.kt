@@ -1,9 +1,9 @@
 package org.ohmyloader.content
 
-import org.ohmyloader.api.OmlLog
-import org.ohmyloader.api.content.ContentRegistry
-import org.ohmyloader.api.content.Furnace
-import org.ohmyloader.api.content.OMLTagDeclaration
+import org.ohmyloader.api.core.OmlLog
+import org.ohmyloader.api.core.content.ContentRegistry
+import org.ohmyloader.api.core.content.Furnace
+import org.ohmyloader.api.core.content.OMLTagDeclaration
 import java.io.File
 
 /**

@@ -1,6 +1,6 @@
 package org.ohmyloader.core.transformer.injection
 
-import org.ohmyloader.api.inject.RuleSet
+import org.ohmyloader.api.core.inject.RuleSet
 import org.ohmyloader.core.transformer.ExclusiveClaim
 import org.ohmyloader.core.transformer.IClassTransformer
 import org.ohmyloader.core.transformer.IExclusiveClaimSource

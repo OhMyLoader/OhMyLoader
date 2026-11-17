@@ -1,13 +1,13 @@
 package org.ohmyloader.adapter
 
-import org.ohmyloader.api.inject.DslValue
-import org.ohmyloader.api.inject.InjectionBuilder
+import org.ohmyloader.api.core.inject.DslValue
+import org.ohmyloader.api.core.inject.InjectionBuilder
 
 /** The bridge every handler below lives on: injected bytecode targets it by fixed owner+name+desc. */
 private const val BRIDGE = "org/ohmyloader/adapter/EventBridge"
 
 /** The `HookValue` parameter type, the tail of every `cancelableReturn` bridge descriptor. */
-private const val CIR = "Lorg/ohmyloader/api/hook/HookValue;"
+private const val CIR = "Lorg/ohmyloader/api/core/hook/HookValue;"
 
 /**
  * Server-thread lifecycle and interaction rules, declared **once** and added to both injection

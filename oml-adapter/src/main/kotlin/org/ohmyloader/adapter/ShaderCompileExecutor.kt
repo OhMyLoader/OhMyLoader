@@ -1,7 +1,7 @@
 package org.ohmyloader.adapter
 
-import org.ohmyloader.api.OmlLog
-import org.ohmyloader.api.hook.Operation
+import org.ohmyloader.api.core.OmlLog
+import org.ohmyloader.api.core.hook.Operation
 import org.ohmyloader.core.RebootMark
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor

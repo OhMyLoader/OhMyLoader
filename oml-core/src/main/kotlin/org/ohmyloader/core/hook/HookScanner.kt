@@ -6,9 +6,9 @@ import org.objectweb.asm.Type
 import org.objectweb.asm.tree.AnnotationNode
 import org.objectweb.asm.tree.ClassNode
 import org.objectweb.asm.tree.MethodNode
-import org.ohmyloader.api.OmlLog
-import org.ohmyloader.api.inject.*
-import org.ohmyloader.api.hook.LocalCapture
+import org.ohmyloader.api.core.OmlLog
+import org.ohmyloader.api.core.inject.*
+import org.ohmyloader.api.core.hook.LocalCapture
 import org.ohmyloader.core.cache.StartupCache
 import org.ohmyloader.core.hook.HookScanner.parseRedirect
 import org.ohmyloader.core.hook.HookScanner.policyProblem
@@ -192,34 +192,34 @@ object HookScanner {
 
     // ---------- annotation descriptors ----------
 
-    private const val HOOKED_DESC = "Lorg/ohmyloader/api/hook/Hooked;"
-    private const val MERGED_DESC = "Lorg/ohmyloader/api/hook/Merged;"
-    private const val IMPLEMENTS_DESC = "Lorg/ohmyloader/api/hook/Implements;"
-    private const val INJECT_DESC = "Lorg/ohmyloader/api/hook/Inject;"
-    private const val REDIRECT_DESC = "Lorg/ohmyloader/api/hook/Redirect;"
-    private const val MODIFY_ARG_DESC = "Lorg/ohmyloader/api/hook/ModifyArg;"
-    private const val MODIFY_ARGS_DESC = "Lorg/ohmyloader/api/hook/ModifyArgs;"
-    private const val MODIFY_CONSTANT_DESC = "Lorg/ohmyloader/api/hook/ModifyConstant;"
-    private const val MODIFY_VARIABLE_DESC = "Lorg/ohmyloader/api/hook/ModifyVariable;"
-    private const val MODIFY_RETURN_VALUE_DESC = "Lorg/ohmyloader/api/hook/ModifyReturnValue;"
-    private const val MODIFY_EXPRESSION_VALUE_DESC = "Lorg/ohmyloader/api/hook/ModifyExpressionValue;"
-    private const val MODIFY_RECEIVER_DESC = "Lorg/ohmyloader/api/hook/ModifyReceiver;"
-    private const val WRAP_WITH_CONDITION_DESC = "Lorg/ohmyloader/api/hook/WrapWithCondition;"
-    private const val WRAP_BRANCH_DESC = "Lorg/ohmyloader/api/hook/WrapBranch;"
-    private const val WRAP_OPERATION_DESC = "Lorg/ohmyloader/api/hook/WrapOperation;"
-    private const val WRAP_METHOD_DESC = "Lorg/ohmyloader/api/hook/WrapMethod;"
-    private const val LOCAL_DESC = "Lorg/ohmyloader/api/hook/Local;"
-    private const val SHARE_DESC = "Lorg/ohmyloader/api/hook/Share;"
-    private const val CANCELABLE_DESC = "Lorg/ohmyloader/api/hook/Cancellable;"
-    private const val COERCE_DESC = "Lorg/ohmyloader/api/hook/Coerce;"
+    private const val HOOKED_DESC = "Lorg/ohmyloader/api/core/hook/Hooked;"
+    private const val MERGED_DESC = "Lorg/ohmyloader/api/core/hook/Merged;"
+    private const val IMPLEMENTS_DESC = "Lorg/ohmyloader/api/core/hook/Implements;"
+    private const val INJECT_DESC = "Lorg/ohmyloader/api/core/hook/Inject;"
+    private const val REDIRECT_DESC = "Lorg/ohmyloader/api/core/hook/Redirect;"
+    private const val MODIFY_ARG_DESC = "Lorg/ohmyloader/api/core/hook/ModifyArg;"
+    private const val MODIFY_ARGS_DESC = "Lorg/ohmyloader/api/core/hook/ModifyArgs;"
+    private const val MODIFY_CONSTANT_DESC = "Lorg/ohmyloader/api/core/hook/ModifyConstant;"
+    private const val MODIFY_VARIABLE_DESC = "Lorg/ohmyloader/api/core/hook/ModifyVariable;"
+    private const val MODIFY_RETURN_VALUE_DESC = "Lorg/ohmyloader/api/core/hook/ModifyReturnValue;"
+    private const val MODIFY_EXPRESSION_VALUE_DESC = "Lorg/ohmyloader/api/core/hook/ModifyExpressionValue;"
+    private const val MODIFY_RECEIVER_DESC = "Lorg/ohmyloader/api/core/hook/ModifyReceiver;"
+    private const val WRAP_WITH_CONDITION_DESC = "Lorg/ohmyloader/api/core/hook/WrapWithCondition;"
+    private const val WRAP_BRANCH_DESC = "Lorg/ohmyloader/api/core/hook/WrapBranch;"
+    private const val WRAP_OPERATION_DESC = "Lorg/ohmyloader/api/core/hook/WrapOperation;"
+    private const val WRAP_METHOD_DESC = "Lorg/ohmyloader/api/core/hook/WrapMethod;"
+    private const val LOCAL_DESC = "Lorg/ohmyloader/api/core/hook/Local;"
+    private const val SHARE_DESC = "Lorg/ohmyloader/api/core/hook/Share;"
+    private const val CANCELABLE_DESC = "Lorg/ohmyloader/api/core/hook/Cancellable;"
+    private const val COERCE_DESC = "Lorg/ohmyloader/api/core/hook/Coerce;"
     private val OBJECT_SORTS = setOf(Type.OBJECT, Type.ARRAY)
-    private const val HOOK_CONTEXT_DESC = "Lorg/ohmyloader/api/hook/HookContext;"
-    private const val HOOK_VALUE_DESC = "Lorg/ohmyloader/api/hook/HookValue;"
-    private const val EXPRESSION_DESC = "Lorg/ohmyloader/api/hook/Expression;"
-    private const val EXPRESSIONS_DESC = "Lorg/ohmyloader/api/hook/Expressions;"
-    private const val DEFINITION_DESC = "Lorg/ohmyloader/api/hook/Definition;"
-    private const val DEFINITIONS_DESC = "Lorg/ohmyloader/api/hook/Definitions;"
-    private const val LAMBDA_DESC = "Lorg/ohmyloader/api/hook/Lambda;"
+    private const val HOOK_CONTEXT_DESC = "Lorg/ohmyloader/api/core/hook/HookContext;"
+    private const val HOOK_VALUE_DESC = "Lorg/ohmyloader/api/core/hook/HookValue;"
+    private const val EXPRESSION_DESC = "Lorg/ohmyloader/api/core/hook/Expression;"
+    private const val EXPRESSIONS_DESC = "Lorg/ohmyloader/api/core/hook/Expressions;"
+    private const val DEFINITION_DESC = "Lorg/ohmyloader/api/core/hook/Definition;"
+    private const val DEFINITIONS_DESC = "Lorg/ohmyloader/api/core/hook/Definitions;"
+    private const val LAMBDA_DESC = "Lorg/ohmyloader/api/core/hook/Lambda;"
 
     /** Injectors that declare `ats`: `@WrapMethod` / `@ModifyConstant` have no anchor list to extend. */
     private val MULTI_ANCHOR_ANNOTATIONS = setOf(
@@ -227,17 +227,17 @@ object HookScanner {
         MODIFY_VARIABLE_DESC, MODIFY_RETURN_VALUE_DESC, MODIFY_EXPRESSION_VALUE_DESC,
         MODIFY_RECEIVER_DESC, WRAP_WITH_CONDITION_DESC, WRAP_BRANCH_DESC, WRAP_OPERATION_DESC,
     )
-    private const val BORROWED_DESC = "Lorg/ohmyloader/api/hook/Borrowed;"
-    private const val EXTRA_DESC = "Lorg/ohmyloader/api/hook/Extra;"
-    private const val REPLACE_DESC = "Lorg/ohmyloader/api/hook/Replace;"
+    private const val BORROWED_DESC = "Lorg/ohmyloader/api/core/hook/Borrowed;"
+    private const val EXTRA_DESC = "Lorg/ohmyloader/api/core/hook/Extra;"
+    private const val REPLACE_DESC = "Lorg/ohmyloader/api/core/hook/Replace;"
 
     /** The merge-family members: only a [Model.MERGE] carrier may declare them. */
     private val MERGE_MEMBER_ANNOTATIONS = setOf(BORROWED_DESC, EXTRA_DESC, REPLACE_DESC)
 
     /** accessor/invoker: only valid on the abstract methods of an **interface** carrier (synthesis path). */
     private val MERGE_ACCESSOR_ANNOTATIONS = setOf(
-        "Lorg/ohmyloader/api/hook/FieldAccess;",
-        "Lorg/ohmyloader/api/hook/MethodAccess;",
+        "Lorg/ohmyloader/api/core/hook/FieldAccess;",
+        "Lorg/ohmyloader/api/core/hook/MethodAccess;",
     )
 
     /** Injection annotations this front-end recognizes → their names (for diagnostics). Exposed for the API-consistency test. */

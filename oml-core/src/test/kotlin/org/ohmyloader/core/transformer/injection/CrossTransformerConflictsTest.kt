@@ -55,13 +55,13 @@ class CrossTransformerConflictsTest {
         assertTrue(!spec.hasExclusivePoints("omltest/Other"))
     }
 
-    private fun org.ohmyloader.api.inject.InjectionBuilder.wrapMax(handler: String) {
+    private fun org.ohmyloader.api.core.inject.InjectionBuilder.wrapMax(handler: String) {
         classTarget(target) {
             method("calc", desc = "(I)I") {
                 beforeCall(owner = "java/lang/Math", name = "max", desc = "(II)I") {
                     wrapOperation(
                         handler, "wrap",
-                        "(IILorg/ohmyloader/api/hook/Operation;)I",
+                        "(IILorg/ohmyloader/api/core/hook/Operation;)I",
                     )
                 }
             }

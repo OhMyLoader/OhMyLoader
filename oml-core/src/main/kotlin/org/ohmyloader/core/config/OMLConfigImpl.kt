@@ -1,7 +1,7 @@
 package org.ohmyloader.core.config
 
-import org.ohmyloader.api.OmlLog
-import org.ohmyloader.api.config.OMLConfig
+import org.ohmyloader.api.core.OmlLog
+import org.ohmyloader.api.core.config.OMLConfig
 import org.ohmyloader.content.MinimalToml
 import java.io.File
 

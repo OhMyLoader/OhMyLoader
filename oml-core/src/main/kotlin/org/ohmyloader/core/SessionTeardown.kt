@@ -1,6 +1,6 @@
 package org.ohmyloader.core
 
-import org.ohmyloader.api.OmlLog
+import org.ohmyloader.api.core.OmlLog
 import org.ohmyloader.core.hook.HookRegistry
 import org.ohmyloader.core.spi.IAdapter
 import java.lang.reflect.Field

@@ -1,9 +1,9 @@
 package omltest.pipeline;
 
-import org.ohmyloader.api.hook.Borrowed;
-import org.ohmyloader.api.hook.Extra;
-import org.ohmyloader.api.hook.Merged;
-import org.ohmyloader.api.hook.Mutable;
+import org.ohmyloader.api.core.hook.Borrowed;
+import org.ohmyloader.api.core.hook.Extra;
+import org.ohmyloader.api.core.hook.Merged;
+import org.ohmyloader.api.core.hook.Mutable;
 
 /**
  * Real compiled fixtures for `@Mutable`: the target's field is `final`, the mixin borrows it and

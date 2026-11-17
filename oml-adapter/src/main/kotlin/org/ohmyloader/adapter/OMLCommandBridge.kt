@@ -17,11 +17,11 @@ import net.minecraft.server.permissions.PermissionCheck
 import net.minecraft.server.permissions.PermissionLevel
 import net.minecraft.server.permissions.PermissionProviderCheck
 import net.minecraft.server.permissions.PermissionSet
-import org.ohmyloader.api.OmlLog
-import org.ohmyloader.api.command.OMLArgumentType
-import org.ohmyloader.api.command.OMLCommandDeclaration
-import org.ohmyloader.api.command.OMLCommandSource
-import org.ohmyloader.api.game.hasNode
+import org.ohmyloader.api.core.OmlLog
+import org.ohmyloader.api.core.command.OMLArgumentType
+import org.ohmyloader.api.core.command.OMLCommandDeclaration
+import org.ohmyloader.api.core.command.OMLCommandSource
+import org.ohmyloader.api.hasNode
 import org.ohmyloader.core.command.CommandDeclarations
 
 /**

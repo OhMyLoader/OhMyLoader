@@ -4,7 +4,7 @@ import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.*
 import org.objectweb.asm.tree.analysis.*
-import org.ohmyloader.api.inject.DslValue
+import org.ohmyloader.api.core.inject.DslValue
 import java.util.IdentityHashMap
 
 /**

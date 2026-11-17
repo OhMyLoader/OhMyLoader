@@ -1,7 +1,7 @@
 package org.ohmyloader.launcher;
 
 import org.junit.jupiter.api.Test;
-import org.ohmyloader.api.command.OMLArgumentType;
+import org.ohmyloader.api.core.command.OMLArgumentType;
 import org.ohmyloader.core.classloader.OMLClassLoader;
 
 import java.io.File;

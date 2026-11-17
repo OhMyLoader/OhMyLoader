@@ -4,8 +4,8 @@ import org.objectweb.asm.ClassReader
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.ClassNode
-import org.ohmyloader.api.OmlLog
-import org.ohmyloader.api.inject.InjectionError
+import org.ohmyloader.api.core.OmlLog
+import org.ohmyloader.api.core.inject.InjectionError
 import org.ohmyloader.core.cache.TransformCache
 import org.ohmyloader.core.diagnostics.Diagnostics
 import org.ohmyloader.core.transformer.IClassTransformer
@@ -75,8 +75,11 @@ class OMLClassLoader(
         }
     }
 
-    private fun shouldParentDelegate(name: String): Boolean =
-        PARENT_FIRST_PREFIXES.any { name.startsWith(it) } && CHILD_FIRST_PREFIXES.none { name.startsWith(it) }
+    private fun shouldParentDelegate(name: String): Boolean {
+        val childFirst = CHILD_FIRST_PREFIXES.any { name.startsWith(it) } &&
+            CHILD_FIRST_EXCLUDED_PREFIXES.none { name.startsWith(it) }
+        return PARENT_FIRST_PREFIXES.any { name.startsWith(it) } && !childFirst
+    }
 
     /**
      * Resources child-first: root resources of the game jar (such as version.json) must not
@@ -229,8 +232,17 @@ class OMLClassLoader(
             "org.ohmyloader.adapter.",
             // The game-facing mod API, same reason — and mods compile against it, so the split would
             // surface as a ClassCastException inside a mod, not inside OML.
-            "org.ohmyloader.api.game.",
+            "org.ohmyloader.api.",
         )
+
+        /**
+         * The version-neutral core API lives inside the game-facing package namespace
+         * (`org.ohmyloader.api.core.*`) but must keep the app loader's definition: it names no game
+         * type, and both the loader and the mods hold it without the session's game jar. Without
+         * this carve-out the `org.ohmyloader.api.` child-first rule above would define a second
+         * copy of it per session.
+         */
+        val CHILD_FIRST_EXCLUDED_PREFIXES = listOf("org.ohmyloader.api.core.")
 
         /** These prefixes are always parent-first: the JVM itself, loader runtime, and all loader-level dependency libraries. */
         val PARENT_FIRST_PREFIXES = listOf(

@@ -2,11 +2,11 @@ package omltest.pipeline;
 
 import java.util.function.Supplier;
 
-import org.ohmyloader.api.hook.At;
-import org.ohmyloader.api.hook.HookContext;
-import org.ohmyloader.api.hook.Hooked;
-import org.ohmyloader.api.hook.Inject;
-import org.ohmyloader.api.hook.Lambda;
+import org.ohmyloader.api.core.hook.At;
+import org.ohmyloader.api.core.hook.HookContext;
+import org.ohmyloader.api.core.hook.Hooked;
+import org.ohmyloader.api.core.hook.Inject;
+import org.ohmyloader.api.core.hook.Lambda;
 
 /**
  * A lambda whose implementation is a method reference into another class: the mixin names the

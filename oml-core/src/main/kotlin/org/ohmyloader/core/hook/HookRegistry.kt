@@ -5,9 +5,9 @@ import org.objectweb.asm.Handle
 import org.objectweb.asm.Label
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
-import org.ohmyloader.api.OmlLog
-import org.ohmyloader.api.hook.HookContext
-import org.ohmyloader.api.hook.HookValue
+import org.ohmyloader.api.core.OmlLog
+import org.ohmyloader.api.core.hook.HookContext
+import org.ohmyloader.api.core.hook.HookValue
 import org.ohmyloader.core.transformer.injection.Boxing
 import java.lang.invoke.CallSite
 import java.lang.invoke.ConstantCallSite
@@ -439,12 +439,12 @@ object HookRegistry {
         when (kind) {
             BridgeKind.CANCELABLE -> {
                 val contextSlot = captureSlots + 1
-                mv.visitTypeInsn(Opcodes.NEW, "org/ohmyloader/api/hook/HookContext")
+                mv.visitTypeInsn(Opcodes.NEW, "org/ohmyloader/api/core/hook/HookContext")
                 mv.visitInsn(Opcodes.DUP)
                 mv.visitLdcInsn(handler.targetMethod)
                 mv.visitInsn(Opcodes.ICONST_1)
                 mv.visitMethodInsn(
-                    Opcodes.INVOKESPECIAL, "org/ohmyloader/api/hook/HookContext", "<init>",
+                    Opcodes.INVOKESPECIAL, "org/ohmyloader/api/core/hook/HookContext", "<init>",
                     "(Ljava/lang/String;Z)V", false,
                 )
                 mv.visitVarInsn(Opcodes.ASTORE, contextSlot)
@@ -453,11 +453,11 @@ object HookRegistry {
                 mv.visitVarInsn(Opcodes.ALOAD, contextSlot)
                 mv.visitMethodInsn(
                     Opcodes.INVOKEVIRTUAL, "java/lang/invoke/MethodHandle", "invokeExact",
-                    "(${captureDesc}Lorg/ohmyloader/api/hook/HookContext;)V", false,
+                    "(${captureDesc}Lorg/ohmyloader/api/core/hook/HookContext;)V", false,
                 )
                 mv.visitVarInsn(Opcodes.ALOAD, contextSlot)
                 mv.visitMethodInsn(
-                    Opcodes.INVOKEVIRTUAL, "org/ohmyloader/api/hook/HookContext", "getCanceled", "()Z", false,
+                    Opcodes.INVOKEVIRTUAL, "org/ohmyloader/api/core/hook/HookContext", "getCanceled", "()Z", false,
                 )
                 mv.visitInsn(Opcodes.IRETURN)
             }
@@ -470,13 +470,13 @@ object HookRegistry {
                 mv.visitVarInsn(Opcodes.ALOAD, callbackSlot)
                 mv.visitMethodInsn(
                     Opcodes.INVOKEVIRTUAL, "java/lang/invoke/MethodHandle", "invokeExact",
-                    "(${captureDesc}Lorg/ohmyloader/api/hook/HookValue;)V", false,
+                    "(${captureDesc}Lorg/ohmyloader/api/core/hook/HookValue;)V", false,
                 )
                 mv.visitVarInsn(Opcodes.ILOAD, idSlot)
                 mv.visitVarInsn(Opcodes.ALOAD, callbackSlot)
                 mv.visitMethodInsn(
                     Opcodes.INVOKESTATIC, REGISTRY, "checkReturnable",
-                    "(ILorg/ohmyloader/api/hook/HookValue;)V", false,
+                    "(ILorg/ohmyloader/api/core/hook/HookValue;)V", false,
                 )
                 mv.visitInsn(Opcodes.RETURN)
             }
@@ -641,9 +641,9 @@ object HookRegistry {
         val bridgeReturn = Type.getReturnType(desc)
         if (hasCallback) {
             val callbackDesc = if (kind == BridgeKind.RETURNABLE) {
-                "Lorg/ohmyloader/api/hook/HookValue;"
+                "Lorg/ohmyloader/api/core/hook/HookValue;"
             } else {
-                "Lorg/ohmyloader/api/hook/HookContext;"
+                "Lorg/ohmyloader/api/core/hook/HookContext;"
             }
             if (Type.getDescriptor(method.parameterTypes[captures]) != callbackDesc) return false
             if (method.returnType != Void.TYPE) return false
@@ -688,7 +688,7 @@ object HookRegistry {
             mv.visitInsn(if (kind == BridgeKind.CANCELABLE) Opcodes.ICONST_1 else Opcodes.ICONST_0)
             mv.visitMethodInsn(
                 Opcodes.INVOKESTATIC, REGISTRY, "newContext",
-                "(IZ)Lorg/ohmyloader/api/hook/HookContext;", false,
+                "(IZ)Lorg/ohmyloader/api/core/hook/HookContext;", false,
             )
             mv.visitVarInsn(Opcodes.ASTORE, contextSlot)
             mv.visitVarInsn(Opcodes.ALOAD, contextSlot)
@@ -705,7 +705,7 @@ object HookRegistry {
             BridgeKind.CANCELABLE -> {
                 mv.visitVarInsn(Opcodes.ALOAD, contextSlot)
                 mv.visitMethodInsn(
-                    Opcodes.INVOKEVIRTUAL, "org/ohmyloader/api/hook/HookContext",
+                    Opcodes.INVOKEVIRTUAL, "org/ohmyloader/api/core/hook/HookContext",
                     "getCanceled", "()Z", false,
                 )
                 mv.visitInsn(Opcodes.IRETURN)
@@ -715,7 +715,7 @@ object HookRegistry {
                 mv.visitVarInsn(Opcodes.ALOAD, callbackSlot)
                 mv.visitMethodInsn(
                     Opcodes.INVOKESTATIC, REGISTRY, "checkReturnable",
-                    "(ILorg/ohmyloader/api/hook/HookValue;)V", false,
+                    "(ILorg/ohmyloader/api/core/hook/HookValue;)V", false,
                 )
                 mv.visitInsn(Opcodes.RETURN)
             }

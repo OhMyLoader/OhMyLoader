@@ -4,9 +4,9 @@ import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.ClassNode
 import org.objectweb.asm.tree.FieldNode
 import org.objectweb.asm.tree.MethodNode
-import org.ohmyloader.api.inject.AccessRule
-import org.ohmyloader.api.inject.MemberKind
-import org.ohmyloader.api.inject.Visibility
+import org.ohmyloader.api.core.inject.AccessRule
+import org.ohmyloader.api.core.inject.MemberKind
+import org.ohmyloader.api.core.inject.Visibility
 
 internal object AccessApplier {
 

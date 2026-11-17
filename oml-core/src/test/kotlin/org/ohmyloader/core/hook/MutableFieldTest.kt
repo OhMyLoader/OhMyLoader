@@ -65,8 +65,8 @@ class MutableFieldTest {
             fields.add(
                 FieldNode(Opcodes.ACC_PRIVATE, "value", "I", null, null).apply {
                     visibleAnnotations = buildList {
-                        if (borrowed) add(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Borrowed;"))
-                        if (mutable) add(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Mutable;"))
+                        if (borrowed) add(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/core/hook/Borrowed;"))
+                        if (mutable) add(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/core/hook/Mutable;"))
                     }
                 },
             )

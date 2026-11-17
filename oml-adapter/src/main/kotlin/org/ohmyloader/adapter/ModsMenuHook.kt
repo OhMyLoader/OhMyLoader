@@ -7,13 +7,13 @@ import net.minecraft.client.gui.screens.Screen
 import net.minecraft.client.gui.screens.TitleScreen
 import net.minecraft.commands.CommandSourceStack
 import net.minecraft.network.chat.Component
-import org.ohmyloader.api.OmlLog
-import org.ohmyloader.api.command.OMLCommandDeclaration
-import org.ohmyloader.api.command.OMLCommandSource
-import org.ohmyloader.api.tick.OMLScheduler
-import org.ohmyloader.api.game.OMLReboot
-import org.ohmyloader.api.game.RebootRestore
-import org.ohmyloader.api.game.currentScreen
+import org.ohmyloader.api.core.OmlLog
+import org.ohmyloader.api.core.command.OMLCommandDeclaration
+import org.ohmyloader.api.core.command.OMLCommandSource
+import org.ohmyloader.api.core.tick.OMLScheduler
+import org.ohmyloader.api.OMLReboot
+import org.ohmyloader.api.RebootRestore
+import org.ohmyloader.api.currentScreen
 import org.ohmyloader.core.OMLCore
 
 /**
@@ -49,7 +49,7 @@ internal object ModsMenuHook {
         if (!OMLCore.isServerSide()) {
             runCatching { ModsInventory.captureBaseline() }
                 .onFailure { OmlLog.warn("Mods", "capturing the mods directory baseline failed: $it") }
-            org.ohmyloader.api.game.event.Events.CLIENT_TICK.register { reopenRequestedScreen() }
+            org.ohmyloader.api.event.Events.CLIENT_TICK.register { reopenRequestedScreen() }
         }
         runCatching { OMLCore.addBuiltinCommand(reloadCommand()) }
             .onFailure { OmlLog.warn("Mods", "registering /oml reload failed: $it") }

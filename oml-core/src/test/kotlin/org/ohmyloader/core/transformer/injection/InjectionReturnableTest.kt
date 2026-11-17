@@ -4,9 +4,9 @@ import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.*
-import org.ohmyloader.api.inject.DslValue
-import org.ohmyloader.api.inject.InjectionError
-import org.ohmyloader.api.hook.HookValue
+import org.ohmyloader.api.core.inject.DslValue
+import org.ohmyloader.api.core.inject.InjectionError
+import org.ohmyloader.api.core.hook.HookValue
 import org.ohmyloader.core.hook.HookRegistry
 import org.ohmyloader.core.transformer.TransformContext
 import kotlin.test.*
@@ -217,7 +217,7 @@ class InjectionReturnableTest {
                     atTail {
                         cancelableReturn(
                             ReturnHandlers.OWNER, "returnInt",
-                            "(ILorg/ohmyloader/api/hook/HookValue;)V",
+                            "(ILorg/ohmyloader/api/core/hook/HookValue;)V",
                             listOf(DslValue.IntVal(1)),
                         )
                     }
@@ -261,7 +261,7 @@ class InjectionReturnableTest {
         val kind = HookRegistry.bridgeKind(id)
         assertEquals(HookRegistry.BridgeKind.RETURNABLE, kind)
         assertEquals(
-            "(ILorg/ohmyloader/api/hook/HookValue;)V",
+            "(ILorg/ohmyloader/api/core/hook/HookValue;)V",
             HookRegistry.bridgeDesc(id, HookRegistry.BridgeKind.RETURNABLE),
         )
         assertEquals(

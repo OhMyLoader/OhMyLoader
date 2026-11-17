@@ -4,7 +4,7 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Shared test wiring between [org.ohmyloader.api.natives.NativeManager] and the zig build of
+ * Shared test wiring between [org.ohmyloader.api.core.natives.NativeManager] and the zig build of
  * `oml-native` that lives next to this repository, published as oml-core's **test fixtures** so
  * the adapter's codec tests exercise the same instance instead of a drifting copy. Pointing
  * `oml.natives.dir` at the build output means every consumer tests the REAL library — same file

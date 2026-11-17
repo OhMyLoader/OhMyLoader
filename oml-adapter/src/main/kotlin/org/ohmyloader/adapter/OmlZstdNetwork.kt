@@ -12,7 +12,7 @@ import net.minecraft.network.protocol.login.custom.CustomQueryAnswerPayload
 import net.minecraft.network.protocol.login.custom.CustomQueryPayload
 import net.minecraft.resources.Identifier
 import net.minecraft.server.network.ServerLoginPacketListenerImpl
-import org.ohmyloader.api.OmlLog
+import org.ohmyloader.api.core.OmlLog
 import org.ohmyloader.core.adapter.Refl
 
 /**

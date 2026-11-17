@@ -29,7 +29,7 @@ class ModScannerTest {
     private fun modClassBytes(internalName: String, modId: String): ByteArray {
         val writer = ClassWriter(0)
         writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, internalName, null, "java/lang/Object", null)
-        writer.visitAnnotation("Lorg/ohmyloader/api/Mod;", true).apply {
+        writer.visitAnnotation("Lorg/ohmyloader/api/core/Mod;", true).apply {
             visit("id", modId)
             visitEnd()
         }
@@ -137,7 +137,7 @@ class ModScannerTest {
 
     @Test
     fun `a jar that packs oml's own namespace is skipped whole`() {
-        val modsDir = modsDirWith("org/ohmyloader/api/Mod.class")
+        val modsDir = modsDirWith("org/ohmyloader/api/core/Mod.class")
 
         val found = ModScanner.scan(modsDir)
 
@@ -148,7 +148,7 @@ class ModScannerTest {
     fun `a versioned copy under oml's namespace is refused too`() {
         // The base copy is absent here, so a JVM reading this jar defines the versioned one — same namespace,
         // same damage, and the reason the check does not simply skip META-INF on its way to the refusal.
-        val modsDir = modsDirWith("META-INF/versions/21/org/ohmyloader/api/Mod.class")
+        val modsDir = modsDirWith("META-INF/versions/21/org/ohmyloader/api/core/Mod.class")
 
         assertEquals(emptyList(), ModScanner.scan(modsDir).map { it.id })
     }

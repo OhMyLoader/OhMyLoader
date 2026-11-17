@@ -1,8 +1,8 @@
 package org.ohmyloader.core.transformer.injection
 
-import org.ohmyloader.api.inject.InjectionBuilder
-import org.ohmyloader.api.inject.RuleSet
-import org.ohmyloader.api.inject.injection
+import org.ohmyloader.api.core.inject.InjectionBuilder
+import org.ohmyloader.api.core.inject.RuleSet
+import org.ohmyloader.api.core.inject.injection
 
 /**
  * Test convenience entry point: the DSL produces a rule set ([RuleSet]), while unit tests

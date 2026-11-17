@@ -3,10 +3,10 @@ package org.ohmyloader.core.transformer.injection
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.*
-import org.ohmyloader.api.inject.HandlerKind
-import org.ohmyloader.api.inject.HandlerVariant
-import org.ohmyloader.api.inject.InjectionError
-import org.ohmyloader.api.inject.MethodRuleBuilder
+import org.ohmyloader.api.core.inject.HandlerKind
+import org.ohmyloader.api.core.inject.HandlerVariant
+import org.ohmyloader.api.core.inject.InjectionError
+import org.ohmyloader.api.core.inject.MethodRuleBuilder
 import org.ohmyloader.core.hook.ClassMerger
 import org.ohmyloader.core.transformer.TransformContext
 import kotlin.test.Test
@@ -295,7 +295,7 @@ class InjectionHandlerModifyTest {
             }
             atHead {
                 handlerCall(
-                    OWNER, "onCall2", "(Lorg/ohmyloader/api/hook/HookContext;)V",
+                    OWNER, "onCall2", "(Lorg/ohmyloader/api/core/hook/HookContext;)V",
                     variant = HandlerVariant.CANCELABLE,
                 )
             }
@@ -658,7 +658,7 @@ class InjectionHandlerModifyTest {
         superName = "java/lang/Object"
         fields.add(
             FieldNode(Opcodes.ACC_PRIVATE, "tag", "Ljava/lang/String;", null, null).apply {
-                visibleAnnotations = listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Borrowed;"))
+                visibleAnnotations = listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/core/hook/Borrowed;"))
             },
         )
 

@@ -1,8 +1,8 @@
 package omltest.pipeline;
 
-import org.ohmyloader.api.hook.Coerce;
-import org.ohmyloader.api.hook.Merged;
-import org.ohmyloader.api.hook.ModifyReturnValue;
+import org.ohmyloader.api.core.hook.Coerce;
+import org.ohmyloader.api.core.hook.Merged;
+import org.ohmyloader.api.core.hook.ModifyReturnValue;
 
 /**
  * Real compiled fixtures for `@Coerce` on a **merged** handler: the modified value arrives as

@@ -24,9 +24,9 @@ import net.minecraft.world.level.Level
 import net.minecraft.world.level.chunk.LevelChunk
 import net.minecraft.world.phys.BlockHitResult
 import java.util.OptionalInt
-import org.ohmyloader.api.OmlLog
-import org.ohmyloader.api.hook.HookValue
-import org.ohmyloader.api.game.EventDispatch
+import org.ohmyloader.api.core.OmlLog
+import org.ohmyloader.api.core.hook.HookValue
+import org.ohmyloader.api.EventDispatch
 import org.ohmyloader.core.OMLCore
 import org.ohmyloader.core.adapter.Refl
 import java.lang.reflect.Field
@@ -79,7 +79,7 @@ object EventBridge {
         clientTicks++
         // The second session's restore, before anything else this tick looks at the world: it is
         // what opens the save the snapshot names and lifts the red transition when the player is back.
-        org.ohmyloader.api.game.RebootRestore.tick()
+        org.ohmyloader.api.RebootRestore.tick()
         val target = autoRebootAt
         // One-shot, and not merely because the property is cleared: the farewell frame budget keeps
         // the loop alive for a few more ticks, so `clientTicks >= target` stays true and would
@@ -88,7 +88,7 @@ object EventBridge {
             autoRebootIssued = true
             // One-shot: SessionControl clears the property for the next session.
             System.clearProperty("oml.reboot.afterTicks")
-            org.ohmyloader.api.game.OMLReboot.restart("automatic after $clientTicks ticks")
+            org.ohmyloader.api.OMLReboot.restart("automatic after $clientTicks ticks")
         }
         OMLKeyBindingsBridge.applyPending()
         EventDispatch.onClientTick()
@@ -217,12 +217,12 @@ object EventBridge {
         permissions: net.minecraft.server.permissions.PermissionSet,
         player: ServerPlayer,
     ): net.minecraft.server.permissions.PermissionSet =
-        org.ohmyloader.api.game.OMLPermissionGrants.apply(player, permissions)
+        org.ohmyloader.api.OMLPermissionGrants.apply(player, permissions)
 
     /** [PlayerList.remove head] Still readable: the game has not torn the player down yet. */
     @JvmStatic
     fun onPlayerLeft(player: ServerPlayer) {
-        org.ohmyloader.api.game.OMLPermissionGrants.forget(player.uuid)
+        org.ohmyloader.api.OMLPermissionGrants.forget(player.uuid)
         EventDispatch.onPlayerLeft(player)
     }
 

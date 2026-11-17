@@ -1,9 +1,9 @@
 package omltest.pipeline;
 
-import org.ohmyloader.api.hook.At;
-import org.ohmyloader.api.hook.HookValue;
-import org.ohmyloader.api.hook.Inject;
-import org.ohmyloader.api.hook.Hooked;
+import org.ohmyloader.api.core.hook.At;
+import org.ohmyloader.api.core.hook.HookValue;
+import org.ohmyloader.api.core.hook.Inject;
+import org.ohmyloader.api.core.hook.Hooked;
 
 /**
  * Real compiled fixtures for the static-handler path: the target is an **interface** whose static

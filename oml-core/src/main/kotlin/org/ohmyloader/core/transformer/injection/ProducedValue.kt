@@ -3,8 +3,8 @@ package org.ohmyloader.core.transformer.injection
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.*
-import org.ohmyloader.api.inject.InjectionError
-import org.ohmyloader.api.inject.InjectionPoint
+import org.ohmyloader.api.core.inject.InjectionError
+import org.ohmyloader.api.core.inject.InjectionPoint
 
 /**
  * The **value produced** by an anchor instruction — the value left on top of the stack after that

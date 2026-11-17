@@ -5,10 +5,10 @@ import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.network.codec.StreamCodec
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.resources.Identifier
-import org.ohmyloader.api.network.OMLNetworkContext
-import org.ohmyloader.api.network.OMLPacketBuffer
-import org.ohmyloader.api.network.OMLPayloadCodec
-import org.ohmyloader.api.network.OMLPayloadType
+import org.ohmyloader.api.core.network.OMLNetworkContext
+import org.ohmyloader.api.core.network.OMLPacketBuffer
+import org.ohmyloader.api.core.network.OMLPayloadCodec
+import org.ohmyloader.api.core.network.OMLPayloadType
 import org.ohmyloader.core.network.PayloadDeclarations
 import org.ohmyloader.core.network.PayloadDeclarations.Direction
 import java.util.*

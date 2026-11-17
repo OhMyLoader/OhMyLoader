@@ -3,10 +3,10 @@ package omltest.pipeline;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.ohmyloader.api.hook.At;
-import org.ohmyloader.api.hook.HookContext;
-import org.ohmyloader.api.hook.Hooked;
-import org.ohmyloader.api.hook.Inject;
+import org.ohmyloader.api.core.hook.At;
+import org.ohmyloader.api.core.hook.HookContext;
+import org.ohmyloader.api.core.hook.Hooked;
+import org.ohmyloader.api.core.hook.Inject;
 
 /**
  * The lower-priority handler is declared first; only priority sorting makes the 2000 handler run

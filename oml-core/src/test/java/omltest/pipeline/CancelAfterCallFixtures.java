@@ -3,10 +3,10 @@ package omltest.pipeline;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.ohmyloader.api.hook.At;
-import org.ohmyloader.api.hook.HookContext;
-import org.ohmyloader.api.hook.Hooked;
-import org.ohmyloader.api.hook.Inject;
+import org.ohmyloader.api.core.hook.At;
+import org.ohmyloader.api.core.hook.HookContext;
+import org.ohmyloader.api.core.hook.Hooked;
+import org.ohmyloader.api.core.hook.Inject;
 
 /**
  * Short-circuit after a void call: the anchor is {@code INVOKE_ASSIGN} on {@code record(I)V} and the

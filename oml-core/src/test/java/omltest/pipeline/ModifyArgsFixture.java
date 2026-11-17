@@ -3,10 +3,10 @@ package omltest.pipeline;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.ohmyloader.api.hook.Args;
-import org.ohmyloader.api.hook.At;
-import org.ohmyloader.api.hook.Hooked;
-import org.ohmyloader.api.hook.ModifyArgs;
+import org.ohmyloader.api.core.hook.Args;
+import org.ohmyloader.api.core.hook.At;
+import org.ohmyloader.api.core.hook.Hooked;
+import org.ohmyloader.api.core.hook.ModifyArgs;
 
 /**
  * The bridge form of {@code @ModifyArgs}: the void handler still needs the id-dropping MODIFY bridge,

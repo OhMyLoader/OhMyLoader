@@ -1,6 +1,6 @@
 package org.ohmyloader.core.transformer.injection
 
-import org.ohmyloader.api.inject.*
+import org.ohmyloader.api.core.inject.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
 

@@ -10,7 +10,7 @@ package org.ohmyloader.launcher;
  * the session's own loader, so keeping one here would pin the whole session alive and make the
  * canary fail exactly as a leaked class loader does. Text has no loader.
  *
- * <p>The encoding lives with the producer ({@code org.ohmyloader.api.game.RebootRestore}), which is
+ * <p>The encoding lives with the producer ({@code org.ohmyloader.api.RebootRestore}), which is
  * the side that knows the game types; this class only holds the line and hands it over once.
  */
 public final class RebootSnapshot {

@@ -4,8 +4,8 @@ import org.objectweb.asm.Handle
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.*
-import org.ohmyloader.api.OmlLog
-import org.ohmyloader.api.inject.*
+import org.ohmyloader.api.core.OmlLog
+import org.ohmyloader.api.core.inject.*
 import org.ohmyloader.core.expression.flow.ExpressionTarget
 import org.ohmyloader.core.expression.flow.expansion.InsnExpander
 import org.ohmyloader.core.expression.flow.postprocessing.ArrayCreationInfo
@@ -62,7 +62,7 @@ internal fun Payload.usesLocals(): Boolean =
 /**
  * The engine-side rule set: applies a [RuleSet] to target classes, and is responsible for startup self-checking.
  *
- * The rule **model** and the DSL both live in `org.ohmyloader.api.inject` — this file contains only what the
+ * The rule **model** and the DSL both live in `org.ohmyloader.api.core.inject` — this file contains only what the
  * engine does: weaving rules into bytecode ([transform]) and surfacing "broken rule" problems early ([verify]).
  */
 
@@ -305,7 +305,7 @@ class InjectionSpec internal constructor(
         else -> null
     }
 
-    private fun claimLabel(rule: org.ohmyloader.api.inject.MethodRule, payload: Payload): String {
+    private fun claimLabel(rule: org.ohmyloader.api.core.inject.MethodRule, payload: Payload): String {
         fun owner(owner: String, method: String) = "${owner.replace('/', '.')}.$method"
         val what = when (payload) {
             is Payload.Redirect -> "Redirect → ${owner(payload.handlerOwner, payload.handlerMethod)}"
@@ -582,7 +582,7 @@ class InjectionSpec internal constructor(
         anchor as? JumpInsnNode
     }
 
-    private fun org.ohmyloader.api.inject.MethodRule.isWholeMethodWrap(): Boolean =
+    private fun org.ohmyloader.api.core.inject.MethodRule.isWholeMethodWrap(): Boolean =
         points.any { (_, payload) ->
             payload is Payload.WrapMethod ||
                 (payload is Payload.HandlerCall && payload.kind == HandlerKind.WRAP_METHOD)

@@ -42,14 +42,14 @@ interface IAdapter {
      * starts and the version registry freezes. Returns null when that version does not yet
      * support content registration.
      */
-    fun createContentRegistry(): org.ohmyloader.api.content.ContentRegistryFactory? = null
+    fun createContentRegistry(): org.ohmyloader.api.core.content.ContentRegistryFactory? = null
 
     /**
      * The version's custom-payload send path (client→server and server→player). Null when that
      * version does not yet route mod payloads; mods calling a send method then get a clear error
      * rather than a packet dropped without a trace.
      */
-    fun createNetworkSender(): org.ohmyloader.api.network.OMLNetworkSender? = null
+    fun createNetworkSender(): org.ohmyloader.api.core.network.OMLNetworkSender? = null
 
     /**
      * Game-ready hook (tail of Minecraft initialization, or the dedicated server's own constructor path):

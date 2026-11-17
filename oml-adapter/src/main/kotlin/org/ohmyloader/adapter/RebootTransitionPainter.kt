@@ -5,7 +5,7 @@ import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.GuiPipeline
 import net.minecraft.resources.Identifier
 import net.minecraft.util.ARGB
-import org.ohmyloader.api.game.RebootRestore
+import org.ohmyloader.api.RebootRestore
 
 /**
  * The reboot transition's pixels: vanilla's own loading screen, copied number for number.

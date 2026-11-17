@@ -17,7 +17,7 @@ stable line is 26.3; the stack runs on Java 27.
   payloads are the game's own objects (`ServerPlayer`, `BlockPos`, `BlockState`, `DamageSource`, `Screen`),
   with no wrapper layer. Command sources, network contexts, and registered block handles expose a `platform`
   handle where a typed surface is not yet available.
-- **Game access API (`org.ohmyloader.api.game`).** `OMLGame.server` and `OMLGame.client` are
+- **Game access API (`org.ohmyloader.api`).** `OMLGame.server` and `OMLGame.client` are
   `MinecraftServer` and `Minecraft`. Other capabilities are extension functions and properties on game types,
   so there are no wrapper objects or cross-tick stale handles. They cover entity spawn and query, motion,
   attributes and modifiers, damage, ignition, block state read/write, particles, weather, game rules,

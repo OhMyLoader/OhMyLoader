@@ -1,7 +1,7 @@
 package org.ohmyloader.adapter
 
-import org.ohmyloader.api.inject.DslValue
-import org.ohmyloader.api.inject.injection
+import org.ohmyloader.api.core.inject.DslValue
+import org.ohmyloader.api.core.inject.injection
 import org.ohmyloader.core.transformer.injection.InjectingTransformer
 
 /**
@@ -18,7 +18,7 @@ class ThreadHygieneTransformer : InjectingTransformer(
                 wrapMethod(
                     owner = BRIDGE,
                     method = "makeExecutor",
-                    desc = "(Ljava/lang/String;Lorg/ohmyloader/api/hook/Operation;I)Lnet/minecraft/TracingExecutor;",
+                    desc = "(Ljava/lang/String;Lorg/ohmyloader/api/core/hook/Operation;I)Lnet/minecraft/TracingExecutor;",
                     extras = listOf(DslValue.IntVal(0)),
                 )
                 require(1)
@@ -27,7 +27,7 @@ class ThreadHygieneTransformer : InjectingTransformer(
                 wrapMethod(
                     owner = BRIDGE,
                     method = "makeIoExecutor",
-                    desc = "(Ljava/lang/String;ZLorg/ohmyloader/api/hook/Operation;I)Lnet/minecraft/TracingExecutor;",
+                    desc = "(Ljava/lang/String;ZLorg/ohmyloader/api/core/hook/Operation;I)Lnet/minecraft/TracingExecutor;",
                     extras = listOf(DslValue.IntVal(0)),
                 )
                 require(1)
@@ -36,7 +36,7 @@ class ThreadHygieneTransformer : InjectingTransformer(
                 wrapMethod(
                     owner = BRIDGE,
                     method = "startTimerHack",
-                    desc = "(Lorg/ohmyloader/api/hook/Operation;I)V",
+                    desc = "(Lorg/ohmyloader/api/core/hook/Operation;I)V",
                     extras = listOf(DslValue.IntVal(0)),
                 )
                 require(1)
@@ -55,7 +55,7 @@ class ThreadHygieneTransformer : InjectingTransformer(
                 wrapMethod(
                     owner = BRIDGE,
                     method = "soundThread",
-                    desc = "(Lorg/ohmyloader/api/hook/Operation;I)Ljava/lang/Thread;",
+                    desc = "(Lorg/ohmyloader/api/core/hook/Operation;I)Ljava/lang/Thread;",
                     extras = listOf(DslValue.IntVal(0)),
                 )
                 require(1)
@@ -66,7 +66,7 @@ class ThreadHygieneTransformer : InjectingTransformer(
                 wrapMethod(
                     owner = BRIDGE,
                     method = "threadFactory",
-                    desc = "(Lorg/ohmyloader/api/hook/Operation;I)Ljava/util/concurrent/ThreadFactory;",
+                    desc = "(Lorg/ohmyloader/api/core/hook/Operation;I)Ljava/util/concurrent/ThreadFactory;",
                     extras = listOf(DslValue.IntVal(0)),
                 )
                 require(1)
@@ -77,7 +77,7 @@ class ThreadHygieneTransformer : InjectingTransformer(
                 wrapMethod(
                     owner = BRIDGE,
                     method = "defaultThread",
-                    desc = "(Ljava/lang/Runnable;Lorg/ohmyloader/api/hook/Operation;I)Ljava/lang/Thread;",
+                    desc = "(Ljava/lang/Runnable;Lorg/ohmyloader/api/core/hook/Operation;I)Ljava/lang/Thread;",
                     extras = listOf(DslValue.IntVal(0)),
                 )
                 require(1)

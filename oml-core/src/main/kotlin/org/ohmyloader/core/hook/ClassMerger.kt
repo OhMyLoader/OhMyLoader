@@ -76,26 +76,26 @@ internal object ClassMerger {
                 accessors > 0 || invokers > 0 || constructors > 0 || interfaces > 0 || mutable > 0
     }
 
-    private const val BORROWED_DESC = "Lorg/ohmyloader/api/hook/Borrowed;"
-    private const val MUTABLE_DESC = "Lorg/ohmyloader/api/hook/Mutable;"
-    private const val OVERWRITE_DESC = "Lorg/ohmyloader/api/hook/Replace;"
-    public const val ACCESSOR_DESC = "Lorg/ohmyloader/api/hook/FieldAccess;"
-    public const val INVOKER_DESC = "Lorg/ohmyloader/api/hook/MethodAccess;"
+    private const val BORROWED_DESC = "Lorg/ohmyloader/api/core/hook/Borrowed;"
+    private const val MUTABLE_DESC = "Lorg/ohmyloader/api/core/hook/Mutable;"
+    private const val OVERWRITE_DESC = "Lorg/ohmyloader/api/core/hook/Replace;"
+    public const val ACCESSOR_DESC = "Lorg/ohmyloader/api/core/hook/FieldAccess;"
+    public const val INVOKER_DESC = "Lorg/ohmyloader/api/core/hook/MethodAccess;"
 
     /** The injection-family annotations: their methods never merge — they are rule carriers. */
     private val INJECTION_FAMILY_DESCS = setOf(
-        "Lorg/ohmyloader/api/hook/Inject;",
-        "Lorg/ohmyloader/api/hook/Redirect;",
-        "Lorg/ohmyloader/api/hook/ModifyArg;",
-        "Lorg/ohmyloader/api/hook/ModifyArgs;",
-        "Lorg/ohmyloader/api/hook/ModifyConstant;",
-        "Lorg/ohmyloader/api/hook/ModifyVariable;",
-        "Lorg/ohmyloader/api/hook/ModifyReturnValue;",
-        "Lorg/ohmyloader/api/hook/ModifyExpressionValue;",
-        "Lorg/ohmyloader/api/hook/ModifyReceiver;",
-        "Lorg/ohmyloader/api/hook/WrapWithCondition;",
-        "Lorg/ohmyloader/api/hook/WrapOperation;",
-        "Lorg/ohmyloader/api/hook/WrapMethod;",
+        "Lorg/ohmyloader/api/core/hook/Inject;",
+        "Lorg/ohmyloader/api/core/hook/Redirect;",
+        "Lorg/ohmyloader/api/core/hook/ModifyArg;",
+        "Lorg/ohmyloader/api/core/hook/ModifyArgs;",
+        "Lorg/ohmyloader/api/core/hook/ModifyConstant;",
+        "Lorg/ohmyloader/api/core/hook/ModifyVariable;",
+        "Lorg/ohmyloader/api/core/hook/ModifyReturnValue;",
+        "Lorg/ohmyloader/api/core/hook/ModifyExpressionValue;",
+        "Lorg/ohmyloader/api/core/hook/ModifyReceiver;",
+        "Lorg/ohmyloader/api/core/hook/WrapWithCondition;",
+        "Lorg/ohmyloader/api/core/hook/WrapOperation;",
+        "Lorg/ohmyloader/api/core/hook/WrapMethod;",
     )
 
     /** `@Replace` ledger key: **must include the target class** -- otherwise two mixins overwriting the same-named method in different classes would yield a false conflict. */

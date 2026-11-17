@@ -26,7 +26,8 @@ import kotlin.test.assertSame
 class OMLClassLoaderTest {
 
     private val adapterClass = "org.ohmyloader.adapter.probe.AdapterProbe"
-    private val apiGameClass = "org.ohmyloader.api.game.probe.ApiGameProbe"
+    private val apiGameClass = "org.ohmyloader.api.probe.ApiGameProbe"
+    private val apiCoreClass = "org.ohmyloader.api.core.probe.ApiCoreProbe"
     private val coreClass = "org.ohmyloader.core.probe.CoreProbe"
     private val gameClass = "com.example.probe.GameProbe"
 
@@ -51,6 +52,22 @@ class OMLClassLoaderTest {
             fromParent,
             main.loadClass(adapterClass),
             "the two loaders defining the same adapter class is exactly the split OMLCore.discoverAdapter guards against",
+        )
+    }
+
+    @Test
+    fun `the version-neutral api core keeps the parent's identity`() {
+        // It lives under the game-facing namespace but names no game type, so it must not be
+        // redefined per session — that is what the child-first carve-out exists for.
+        val dir = classDir()
+        writeClass(dir, apiCoreClass)
+
+        val [parent, main] = loaders(dir)
+
+        assertSame(
+            parent.loadClass(apiCoreClass),
+            main.loadClass(apiCoreClass),
+            "the neutral api core must stay parent-first",
         )
     }
 

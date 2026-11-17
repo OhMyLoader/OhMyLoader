@@ -1,8 +1,8 @@
 package omltest.pipeline;
 
-import org.ohmyloader.api.hook.Extra;
-import org.ohmyloader.api.hook.Implements;
-import org.ohmyloader.api.hook.Merged;
+import org.ohmyloader.api.core.hook.Extra;
+import org.ohmyloader.api.core.hook.Implements;
+import org.ohmyloader.api.core.hook.Merged;
 
 /**
  * Real compiled fixtures for `@Implements`: a merge carrier declares an extra interface for the

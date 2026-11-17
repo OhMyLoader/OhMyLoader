@@ -4,9 +4,9 @@ import org.junit.jupiter.api.Test
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.*
-import org.ohmyloader.api.inject.ClassTargetBuilder
-import org.ohmyloader.api.inject.HandlerKind
-import org.ohmyloader.api.inject.InjectionError
+import org.ohmyloader.api.core.inject.ClassTargetBuilder
+import org.ohmyloader.api.core.inject.HandlerKind
+import org.ohmyloader.api.core.inject.InjectionError
 import org.ohmyloader.core.hook.ClassMerger
 import org.ohmyloader.core.transformer.TransformContext
 import kotlin.test.assertContains

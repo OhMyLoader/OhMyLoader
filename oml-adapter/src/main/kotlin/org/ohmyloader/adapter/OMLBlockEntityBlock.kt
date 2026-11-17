@@ -22,18 +22,18 @@ import net.minecraft.world.level.block.entity.BlockEntityType
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.storage.ValueInput
 import net.minecraft.world.level.storage.ValueOutput
-import org.ohmyloader.api.content.OMLBlockDataCarrier
-import org.ohmyloader.api.game.OMLRegistries
-import org.ohmyloader.api.game.itemId
-import org.ohmyloader.api.content.OMLBlockTickEvent
-import org.ohmyloader.api.content.OMLDataItemStack
-import org.ohmyloader.api.content.OMLSlotLayout
-import org.ohmyloader.api.content.OMLSlotStore
+import org.ohmyloader.api.core.content.OMLBlockDataCarrier
+import org.ohmyloader.api.OMLRegistries
+import org.ohmyloader.api.itemId
+import org.ohmyloader.api.core.content.OMLBlockTickEvent
+import org.ohmyloader.api.core.content.OMLDataItemStack
+import org.ohmyloader.api.core.content.OMLSlotLayout
+import org.ohmyloader.api.core.content.OMLSlotStore
 
 /**
  * The block class a declaration with a block entity materializes into. Extends [OMLBehaviorBlock]
  * so a machine can also carry the step-on / hit hooks; the block entity adds the server ticker,
- * the persistent data store and — when [org.ohmyloader.api.content.OMLBlockEntityDeclaration.slots]
+ * the persistent data store and — when [org.ohmyloader.api.core.content.OMLBlockEntityDeclaration.slots]
  * was declared — the item container. [entityType] is assigned by materialization right after the
  * type is built — the type's supplier reads it back only when the first block entity is created
  * (a chunk load), long after registration closes, which is what breaks the type/supplier cycle.

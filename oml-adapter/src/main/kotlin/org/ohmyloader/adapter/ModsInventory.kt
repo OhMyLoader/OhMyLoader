@@ -1,6 +1,6 @@
 package org.ohmyloader.adapter
 
-import org.ohmyloader.api.OmlLog
+import org.ohmyloader.api.core.OmlLog
 import org.ohmyloader.core.OMLCore
 import java.awt.Desktop
 import java.io.File

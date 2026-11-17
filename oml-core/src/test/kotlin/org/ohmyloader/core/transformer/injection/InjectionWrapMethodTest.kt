@@ -10,7 +10,7 @@ import org.objectweb.asm.tree.InsnNode
 import org.objectweb.asm.tree.MethodInsnNode
 import org.objectweb.asm.tree.MethodNode
 import org.objectweb.asm.tree.VarInsnNode
-import org.ohmyloader.api.hook.Operation
+import org.ohmyloader.api.core.hook.Operation
 import org.ohmyloader.core.transformer.TransformContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -135,7 +135,7 @@ class InjectionWrapMethodTest {
 
     // ---------- fixtures ----------
 
-    private val OPERATION_DESC = "Lorg/ohmyloader/api/hook/Operation;"
+    private val OPERATION_DESC = "Lorg/ohmyloader/api/core/hook/Operation;"
 
     private fun classNode(vararg methods: MethodNode): ClassNode =
         ClassNode(Opcodes.ASM9).apply {

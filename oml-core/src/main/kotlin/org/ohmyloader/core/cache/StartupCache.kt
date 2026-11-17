@@ -1,6 +1,6 @@
 package org.ohmyloader.core.cache
 
-import org.ohmyloader.api.OmlLog
+import org.ohmyloader.api.core.OmlLog
 import java.io.File
 import java.security.MessageDigest
 

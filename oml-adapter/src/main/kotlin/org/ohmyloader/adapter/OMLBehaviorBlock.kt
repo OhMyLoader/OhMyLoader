@@ -6,14 +6,14 @@ import net.minecraft.world.entity.player.Player
 import net.minecraft.world.level.Level
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.state.BlockState
-import org.ohmyloader.api.content.OMLBlockHitEvent
-import org.ohmyloader.api.content.OMLStepOnEvent
+import org.ohmyloader.api.core.content.OMLBlockHitEvent
+import org.ohmyloader.api.core.content.OMLStepOnEvent
 
 /**
  * The block class a declaration with behavior hooks materializes into: the overrides translate
  * the vanilla callback args into the OML event and dispatch to the mod's handlers, then always
  * run the vanilla super — a behavior block is a plain Block plus hooks, never a replacement of
- * vanilla behavior. Dispatch is unguarded like [org.ohmyloader.api.event.Events] firing: a
+ * vanilla behavior. Dispatch is unguarded like [org.ohmyloader.api.core.event.Events] firing: a
  * handler exception surfaces as the game crash it is. Open because the block-entity variant
  * ([OMLBlockEntityBlock]) extends it with the ticker and the persistent data store.
  */

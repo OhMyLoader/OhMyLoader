@@ -1,6 +1,6 @@
 package org.ohmyloader.content
 
-import org.ohmyloader.api.OmlLog
+import org.ohmyloader.api.core.OmlLog
 import java.io.File
 import java.util.zip.ZipFile
 

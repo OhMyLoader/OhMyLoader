@@ -1,7 +1,7 @@
 package org.ohmyloader.core.hook
 
-import org.ohmyloader.api.OmlLog
-import org.ohmyloader.api.inject.InjectionError
+import org.ohmyloader.api.core.OmlLog
+import org.ohmyloader.api.core.inject.InjectionError
 import org.ohmyloader.core.diagnostics.Diagnostics
 import org.ohmyloader.core.transformer.IClassTransformer
 import org.ohmyloader.core.transformer.IVerifiableTransformer

@@ -9,8 +9,8 @@ import org.objectweb.asm.tree.MethodInsnNode
 import org.objectweb.asm.tree.MethodNode
 import org.objectweb.asm.tree.TypeInsnNode
 import org.objectweb.asm.tree.VarInsnNode
-import org.ohmyloader.api.inject.DslValue
-import org.ohmyloader.api.inject.InjectionError
+import org.ohmyloader.api.core.inject.DslValue
+import org.ohmyloader.api.core.inject.InjectionError
 import org.ohmyloader.core.hook.OPERATION_DESC
 import java.util.concurrent.atomic.AtomicInteger
 

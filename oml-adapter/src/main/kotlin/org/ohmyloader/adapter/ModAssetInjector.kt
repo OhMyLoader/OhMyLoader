@@ -1,7 +1,7 @@
 package org.ohmyloader.adapter
 
 import org.ohmyloader.adapter.ModAssetInjector.resolveResource
-import org.ohmyloader.api.OmlLog
+import org.ohmyloader.api.core.OmlLog
 import org.ohmyloader.content.ModAssetIndex
 import org.ohmyloader.core.OMLCore
 import org.ohmyloader.core.adapter.Refl
@@ -332,7 +332,7 @@ object ModAssetInjector {
 
     /**
      * Bytes for one datapack file. Recipes and loot tables come from OML content declarations
-     * (collected via [org.ohmyloader.api.content.ContentRegistry.declareSmelting] /
+     * (collected via [org.ohmyloader.api.core.content.ContentRegistry.declareSmelting] /
      * `declareBlockDrop` and translated at the registry freeze point), matching the vanilla
      * datapack formats so the game's own reload paths parse them.
      */

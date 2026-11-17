@@ -1,8 +1,8 @@
 package org.ohmyloader.adapter
 
-import org.ohmyloader.api.inject.DslValue
-import org.ohmyloader.api.inject.injection
-import org.ohmyloader.api.inject.local
+import org.ohmyloader.api.core.inject.DslValue
+import org.ohmyloader.api.core.inject.injection
+import org.ohmyloader.api.core.inject.local
 import org.ohmyloader.core.transformer.injection.InjectingTransformer
 
 /**
@@ -247,7 +247,7 @@ class MinecraftHookTransformer(private val idPrefix: String) : InjectingTransfor
                 wrapMethod(
                     owner = "org/ohmyloader/adapter/WindowHooks",
                     method = "createWindow",
-                    desc = "(Lcom/mojang/renderpearl/api/device/GpuBackend;IILjava/lang/String;Lorg/ohmyloader/api/hook/Operation;I)J",
+                    desc = "(Lcom/mojang/renderpearl/api/device/GpuBackend;IILjava/lang/String;Lorg/ohmyloader/api/core/hook/Operation;I)J",
                     extras = listOf(DslValue.IntVal(0)),
                 )
                 require(1)
@@ -275,7 +275,7 @@ class MinecraftHookTransformer(private val idPrefix: String) : InjectingTransfor
                 wrapMethod(
                     owner = "org/ohmyloader/adapter/WindowHooks",
                     method = "close",
-                    desc = "(Lorg/ohmyloader/api/hook/Operation;I)V",
+                    desc = "(Lorg/ohmyloader/api/core/hook/Operation;I)V",
                     extras = listOf(DslValue.IntVal(0)),
                 )
                 require(1)

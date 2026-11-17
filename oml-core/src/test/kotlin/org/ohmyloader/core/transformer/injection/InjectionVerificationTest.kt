@@ -5,9 +5,9 @@ import org.objectweb.asm.tree.ClassNode
 import org.objectweb.asm.tree.InsnList
 import org.objectweb.asm.tree.InsnNode
 import org.objectweb.asm.tree.MethodNode
-import org.ohmyloader.api.inject.DslValue
-import org.ohmyloader.api.inject.InjectionBuilder
-import org.ohmyloader.api.inject.InjectionError
+import org.ohmyloader.api.core.inject.DslValue
+import org.ohmyloader.api.core.inject.InjectionBuilder
+import org.ohmyloader.api.core.inject.InjectionError
 import org.ohmyloader.core.transformer.TransformContext
 import kotlin.test.*
 

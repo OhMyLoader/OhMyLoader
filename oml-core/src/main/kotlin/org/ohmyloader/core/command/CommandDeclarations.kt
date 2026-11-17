@@ -1,6 +1,6 @@
 package org.ohmyloader.core.command
 
-import org.ohmyloader.api.command.OMLCommandDeclaration
+import org.ohmyloader.api.core.command.OMLCommandDeclaration
 
 /**
  * The collected command trees of every mod, in declaration order. Populated during mod init (the

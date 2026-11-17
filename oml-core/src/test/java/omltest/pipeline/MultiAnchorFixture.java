@@ -2,10 +2,10 @@ package omltest.pipeline;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.ohmyloader.api.hook.At;
-import org.ohmyloader.api.hook.HookContext;
-import org.ohmyloader.api.hook.Hooked;
-import org.ohmyloader.api.hook.Inject;
+import org.ohmyloader.api.core.hook.At;
+import org.ohmyloader.api.core.hook.HookContext;
+import org.ohmyloader.api.core.hook.Hooked;
+import org.ohmyloader.api.core.hook.Inject;
 
 /**
  * One handler at two anchors: {@code require = 2} only passes when the policy counts the head and the

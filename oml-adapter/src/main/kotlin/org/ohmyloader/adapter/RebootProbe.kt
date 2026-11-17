@@ -1,6 +1,6 @@
 package org.ohmyloader.adapter
 
-import org.ohmyloader.api.hook.Operation
+import org.ohmyloader.api.core.hook.Operation
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.atomic.AtomicBoolean
 

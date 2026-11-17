@@ -12,8 +12,8 @@ import org.objectweb.asm.tree.LabelNode
 import org.objectweb.asm.tree.MethodInsnNode
 import org.objectweb.asm.tree.MethodNode
 import org.objectweb.asm.tree.VarInsnNode
-import org.ohmyloader.api.hook.LocalRef
-import org.ohmyloader.api.inject.DslValue
+import org.ohmyloader.api.core.hook.LocalRef
+import org.ohmyloader.api.core.inject.DslValue
 import org.ohmyloader.core.transformer.TransformContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -63,7 +63,7 @@ class InjectionShareTest {
                     call(
                         ShareHandlers.OWNER,
                         "set",
-                        "(Lorg/ohmyloader/api/hook/LocalRef;)V",
+                        "(Lorg/ohmyloader/api/core/hook/LocalRef;)V",
                         args = listOf(DslValue.SharedRef("test", "x")),
                     )
                 }
@@ -71,7 +71,7 @@ class InjectionShareTest {
                     call(
                         ShareHandlers.OWNER,
                         "read",
-                        "(ILorg/ohmyloader/api/hook/LocalRef;)V",
+                        "(ILorg/ohmyloader/api/core/hook/LocalRef;)V",
                         args = listOf(DslValue.Arg(0), DslValue.SharedRef("test", "x")),
                     )
                 }

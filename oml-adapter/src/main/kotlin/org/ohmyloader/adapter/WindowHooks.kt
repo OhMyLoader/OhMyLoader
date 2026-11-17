@@ -1,8 +1,8 @@
 package org.ohmyloader.adapter
 
 import com.mojang.renderpearl.api.device.GpuBackend
-import org.ohmyloader.api.OmlLog
-import org.ohmyloader.api.hook.Operation
+import org.ohmyloader.api.core.OmlLog
+import org.ohmyloader.api.core.hook.Operation
 import org.ohmyloader.launcher.WindowLease
 
 /**

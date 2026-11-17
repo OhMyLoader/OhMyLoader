@@ -9,7 +9,7 @@ import com.mojang.renderpearl.backend.vulkan.VulkanBackend
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.ohmyloader.api.hook.Operation
+import org.ohmyloader.api.core.hook.Operation
 import org.ohmyloader.launcher.WindowLease
 import java.util.Optional
 import kotlin.test.assertEquals

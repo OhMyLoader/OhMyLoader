@@ -1,6 +1,6 @@
 package org.ohmyloader.adapter
 
-import org.ohmyloader.api.content.OMLDataItemStack
+import org.ohmyloader.api.core.content.OMLDataItemStack
 import kotlin.test.*
 
 /**

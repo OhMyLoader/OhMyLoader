@@ -9,8 +9,8 @@ import org.objectweb.asm.tree.IntInsnNode
 import org.objectweb.asm.tree.MethodNode
 import org.objectweb.asm.tree.TypeInsnNode
 import org.objectweb.asm.tree.VarInsnNode
-import org.ohmyloader.api.hook.Operation
-import org.ohmyloader.api.inject.InjectionPoint
+import org.ohmyloader.api.core.hook.Operation
+import org.ohmyloader.api.core.inject.InjectionPoint
 import org.ohmyloader.core.transformer.TransformContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -24,7 +24,7 @@ import kotlin.test.assertTrue
 class InjectionWrapOperationSpecialTest {
 
     private val owner = "omltest/WrapSpecialTarget"
-    private val op = "Lorg/ohmyloader/api/hook/Operation;"
+    private val op = "Lorg/ohmyloader/api/core/hook/Operation;"
 
     @Test
     fun `wrapOperation wraps a checkcast`() {

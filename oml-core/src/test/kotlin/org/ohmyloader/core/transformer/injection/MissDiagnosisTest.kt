@@ -2,7 +2,7 @@ package org.ohmyloader.core.transformer.injection
 
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.*
-import org.ohmyloader.api.inject.*
+import org.ohmyloader.api.core.inject.*
 import org.ohmyloader.core.transformer.TransformContext
 import kotlin.test.Test
 import kotlin.test.assertFailsWith

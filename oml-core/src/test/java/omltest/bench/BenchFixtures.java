@@ -2,19 +2,19 @@ package omltest.bench;
 
 import java.util.function.IntUnaryOperator;
 
-import org.ohmyloader.api.hook.Args;
-import org.ohmyloader.api.hook.At;
-import org.ohmyloader.api.hook.HookContext;
-import org.ohmyloader.api.hook.Hooked;
-import org.ohmyloader.api.hook.Inject;
-import org.ohmyloader.api.hook.ModifyArg;
-import org.ohmyloader.api.hook.ModifyArgs;
-import org.ohmyloader.api.hook.ModifyReturnValue;
-import org.ohmyloader.api.hook.ModifyVariable;
-import org.ohmyloader.api.hook.Operation;
-import org.ohmyloader.api.hook.Redirect;
-import org.ohmyloader.api.hook.WrapMethod;
-import org.ohmyloader.api.hook.WrapOperation;
+import org.ohmyloader.api.core.hook.Args;
+import org.ohmyloader.api.core.hook.At;
+import org.ohmyloader.api.core.hook.HookContext;
+import org.ohmyloader.api.core.hook.Hooked;
+import org.ohmyloader.api.core.hook.Inject;
+import org.ohmyloader.api.core.hook.ModifyArg;
+import org.ohmyloader.api.core.hook.ModifyArgs;
+import org.ohmyloader.api.core.hook.ModifyReturnValue;
+import org.ohmyloader.api.core.hook.ModifyVariable;
+import org.ohmyloader.api.core.hook.Operation;
+import org.ohmyloader.api.core.hook.Redirect;
+import org.ohmyloader.api.core.hook.WrapMethod;
+import org.ohmyloader.api.core.hook.WrapOperation;
 
 /**
  * Real compiled fixtures for the injection hot-path benchmark: every target has the same body

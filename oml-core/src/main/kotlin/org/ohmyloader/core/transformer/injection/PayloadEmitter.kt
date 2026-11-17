@@ -3,8 +3,8 @@ package org.ohmyloader.core.transformer.injection
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.*
-import org.ohmyloader.api.OmlLog
-import org.ohmyloader.api.inject.*
+import org.ohmyloader.api.core.OmlLog
+import org.ohmyloader.api.core.inject.*
 import org.ohmyloader.core.expression.utils.ComparisonInfo
 import org.ohmyloader.core.expression.utils.ComplexComparisonInfo
 import org.ohmyloader.core.hook.*

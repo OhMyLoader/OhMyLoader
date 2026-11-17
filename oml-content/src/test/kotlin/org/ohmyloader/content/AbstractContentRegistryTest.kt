@@ -1,7 +1,7 @@
 package org.ohmyloader.content
 
-import org.ohmyloader.api.content.Furnace
-import org.ohmyloader.api.content.OMLItemDeclaration
+import org.ohmyloader.api.core.content.Furnace
+import org.ohmyloader.api.core.content.OMLItemDeclaration
 import kotlin.test.*
 
 /**
@@ -28,12 +28,12 @@ class AbstractContentRegistryTest {
             for (decl in collected) {
                 blocks += decl
                 materialized["${decl.namespace}:${decl.id}"] =
-                    org.ohmyloader.api.content.OMLBlock("${decl.namespace}:${decl.id}") { "block-platform" }
+                    org.ohmyloader.api.core.content.OMLBlock("${decl.namespace}:${decl.id}") { "block-platform" }
             }
             for (decl in collectedItems) {
                 items += decl
                 materializedItems["${decl.namespace}:${decl.id}"] =
-                    org.ohmyloader.api.content.OMLItem("${decl.namespace}:${decl.id}") { "item-platform" }
+                    org.ohmyloader.api.core.content.OMLItem("${decl.namespace}:${decl.id}") { "item-platform" }
             }
         }
     }
@@ -201,10 +201,10 @@ class AbstractContentRegistryTest {
     }
 
     private fun omlStepOnEvent() =
-        org.ohmyloader.api.content.OMLStepOnEvent(1, 2, 3, isClient = false, { "level" }, { "entity" })
+        org.ohmyloader.api.core.content.OMLStepOnEvent(1, 2, 3, isClient = false, { "level" }, { "entity" })
 
     private fun omlBlockHitEvent() =
-        org.ohmyloader.api.content.OMLBlockHitEvent(1, 2, 3, isClient = false, { "level" }, { "player" })
+        org.ohmyloader.api.core.content.OMLBlockHitEvent(1, 2, 3, isClient = false, { "level" }, { "player" })
 
     @Test
     fun `ore declarations produce the vanilla-shaped datapack files`() {
@@ -357,9 +357,9 @@ class AbstractContentRegistryTest {
         assertEquals("Machine", layout.title)
     }
 
-    private fun omlTickEvent() = org.ohmyloader.api.content.OMLBlockTickEvent(1, 2, 3, NoopBlockData, { "level" }) { null }
+    private fun omlTickEvent() = org.ohmyloader.api.core.content.OMLBlockTickEvent(1, 2, 3, NoopBlockData, { "level" }) { null }
 
-    private object NoopBlockData : org.ohmyloader.api.content.OMLBlockData {
+    private object NoopBlockData : org.ohmyloader.api.core.content.OMLBlockData {
         override fun getInt(key: String, default: Int) = default
         override fun putInt(key: String, value: Int) {}
         override fun getLong(key: String, default: Long) = default
@@ -372,8 +372,8 @@ class AbstractContentRegistryTest {
         override fun putBoolean(key: String, value: Boolean) {}
         override fun getString(key: String): String? = null
         override fun putString(key: String, value: String) {}
-        override fun getItemStack(key: String): org.ohmyloader.api.content.OMLDataItemStack? = null
-        override fun putItemStack(key: String, value: org.ohmyloader.api.content.OMLDataItemStack) {}
+        override fun getItemStack(key: String): org.ohmyloader.api.core.content.OMLDataItemStack? = null
+        override fun putItemStack(key: String, value: org.ohmyloader.api.core.content.OMLDataItemStack) {}
         override fun hasKey(key: String) = false
         override fun remove(key: String) = false
         override fun keys(): Set<String> = emptySet()

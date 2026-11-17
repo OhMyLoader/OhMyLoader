@@ -1,0 +1,863 @@
+package org.ohmyloader.api.core.inject
+
+import org.objectweb.asm.tree.InsnList
+import org.objectweb.asm.tree.MethodNode
+
+/**
+ * The injection rule model: **anchor** (where to insert) + **payload** (what to insert) + **value** (where arguments come from). These types are the **single representation** of a rule — the annotation front-end (`org.ohmyloader.api.core.hook`) only translates rules into these objects, so the field semantics are the engine's contract; changing them changes the rule language.
+ * The namespace holds **the target version's readable names** (26.x jars ship class and member names unobfuscated), not obfuscated ones; all descriptors are JVM descriptor strings. The only ASM touchpoint is [Payload.Raw] (an escape hatch; whoever uses it is already writing ASM).
+ * Boundary: this package is data plus "questions the data answers itself" (e.g. [InjectionPoint.isMethodHead]); anchor resolution, validation, and bytecode emission need the target class and live in the loader. No name mapping happens here — rule names are the target version's names.
+ */
+
+/** Method selector: a match succeeds when any of [names] matches; [desc] being null matches any descriptor. */
+/**
+ * Selects a method. Without [lambda] this is a plain name/descriptor selector; with [lambda] the
+ * names/descriptor select the **enclosing** method and the actual target is the synthetic method
+ * behind a `LambdaMetafactory` `invokedynamic` of that interface (see [LambdaSelector]).
+ */
+data class MethodSelector(
+    val names: Set<String>,
+    val desc: String?,
+    val lambda: LambdaSelector? = null,
+) {
+    /** Only plain selectors match by name; lambda selectors resolve through their enclosing method. */
+    fun matches(name: String, desc: String): Boolean =
+        lambda == null && name in names && (this.desc == null || this.desc == desc)
+
+    fun describe(): String =
+        if (lambda == null) {
+            "method(${names.joinToString("|")}${this.desc?.let { ", desc=$it" } ?: ""})"
+        } else {
+            "lambdaMethod(outer=${names.joinToString("|")}${this.desc?.let { ", desc=$it" } ?: ""}, " +
+                "interface=${lambda.interfaceInternal}, ordinal=${lambda.ordinal})"
+        }
+}
+
+/**
+ * Targets the synthetic method a lambda compiles to: [interfaceInternal] is the functional
+ * interface of the `invokedynamic` (internal name, e.g. `java/util/function/Supplier`), and [ordinal]
+ * picks the Nth matching lambda in the selected enclosing methods. Only lambdas whose implementation
+ * lives in the same class are resolvable.
+ */
+data class LambdaSelector(val interfaceInternal: String, val ordinal: Int = 0)
+
+/**
+ * The injection rule itself is wrong (the kind determinable statically at
+ * startup). Throwing it fails this class load.
+ *
+ * Better to fail loudly at startup than to have "changed something incorrectly
+ * without crashing, just behaving wrongly" — the latter is this engine's most
+ * dangerous failure mode.
+ */
+class InjectionError(message: String) : RuntimeException(message)
+
+/**
+ * The injection anchor type.
+ *
+ * Names and semantics are **aligned with Mixin's `@At` codes**: a given `@At`
+ * form must behave identically on OML. See each entry's comment for a one-to-one
+ * comparison.
+ */
+sealed class InjectionPoint {
+
+    /**
+     * Whether the injection block is inserted **after** the anchor instruction
+     * (default: before).
+     *
+     * Answered by the anchor itself, rather than the engine `when`ing over it —
+     * "insert after" holds for both calls and field accesses, and new anchors
+     * require no engine changes.
+     */
+    open val after: Boolean get() = false
+
+    /**
+     * The anchor that, once the [Sliced] shell is stripped away, truly decides
+     * "where to insert".
+     *
+     * Payload validation (which payloads may only land on entry/return anchors)
+     * looks at the **core**, not the shell — otherwise
+     * `within { atHead { … } }` would be misjudged as "not an entry anchor".
+     */
+    open val core: InjectionPoint get() = this
+
+    /**
+     * Whether this is a "method entry" anchor ([Head], or [ConstructorHead] for
+     * constructors).
+     *
+     * Short-circuiting payloads (`CheckCall` / `CancelableReturn`) may land here:
+     * both must decide "whether to run / what to return" before the method body
+     * executes. Note that **only [ConstructorHead] may be used inside
+     * constructors** — returning early before `super()` is illegal.
+     */
+    fun isMethodHead(): Boolean = core is Head || core is ConstructorHead
+
+    /**
+     * Whether this is an "after a method call" anchor ([Call] with `after = true`).
+     *
+     * [Payload.CheckCall] may also land here — after a **void** call the operand
+     * stack is empty, so the short-circuit `RETURN` is stack-legal, and landing
+     * after a re-dispatch call (`PacketUtils.ensureRunningOnSameThread` and its
+     * like) fires the hook once, on the thread the call re-dispatched to. The
+     * continuation frame is derived from dataflow, not assumed to be the method
+     * entry's.
+     */
+    fun isAfterCallAnchor(): Boolean = (core as? Call)?.after == true
+
+    /**
+     * Whether this is a "return-type" anchor ([Return] / [FinalReturn]).
+     *
+     * Payloads that rewrite the return value (`TransformReturn`) may only land on
+     * such anchors — they rely on the precondition that a return value is already
+     * on the stack.
+     */
+    fun isReturnAnchor(): Boolean = core is Return || core is FinalReturn
+
+    /** Before the first instruction of the method body (aligned with Mixin `HEAD`). */
+    data object Head : InjectionPoint()
+
+    /**
+     * The first instruction after the "**delegate call**" in a constructor (aligned with Mixin
+     * `CTOR_HEAD`); for non-constructor methods it degrades to [Head].
+     * The difference from [Head] is legality, not just location: before `super()`/`this()`, `this`
+     * is not yet initialized, so pushing it for a static call produces illegal bytecode — use this
+     * anchor to reference `This` safely inside a constructor.
+     * Mixin's `CTOR_HEAD` also skips field initializers (`POST_MIXIN` semantics); merged members'
+     * initial values live in `<clinit>`, which constructors do not run, so this anchor is
+     * equivalent to Mixin's `POST_DELEGATE`.
+     */
+    data object ConstructorHead : InjectionPoint()
+
+    /**
+     * Before every return instruction (aligned with Mixin `RETURN`).
+     *
+     * Only matches **the target method's own return instructions** (an `I` method
+     * recognizes only `IRETURN`), consistent with Mixin — otherwise an
+     * unreachable other `xRETURN` in the body could be matched by mistake.
+     *
+     * [ordinal] selects the Nth match (0-based); null matches them all.
+     */
+    data class Return(val ordinal: Int? = null) : InjectionPoint()
+
+    /**
+     * Before the **last** return instruction (aligned with Mixin `TAIL`).
+     *
+     * Use [Return] for "all returns".
+     */
+    data object FinalReturn : InjectionPoint()
+
+    /**
+     * Before/after a method-call instruction (aligned with Mixin `INVOKE` /
+     * `INVOKE_ASSIGN`).
+     * Passing null for owner/name/desc means "no constraint"; [ordinal] selects
+     * the Nth match.
+     */
+    data class Call(
+        val owner: String?,
+        val name: String?,
+        val desc: String?,
+        override val after: Boolean,
+        val ordinal: Int? = null,
+        /**
+         * Whether it is a **static call** (`INVOKESTATIC`): "whether an instance receiver counts
+         * toward the parameter list" depends entirely on it. `null` = not declared, treated
+         * strictly as "possibly an instance call" — a handler that includes the receiver merely
+         * gets one extra parameter on a static call, whereas omitting it misaligns the stack and
+         * only blows up at runtime.
+         */
+        val isStatic: Boolean? = null,
+        /**
+         * Selects the **last** match instead of every/ordinal-th — the `INVOKE:LAST` specifier
+         * suffix. Mutually exclusive with [ordinal] by construction (the front end rejects the
+         * combination).
+         */
+        val last: Boolean = false,
+    ) : InjectionPoint() {
+        /** True only when known to be a static call (`null` counts as "uncertain", treated strictly as an instance call). */
+        fun isStaticCall(): Boolean = isStatic == true
+    }
+
+    /**
+     * Before/after a field-access instruction (aligned with Mixin `FIELD`).
+     * [opcode] restricts to one of the four accesses (`GETFIELD`/`PUTFIELD`/`GETSTATIC`/
+     * `PUTSTATIC`); null [owner]/[name]/[desc]/[opcode] = unrestricted.
+     * Mixin's `array=`/`fuzz=` array-access sub-feature is **not** implemented (a separate fuzzy
+     * search of array opcodes near a field access, unrelated to the anchor itself).
+     */
+    data class FieldAccess(
+        val owner: String?,
+        val name: String?,
+        val desc: String?,
+        val opcode: Int?,
+        override val after: Boolean,
+        val ordinal: Int? = null,
+    ) : InjectionPoint()
+
+    /**
+     * Before a `new` instruction (aligned with Mixin `NEW`). Only "before" exists: after `NEW` the
+     * stack holds a **not-yet-initialized** reference, and injecting there and passing it to a
+     * static method is a direct `VerifyError`.
+     * A non-null [desc] additionally confirms this `NEW` is followed by an `<init>` call matching
+     * that descriptor (nested `new`s may sit between `NEW` and `<init>`, so it scans by depth).
+     */
+    data class NewInstance(
+        val owner: String?,
+        val desc: String?,
+        val ordinal: Int? = null,
+    ) : InjectionPoint()
+
+    /**
+     * A `CHECKCAST` / `INSTANCEOF` instruction. [desc] is the target's internal name (or array
+     * descriptor); null matches any target.
+     */
+    data class TypeCheck(
+        val opcode: Int,
+        val desc: String? = null,
+        val ordinal: Int? = null,
+    ) : InjectionPoint()
+
+    /**
+     * An array load/store instruction (`xALOAD` / `xASTORE`). [opcode] pins the exact instruction
+     * (`Opcodes.IALOAD`, …); null matches any array access.
+     */
+    data class ArrayAccess(
+        val opcode: Int? = null,
+        val ordinal: Int? = null,
+    ) : InjectionPoint()
+
+    /**
+     * An array creation: `NEWARRAY` ([atype] is the JVM `T_*` code), `ANEWARRAY` ([desc] is the element
+     * internal name), or `MULTIANEWARRAY` ([desc] is the array descriptor, [dims] the allocated count).
+     */
+    data class ArrayCreate(
+        val opcode: Int,
+        val atype: Int = -1,
+        val desc: String? = null,
+        val dims: Int = 0,
+        val ordinal: Int? = null,
+    ) : InjectionPoint()
+
+    /**
+     * A **conditional branch**: `IFEQ`…`IF_ACMPNE`, `IFNULL` / `IFNONNULL`. [opcode] pins the exact
+     * instruction (`Opcodes.IFEQ`, …); null matches any conditional jump. [ordinal] selects the Nth
+     * match.
+     * The values the jump compares are already on the operand stack (one int, two ints, one reference,
+     * or two references, depending on the opcode); [Payload.WrapBranch] hands them to a handler that
+     * decides whether the branch is taken.
+     */
+    data class Jump(
+        val opcode: Int? = null,
+        val ordinal: Int? = null,
+    ) : InjectionPoint()
+
+    /**
+     * An **expression anchor** (aligned with MixinExtras' `@Expression`): a Java-like pattern matched
+     * against the target method's reconstructed value flow. [expressions] are alternatives — the first
+     * one that matches counts; [definitions] declare the identifiers the pattern uses; [ordinal]
+     * selects the Nth captured instruction in method order. The pattern is parsed and matched by the
+     * engine when the target class loads.
+     *
+     * [after] places the injection block after the captured instruction (what value-modifying
+     * payloads need); it is decided by the front end from the injector annotation.
+     */
+    data class Expression(
+        val expressions: List<String>,
+        val ordinal: Int? = null,
+        val definitions: List<Definition> = emptyList(),
+        override val after: Boolean = false,
+    ) : InjectionPoint() {
+        /** One `@Definition`: the identifier plus the members/types/locals it stands for (At-style strings). */
+        data class Definition(
+            val id: String,
+            val methods: List<String> = emptyList(),
+            val fields: List<String> = emptyList(),
+            val types: List<String> = emptyList(),
+            val locals: List<Local> = emptyList(),
+        ) {
+            /**
+             * A `@DefinitionLocal`: the local variable the identifier stands for. [index] pins the slot;
+             * otherwise the [ordinal]-th live local of [type] is used. [argsOnly] restricts the search to
+             * the method's parameter slots; [print] logs the resolution during weaving.
+             */
+            data class Local(
+                val index: Int? = null,
+                val type: String? = null,
+                val ordinal: Int = 0,
+                val argsOnly: Boolean = false,
+                val print: Boolean = false,
+            )
+        }
+    }
+
+    /**
+     * Before a constant-loading instruction (aligned with Mixin `CONSTANT`). The type of [value]
+     * picks the kind: `Int` / `Long` / `Float` / `Double` / `String` / `org.objectweb.asm.Type`,
+     * or `null` (matches `ACONST_NULL`).
+     * Besides `LDC`, the short instruction forms (`ICONST_M1..5`/`BIPUSH`/`SIPUSH`/`LCONST_0/1`/
+     * `FCONST_*`/`DCONST_*`) match too — javac does not emit `LDC` for `1`, so something like
+     * `if (x == 1)` is otherwise never found.
+     */
+    data class Constant(
+        val value: Any?,
+        val ordinal: Int? = null,
+        /**
+         * `true` = insert **after** the constant-loading instruction (at that
+         * point the value is already on the stack, as `ModifyConstant` requires);
+         * default `false` = before loading (use this for "observe this constant
+         * was seen").
+         */
+        override val after: Boolean = false,
+    ) : InjectionPoint()
+
+    /**
+     * After a local variable is **written** (aligned with Mixin `STORE`) — [ModifyVariable]'s anchor: the block lands after the write
+     * instruction, so "read back, change, write again" is naturally legal straight-line code ([after] is always true).
+     * Locating "which variable": `index` (slot; `long`/`double` take two) / `type` (the value's JVM descriptor) / `localOrdinal` (n-th
+     * among slots matching `type`, slot-ascending) / `argsOnly` (parameter slots only) stack up into a filter, and [ordinal] ("which
+     * write") layers on top; none written = "every write", which the validation layer warns about as under-targeting.
+     * The type filter reads the **top-of-stack type** (data-flow, path-independent), degrading to instruction kind (`ISTORE` → int family,
+     * `ASTORE` → reference) when analysis is unavailable; `type = "Ljava/lang/Object;"` matches any reference/array — what Mixin's
+     * `Object`-typed `@ModifyVariable` intends.
+     */
+    data class Store(
+        val index: Int? = null,
+        val type: String? = null,
+        val localOrdinal: Int? = null,
+        val ordinal: Int? = null,
+        val argsOnly: Boolean = false,
+    ) : InjectionPoint() {
+        /** **After** the write instruction — the value is already in the variable. */
+        override val after: Boolean get() = true
+    }
+
+    /**
+     * Before a local variable is **read** (aligned with Mixin `LOAD`).
+     *
+     * The fields mean exactly what they mean in [Store], except "which
+     * occurrence" counts **reads** rather than writes. When `ModifyVariable` lands
+     * "before the read", it changes **what the upcoming read sees** (writing back
+     * to the same variable), so every subsequent read in the method sees the new
+     * value.
+     */
+    data class Load(
+        val index: Int? = null,
+        val type: String? = null,
+        val localOrdinal: Int? = null,
+        val ordinal: Int? = null,
+        val argsOnly: Boolean = false,
+    ) : InjectionPoint()
+
+    /**
+     * Wraps any anchor in a **search window** (one window here, unlike Mixin's slice chain): finds
+     * [inner] only strictly between [from] and [to] — both ends excluded; [from] takes its **last**
+     * match as the window start, [to] its **first** as the end.
+     * A bound that resolves nothing means **no injection** and the reason is printed — ignoring it
+     * would degrade to whole-method scope, exactly what `within` avoids. E.g.
+     * `within(from = Anchor.call(name = "begin"), to = Anchor.call(name = "end")) { atReturn { … } }`
+     * injects only on the returns between the two calls.
+     */
+    data class Sliced(
+        val inner: InjectionPoint,
+        val from: InjectionPoint?,
+        val to: InjectionPoint?,
+    ) : InjectionPoint() {
+        override val after: Boolean get() = inner.after
+        override val core: InjectionPoint get() = inner.core
+    }
+}
+
+/** An argument that can be injected into a payload call, pushed in declaration order. */
+sealed class DslValue {
+    /** The current instance (`this`; only available in instance methods — static methods are skipped with a warning). */
+    data object This : DslValue()
+
+    /**
+     * The [index]-th method parameter (0-based); the slot is computed automatically
+     * from the method descriptor.
+     *
+     * Can only express the target method's **declared parameters**, and the target
+     * descriptor must be written literally. For local variables computed in the
+     * body, or to avoid hardcoding a slot, use [Local].
+     */
+    data class Arg(val index: Int) : DslValue()
+
+    /**
+     * A **local variable** at the injection point (via data-flow analysis). [index] alone = slot **assertion** — contradicting the
+     * data-flow-computed state fails hard with [InjectionError]; [type] alone = the engine locates the `ordinal`-th local of that type
+     * (the int family Z/B/C/S/I counts as one kind); not found → the injection is skipped with the reason printed, hit count guarded by
+     * `require`/`expect` — "a rule matches several overloads, only some of which have the local" is a legal pattern.
+     * Or both (verify). [strict] turns the by-type failure into a hard error (Mixin's `CAPTURE_FAILHARD`; default soft, and writing
+     * [index] is already strict). Located **by type, never by variable name**: a mangled jar's `LocalVariableTable` is only sometimes
+     * present and its names are mangled. vs [Arg]: `Arg` fetches a **declared parameter** and needs the target descriptor hardcoded;
+     * [Local] faces the injection-point slot, reaching locals computed mid-body without hardcoding the target overload.
+     */
+    data class Local(
+        val index: Int? = null,
+        val type: String? = null,
+        val ordinal: Int = 0,
+        val strict: Boolean = false,
+    ) : DslValue()
+
+    /**
+     * A **mutable** local capture (aligned with MixinExtras' `@Local` on a `LocalRef<T>` parameter).
+     * Resolution is identical to [Local]; the engine additionally creates a
+     * [org.ohmyloader.api.core.hook.LocalRef], initializes it from the local, pushes it as the handler argument,
+     * and writes the ref's final value back to the local after the handler returns. Only `@Inject`
+     * payloads support a write-back.
+     */
+    data class RefLocal(
+        val index: Int? = null,
+        val type: String? = null,
+        val ordinal: Int = 0,
+        val strict: Boolean = true,
+        /** The handler parameter's ref type: `LocalRef` or a primitive-specialized `LocalXxxRef`. */
+        val refType: String = "Lorg/ohmyloader/api/core/hook/LocalRef;",
+    ) : DslValue()
+
+    /**
+     * A **shared** `LocalRef` (aligned with MixinExtras' `@Share`): the engine creates one ref per target
+     * method invocation and hands the same instance to every payload requesting the same
+     * ([namespace], [id]). The engine rewrites this to the method's ref slot before emission; it is only
+     * valid on `@Inject` payloads.
+     */
+    data class SharedRef(
+        val namespace: String,
+        val id: String,
+        val type: String = "Lorg/ohmyloader/api/core/hook/LocalRef;",
+    ) : DslValue()
+
+    /**
+     * Engine-internal: a read of an already-allocated shared-ref slot. The engine rewrites [SharedRef] to
+     * this after allocating the method's slot. The slot is initialized by a prologue inserted at the end of
+     * the transform, so it is deliberately **not** resolved by the dataflow analysis; the type is fixed.
+     */
+    data class RefSlot(
+        val slot: Int,
+        val type: String = "Lorg/ohmyloader/api/core/hook/LocalRef;",
+    ) : DslValue()
+
+    /**
+     * Engine-internal: a per-call cancellation handle for a `@Cancellable` handler parameter. The engine
+     * creates a `HookContext` (void target) or `HookValue` (non-void target), passes it to the handler and,
+     * when canceled, returns from the target method. [descriptor] is the parameter's declared type.
+     */
+    data class CancelableHandle(
+        val descriptor: String = "Lorg/ohmyloader/api/core/hook/HookContext;",
+    ) : DslValue()
+
+    data class IntVal(val value: Int) : DslValue()
+    data class LongVal(val value: Long) : DslValue()
+    data class Str(val value: String) : DslValue()
+
+    /** A class constant (LDC org/objectweb/asm/Type). */
+    data class Cls(val internalName: String) : DslValue()
+
+    data object Null : DslValue()
+}
+
+/** An injection payload. */
+sealed class Payload {
+    /**
+     * Inserts an INVOKESTATIC. The types of [args] must match the parameters of
+     * [desc]; this is the caller's responsibility to guarantee.
+     */
+    data class StaticCall(
+        val owner: String,
+        val method: String,
+        val desc: String,
+        val args: List<DslValue>,
+    ) : Payload()
+
+    /**
+     * Return-value transform (rewrite-level): the anchor is a return instruction.
+     * A return value R is already on the stack; the engine pushes [extras] after
+     * it and calls a static handler shaped `(R[, extras...]) R`, replacing R with
+     * its return value. That is, "the original return value, processed by the
+     * handler, is then returned".
+     */
+    data class TransformReturn(
+        val owner: String,
+        val method: String,
+        val desc: String,
+        val extras: List<DslValue>,
+        /** The value parameter may be a reference supertype of the return value (`@Coerce`). */
+        val coerceParam: Boolean = false,
+        /** The handler may return a reference supertype; the engine casts it back (`@Coerce`). */
+        val coerceReturn: Boolean = false,
+    ) : Payload()
+
+    /**
+     * Call redirect (rewrite-level): the anchor is the matched method-call
+     * instruction, and the entire instruction is replaced by a call to the static
+     * [handlerOwner].[handlerMethod] (descriptor identical to the original call,
+     * i.e. the handler is a static mirror image of the original method). The
+     * original call no longer executes.
+     */
+    data class Redirect(
+        val handlerOwner: String,
+        val handlerMethod: String,
+        /**
+         * null = the handler is a **descriptor mirror** of the replaced call (no sugar). When sugar
+         * params are present the desc is the bridge's `(receiver?, args…, sugar…, id)ret` form.
+         */
+        val desc: String? = null,
+        val extras: List<DslValue> = emptyList(),
+        /** Positions of value parameters that may be reference supertypes (`@Coerce`). */
+        val coerceParams: Set<Int> = emptySet(),
+        /** The handler may return a reference supertype; the engine casts it to the call's return type. */
+        val coerceReturn: Boolean = false,
+    ) : Payload()
+
+    /**
+     * Cancelable check (rewrite-level): a method-entry anchor ([InjectionPoint.isMethodHead]) or an
+     * after-call anchor ([InjectionPoint.isAfterCallAnchor]); the target method must be void. Calls a
+     * static handler shaped `(...args)Z`; returning true short-circuits the rest of the method body
+     * with an immediate `RETURN`. At method entry the continuation frame is the method's own entry
+     * frame; after a call it is derived from dataflow at the anchor (the stack there must be empty,
+     * which a void call guarantees).
+     */
+    data class CheckCall(
+        val owner: String,
+        val method: String,
+        val desc: String,
+        val args: List<DslValue>,
+    ) : Payload()
+
+    /**
+     * A cancelable check **carrying a return value**: HEAD anchor only, and the target method
+     * must be **non-void**. Calls a static handler shaped `(...args)Z`; on cancel, the engine
+     * returns the value from a `HookValue` handle it created itself — the engine must
+     * read back `canceled` and the return value in the same bytecode segment, so the handle lives
+     * in a local slot at the injection point (a void target uses [CheckCall]'s plain `RETURN`).
+     * [bridgeArgs] are **all arguments the engine pushes onto the stack** (captures + handler id),
+     * matching [desc]'s parameters one-to-one; the trailing handle parameter of [desc] is not part
+     * of [bridgeArgs] — the engine `ALOAD`s it last.
+     */
+    data class CancelableReturn(
+        val owner: String,
+        val method: String,
+        val desc: String,
+        val bridgeArgs: List<DslValue>,
+    ) : Payload()
+
+    /**
+     * **Rewrites one argument in place** (aligned with Mixin `@ModifyArg`). The anchor must be a **method call** ([Call]). The engine
+     * stores the call's arguments in reverse order into temporary locals (the receiver stays on the stack, the argument slots empty),
+     * edits the [index]-th one, and pushes them back — straight-line code, **zero boxing**.
+     * Handler shapes (decided by [desc]'s parameter count after removing [extras]): **single-argument** `(T, extras…)T`, `T` = the
+     * [index]-th argument's type; **multi-argument** `(T0, T1, …, extras…)T` mapping one-to-one to all arguments (so siblings are visible),
+     * return type `T` = the [index]-th argument's type. `index = -1` auto-locates by return type (exactly one matching argument; zero or
+     * several error).
+     */
+    data class ModifyArg(
+        val owner: String,
+        val method: String,
+        val desc: String,
+        val index: Int,
+        val extras: List<DslValue> = emptyList(),
+        /** Single-argument mode: the parameter may be a reference supertype of the argument (`@Coerce`). */
+        val coerceParam: Boolean = false,
+        /** The returned reference supertype is cast back to the argument's type (`@Coerce`). */
+        val coerceReturn: Boolean = false,
+    ) : Payload()
+
+    /**
+     * **Fetches all arguments at once and rewrites them** (aligned with Mixin `@ModifyArgs`). The
+     * anchor must be a method call; the engine boxes the arguments into an `Object[]` wrapped in
+     * [org.ohmyloader.api.core.hook.Args] and hands it to the handler, then unboxes each item per the
+     * **call-site declared type** and pushes it back. This path necessarily boxes — use
+     * [ModifyArg] on hot paths. Handler shape `(Args, extras…)V`.
+     */
+    data class ModifyArgs(
+        val owner: String,
+        val method: String,
+        val desc: String,
+        val extras: List<DslValue> = emptyList(),
+    ) : Payload()
+
+    /**
+     * **Rewrites a constant** (aligned with Mixin `@ModifyConstant`). The anchor must be an
+     * [`InjectionPoint.Constant`] and **must be `after`** (`afterConstant(...)`) — only after the
+     * load is the value on the stack for the handler to rewrite.
+     * Handler shape `(T, extras…)T`, `T` = the constant's type, given by the anchor's loading
+     * instruction and checked item-by-item against the handler's declaration (see
+     * `ProducedValue`) — a mismatch errors immediately at injection time instead of surfacing as
+     * a `VerifyError` when the class is defined.
+     */
+    data class ModifyConstant(
+        val owner: String,
+        val method: String,
+        val desc: String,
+        val extras: List<DslValue> = emptyList(),
+        /** The value parameter may be a reference supertype of the constant (`@Coerce`). */
+        val coerceParam: Boolean = false,
+        /** The returned reference supertype is cast back to the constant's type (`@Coerce`). */
+        val coerceReturn: Boolean = false,
+    ) : Payload()
+
+    /**
+     * **Rewrites "the value the anchor produces"** (aligned with Mixin
+     * `@ModifyExpressionValue`). The anchor can be any value-producing expression — non-void call,
+     * field read (`GETFIELD`/`GETSTATIC`), constant load — and must sit where the value has
+     * already been produced (`afterCall` / `afterField` / `afterConstant`). The whole expression
+     * still runs; only the value it leaves behind is replaced (vs [Redirect], which replaces the
+     * whole call, arguments included). Handler shape `(T, extras…)T`, `T` decided by that
+     * instruction; a mismatch errors immediately at injection time.
+     */
+    data class ModifyExpressionValue(
+        val owner: String,
+        val method: String,
+        val desc: String,
+        val extras: List<DslValue> = emptyList(),
+        /** The value parameter may be a reference supertype of the produced value (`@Coerce`). */
+        val coerceParam: Boolean = false,
+        /** The handler may return a reference supertype; the engine casts it back (`@Coerce`). */
+        val coerceReturn: Boolean = false,
+    ) : Payload()
+
+    /**
+     * **Rewrites the receiver** of an instance call / field access (aligned with MixinExtras
+     * `@ModifyReceiver`). The anchor must be an instance method call or `GETFIELD`/`PUTFIELD`, before the
+     * instruction. The engine stashes the receiver and the instruction's operands (call arguments / field
+     * value) into temporary locals, calls a handler shaped `(ReceiverType, operands…, extras…)ReceiverType`,
+     * and re-seats the returned receiver beneath the unchanged operands so the original instruction runs on
+     * it. Zero boxing. The receiver type and operand types are decided by the anchor instruction and checked
+     * against the handler's declaration at injection time.
+     */
+    data class ModifyReceiver(
+        val owner: String,
+        val method: String,
+        val desc: String,
+        val extras: List<DslValue> = emptyList(),
+        /** Positions of value parameters (receiver first) that may be reference supertypes (`@Coerce`). */
+        val coerceParams: Set<Int> = emptySet(),
+        /** The handler may return a reference supertype; the engine casts it to the receiver type. */
+        val coerceReturn: Boolean = false,
+    ) : Payload()
+
+    /**
+     * **Gates an operation on a boolean handler** (aligned with MixinExtras `@WrapWithCondition`). The anchor
+     * must be a method call or a field write, before the instruction. The handler is shaped
+     * `(receiver?, operands…, extras…)Z`: false skips the original instruction entirely, true runs it
+     * unchanged. A non-void call is accepted only when its result is discarded immediately (`POP`/`POP2`).
+     */
+    data class WrapWithCondition(
+        val owner: String,
+        val method: String,
+        val desc: String,
+        val extras: List<DslValue> = emptyList(),
+        val coerceParams: Set<Int> = emptySet(),
+        val coerceReturn: Boolean = false,
+    ) : Payload()
+
+    /**
+     * **Decides a conditional branch** (OML's own, beyond MixinExtras). The anchor must be a conditional
+     * jump ([InjectionPoint.Jump]), before the instruction. The values the jump compares are already on
+     * the operand stack; the engine appends [extras] and calls a handler shaped
+     * `(operands…, extras…)Z`, then replaces the jump with `IFNE <same target>`: **true = take the
+     * original branch, false = fall through**. The operands mirror the opcode's stack form — `(I)` for
+     * `IFEQ`-family, `(II)` for `IF_ICMP*`, `(Object, Object)` for `IF_ACMP*`, `(Object)` for
+     * `IFNULL`/`IFNONNULL` — so the handler sees the bytecode-level branch, not the source-level
+     * condition: to "relax `if (damage > 10)` to `> 5`", rewrite the branch opcode's own test
+     * (`damage <= 10` → `damage <= 5`) and return that.
+     */
+    data class WrapBranch(
+        val owner: String,
+        val method: String,
+        val desc: String,
+        val extras: List<DslValue> = emptyList(),
+        val coerceParams: Set<Int> = emptySet(),
+        val coerceReturn: Boolean = false,
+    ) : Payload()
+
+    /**
+     * **Wraps an operation with an `Operation<R>` callback** (aligned with MixinExtras `@WrapOperation`).
+     * The anchor must be a method call or a field read/write, before the instruction. The handler is shaped
+     * `(receiver?, operands…, Operation<R>, extras…)R`: the original operation is replaced by this call, and
+     * [org.ohmyloader.api.core.hook.Operation.call] re-executes it with whatever arguments the handler passes.
+     * Unlike [Redirect], the handler need not re-implement the operation; unlike [ModifyExpressionValue], it
+     * sees the arguments and may run it zero or several times. The engine clones the original instruction
+     * into a private synthetic bridge in the target class and creates the `Operation` via
+     * `LambdaMetafactory`.
+     */
+    data class WrapOperation(
+        val owner: String,
+        val method: String,
+        val desc: String,
+        val extras: List<DslValue> = emptyList(),
+        /** Positions of value parameters that may be reference supertypes (`@Coerce`). */
+        val coerceParams: Set<Int> = emptySet(),
+        /** The handler may return a reference supertype; the engine casts it to the operation's return type. */
+        val coerceReturn: Boolean = false,
+    ) : Payload()
+
+    /**
+     * **Wraps the whole selected method** (aligned with MixinExtras `@WrapMethod`). There is no anchor: the
+     * payload applies to the method body itself. The original body moves to a private synthetic method, and
+     * the public method becomes a wrapper that calls `(params…, Operation<R>, extras…)R`; the handler may
+     * run the original through [org.ohmyloader.api.core.hook.Operation.call] with different arguments, or not at
+     * all. The rule is applied **after** the method's ordinary injection rules, so those land in the moved
+     * body. Constructors and abstract/native methods are rejected.
+     */
+    data class WrapMethod(
+        val owner: String,
+        val method: String,
+        val desc: String,
+        val extras: List<DslValue> = emptyList(),
+        val coerceParams: Set<Int> = emptySet(),
+        val coerceReturn: Boolean = false,
+    ) : Payload()
+
+    /**
+     * **Rewrites a local variable** (aligned with Mixin `@ModifyVariable`). The anchor must be an [`InjectionPoint.Store`] or
+     * [`InjectionPoint.Load`]; the handler is shaped `(T[, captures…])T` and the engine synthesizes `LOAD slot → captures → INVOKESTATIC
+     * handler → STORE slot` — no stack juggling needed, because the changed value lives in that one local (contrast [ModifyArg], where the
+     * argument may sit mid-stack). "Which variable / which occurrence" is decided by the **anchor**; the payload only decides "change it
+     * to what" — one set of semantics shared by the annotation and DSL forms.
+     * The value's type is declared by the **handler's return type** (picks `ILOAD`/`LLOAD`/`FLOAD`/`DLOAD`/`ALOAD`), so a handler returning
+     * `Object` only serves reference-typed locals. **Never** use [DslValue.Local] to fetch the slot currently being rewritten — it reads
+     * the stale value not yet written back.
+     */
+    data class ModifyVariable(
+        val owner: String,
+        val method: String,
+        val desc: String,
+        val extras: List<DslValue> = emptyList(),
+        /** The value parameter may be a reference supertype of the local (`@Coerce`). */
+        val coerceParam: Boolean = false,
+        /** The returned reference supertype is cast back to the local's type (`@Coerce`). */
+        val coerceReturn: Boolean = false,
+    ) : Payload()
+
+    /**
+     * **Directly calls a handler "merged into the target class"** (true Mixin `this` semantics): the handler is carried in via
+     * **class merge**, so `this` is the target instance (`@Shadow` fields genuinely readable) and the injection point is a plain
+     * `INVOKEVIRTUAL` — no registry, bridge, or reflection. A static target method is rejected: there is no `this` to pass.
+     * Entry-type variants ([variant]): `NOTIFY` takes `(captures…)HookContext` and reads nothing back; `CANCELABLE` reads the cancel
+     * flag and `RETURN`s short (void target); `RETURNABLE` takes a `HookValue` and short-circuits with the handle's zero/set
+     * value — [desc] still returns `V`: the value comes **from the handle**, not the handler's return. The **engine** creates the handle,
+     * since the same bytecode must read it back after the call (as in [CancelableReturn]); value-rewriting kinds ([kind]) want no handle —
+     * the handler's return value is the conclusion.
+     */
+    data class HandlerCall(
+        val owner: String,
+        val method: String,
+        val desc: String,
+        val captures: List<DslValue> = emptyList(),
+        val variant: HandlerVariant = HandlerVariant.NOTIFY,
+        /**
+         * The variant family: the three entry-type forms are in [HandlerVariant];
+         * the value-rewriting forms are in [HandlerKind].
+         *
+         * Value-rewriting kinds **want no handle** — the handler's return value is
+         * the conclusion ([variant] uses [HandlerVariant.NOTIFY], and [desc]'s last
+         * parameter is not a callback handle). Each value-rewriting kind's own
+         * discriminator (which argument / which slot) is carried by [index] and
+         * [slot].
+         */
+        val kind: HandlerKind = HandlerKind.INJECT,
+        /** [HandlerKind.MODIFY_ARG]: which argument to rewrite (0-based; aligned with `@ModifyArg(index)`). */
+        val index: Int = 0,
+        /** [HandlerKind.MODIFY_VAR]: the slot to rewrite; `null` = let the engine find by type (aligned with Mixin's `ordinal`). */
+        val slot: Int? = null,
+        /** Positions of value parameters that may be reference types (`@Coerce`). */
+        val coerceParams: Set<Int> = emptySet(),
+        /** The handler may return a reference type that is cast back (`@Coerce`). */
+        val coerceReturn: Boolean = false,
+    ) : Payload()
+
+    /**
+     * Escape hatch: build the instruction sequence directly; [method] provides
+     * the target-method context, and [owner] is the owning class's internal name.
+     *
+     * The parameters are ASM's instruction list and method node — using this
+     * requires importing ASM yourself. The engine only inserts this sequence at
+     * the anchor and performs no static validation (other payloads surface issues
+     * at startup; this one is entirely the responsibility of whoever writes it).
+     */
+    data class Raw(val build: (InsnList, MethodNode, String) -> Unit) : Payload()
+}
+
+/** The three **entry-type** variants of [Payload.HandlerCall] (see its documentation). */
+enum class HandlerVariant {
+    /** Notify only: the handler takes a `HookContext` and nothing is read back. */
+    NOTIFY,
+
+    /** Cancelable (void target): reads back `HookContext.canceled`; if true, short-circuits. */
+    CANCELABLE,
+
+    /** Cancelable + specifiable return value (non-void target): the handle becomes a `HookValue`. */
+    RETURNABLE,
+}
+
+/**
+ * The **variant family** of [Payload.HandlerCall]: the first three are **entry-type** (the handler
+ * takes a callback handle, subdivided by [HandlerVariant]); the rest are **value-rewriting** — no
+ * handle, the handler's **return value** is "what to change it to", matching the external static
+ * handler shapes (e.g. [Payload.ModifyArg]). The split is structural in the engine: entry-type
+ * builds a handle and may read back short-circuiting; value-rewriting rewrites in place, merely
+ * swapping `INVOKESTATIC bridge` for `INVOKEVIRTUAL target class` (`this` = target instance).
+ */
+enum class HandlerKind {
+    /** `@Inject`: the handler's tail takes a `HookContext` / `HookValue`. */
+    INJECT,
+
+    /** `@Redirect`: replaces the whole call with the handler's call (in instance form the receiver is a parameter too). */
+    REDIRECT,
+
+    /** `@ModifyArg`: rewrites the [Payload.HandlerCall.index]-th argument, handler `(T…)T`. */
+    MODIFY_ARG,
+
+    /** `@ModifyArgs`: fetches all arguments at once, handler `(Object[])V` (instance form uses the bare array, no `Args` handle). */
+    MODIFY_ARGS,
+
+    /** `@ModifyConstant`: rewrites a constant, handler `(T)T`. */
+    MODIFY_CONST,
+
+    /** `@ModifyVariable`: rewrites a local variable, handler `(T…)T`. */
+    MODIFY_VAR,
+
+    /** `@ModifyReturnValue`: rewrites the target method's **return value**, handler `(R[, captures…])R`, R = the method's return type. */
+    MODIFY_RETURN,
+
+    /**
+     * `@ModifyExpressionValue`: rewrites the value **produced** by the anchor
+     * expression, handler `(T[, captures…])T`.
+     *
+     * `T` is decided by the anchor instruction (call return type / field type /
+     * constant type; see `ProducedValue`), and the anchor must sit where the value
+     * has already been produced.
+     */
+    MODIFY_EXPR_VALUE,
+
+    /**
+     * `@ModifyReceiver`: rewrites the receiver of an instance call / field access, handler
+     * `(ReceiverType, operands…)ReceiverType`. The receiver being rewritten is the **call's receiver** (a
+     * parameter), not the merged handler's `this` — like [REDIRECT], the first parameter is that receiver.
+     */
+    MODIFY_RECEIVER,
+
+    /**
+     * `@WrapWithCondition`: gates a void call / field write on a boolean handler,
+     * `(receiver?, operands…)Z`. Like [REDIRECT], the receiver is a parameter, not `this`.
+     */
+    WRAP_WITH_CONDITION,
+
+    /**
+     * `@WrapBranch`: decides a conditional branch, handler `(operands…)Z` — true = take the branch,
+     * false = fall through. The operands are the jump's own comparison values.
+     */
+    WRAP_BRANCH,
+
+    /**
+     * `@WrapOperation`: replaces an operation with a handler that receives an
+     * `Operation<R>` and may re-run the original with different arguments,
+     * handler `(receiver?, operands…, Operation<R>)R`.
+     */
+    WRAP_OPERATION,
+
+    /**
+     * `@WrapMethod`: replaces the whole method body with a handler that receives an
+     * `Operation<R>` for the original body, `(params…, Operation<R>)R`.
+     */
+    WRAP_METHOD,
+}

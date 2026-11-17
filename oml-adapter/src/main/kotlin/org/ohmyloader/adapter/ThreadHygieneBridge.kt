@@ -4,7 +4,7 @@ import io.netty.channel.EventLoopGroup
 import net.minecraft.TracingExecutor
 import net.minecraft.client.sounds.SoundEngineExecutor
 import net.minecraft.util.Util
-import org.ohmyloader.api.hook.Operation
+import org.ohmyloader.api.core.hook.Operation
 import java.util.concurrent.Executor
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.ForkJoinPool

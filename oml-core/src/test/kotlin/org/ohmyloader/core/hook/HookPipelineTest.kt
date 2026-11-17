@@ -180,7 +180,7 @@ class HookPipelineTest {
         // The handler id is encoded in the bridge method's name (the only place the engine can put it).
         val bridge = HookRegistry.bridgeClass!!.declaredMethods.first { it.name.startsWith("injectReturn") }
         val handlerId = bridge.name.substringAfterLast('$').toInt()
-        val cir = org.ohmyloader.api.hook.HookValue<String>("create", true)
+        val cir = org.ohmyloader.api.core.hook.HookValue<String>("create", true)
         bridge.invoke(null, handlerId, cir)
         assertEquals("bridged", cir.returnValue, "the static handler's value must reach the handle")
         assertEquals(1, recorderHits.get(), "exactly one dispatch per call")
@@ -494,24 +494,24 @@ fun `a void ModifyArgs handler calls the bridge generated for its kind`() {
     private fun genMixin(name: String, targetInternal: String): ClassNode = ClassNode(Opcodes.ASM9).apply {
         visit(
             Opcodes.V17, Opcodes.ACC_PUBLIC, name, null, "java/lang/Object",
-            arrayOf("Lorg/ohmyloader/api/hook/Merged;"),
+            arrayOf("Lorg/ohmyloader/api/core/hook/Merged;"),
         )
-        visitAnnotation("Lorg/ohmyloader/api/hook/Merged;", true).apply {
+        visitAnnotation("Lorg/ohmyloader/api/core/hook/Merged;", true).apply {
             visit("target", targetInternal.replace('/', '.'))
             visitEnd()
         }
         visitField(
             Opcodes.ACC_PRIVATE, "merged", "Z", null, null,
         ).apply {
-            visitAnnotation("Lorg/ohmyloader/api/hook/Extra;", true).visitEnd()
+            visitAnnotation("Lorg/ohmyloader/api/core/hook/Extra;", true).visitEnd()
             visitEnd()
         }
         visitMethod(
-            Opcodes.ACC_PUBLIC, "onTag", "(Lorg/ohmyloader/api/hook/HookContext;)V", null, null,
+            Opcodes.ACC_PUBLIC, "onTag", "(Lorg/ohmyloader/api/core/hook/HookContext;)V", null, null,
         ).apply {
-            visitAnnotation("Lorg/ohmyloader/api/hook/Inject;", true).apply {
+            visitAnnotation("Lorg/ohmyloader/api/core/hook/Inject;", true).apply {
                 visitArray("at").apply {
-                    visitAnnotation("Lorg/ohmyloader/api/hook/At;", true).apply {
+                    visitAnnotation("Lorg/ohmyloader/api/core/hook/At;", true).apply {
                         visit("value", "HEAD")
                         visitEnd()
                     }

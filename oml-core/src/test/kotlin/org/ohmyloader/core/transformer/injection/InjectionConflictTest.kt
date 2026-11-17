@@ -10,7 +10,7 @@ import org.objectweb.asm.tree.LabelNode
 import org.objectweb.asm.tree.MethodInsnNode
 import org.objectweb.asm.tree.MethodNode
 import org.objectweb.asm.tree.VarInsnNode
-import org.ohmyloader.api.inject.InjectionError
+import org.ohmyloader.api.core.inject.InjectionError
 import org.ohmyloader.core.transformer.TransformContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -59,7 +59,7 @@ class InjectionConflictTest {
                     beforeCall(owner = ConflictSink.OWNER, name = "record", desc = "(I)V") {
                         wrapOperation(
                             ConflictHandlers.OWNER, "wrap",
-                            "(ILorg/ohmyloader/api/hook/Operation;)V",
+                            "(ILorg/ohmyloader/api/core/hook/Operation;)V",
                         )
                     }
                 }
@@ -101,12 +101,12 @@ class InjectionConflictTest {
             classTarget(owner) {
                 method("target", desc = "(I)V") {
                     beforeCall(owner = ConflictSink.OWNER, name = "record", desc = "(I)V") {
-                        wrapOperation(ConflictHandlers.OWNER, "wrap", "(ILorg/ohmyloader/api/hook/Operation;)V")
+                        wrapOperation(ConflictHandlers.OWNER, "wrap", "(ILorg/ohmyloader/api/core/hook/Operation;)V")
                     }
                 }
                 method("target", desc = "(I)V") {
                     beforeCall(owner = ConflictSink.OWNER, name = "record", desc = "(I)V") {
-                        wrapOperation(ConflictHandlers.OWNER, "wrap2", "(ILorg/ohmyloader/api/hook/Operation;)V")
+                        wrapOperation(ConflictHandlers.OWNER, "wrap2", "(ILorg/ohmyloader/api/core/hook/Operation;)V")
                     }
                 }
             }
@@ -145,10 +145,10 @@ class InjectionConflictTest {
         val spec = specOf {
             classTarget(owner) {
                 method("target", desc = "(I)V") {
-                    wrapMethod(ConflictHandlers.OWNER, "wrapMethod", "(ILorg/ohmyloader/api/hook/Operation;)V")
+                    wrapMethod(ConflictHandlers.OWNER, "wrapMethod", "(ILorg/ohmyloader/api/core/hook/Operation;)V")
                 }
                 method("target", desc = "(I)V") {
-                    wrapMethod(ConflictHandlers.OWNER, "wrapMethod2", "(ILorg/ohmyloader/api/hook/Operation;)V")
+                    wrapMethod(ConflictHandlers.OWNER, "wrapMethod2", "(ILorg/ohmyloader/api/core/hook/Operation;)V")
                 }
             }
         }
@@ -197,7 +197,7 @@ class InjectionConflictTest {
 
     // ---------- fixtures ----------
 
-    private fun org.ohmyloader.api.inject.MethodRuleBuilder.redirectsTo(handler: String) {
+    private fun org.ohmyloader.api.core.inject.MethodRuleBuilder.redirectsTo(handler: String) {
         redirectCall(owner = ConflictSink.OWNER, name = "record", desc = "(I)V", handlerOwner = ConflictHandlers.OWNER, handlerMethod = handler)
     }
 
@@ -310,22 +310,22 @@ class InjectionConflictTest {
         fun deny(value: Int): Boolean = false
 
         @JvmStatic
-        fun wrap(value: Int, operation: org.ohmyloader.api.hook.Operation<Void>) {
+        fun wrap(value: Int, operation: org.ohmyloader.api.core.hook.Operation<Void>) {
             operation.call(value)
         }
 
         @JvmStatic
-        fun wrap2(value: Int, operation: org.ohmyloader.api.hook.Operation<Void>) {
+        fun wrap2(value: Int, operation: org.ohmyloader.api.core.hook.Operation<Void>) {
             operation.call(value)
         }
 
         @JvmStatic
-        fun wrapMethod(value: Int, operation: org.ohmyloader.api.hook.Operation<Void>) {
+        fun wrapMethod(value: Int, operation: org.ohmyloader.api.core.hook.Operation<Void>) {
             operation.call(value)
         }
 
         @JvmStatic
-        fun wrapMethod2(value: Int, operation: org.ohmyloader.api.hook.Operation<Void>) {
+        fun wrapMethod2(value: Int, operation: org.ohmyloader.api.core.hook.Operation<Void>) {
             operation.call(value)
         }
 

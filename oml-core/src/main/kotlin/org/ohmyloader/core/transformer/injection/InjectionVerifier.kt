@@ -2,7 +2,7 @@ package org.ohmyloader.core.transformer.injection
 
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
-import org.ohmyloader.api.inject.*
+import org.ohmyloader.api.core.inject.*
 import org.ohmyloader.core.hook.ARGS_DESC
 import org.ohmyloader.core.hook.CALLBACK_INFO_DESC
 import org.ohmyloader.core.hook.CALLBACK_RETURNABLE_DESC

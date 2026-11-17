@@ -1,7 +1,7 @@
 package org.ohmyloader.core.network
 
-import org.ohmyloader.api.network.OMLNetworkContext
-import org.ohmyloader.api.network.OMLPayloadType
+import org.ohmyloader.api.core.network.OMLNetworkContext
+import org.ohmyloader.api.core.network.OMLPayloadType
 
 /**
  * The collected custom-payload channels of every mod, in declaration order. The declarations are

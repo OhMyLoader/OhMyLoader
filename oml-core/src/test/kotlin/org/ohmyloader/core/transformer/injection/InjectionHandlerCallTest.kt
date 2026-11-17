@@ -3,9 +3,9 @@ package org.ohmyloader.core.transformer.injection
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.*
-import org.ohmyloader.api.inject.HandlerVariant
-import org.ohmyloader.api.inject.InjectionError
-import org.ohmyloader.api.inject.Payload
+import org.ohmyloader.api.core.inject.HandlerVariant
+import org.ohmyloader.api.core.inject.InjectionError
+import org.ohmyloader.api.core.inject.Payload
 import org.ohmyloader.core.hook.ClassMerger
 import org.ohmyloader.core.transformer.TransformContext
 import kotlin.test.*
@@ -25,8 +25,8 @@ class InjectionHandlerCallTest {
     private val owner = "omltest/HookTarget"
     private val mixinName = "omltest/HookMixin"
 
-    private val callbackInfo = "Lorg/ohmyloader/api/hook/HookContext;"
-    private val callbackReturnable = "Lorg/ohmyloader/api/hook/HookValue;"
+    private val callbackInfo = "Lorg/ohmyloader/api/core/hook/HookContext;"
+    private val callbackReturnable = "Lorg/ohmyloader/api/core/hook/HookValue;"
 
     // ---------- Notifier: the handler reads this.<@Shadow field> ----------
 
@@ -296,7 +296,7 @@ class InjectionHandlerCallTest {
         // @Shadow field: only declares "the target class has it", not merged in
         fields.add(
             FieldNode(Opcodes.ACC_PRIVATE, "tag", "Ljava/lang/String;", null, null).apply {
-                visibleAnnotations = listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/hook/Borrowed;"))
+                visibleAnnotations = listOf(AnnotationNode(Opcodes.ASM9, "Lorg/ohmyloader/api/core/hook/Borrowed;"))
             },
         )
         // Notifier: reads this.tag (through the @Shadow field) and records it — proving the handler's
@@ -363,8 +363,8 @@ class InjectionHandlerCallTest {
 
     private companion object {
         const val RECORDER = "org/ohmyloader/core/transformer/injection/HandlerRecorder"
-        const val CALLBACK_INFO = "org/ohmyloader/api/hook/HookContext"
-        const val CALLBACK_RETURNABLE = "org/ohmyloader/api/hook/HookValue"
+        const val CALLBACK_INFO = "org/ohmyloader/api/core/hook/HookContext"
+        const val CALLBACK_RETURNABLE = "org/ohmyloader/api/core/hook/HookValue"
     }
 }
 

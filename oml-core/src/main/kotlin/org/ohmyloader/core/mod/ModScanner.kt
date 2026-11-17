@@ -2,7 +2,7 @@ package org.ohmyloader.core.mod
 
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.tree.ClassNode
-import org.ohmyloader.api.OmlLog
+import org.ohmyloader.api.core.OmlLog
 import org.ohmyloader.core.cache.StartupCache
 import org.ohmyloader.core.diagnostics.Diagnostics
 import java.io.File
@@ -83,7 +83,7 @@ object ModScanner {
                     reader.accept(classNode, ClassReader.SKIP_CODE or ClassReader.SKIP_DEBUG)
 
                     val modAnnotation = classNode.visibleAnnotations?.find {
-                        it.desc == "Lorg/ohmyloader/api/Mod;"
+                        it.desc == "Lorg/ohmyloader/api/core/Mod;"
                     } ?: return@use
 
                     // Annotation values contain only explicitly set key-value pairs (in pairs); omitted entries fall back to defaults

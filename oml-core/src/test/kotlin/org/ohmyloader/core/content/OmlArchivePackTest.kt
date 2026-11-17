@@ -1,6 +1,6 @@
 package org.ohmyloader.core.content
 
-import org.ohmyloader.api.content.*
+import org.ohmyloader.api.core.content.*
 import org.ohmyloader.content.AbstractContentRegistry
 import org.ohmyloader.core.OMLCore
 import java.io.File

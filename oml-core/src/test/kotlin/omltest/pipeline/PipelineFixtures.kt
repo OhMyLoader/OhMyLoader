@@ -1,10 +1,10 @@
 package omltest.pipeline
 
-import org.ohmyloader.api.hook.At
-import org.ohmyloader.api.hook.HookContext
-import org.ohmyloader.api.hook.Inject
-import org.ohmyloader.api.hook.Merged
-import org.ohmyloader.api.hook.Extra
+import org.ohmyloader.api.core.hook.At
+import org.ohmyloader.api.core.hook.HookContext
+import org.ohmyloader.api.core.hook.Inject
+import org.ohmyloader.api.core.hook.Merged
+import org.ohmyloader.api.core.hook.Extra
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
