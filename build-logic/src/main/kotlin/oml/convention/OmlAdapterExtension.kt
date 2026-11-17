@@ -11,6 +11,10 @@ import org.gradle.api.provider.Property
  * plugin, the single launch interface of this repository.
  */
 interface OmlAdapterExtension {
-    /** Version id, e.g. `26.3`; also the version the installer and launcher are pointed at. */
+    /**
+     * Version id, e.g. `26.4-snapshot-8`; also the version the installer and launcher are pointed
+     * at. Defaults to the root `gradle.properties`' `oml_game_version` — the one place the tracked
+     * game version is written.
+     */
     val versionId: Property<String>
 }

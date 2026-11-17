@@ -1,3 +1,5 @@
+import oml.convention.omlGameVersion
+
 plugins {
     id("oml.convention.kotlin-jvm")
     alias(libs.plugins.shadow)
@@ -34,15 +36,13 @@ tasks.jar { from(sourceSets.getByName("bootstrap").output) }
 val embedShared = configurations.create("embedShared")
 
 // The version catalog (oml-versions.json) and the embed wiring are BOTH generated from this
-// map: game version -> adapter artifact id. The artifact id doubles as the project name (the thin
-// adapter modules publish under it) and as the file-name segment (`oml-adapter-<version with _>`)
-// the installer matches the user's version choice against. Adding a version = one entry here; the
-// configuration, the dependency, the packaged lib/ contents and the runtime catalog all follow.
-// `snapshot` is an alias: the installer resolves it to the manifest's latest snapshot at install
-// time (AssetDownloader.resolveLatestSnapshotId) and installs under the real id.
+// map: game version -> adapter artifact id. The artifact id doubles as the project name and as the
+// file-name segment (`oml-adapter-<version with _>`) the installer matches the user's version
+// choice against. There is exactly one adapter now — the loader tracks the newest game line — so
+// this map is a single entry; adding a second version would be a deliberate policy change, not an
+// option.
 val bundledAdapters = mapOf(
-    "26.3" to "oml-adapter-26_3",
-    "snapshot" to "oml-adapter-snapshot",
+    omlGameVersion() to "oml-adapter",
 )
 
 // One embed configuration per bundled version, derived from `bundledAdapters` — the single
@@ -64,9 +64,9 @@ dependencies {
     implementation(libs.flatlaf)
     embedShared(project(":oml-core"))
     embedShared(project(":oml-launcher"))
-    // The shared adapter implementation: version-independent, so it ships once in lib/ while the
-    // thin per-version adapters carry only their entry point.
-    embedShared(project(":oml-adapter-common"))
+    // The game-facing API travels in the shared layer: a mod compiles against it and the adapter's
+    // event payloads ARE its types, so it must be the one copy the session loader defines.
+    embedShared(project(":oml-api-game"))
     for ((version, adapter) in bundledAdapters) {
         add(adapterEmbeds.getValue(version).name, project(":$adapter"))
     }

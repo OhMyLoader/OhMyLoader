@@ -136,7 +136,7 @@ interface ContentRegistry {
 
     /**
      * Declares a dimension, loaded as `data/<namespace>/dimension/<id>.json`. The game creates a level for
-     * **every** entry in that table when the server starts ([org.ohmyloader.api26_3.levelById] then answers for
+     * **every** entry in that table when the server starts ([org.ohmyloader.api.game.levelById] then answers for
      * it), so this is the whole of what 26.3 gives a mod without writing a level implementer.
      * [OMLDimensionDeclaration.type] is required.
      */
@@ -291,7 +291,7 @@ class OMLTimelineDeclaration {
 
     /**
      * Names [ticks] of the cycle as `markerId`. [inCommands] decides whether `/time set` offers it — the
-     * game's own flag, and the reason [org.ohmyloader.api26_3.markersOf] can list fewer markers than a
+     * game's own flag, and the reason [org.ohmyloader.api.game.markersOf] can list fewer markers than a
      * timeline declares.
      */
     fun marker(id: String, ticks: Int, inCommands: Boolean = false) {

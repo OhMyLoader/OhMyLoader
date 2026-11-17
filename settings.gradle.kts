@@ -28,14 +28,12 @@ plugins {
 
 include(":oml-launcher")
 include(":oml-api")
-include(":oml-api-26_3")
+include(":oml-api-game")
 include(":oml-core")
 include(":oml-content")
 include(":oml-devtools")
 include(":oml-native")
 include(":oml-installer")
-include(":oml-adapter-common")
-include(":oml-adapter-26_3")
-include(":oml-adapter-snapshot")
+include(":oml-adapter")
 
 rootProject.name = "OhMyLoader"

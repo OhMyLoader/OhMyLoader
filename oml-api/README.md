@@ -11,7 +11,7 @@ the runtime banner and published coordinates read it.
 |---|---|---|
 | **Contract** | `@Mod` entry points, `OMLModInitializer` / `ModContext`, `Event` and `EventDefinition`, `ContentRegistry` declaration DSL, and injection DSL (`@RuleSource`, `RuleSetProvider`, anchors, rewrite primitives) | 0.x: breaking changes land directly with a `!` commit and no deprecation period; each migration step is in that commit's body. Frozen at 1.0; see the version policy below. |
 | **Provided, still settling** | Command DSL (`command`), config (`config`), network (`network`), keybinds/HUD/creative tabs (`client`), main-thread scheduler (`tick`), and `ModContext.config` | 0.x: may change between versions; record changes in release notes and `docs/forensics.md`. Moves into the contract layer at 1.0. |
-| **Version-facing** | `oml-api-26_3`: event payloads and extensions name 26.3 classes (`ServerPlayer`, `BlockPos`, `DamageSource`, `BuiltInRegistries`, and others) | No cross-game-version compatibility. Its compatibility target is that game version. A version change is a different artifact (`oml-api-<version>`), not a different call site. |
+| **Version-facing** | `oml-api-game`: event payloads and extensions name 26.3 classes (`ServerPlayer`, `BlockPos`, `DamageSource`, `BuiltInRegistries`, and others) | No cross-game-version compatibility. Its compatibility target is that game version. A version change is a different artifact (`oml-api-<version>`), not a different call site. |
 
 A signature belongs to the version-neutral artifact if it does not name a game version (declarations,
 scheduling, event primitives, injection DSL); it is covered by the contract. A signature that names a game

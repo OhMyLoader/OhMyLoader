@@ -26,7 +26,7 @@ import kotlin.test.assertSame
 class OMLClassLoaderTest {
 
     private val adapterClass = "org.ohmyloader.adapter.probe.AdapterProbe"
-    private val api26Class = "org.ohmyloader.api26_3.probe.Api26Probe"
+    private val apiGameClass = "org.ohmyloader.api.game.probe.ApiGameProbe"
     private val coreClass = "org.ohmyloader.core.probe.CoreProbe"
     private val gameClass = "com.example.probe.GameProbe"
 
@@ -69,16 +69,16 @@ class OMLClassLoaderTest {
     }
 
     @Test
-    fun `the version-facing api module is child-first like the adapters`() {
+    fun `the game-facing api module is child-first like the adapter`() {
         // It names game types in its public signatures, so a parent-defined copy would hand a mod a second
         // `ServerPlayer` class than the running game holds — the cast failure would surface inside the mod.
         val dir = classDir()
-        writeClass(dir, api26Class)
+        writeClass(dir, apiGameClass)
 
         val [parent, main] = loaders(dir)
 
-        assertSame(main, main.loadClass(api26Class).classLoader, "the main loader must define the version-facing api")
-        assertNotSame(parent.loadClass(api26Class), main.loadClass(api26Class))
+        assertSame(main, main.loadClass(apiGameClass).classLoader, "the main loader must define the game-facing api")
+        assertNotSame(parent.loadClass(apiGameClass), main.loadClass(apiGameClass))
     }
 
     @Test

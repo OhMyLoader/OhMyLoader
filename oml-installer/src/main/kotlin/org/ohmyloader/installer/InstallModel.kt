@@ -199,7 +199,7 @@ interface ArtifactSource : Closeable {
  */
 class FatJarArtifactSource(
     override val version: String,
-    /** The adapter artifact id for [version] (e.g. `oml-adapter-26_3`), from the version catalog. */
+    /** The adapter artifact id for [version] (e.g. `oml-adapter`), from the version catalog. */
     private val adapterArtifact: String,
     private val installerJar: File = runningJar(),
 ) : ArtifactSource {
@@ -351,7 +351,7 @@ class DirectoryArtifactSource(
 data class SupportedVersion(
     val version: String,
     val javaMajor: Int,
-    /** The adapter artifact id for this version (e.g. `oml-adapter-26_3`) — the only per-version artifact. */
+    /** The adapter artifact id for this version (e.g. `oml-adapter`) — the only per-version artifact. */
     val adapterArtifact: String,
 )
 

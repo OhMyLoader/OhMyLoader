@@ -71,7 +71,7 @@ The E2E scripts target Linux with Xvfb; CI uses software rendering. Windows deve
 - Keep KDoc to one or two sentences; the limit is about 10 lines. Test KDoc states the reproduced shape,
   the error without the fix, and what the assertion proves.
 - `TODO`, `FIXME`, and `@Deprecated` have a zero baseline. Do not introduce them.
-- Version-neutral code belongs in `oml-api`; code that names a game type belongs in `oml-api-26_3` or the
+- Version-neutral code belongs in `oml-api`; code that names a game type belongs in `oml-api-game` or the
   version adapter. Do not add a wrapper layer or a `platform` escape hatch to the stable layer.
 - A breaking `oml-api` change is a separate `!` commit with the migration in the body. Do not mix it with
   feature work.

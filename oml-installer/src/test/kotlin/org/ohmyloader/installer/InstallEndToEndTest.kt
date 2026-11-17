@@ -94,10 +94,10 @@ class InstallEndToEndTest {
     fun `a standard install lays out a self-consistent version and uninstalls cleanly`() {
         val gameDir = tempDir()
         val sources = tempDir()
-        val layer = listOf("oml-core", "oml-launcher", "oml-adapter-26_3").map { fakeJar(sources, "$it.jar") }
+        val layer = listOf("oml-core", "oml-launcher", "oml-adapter").map { fakeJar(sources, "$it.jar") }
         val natives = nativePackages(sources)
         val ctx = InstallContext(
-            target = SupportedVersion("26.3", 27, "oml-adapter-26_3"),
+            target = SupportedVersion("26.3", 27, "oml-adapter"),
             targetDir = gameDir,
             installId = "26.3-OML",
             isolation = true,
@@ -188,10 +188,10 @@ class InstallEndToEndTest {
         val levelDat = File(instance, "minecraft/saves/world/level.dat").apply { writeBytes(ByteArray(8)) }
 
         val sources = tempDir()
-        val layer = listOf("oml-core", "oml-launcher", "oml-adapter-26_3").map { fakeJar(sources, "$it.jar", fill = 7) }
+        val layer = listOf("oml-core", "oml-launcher", "oml-adapter").map { fakeJar(sources, "$it.jar", fill = 7) }
         val natives = nativePackages(sources)
         val ctx = InstallContext(
-            target = SupportedVersion("26.3", 27, "oml-adapter-26_3"),
+            target = SupportedVersion("26.3", 27, "oml-adapter"),
             targetDir = instance,
             installId = "26.3-OML",
             isolation = true,

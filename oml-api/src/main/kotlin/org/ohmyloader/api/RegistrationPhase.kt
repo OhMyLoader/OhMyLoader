@@ -2,7 +2,7 @@ package org.ohmyloader.api
 
 /**
  * Scopes the registry-declaration phase: the version-facing registration helpers
- * (`org.ohmyloader.api26_3.OMLRegistration`) derive every registry id's namespace from the mod
+ * (`org.ohmyloader.api.game.OMLRegistration`) derive every registry id's namespace from the mod
  * whose [OMLRegistryInitializer.onDeclareRegistries] is currently running, so a mod passes plain
  * ids (`"iron_chest"`) instead of spelling `modid:` on every call.
  *

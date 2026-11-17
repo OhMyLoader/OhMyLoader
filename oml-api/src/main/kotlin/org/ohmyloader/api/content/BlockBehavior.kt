@@ -4,7 +4,7 @@ package org.ohmyloader.api.content
  * A [ContentRegistry.declareBlock] behavior event: built by the version adapter from the vanilla
  * block callback, synchronously on the thread the game called it on. [level] and [entity] are typed
  * only as `Any` — this module cannot name a game type — and the version-facing module exposes typed
- * accessors for them (`org.ohmyloader.api26_3` `serverLevel` / `stepper` / `hitBy`); use those
+ * accessors for them (`org.ohmyloader.api.game` `serverLevel` / `stepper` / `hitBy`); use those
  * rather than casting the `Any` yourself.
  */
 class OMLStepOnEvent(

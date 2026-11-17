@@ -59,7 +59,7 @@ class OMLCommandDeclaration(
     /**
      * A fine-grained permission node this command requires, addressed by id (`mymod:build`); the source's own
      * `PermissionSet` answers for it, so a node nothing grants keeps the command out of reach and an
-     * `org.ohmyloader.api26_3.grantPermissionNode` puts it back. Null leaves the gate to [permissionLevel].
+     * `org.ohmyloader.api.game.grantPermissionNode` puts it back. Null leaves the gate to [permissionLevel].
      */
     var permissionNode: String? = null
 

@@ -10,6 +10,10 @@ plugins {
 // Version-difference declaration entry point: `omlAdapter { ... }`
 val oml = extensions.create<OmlAdapterExtension>("omlAdapter")
 
+// The tracked game version comes from the root gradle.properties, read as a file: neither a module
+// script nor a command-line `-P` declares or overrides it.
+oml.versionId.convention(omlGameVersion())
+
 // Build-time only; never on the game runtime classpath.
 val devtools = configurations.create("devtools")
 val installer = configurations.create("installer")
@@ -124,11 +128,9 @@ afterEvaluate {
 
         val ourProjects = listOf(
             project(":oml-launcher"), project(":oml-core"), project(":oml-api"),
-            // The version-facing mod API names game classes, so the main loader must define it (its
+            // The game-facing mod API names game classes, so the main loader must define it (its
             // child-first carve-out) — it still travels on the app classpath like every layer jar.
-            project(":oml-api-26_3"),
-            // the shared adapter implementation travels with every adapter install
-            project(":oml-adapter-common"),
+            project(":oml-api-game"),
             project,
         )
         dependsOn(ourProjects.map { it.tasks.named("jar") })
@@ -182,8 +184,8 @@ afterEvaluate {
     }
 
     // HookShapeTest asserts the hook rules against the real client jar, so fetching it is part of
-    // the test task graph; the tests locate the jar through this system property. SnapshotLinkageTest
-    // additionally resolves supertypes, which for the game means the version JSON library tree.
+    // the test task graph; the tests locate the jar through this system property. The version's
+    // library tree is there for the tests that resolve real game types.
     tasks.withType<Test>().configureEach {
         dependsOn(fetchClientJar)
         systemProperty("oml.clientJar", clientJar.absolutePath)

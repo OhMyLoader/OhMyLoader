@@ -101,7 +101,7 @@ class InstallerContractTest {
             zip.closeEntry()
         }
 
-        FatJarArtifactSource("26.3", "oml-adapter-26_3", jar).use { source ->
+        FatJarArtifactSource("26.3", "oml-adapter", jar).use { source ->
             val native = source.nativeLibrary()
             assertNotNull(native, "the installer must find natives/<os>-<arch>/oml-native.<ext>")
             assertEquals("oml-native.$ext", native.fileName)
@@ -338,34 +338,31 @@ class InstallerContractTest {
     }
 
     // ------------------------------------------------------------------------------------------
-    // T-1.7 / AC-5 — the snapshot adapter ships in the installer under the stable `snapshot`
-    // alias, and the alias is resolved to the manifest's latest snapshot id before anything is
-    // written: launchers look vanilla versions up by exact id, so a literal "snapshot" in
-    // `inheritsFrom` would produce a version that inherits from nothing.
+    // T-1.7 / AC-5 — the installer bundles exactly one adapter, pinned to the newest game line.
     // ------------------------------------------------------------------------------------------
 
     @Test
-    fun `the catalog bundles the snapshot alias on the snapshot adapter`() {
-        val entry = VersionCatalog.versions().firstOrNull { it.version == "snapshot" }
-        assertNotNull(entry, "the installer must bundle the `snapshot` alias (AC-5)")
-        assertEquals("oml-adapter-snapshot", entry.adapterArtifact)
+    fun `the catalog bundles the one pinned adapter`() {
+        val entry = VersionCatalog.versions().single()
+        assertEquals("26.4-snapshot-8", entry.version)
+        assertEquals("oml-adapter", entry.adapterArtifact)
     }
 
     @Test
     fun `the snapshot alias resolves to the real id and a real id passes through`() {
-        val catalogEntry = SupportedVersion("snapshot", 27, "oml-adapter-snapshot")
+        val catalogEntry = SupportedVersion("snapshot", 27, "oml-adapter")
         val resolved = resolveSnapshotAlias(catalogEntry, fetchLatest = { "26.4-snapshot-9" })
         assertEquals("26.4-snapshot-9", resolved.version, "the alias must be replaced by the real id")
         assertEquals(27, resolved.javaMajor, "resolution must not touch the other fields")
-        assertEquals("oml-adapter-snapshot", resolved.adapterArtifact)
+        assertEquals("oml-adapter", resolved.adapterArtifact)
 
-        val stable = SupportedVersion("26.3", 27, "oml-adapter-26_3")
+        val stable = SupportedVersion("26.3", 27, "oml-adapter")
         assertSame(stable, resolveSnapshotAlias(stable, fetchLatest = { fail("must not resolve for a real id") }))
     }
 
     @Test
     fun `a failing snapshot resolution is a controlled installation exception`() {
-        val catalogEntry = SupportedVersion("snapshot", 27, "oml-adapter-snapshot")
+        val catalogEntry = SupportedVersion("snapshot", 27, "oml-adapter")
         val e = assertFailsWith<InstallationException> {
             resolveSnapshotAlias(catalogEntry, fetchLatest = { error("manifest unreachable") })
         }
@@ -406,7 +403,7 @@ class InstallerContractTest {
                 zip.closeEntry()
             }
         }
-        FatJarArtifactSource("26.3", "oml-adapter-26_3", jar).use { source ->
+        FatJarArtifactSource("26.3", "oml-adapter", jar).use { source ->
             assertEquals("oml-launcher.jar", source.shellJar().fileName)
         }
     }
@@ -427,16 +424,16 @@ class InstallerContractTest {
 
     @Test
     fun `a snapshot install declares the adapter's verification scope in the log`() {
-        fun loggedFor(adapter: String): List<String> {
+        fun loggedFor(version: String): List<String> {
             val lines = mutableListOf<String>()
             val ctx = InstallContext(
-                target = SupportedVersion("26.4-snapshot-9", 27, adapter),
+                target = SupportedVersion(version, 27, "oml-adapter"),
                 targetDir = File(tempDir(), "missing"),
                 installId = "snap-OML",
                 isolation = true,
                 acceptEula = true,
                 allowSharedMods = false,
-                artifacts = DirectoryArtifactSource("26.4-snapshot-9", emptyList(), null),
+                artifacts = DirectoryArtifactSource(version, emptyList(), null),
                 side = "client",
                 log = { lines += it },
             )
@@ -448,12 +445,12 @@ class InstallerContractTest {
         }
 
         assertTrue(
-            loggedFor("oml-adapter-snapshot").any { it.contains("26.4-snapshot-8") },
+            loggedFor("26.4-snapshot-9").any { it.contains("26.4-snapshot-8") },
             "the snapshot install must state the adapter's verification scope",
         )
         assertTrue(
-            loggedFor("oml-adapter-26_3").none { it.contains("26.4-snapshot-8") },
-            "a stable-adapter install must not carry the snapshot notice",
+            loggedFor("26.3").none { it.contains("26.4-snapshot-8") },
+            "a release-version install must not carry the snapshot notice",
         )
     }
 
@@ -699,7 +696,7 @@ class InstallerContractTest {
         val artifacts = listOf(
             "annotations-13.0", "asm-9.10.1", "asm-analysis-9.10.1", "asm-commons-9.10.1",
             "asm-tree-9.10.1", "asm-util-9.10.1", "kotlin-stdlib-2.4.20",
-            "oml-adapter-26_3", "oml-api", "oml-core", "oml-launcher",
+            "oml-adapter", "oml-api", "oml-core", "oml-launcher",
         )
         for (base in artifacts) {
             val coordinate = LayerLayout.coordinate(base, "26.3-OML")

@@ -51,14 +51,12 @@ jobs:
       # HookShapeTest and the adapter compile read the vanilla client jar; caching it
       # avoids a full Piston download on every run. The key hashes the build files that
       # declare which game versions are wanted, so a new version invalidates the cache;
-      # oml-adapter-common/libs holds the jar its compileOnly/testImplementation wiring reads.
+      # oml-adapter/libs holds the jar its compileOnly/testImplementation wiring reads.
       - uses: actions/cache@v6
         with:
           path: |
-            oml-adapter-26_3/libs
-            oml-adapter-snapshot/libs
-            oml-adapter-common/libs
-          key: client-jars-${{ hashFiles('oml-adapter-26_3/build.gradle.kts', 'oml-adapter-snapshot/build.gradle.kts', 'oml-adapter-common/build.gradle.kts') }}
+            oml-adapter/libs
+          key: client-jars-${{ hashFiles('oml-adapter/build.gradle.kts') }}
           restore-keys: |
             client-jars-
       # tag builds produce the release-versioned installer here, so the release job can

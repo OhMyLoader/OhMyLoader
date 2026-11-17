@@ -10,14 +10,14 @@ stable line is 26.3; the stack runs on Java 27.
 - **Injection engine.** A declarative injection DSL and Mixin class merging (`@Shadow`, `@Overwrite`,
   `@Accessor`, and others). Rules are self-checked at startup (handler existence, signature, and
   anchor/access-rule sanity); target existence and `require`/`allow` hit counts are enforced when the
-  target class loads, and the bundled adapters' anchors are checked against the real game jar at build
+  target class loads, and the bundled adapter's anchors are checked against the real game jar at build
   time. A bad rule fails fast instead of silently doing less in game.
 - **Mod API.** `@Mod` entry points and lambda-based event registration for ticks, lifecycle, block and entity
   interactions, damage, death, chat, GUI, world load, chunk lifecycle, HUD, and frame-rate limits. Event
   payloads are the game's own objects (`ServerPlayer`, `BlockPos`, `BlockState`, `DamageSource`, `Screen`),
   with no wrapper layer. Command sources, network contexts, and registered block handles expose a `platform`
   handle where a typed surface is not yet available.
-- **26.3 access API (`org.ohmyloader.api26_3`).** `OMLGame.server` and `OMLGame.client` are
+- **Game access API (`org.ohmyloader.api.game`).** `OMLGame.server` and `OMLGame.client` are
   `MinecraftServer` and `Minecraft`. Other capabilities are extension functions and properties on game types,
   so there are no wrapper objects or cross-tick stale handles. They cover entity spawn and query, motion,
   attributes and modifiers, damage, ignition, block state read/write, particles, weather, game rules,
@@ -68,7 +68,7 @@ class MyMod : OMLModInitializer {
 }
 ```
 
-The Gradle plugin supplies `oml-api`, `oml-api-26_3` (derived from `oml { minecraftVersion }`), the game jar,
+The Gradle plugin supplies `oml-api`, `oml-api-game`, the game jar,
 and the version's libraries. Mod classes must not use the `org.ohmyloader.` prefix. That prefix is
 parent-first: the launcher layer defines those classes without the game libraries, so the first
 `net.minecraft.*` reference fails with `NoClassDefFoundError`. The loader rejects and skips such a jar while
@@ -120,7 +120,7 @@ Maven coordinates.
 ```
 
 **Snapshot tracking.** In the test mod, `oml { minecraftVersion.set("snapshot") }` resolves the manifest's
-`latest.snapshot` at runtime and uses `oml-adapter-snapshot`, so a new snapshot needs no configuration
+`latest.snapshot` at runtime and uses `oml-adapter`, so a new snapshot needs no configuration
 change.
 
 ### Toolchain
@@ -134,12 +134,12 @@ compiler; this is valid.
 - `oml-core`: loader core (class loading, injection executor, Mixin front end and class merging, SPI).
 - `oml-api`: version-neutral mod API (event primitives, content declarations, scheduling, config, network,
   injection, and Mixin).
-- `oml-api-26_3`: 26.3-facing API; event payloads and extensions name game types directly. The main loader
+- `oml-api-game`: game-facing API; event payloads and extensions name game types directly. The main loader
   must define it child-first.
 - `oml-content`: version-neutral content registration and `.oml`/TOML loading.
 - `oml-launcher`: bootstrap header.
-- `oml-adapter-common`: shared hooks, event bridge, content materialization, and network bridge.
-- `oml-adapter-26_3` and `oml-adapter-snapshot`: thin version drivers.
+- `oml-adapter`: the one adapter — hooks, event bridge, content materialization, network bridge, GUI and
+  shader integration, built and shape-checked against the newest game line.
 - `oml-native`: Zig-built C library for Zstandard codecs.
 - `oml-devtools`: downloader.
 - `oml-installer`: installer, including the Java 8 bootstrap stub.

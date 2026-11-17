@@ -19,8 +19,8 @@ class OMLSupervisorTest {
     void omlModulesAreSessionAndLibrariesAreSupervisor(@TempDir Path dir) throws Exception {
         URL core = url(dir, "oml-core-0.1.0.jar");
         URL api = url(dir, "oml-api-0.1.0.jar");
-        URL api26 = url(dir, "oml-api-26_3-0.1.0.jar");
-        URL adapter = url(dir, "oml-adapter-26_3-0.1.0.jar");
+        URL api26 = url(dir, "oml-api-game-0.1.0.jar");
+        URL adapter = url(dir, "oml-adapter-0.1.0.jar");
         URL asm = url(dir, "asm-9.11.1.jar");
         URL kotlin = url(dir, "kotlin-stdlib-2.5.0.jar");
         URL launcher = url(dir, "oml-launcher-0.1.0.jar");

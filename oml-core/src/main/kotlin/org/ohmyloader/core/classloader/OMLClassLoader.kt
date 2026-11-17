@@ -225,11 +225,11 @@ class OMLClassLoader(
          * `org.ohmyloader.` keeps parent-first for a single identity with the app-loader world.
          */
         val CHILD_FIRST_PREFIXES = listOf(
-            // The version adapters: their signatures and bodies name game types.
+            // The game adapter: its signatures and bodies name game types.
             "org.ohmyloader.adapter.",
-            // The 26.3-facing mod API, same reason — and mods compile against it, so the split would
+            // The game-facing mod API, same reason — and mods compile against it, so the split would
             // surface as a ClassCastException inside a mod, not inside OML.
-            "org.ohmyloader.api26_3.",
+            "org.ohmyloader.api.game.",
         )
 
         /** These prefixes are always parent-first: the JVM itself, loader runtime, and all loader-level dependency libraries. */
