@@ -720,7 +720,9 @@ object AssetDownloader {
             ".oml-tmp",
         ).toFile()
         try {
-            data.use { input -> tmp.outputStream().buffered().use { input.copyTo(it) } }
+            // [data] is the caller's ZipInputStream mid-iteration — do NOT close it here; only the
+            // output stream is ours.
+            tmp.outputStream().buffered().use { output -> data.copyTo(output) }
             if (target.isFile && sameBytes(target, tmp)) return false
             try {
                 Files.move(
