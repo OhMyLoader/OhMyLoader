@@ -22,8 +22,9 @@ public final class SessionControl {
     /** Called from the session (through reflection from OMLReboot). */
     public static void requestReboot(String why) {
         reason = why == null || why.isBlank() ? "User requested" : why;
-        // The auto-reboot test switch is one-shot: the next session must not request another one.
+        // The auto-reboot test switches are one-shot: the next session must not request another one.
         System.clearProperty("oml.reboot.afterTicks");
+        System.clearProperty("oml.reboot.via");
         WindowLease.beginShare();
         requested = true;
     }

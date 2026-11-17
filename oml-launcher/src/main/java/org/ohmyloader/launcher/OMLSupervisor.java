@@ -62,12 +62,11 @@ public final class OMLSupervisor {
             boolean collected = stopSession();
             if (!collected) {
                 // A leaked session must not be papered over by starting another one: the old
-                // loader, its native callbacks and its class metadata would all survive. Refuse
-                // the in-process swap; the launcher/process owner has to restart the process.
-                System.err.println(
-                    "[OMLSupervisor] the old session is still reachable after close; refusing the in-process reboot");
-                throw new IllegalStateException(
-                    "session classloader was not collected within 5s; process restart is required");
+                // loader, its native callbacks and its class metadata would all survive. The usual
+                // root here is native: a JNI global holds the session's loader until the library
+                // that made it releases it, and no Java-side sweep can. A reload was asked for, so
+                // hand the request to a fresh process instead of dying with a stack trace.
+                OMLBootstrap.restartProcess(args);
             }
             session = startSession(nextSessionArgs(args), sessionJars);
             activeSession = session;
@@ -137,7 +136,17 @@ public final class OMLSupervisor {
         // the next session inherits entry points that belong to a context that no longer exists.
         // Clear them while the retiring session is provably dead and before anything is collected.
         LwjglStatics.reset(OMLSupervisor.class.getClassLoader());
-        boolean collected = SessionCanary.awaitCollected(probe, 5_000, true, OMLSupervisor.class.getClassLoader());
+        // `-Doml.canary.rebootTimeoutMs=<n>`: diagnostics knob for how long a reboot waits for the
+        // retiring session to become unreachable. The default is the gate's own budget.
+        long timeout = Long.getLong("oml.canary.rebootTimeoutMs", 5_000L);
+        boolean collected = SessionCanary.awaitCollected(probe, timeout, true, OMLSupervisor.class.getClassLoader());
+        // Test hook: `-Doml.canary.forceRefuse` exercises the process-restart fallback without
+        // waiting for a native pin to appear by chance. Presence, not `Boolean.getBoolean`: a `1`
+        // is not a boolean literal, and a test switch that silently reads false is worse than none.
+        if (System.getProperty("oml.canary.forceRefuse") != null) {
+            System.err.println("[OMLSupervisor] canary refusal forced by -Doml.canary.forceRefuse");
+            collected = false;
+        }
         RebootClock.mark("supervisor.canary.done");
         return collected;
     }

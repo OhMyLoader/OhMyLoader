@@ -20,9 +20,18 @@ object OMLReboot {
 
     val isSupported: Boolean get() = OMLGame.client != null
 
-    fun restart(reason: String = "User requested") {
+    /**
+     * @param reason what the loader logs as the cause of the reboot.
+     * @param reopen a screen the next session should open once its transition lifts (`mods` for
+     *   [org.ohmyloader.adapter.v26_3.OMLModsScreen]'s own Reload button). Null keeps the default
+     *   landing: the world the snapshot names, or the main menu.
+     */
+    fun restart(reason: String = "User requested", reopen: String? = null) {
         val client = OMLGame.client ?: error("OMLReboot is only available on a client")
         OmlLog.info("Reboot", reason)
+        // Recorded before the capture so both the in-process swap and the process-restart fallback
+        // see it; it is plain text in the supervisor, never a screen object.
+        runCatching { RebootRestore.putScreen(reopen) }
 
         // Where the player is, as text in the supervisor: the next session opens this save and puts
         // the player back. Captured before the close path runs, because that is what saves the world

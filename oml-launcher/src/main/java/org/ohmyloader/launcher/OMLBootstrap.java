@@ -66,6 +66,65 @@ public final class OMLBootstrap {
         System.setErr(ORIGINAL_ERR);
     }
 
+    /**
+     * Replaces this process with a fresh one when an in-process reboot is refused.
+     *
+     * <p>The canary refuses the swap when the retiring session is still reachable — and the only
+     * root a JNI global can produce is native code holding the session's loader, which no Java-side
+     * sweep can release. Refusing is correct (a leaked session would otherwise accumulate), but the
+     * user asked for a reload and a stack trace is not an answer: this re-runs the exact JVM command
+     * line that started us and halts, so the game comes back in a new process.
+     *
+     * <p>The command line is rebuilt from the process handle when the platform exposes it, otherwise
+     * from the JVM's own input arguments plus the launch classpath and [gameArgs]. The reboot test
+     * switches are dropped: they are one-shot, and the new process must not reboot again.
+     */
+    static void restartProcess(String[] gameArgs) {
+        List<String> command = new ArrayList<>();
+        ProcessHandle.Info info = ProcessHandle.current().info();
+        String executable = info.command().orElse(null);
+        if (executable == null) {
+            executable = new File(new File(System.getProperty("java.home"), "bin"), isWindows() ? "java.exe" : "java")
+                .getAbsolutePath();
+        }
+        command.add(executable);
+        String[] inherited = info.arguments().orElse(null);
+        if (inherited == null) {
+            // No OS view of the command line: rebuild it from the JVM's own inputs. The program
+            // arguments are not part of that view, so they are appended here (and not below).
+            command.addAll(java.lang.management.ManagementFactory.getRuntimeMXBean().getInputArguments());
+            command.add("-cp");
+            command.add(System.getProperty("java.class.path"));
+            command.add(OMLBootstrap.class.getName());
+            if (gameArgs != null) command.addAll(Arrays.asList(gameArgs));
+        } else {
+            command.addAll(Arrays.asList(inherited));
+        }
+        command.removeIf(arg -> arg.startsWith("-Doml.reboot.")
+            || arg.startsWith("-Doml.canary.rebootTimeoutMs")
+            || arg.startsWith("-Doml.reopen="));
+        // The screen the retiring session asked the next one to reopen travels the same way: the
+        // restart is a new process, so the supervisor's slot does not survive. Inserted before the
+        // main class — after it, the JVM would hand it to the game as a program argument.
+        String reopen = RebootSnapshot.peekScreen();
+        if (reopen != null) {
+            int main = command.indexOf(OMLBootstrap.class.getName());
+            command.add(main < 0 ? 1 : main, "-Doml.reopen=" + reopen);
+        }
+        System.err.println("[OMLSupervisor] restarting the process: " + String.join(" ", command));
+        try {
+            new ProcessBuilder(command).inheritIO().start();
+        } catch (Exception failed) {
+            System.err.println("[OMLSupervisor] the process restart could not be started: " + failed);
+            throw new IllegalStateException("session classloader was not collected and the process restart failed", failed);
+        }
+        Runtime.getRuntime().halt(0);
+    }
+
+    private static boolean isWindows() {
+        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+    }
+
     public static void main(String[] args) throws Exception {
         Runtime.Version running = Runtime.version();
         System.out.println("[OMLBootstrap] JVM version: " + running);

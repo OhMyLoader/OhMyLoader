@@ -66,6 +66,9 @@ class OMLAdapterV26_3 : IAdapter {
         // The reboot bill's game-side probes: entry/exit marks on bootstrap, device, close and
         // reload sites. Measurement only, nothing reads the marks to decide anything.
         RebootTimingTransformer(),
+        // The Mods button on the title and pause menus: the player-facing way into OMLModsScreen and
+        // the soft reboot, beside `/oml reload`. Version-facing (both screens are 26.3 shapes).
+        ModsMenuTransformer(),
         // Network compression and mod payloads are shared bootstrap code (both sides run the same
         // unified jar), so the same transformers register on the client and the server path.
         NetworkCompressionTransformer(idPrefix = "v26_3"),
@@ -89,6 +92,11 @@ class OMLAdapterV26_3 : IAdapter {
 
     override fun onGameReady() {
         recordRunningServer()
+        // The mods-directory baseline and the `/oml reload` node. Both are plain data; the client
+        // side is where the directory is meaningful, and the command is declared on both so a
+        // dedicated server answers rather than "unknown command".
+        runCatching { ModsMenuHook.install() }
+            .onFailure { OmlLog.warn("Mods", "installing the mods menu failed: $it") }
     }
 
     override fun launch(args: Array<String>, serverSide: Boolean) {

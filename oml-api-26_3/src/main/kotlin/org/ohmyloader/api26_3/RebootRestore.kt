@@ -80,6 +80,15 @@ object RebootRestore {
     var openedFromSnapshot: Boolean = false
         private set
 
+    /**
+     * Session 2 of a reboot requested from the **main menu**: there was no world to carry, so the
+     * only thing that crossed is the transition. The state machine still fades it out (instead of
+     * resetting it the way a plain launch does), and nothing here touches a save or a player.
+     */
+    @Volatile
+    var titleOnly: Boolean = false
+        private set
+
     /** One-line, log-safe description of the snapshot this session holds or restored. */
     @Volatile
     var describe: String = "none"
@@ -202,15 +211,25 @@ object RebootRestore {
         // The mask goes up with the curtain: from here the leaving half of the join/leave pair is a
         // fiction — nothing "leaves", the process is handing over.
         maskingWindow = true
-        overlayBegin("Saving world")
-        if (client == null) return false
-        val player = client.player
-        val level = client.level
-        if (player == null || level == null) {
-            // Nothing to carry, but the bar still has to move: the swap is about to happen.
+        if (client == null) {
+            overlayBegin("Handing over")
             overlayMilestone("Handing over", REBUILDING)
             return false
         }
+        val player = client.player
+        val level = client.level
+        if (player == null || level == null) {
+            // The main menu: no save to write, no player to place. The next session still has to
+            // lift this curtain rather than mistake it for a leftover, so the marker is the whole
+            // snapshot.
+            putTitle()
+            describe = "title"
+            overlayBegin("Handing over")
+            overlayMilestone("Handing over", REBUILDING)
+            OmlLog.info("Reboot", "no world to carry; the next session returns to the main menu")
+            return false
+        }
+        overlayBegin("Saving world")
         val save = saveName(client)
         if (save == null) {
             OmlLog.warn("Reboot", "no singleplayer save directory is known; the next session will not restore state")
@@ -296,6 +315,10 @@ object RebootRestore {
     private fun begin(client: Minecraft) {
         val encoded = take()
         if (encoded == null) {
+            if (takeTitle()) {
+                beginTitle()
+                return
+            }
             // Not a reboot at all: drop whatever a previous session left, and stay out of the frame.
             overlayReset()
             toDone()
@@ -332,6 +355,25 @@ object RebootRestore {
             return
         }
         openWorld(client, parsed)
+    }
+
+    /**
+     * Session 2 of a main-menu reboot: no save to open, no player to place, no join to mask. The
+     * curtain is simply lifted over the title screen this session is going to sit on. The masking
+     * window was opened by session 1's capture, so it is closed here — nothing under it ever
+     * joined, and leaving it up would swallow the next real join.
+     */
+    private fun beginTitle() {
+        titleOnly = true
+        describe = "title"
+        outcome = "title=1"
+        maskingWindow = false
+        state = State.FADING
+        fadeTicks = 0
+        liftStarted = true
+        OmlLog.info("Reboot", "no world to restore; lifting the transition over the main menu")
+        overlayMilestone("Ready", 1.0f)
+        overlayFinish()
     }
 
     /**
@@ -593,8 +635,9 @@ object RebootRestore {
             // The overlay is gone, but the player still does not have the frame while one of the
             // game's own screens (a level-load or reconnect screen) is up — and a fast restore can
             // land here while that screen is mid-life. Holding is what "the player has the frame"
-            // means; the timeout below releases with a warning if the screen never closes.
-            if (client.currentScreen != null && fadeTicks <= FADE_TIMEOUT_TICKS) {
+            // means; the timeout below releases with a warning if the screen never closes. A
+            // main-menu reboot is the exception: the title screen *is* the destination.
+            if (!titleOnly && client.currentScreen != null && fadeTicks <= FADE_TIMEOUT_TICKS) {
                 return
             }
             toDone()
@@ -773,12 +816,36 @@ object RebootRestore {
         runCatching { store?.getMethod("put", String::class.java)?.invoke(null, encoded) }
     }
 
+    private fun putTitle() {
+        runCatching { store?.getMethod("putTitle")?.invoke(null) }
+    }
+
+    /** Session 1: the next session should reopen this screen after the transition lifts. */
+    fun putScreen(screen: String?) {
+        runCatching { store?.getMethod("putScreen", String::class.java)?.invoke(null, screen) }
+    }
+
+    /** Session 2: consume the requested screen id (`mods`), or null when the reboot did not ask. */
+    fun takeScreen(): String? =
+        runCatching { store?.getMethod("takeScreen")?.invoke(null) as? String }.getOrNull()
+
+    /** Whether the retiring session asked for a screen to be reopened (process-restart fallback). */
+    fun pendingScreen(): String? =
+        runCatching { store?.getMethod("peekScreen")?.invoke(null) as? String }.getOrNull()
+
+    private fun takeTitle(): Boolean =
+        runCatching { store?.getMethod("takeTitle")?.invoke(null) as? Boolean }.getOrNull() == true
+
     private fun take(): String? =
         runCatching { store?.getMethod("take")?.invoke(null) as? String }.getOrNull()
 
     /** Whether a session left a snapshot for this one; the supervisor asks this before filtering args. */
     fun pendingSnapshot(): Boolean =
         runCatching { store?.getMethod("pending")?.invoke(null) as? Boolean }.getOrNull() == true
+
+    /** Whether the session that just retired left the main-menu marker instead of a world snapshot. */
+    fun pendingTitle(): Boolean =
+        runCatching { store?.getMethod("titlePending")?.invoke(null) as? Boolean }.getOrNull() == true
 
     /** The raw last capture, for the gate: it is the supervisor's copy, not this session's. */
     fun capturedLine(): String? =

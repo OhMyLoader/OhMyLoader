@@ -109,7 +109,14 @@ object EventBridge {
 
     private var clientTicks = 0
     private var autoRebootIssued = false
+
+    /**
+     * The loader's own one-shot reboot driver. `oml.reboot.via` hands the same tick budget to a
+     * different door (`command` / `ui` / `title`, driven by the testmod), and only one driver may
+     * fire — two restarts in one tick would take two snapshots and request two handovers.
+     */
     private val autoRebootAt = System.getProperty("oml.reboot.afterTicks")?.toIntOrNull()
+        ?.takeIf { (System.getProperty("oml.reboot.via") ?: "api").equals("api", ignoreCase = true) }
 
     /**
      * [keyPress head] Dispatches declared key bindings. Vanilla's own gating is re-applied here

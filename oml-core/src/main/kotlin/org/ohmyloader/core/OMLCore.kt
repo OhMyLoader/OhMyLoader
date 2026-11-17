@@ -98,6 +98,17 @@ object OMLCore {
     private lateinit var gameDir: File
 
     /**
+     * The mods directory [start] resolved (`oml.mods.dir` or `<gameDir>/mods`). Null before start;
+     * the session-side mod manager reads it to list what this session loaded.
+     */
+    @Volatile
+    private var modsDir: File? = null
+
+    /** @see modsDir */
+    @JvmStatic
+    fun modsDirectory(): File? = modsDir
+
+    /**
      * The game's `config` directory - where the loader's own preferences and every mod's
      * `OMLConfig` file land. Only meaningful after [start] has resolved the game directory.
      */
@@ -136,6 +147,7 @@ object OMLCore {
         // from different working directories (the server writes eula / server.properties / world under
         // run/server/), and it lets them share the single run/mods copy.
         val modsDir = System.getProperty("oml.mods.dir")?.let(::File) ?: File(gameDir, "mods")
+        this.modsDir = modsDir
         // The dependency graph is validated and ordered here, at the cheapest possible failure point:
         // no main loader built, no transformer run, no game class loaded. initMods reuses this exact
         // order later.
@@ -925,6 +937,19 @@ object OMLCore {
     val initOrder = mutableListOf<ModContainer>()
 
     /**
+     * A `/oml` child the version adapter contributes (the client's `reload`). The adapter owns the
+     * game-facing handler and the core owns the tree, so the two never need to name each other's
+     * classes: the node is plain declaration data. Called before [registerBuiltinCommands] runs;
+     * later calls still land, at the cost of a dispatcher that was already built without them.
+     */
+    @JvmStatic
+    fun addBuiltinCommand(node: OMLCommandDeclaration) {
+        synchronized(extraBuiltinCommands) { extraBuiltinCommands += node }
+    }
+
+    private val extraBuiltinCommands = mutableListOf<OMLCommandDeclaration>()
+
+    /**
      * The loader's own `/oml` command, registered like a mod's but under the `oml` id: `mods`
      * lists every loaded mod with its version, failed inits in red via
      * [OMLCommandSource.replyError]; `version` prints the loader version.
@@ -953,6 +978,7 @@ object OMLCore {
         val root = node("oml").apply {
             children += mods
             children += version
+            synchronized(extraBuiltinCommands) { children += extraBuiltinCommands }
         }
         CommandDeclarations.entries.add(CommandDeclarations.Entry("oml", root))
     }
