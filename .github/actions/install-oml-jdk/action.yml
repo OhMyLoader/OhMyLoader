@@ -38,10 +38,15 @@ runs:
         fi
         mkdir -p "$RUNNER_TEMP/jdk"
         unzip -q "$RUNNER_TEMP/jdk-bundle.zip" -d "$RUNNER_TEMP/jdk"
-        # The artifact may hold the JDK as a nested bundle archive or as a bare tree; open it
-        # only when bin/java is not there yet.
+        # The bundle holds jdk-<platform>.(tar.gz|zip) next to symbols/tests siblings; match the
+        # jdk* name explicitly — a generic archive glob would race on readdir order and sometimes
+        # unpack the symbols or tests bundle instead (manifesting as "does not contain bin/java").
         if ! find -L "$RUNNER_TEMP/jdk" -path '*/bin/java' | grep -q .; then
-          inner=$(find "$RUNNER_TEMP/jdk" -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.tgz' \) -print -quit)
+          inner=$(find "$RUNNER_TEMP/jdk" -type f \( -name 'jdk*.zip' -o -name 'jdk*.tar.gz' -o -name 'jdk*.tgz' \) -print -quit)
+          if [ -z "$inner" ]; then
+            echo "::error::The bundle contains no jdk* archive; contents: $(ls "$RUNNER_TEMP/jdk")"
+            exit 1
+          fi
           mkdir -p "$RUNNER_TEMP/jdk-x"
           case "$inner" in
             *.zip) unzip -q "$inner" -d "$RUNNER_TEMP/jdk-x" ;;
@@ -80,9 +85,12 @@ runs:
         $java = Get-ChildItem "$env:RUNNER_TEMP\jdk" -Recurse -Filter java.exe |
           Where-Object { $_.DirectoryName -like '*\bin' } | Select-Object -First 1
         if (-not $java) {
-          # The artifact may hold the JDK as a nested bundle archive; open it and look again.
-          $inner = Get-ChildItem "$env:RUNNER_TEMP\jdk" -Recurse -Include *.zip, *.tar.gz, *.tgz |
+          # The bundle holds jdk-<platform>.(zip|tar.gz) next to symbols/tests siblings; match the
+          # jdk* name explicitly — a generic archive glob races on enumeration order and sometimes
+          # unpacks the symbols or tests bundle instead (no java.exe).
+          $inner = Get-ChildItem "$env:RUNNER_TEMP\jdk" -Recurse -Include jdk*.zip, jdk*.tar.gz, jdk*.tgz |
             Select-Object -First 1
+          if (-not $inner) { throw "The bundle contains no jdk* archive." }
           New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\jdk-x" | Out-Null
           if ($inner.Extension -eq '.zip') {
             Expand-Archive $inner.FullName -DestinationPath "$env:RUNNER_TEMP\jdk-x"
