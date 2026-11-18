@@ -10,9 +10,13 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
@@ -37,6 +41,13 @@ public final class TransformCache {
 
     /** The fingerprint shape `TransformCacheKey` produces: a lowercase SHA-256 hex digest. */
     private static final String FINGERPRINT = "[0-9a-f]{64}";
+
+    /**
+     * One previous fingerprint is kept alongside the current one. Soft reboot is how mods are
+     * added and removed; toggling a mod (A → B → A) must find A's transformed bytes still there,
+     * while the cache stays bounded.
+     */
+    private static final int KEPT_PREVIOUS = 1;
 
     private static final Map<String, byte[]> L1 = new ConcurrentHashMap<>();
     private static final AtomicLong L1_BYTES = new AtomicLong();
@@ -138,31 +149,61 @@ public final class TransformCache {
     }
 
     /**
-     * Drops every fingerprint directory except {@code keepNamespace}.
+     * Drops stale fingerprint directories, keeping the current one and the most recently used
+     * previous one.
      *
      * <p>L2 used to accumulate one directory per fingerprint forever (42 fingerprints, 78 MB
-     * during development). Only direct children shaped like a fingerprint are removed, so
-     * pointing the property at a shared directory cannot delete unrelated data; the current
-     * session's directory is kept. Failures are ignored — a missed eviction only costs disk
-     * space, and a concurrent session's entries are regenerated on demand.
+     * during development), and dropping every other directory would make a mod toggle
+     * (A → B → A) rebuild A's transformed bytes. One previous fingerprint is the useful window:
+     * adding or removing a mod produces exactly one new fingerprint, and toggling back reuses
+     * the one before it. Only direct children shaped like a fingerprint are considered, so
+     * pointing the property at a shared directory cannot delete unrelated data. Failures are
+     * ignored — a missed eviction only costs disk space.
      *
      * <p>Reflection entry point for the session-side classloader.
      */
     public static void prune(String keepNamespace) {
         if (keepNamespace == null || !keepNamespace.matches(FINGERPRINT)) return;
-        L1.keySet().removeIf(key -> !key.startsWith(keepNamespace + "/"));
+        Set<String> kept = new LinkedHashSet<>();
+        kept.add(keepNamespace);
         String dir = System.getProperty("oml.transform.cache.dir");
-        if (dir == null || dir.isBlank()) return;
-        Path root = Path.of(dir);
-        try (DirectoryStream<Path> children = Files.newDirectoryStream(root)) {
-            for (Path child : children) {
-                String name = child.getFileName().toString();
-                if (name.equals(keepNamespace) || !name.matches(FINGERPRINT)) continue;
-                if (!Files.isDirectory(child, LinkOption.NOFOLLOW_LINKS)) continue;
-                deleteTree(child);
+        if (dir != null && !dir.isBlank()) {
+            Path root = Path.of(dir);
+            List<Path> previous = new ArrayList<>();
+            try (DirectoryStream<Path> children = Files.newDirectoryStream(root)) {
+                for (Path child : children) {
+                    String name = child.getFileName().toString();
+                    if (name.equals(keepNamespace) || !name.matches(FINGERPRINT)) continue;
+                    if (!Files.isDirectory(child, LinkOption.NOFOLLOW_LINKS)) continue;
+                    previous.add(child);
+                }
+            } catch (IOException ignored) {
+                // A missing cache directory or an unreadable entry is a no-op.
             }
-        } catch (IOException ignored) {
-            // A missing cache directory or an unreadable entry is a no-op.
+            // The directory's mtime is the session that last wrote it; the newest is the set the
+            // user is most likely to toggle back to.
+            previous.sort(Comparator.comparingLong(TransformCache::lastModified).reversed());
+            for (int i = 0; i < previous.size(); i++) {
+                Path child = previous.get(i);
+                if (i < KEPT_PREVIOUS) {
+                    kept.add(child.getFileName().toString());
+                } else {
+                    deleteTree(child);
+                }
+            }
+        }
+        // L1 follows the same keep-set; keys are `namespace/internalName`.
+        L1.keySet().removeIf(key -> {
+            int slash = key.indexOf('/');
+            return slash <= 0 || !kept.contains(key.substring(0, slash));
+        });
+    }
+
+    private static long lastModified(Path path) {
+        try {
+            return Files.getLastModifiedTime(path).toMillis();
+        } catch (IOException e) {
+            return 0L;
         }
     }
 

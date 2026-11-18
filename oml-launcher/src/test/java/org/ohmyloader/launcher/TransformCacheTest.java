@@ -8,6 +8,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.FileTime;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -80,20 +81,30 @@ class TransformCacheTest {
     }
 
     @Test
-    void pruningKeepsOnlyTheCurrentFingerprint() throws Exception {
-        String old = "a".repeat(64);
-        String current = "b".repeat(64);
+    void pruningKeepsTheCurrentAndTheMostRecentPreviousFingerprint() throws Exception {
+        String oldest = "a".repeat(64);
+        String previous = "b".repeat(64);
+        String current = "c".repeat(64);
         Path unrelated = Files.createDirectories(dir.resolve("keep-me"));
-        TransformCache.put(old, "a/B", new byte[]{1});
-        TransformCache.put(current, "a/B", new byte[]{2});
+        TransformCache.put(oldest, "a/B", new byte[]{1});
+        TransformCache.put(previous, "a/B", new byte[]{2});
+        TransformCache.put(current, "a/B", new byte[]{3});
+        long now = System.currentTimeMillis();
+        Files.setLastModifiedTime(dir.resolve(oldest), FileTime.fromMillis(now - 10_000));
+        Files.setLastModifiedTime(dir.resolve(previous), FileTime.fromMillis(now - 5_000));
 
         TransformCache.prune(current);
 
-        assertFalse(Files.exists(dir.resolve(old)), "a previous fingerprint's directory must be removed");
+        assertFalse(Files.exists(dir.resolve(oldest)), "fingerprints older than the toggle window are evicted");
+        assertTrue(
+            Files.exists(dir.resolve(previous)),
+            "the most recent previous fingerprint survives so a mod toggle (A -> B -> A) reuses it"
+        );
         assertTrue(Files.exists(dir.resolve(current)), "the active fingerprint must survive");
         assertTrue(Files.exists(unrelated), "directories outside the fingerprint shape are not the cache's to delete");
-        assertArrayEquals(new byte[]{2}, TransformCache.get(current, "a/B"));
-        assertNull(TransformCache.get(old, "a/B"), "evicted entries are cleared from the in-memory tier too");
+        assertArrayEquals(new byte[]{3}, TransformCache.get(current, "a/B"));
+        assertArrayEquals(new byte[]{2}, TransformCache.get(previous, "a/B"), "the kept previous tier stays in L1");
+        assertNull(TransformCache.get(oldest, "a/B"), "evicted entries are cleared from the in-memory tier too");
     }
 
     @Test

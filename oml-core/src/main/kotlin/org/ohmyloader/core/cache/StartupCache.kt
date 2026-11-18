@@ -107,6 +107,11 @@ object StartupCache {
                     rules[sha] = rules.getOrDefault(sha, emptyList()) + CachedRule(fields[2], id)
                 }
 
+                // Persisted empty results: a matching stat stamp must answer "nothing here"
+                // instead of falling back to a fresh walk on every warm session.
+                "MODS" -> if (fields.size == 2) mods[fields[1]] = emptyList()
+                "RULES" -> if (fields.size == 2) rules[fields[1]] = emptyList()
+
                 "HOOKS" -> if (fields.size == 3) {
                     hookCarriers[fields[1]] = fields[2].split(";").filter { it.isNotEmpty() }
                 }
@@ -222,12 +227,22 @@ object StartupCache {
                 append("JAR\t${escape(path)}\t${stamp.size}\t${stamp.mtime}\t${stamp.sha}\n")
             }
             for ((sha, records) in mods) {
+                // An empty result is a real answer ("scanned, no @Mod here"); without a marker a
+                // warm run cannot tell it from "never scanned" and re-walks the jar every session.
+                if (records.isEmpty()) {
+                    append("MODS\t$sha\n")
+                    continue
+                }
                 for (record in records) {
                     append("MOD\t$sha\t${escape(record.id)}\t${escape(record.name)}\t${escape(record.version)}\t" +
                         "${escape(record.entryClass)}\t${escape(record.dependencies.joinToString("\u001F"))}\n")
                 }
             }
             for ((sha, records) in rules) {
+                if (records.isEmpty()) {
+                    append("RULES\t$sha\n")
+                    continue
+                }
                 for (record in records) {
                     append("RULE\t$sha\t${escape(record.internalName)}\t${escape(record.id.orEmpty())}\n")
                 }

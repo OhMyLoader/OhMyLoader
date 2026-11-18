@@ -353,8 +353,8 @@ object OMLCore {
             OmlLog.info("TransformCache", "disabled: the launcher cache is not on the supervisor classpath")
             return
         }
-        // Only the current fingerprint's directory survives: the disk tier no longer grows by one
-        // directory per build, and the previous fingerprint's entries could never be reused anyway.
+        // The current fingerprint and the most recent previous one survive: the disk tier stays
+        // bounded, while toggling a mod (A → B → A) can reuse A's transformed bytes.
         cache.prune(namespace)
         loader.installTransformCache(cache, namespace)
         OmlLog.info("TransformCache", "enabled namespace=${namespace.take(12)} dir=$directory")

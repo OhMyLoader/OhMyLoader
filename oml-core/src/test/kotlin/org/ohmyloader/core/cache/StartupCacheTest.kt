@@ -86,6 +86,22 @@ class StartupCacheTest {
     }
 
     @Test
+    fun `an empty scan result answers a warm run instead of rescanning`() {
+        val dir = tempDir()
+        val jar = jarFile(dir, "library.jar")
+        StartupCache.init(dir)
+        val sha = StartupCache.hash(jar)
+        StartupCache.rememberMods(sha, emptyList())
+        StartupCache.rememberRules(sha, emptyList())
+        StartupCache.save()
+
+        StartupCache.init(dir)
+        val reloaded = StartupCache.statSha(jar)!!
+        assertTrue(StartupCache.modsFor(reloaded)?.isEmpty() == true, "an empty @Mod result must survive the ledger")
+        assertTrue(StartupCache.rulesFor(reloaded)?.isEmpty() == true, "an empty rule result must survive the ledger")
+    }
+
+    @Test
     fun `a broken ledger is discarded, not fatal`() {
         val dir = tempDir()
         File(dir, "startup-scan.v2.txt").writeText("JAR\tthis is not a record\nMOD\txxx\u0000garbage\n")
