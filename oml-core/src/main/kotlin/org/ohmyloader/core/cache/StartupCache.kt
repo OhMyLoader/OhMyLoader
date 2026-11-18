@@ -2,6 +2,8 @@ package org.ohmyloader.core.cache
 
 import org.ohmyloader.api.core.OmlLog
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.attribute.BasicFileAttributes
 import java.security.MessageDigest
 
 /**
@@ -45,6 +47,10 @@ object StartupCache {
     private val mods = HashMap<String, List<CachedMod>>()
     private val rules = HashMap<String, List<CachedRule>>()
     private val hookCarriers = HashMap<String, List<String>>()
+    /** Per-run answer for [statSha]: the three scanners ask about the same jars in sequence. */
+    private val statMemo = HashMap<String, String?>()
+    /** `absolutePath -> canonicalPath`: canonicalization hits the filesystem on Windows. */
+    private val canonicalPaths = java.util.concurrent.ConcurrentHashMap<String, String>()
     private var dirty = false
 
     /// The carrier-discovery contract version — bump when the scanner's carrier criteria change.
@@ -62,6 +68,8 @@ object StartupCache {
         mods.clear()
         rules.clear()
         hookCarriers.clear()
+        statMemo.clear()
+        canonicalPaths.clear()
         dirty = false
         if (cacheDir == null) return
         val file = ledgerFile(cacheDir)
@@ -111,8 +119,29 @@ object StartupCache {
      * hashing happens on the happy path. `null` = unknown jar (call [hash]).
      */
     fun statSha(file: File): String? {
-        val stamp = jars[file.canonicalPath] ?: return null
-        return if (stamp.size == file.length() && stamp.mtime == file.lastModified()) stamp.sha else null
+        val path = canonicalPathOf(file)
+        if (statMemo.containsKey(path)) return statMemo[path]
+        val stamp = jars[path]
+        if (stamp == null) {
+            statMemo[path] = null
+            return null
+        }
+        // One attributes call instead of length() + lastModified(): on Windows the two File calls
+        // are two syscalls, and a modpack makes this check hundreds of times per phase. The memo
+        // makes the second and third scanner reuse the first scanner's answer for this run.
+        val attributes = runCatching {
+            Files.readAttributes(file.toPath(), BasicFileAttributes::class.java)
+        }.getOrNull()
+        val sha = if (attributes != null &&
+            stamp.size == attributes.size() &&
+            stamp.mtime == attributes.lastModifiedTime().toMillis()
+        ) {
+            stamp.sha
+        } else {
+            null
+        }
+        statMemo[path] = sha
+        return sha
     }
 
     /**
@@ -120,6 +149,20 @@ object StartupCache {
      * matching stamp — once per jar per content change, never on the happy path.
      */
     fun hash(file: File): String {
+        val sha = digest(file)
+        rememberHash(canonicalPathOf(file), sha, file.length(), file.lastModified())
+        return sha
+    }
+
+    /** The ledger key for [file]; canonicalization is filesystem work on Windows, so memoize it. */
+    fun canonicalPathOf(file: File): String =
+        canonicalPaths.computeIfAbsent(file.absolutePath) { file.canonicalPath }
+
+    /**
+     * The pure SHA-256 of [file], safe to call from several threads. The cold scan hashes a
+     * modpack on a small pool; registration happens on one thread in [rememberHash].
+     */
+    fun digest(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")
         file.inputStream().use { input ->
             val buffer = ByteArray(1 shl 16)
@@ -129,10 +172,17 @@ object StartupCache {
                 digest.update(buffer, 0, read)
             }
         }
-        val sha = digest.digest().joinToString("") { "%02x".format(it) }
-        jars[file.canonicalPath] = JarStamp(file.length(), file.lastModified(), sha)
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    /**
+     * Registers a digest and stat stamp; the rest of this run answers [statSha] from it without
+     * touching the file again. [canonicalPath] is the key the scanners look up.
+     */
+    fun rememberHash(canonicalPath: String, sha: String, size: Long, mtime: Long) {
+        jars[canonicalPath] = JarStamp(size, mtime, sha)
+        statMemo[canonicalPath] = sha
         dirty = true
-        return sha
     }
 
     fun modsFor(sha: String): List<CachedMod>? = mods[sha]
@@ -167,7 +217,7 @@ object StartupCache {
         val target = dir?.let(::ledgerFile) ?: return
         if (!dirty) return
         val body = buildString {
-            appendLine("# oml startup scan cache v1 — safe to delete; regenerated from the jars")
+            appendLine("# oml startup scan cache v2 — safe to delete; regenerated from the jars")
             for ((path, stamp) in jars) {
                 append("JAR\t${escape(path)}\t${stamp.size}\t${stamp.mtime}\t${stamp.sha}\n")
             }
@@ -257,7 +307,9 @@ object StartupCache {
 
     // ------------------------------------------------------------- plumbing
 
-    private fun ledgerFile(dir: File) = File(dir, "startup-scan.v1.txt")
+    // v2: MR-JAR winner semantics and the @Mod byte payload change the scan products; an old
+    // v1 ledger must not be trusted for a multi-release jar.
+    private fun ledgerFile(dir: File) = File(dir, "startup-scan.v2.txt")
     private fun assetFile(dir: File) = File(dir, "asset-index.v1.txt")
 
     private fun escape(field: String): String =

@@ -1202,7 +1202,7 @@ class HookScannerTest {
         assertTrue(second.appliesTo("net/minecraft/client/Minecraft"))
         assertEquals(first.appliesTo("net/minecraft/client/Minecraft"), second.appliesTo("net/minecraft/client/Minecraft"))
         assertTrue(
-            java.io.File(cacheDir, "startup-scan.v1.txt").readText().contains("HOOKS\t"),
+            java.io.File(cacheDir, "startup-scan.v2.txt").readText().contains("HOOKS\t"),
             "the carrier list never landed in the ledger",
         )
     }

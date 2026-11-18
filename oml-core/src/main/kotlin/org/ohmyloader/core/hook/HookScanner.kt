@@ -283,17 +283,30 @@ object HookScanner {
         // The common case in a modpack: the ledger already recorded "no carriers here", so there
         // is nothing to parse and the jar does not even need to be opened.
         if (cachedCarriers != null && cachedCarriers.isEmpty()) return ScanResult(emptyList(), emptyList())
+        if (index != null && index.hooks.isEmpty()) {
+            StartupCache.rememberHookCarriers(sha, emptyList())
+            return ScanResult(emptyList(), emptyList())
+        }
         val carriers = mutableListOf<String>()
         JarFile(mod.file).use { zip ->
             // Only the full-list fallback walks the central directory: a cached carrier list (or
-            // the shared index) already names every class that needs the expensive parse.
-            val scanTargets = cachedCarriers ?: index?.hooks ?: zip.entries().asSequence()
-                .filter { it.name.endsWith(".class") && !it.name.startsWith("META-INF/") }
-                .map { it.name.removeSuffix(".class") }
-                .toList()
-            for (internalName in scanTargets) {
+            // the shared index) already names every class that needs the expensive parse. Cached
+            // records hold logical names, so the winning MR-JAR entry is resolved here.
+            val feature = Runtime.version().feature()
+            val scanTargets: List<Pair<String, String>> = when {
+                cachedCarriers != null -> cachedCarriers.map {
+                    JarClassIndex.winningEntryName(zip, it, feature) to it
+                }
+
+                index != null -> index.hooks.map { it.entryName to it.internalName }
+                else -> zip.entries().asSequence()
+                    .filter { it.name.endsWith(".class") && !it.name.startsWith("META-INF/") }
+                    .map { it.name to it.name.removeSuffix(".class") }
+                    .toList()
+            }
+            for ((entryName, internalName) in scanTargets) {
                 val stream = try {
-                    readClass(zip, internalName)
+                    readClass(zip, entryName)
                 } catch (t: Throwable) {
                     problems += "[${mod.id}] could not read $internalName.class: ${t.javaClass.simpleName}: ${t.message}"
                     null
@@ -332,8 +345,8 @@ object HookScanner {
         return ScanResult(rules, problems, merges)
     }
 
-    private fun readClass(zip: JarFile, internalName: String): java.io.InputStream? {
-        val entry = zip.getEntry("$internalName.class") ?: return null
+    private fun readClass(zip: JarFile, entryName: String): java.io.InputStream? {
+        val entry = zip.getEntry(entryName) ?: return null
         return zip.getInputStream(entry)
     }
 

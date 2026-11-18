@@ -20,6 +20,22 @@ pub fn build(b: *std.Build) void {
 
     lib_mod.linkLibrary(zstd_dep.artifact("zstd"));
 
+    // Vendored libdeflate 1.26, decompression subset only (MIT; see vendor/libdeflate/COPYING).
+    // ZIP entries are raw DEFLATE streams, so the zlib/gzip wrappers and the compressor are not
+    // compiled in. libdeflate's ARM decompressor has no arch-specific routine (the generic path is
+    // used), so only the x86 CPU-feature dispatch is part of this build.
+    lib_mod.addIncludePath(b.path("vendor/libdeflate"));
+    lib_mod.addIncludePath(b.path("vendor/libdeflate/lib"));
+    lib_mod.addCSourceFiles(.{
+        .root = b.path("vendor/libdeflate"),
+        .files = &.{
+            "lib/deflate_decompress.c",
+            "lib/utils.c",
+            "lib/x86/cpu_features.c",
+        },
+        .flags = &.{"-std=c11"},
+    });
+
     const lib = b.addLibrary(.{
         .name = "oml-native",
         .linkage = .dynamic,
@@ -37,6 +53,7 @@ pub fn build(b: *std.Build) void {
             \\    oml_zstd_decompress;
             \\    oml_zstd_get_frame_content_size;
             \\    oml_zstd_is_error;
+            \\    oml_scan_jar_v1;
             \\  local: *;
             \\};
         );

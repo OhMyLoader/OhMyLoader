@@ -46,6 +46,13 @@ tasks.processResources {
     }
 }
 
+// The suite exercises the pure-Java path by default: it is always available, and it is the
+// reference the native differential test compares against. The native walk is enabled explicitly
+// by that test (and by the benchmarks) after the library has been built.
+tasks.test {
+    systemProperty("oml.scan.native", "off")
+}
+
 // Hot-path numbers are machine-relative, so this is on demand and never part of `build`/`check`.
 // It still exits non-zero when a scenario's result or handler-hit check fails.
 tasks.register<JavaExec>("injectionBenchmark") {
@@ -67,4 +74,12 @@ tasks.register<JavaExec>("scanBenchmark") {
     description = "Measures cold/warm startup scan cost on a synthetic 300-jar pack."
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("org.ohmyloader.core.benchmark.ScanBenchmark")
+}
+
+tasks.register<JavaExec>("nativeScanBenchmark") {
+    group = "verification"
+    description = "Measures the oml-native jar-scan prototype on the same synthetic pack."
+    dependsOn(":oml-native:buildOmlNative")
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("org.ohmyloader.core.benchmark.NativeScanBenchmark")
 }

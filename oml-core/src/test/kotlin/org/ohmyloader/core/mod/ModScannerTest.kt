@@ -38,7 +38,10 @@ class ModScannerTest {
     }
 
     private fun jarWith(vararg entryNames: String): File {
-        val manifest = Manifest().apply { mainAttributes.putValue("Multi-Release", "true") }
+        val manifest = Manifest().apply {
+            mainAttributes.putValue("Manifest-Version", "1.0")
+            mainAttributes.putValue("Multi-Release", "true")
+        }
         val file = File(createTempDirectory("oml-modscan").toFile(), "mod.jar")
         JarOutputStream(file.outputStream(), manifest).use { jar ->
             for (name in entryNames) {

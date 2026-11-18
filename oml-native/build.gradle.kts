@@ -21,6 +21,7 @@ val buildOmlNative = tasks.register<oml.build.BuildOmlNativeTask>("buildOmlNativ
     nativeProjectDir.set(layout.projectDirectory)
     buildOutputDir.set(layout.projectDirectory.dir("build"))
     sourceFiles.from(fileTree("src"))
+    sourceFiles.from(fileTree("vendor"))
     sourceFiles.from("build.zig")
     sourceFiles.from("build.zig.zon")
 }
@@ -108,8 +109,9 @@ publishing {
             pom {
                 name.set("oml-native")
                 description.set(
-                    "OhMyLoader's own native library (zstd codecs for region files and packet " +
-                        "compression), built by zig with zstd statically linked."
+                    "OhMyLoader's own native library: zstd codecs for region files and packet " +
+                        "compression, and the memory-mapped mod-jar scanner (libdeflate), built by " +
+                        "zig with both C libraries statically linked."
                 )
                 licenses {
                     license {

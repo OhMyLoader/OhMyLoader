@@ -7,6 +7,10 @@ import org.ohmyloader.core.cache.StartupCache
 import org.ohmyloader.core.diagnostics.Diagnostics
 import java.io.File
 import java.io.InputStream
+import java.nio.file.Files
+import java.nio.file.attribute.BasicFileAttributes
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
 import java.util.jar.JarFile
 
 object ModScanner {
@@ -27,11 +31,14 @@ object ModScanner {
     fun scan(modsDir: File): List<ModContainer> {
         val started = System.nanoTime()
         val found = ArrayList<ModContainer>()
-        for (jarFile in ModsDirectory.files(modsDir, ".jar")) {
+        val jars = ModsDirectory.files(modsDir, ".jar")
+        hashMissing(jars)
+        for (jarFile in jars) {
             // Happy path: the ledger's stat stamp matches and the @Mod records come straight from
-            // the cache — no hashing, no jar opened. A miss hashes the jar once and re-scans.
-            val sha = StartupCache.statSha(jarFile) ?: StartupCache.hash(jarFile)
-            val cached = StartupCache.modsFor(sha)
+            // the cache — no hashing, no jar opened. A miss goes through the shared scan; the
+            // missing digests were already computed in parallel before this loop.
+            val known = StartupCache.statSha(jarFile)
+            val cached = known?.let(StartupCache::modsFor)
             if (cached != null) {
                 for (record in cached) {
                     found += ModContainer(
@@ -44,7 +51,15 @@ object ModScanner {
             // Cold path: one shared prefiltered walk finds the `@Mod` candidates, so parsing is
             // restricted to those classes instead of every class in the jar; the same index is
             // reused by the rule-set and hook scanners later in this run.
-            val scanned = scanJar(jarFile, JarClassIndex.of(jarFile, sha))
+            val scan = JarClassIndex.scan(jarFile)
+            val sha = scan?.sha ?: StartupCache.hash(jarFile)
+            val index = scan?.candidates
+            val scanned = if (index != null && index.mods.isEmpty() && index.reserved.isEmpty()) {
+                // A library jar: nothing to parse, and the empty record is still cached below.
+                ScanResult(emptyList(), reservedHit = false)
+            } else {
+                scanJar(jarFile, index)
+            }
             // A reserved-namespace jar is an error path (logged on every scan, never cached) —
             // a broken setup must keep shouting until it is fixed.
             if (!scanned.reservedHit) {
@@ -64,6 +79,53 @@ object ModScanner {
 
     private class ScanResult(val mods: List<ModContainer>, val reservedHit: Boolean)
 
+    private class HashResult(val path: String, val sha: String, val size: Long, val mtime: Long)
+
+    /**
+     * Hashes the jars whose stat stamp no longer matches on a small pool: a cold modpack is
+     * dominated by reading every jar once, and the digests are independent. Registration is
+     * sequential — the ledger maps are not thread-safe, and the digest is the expensive part.
+     */
+    private fun hashMissing(jars: List<File>) {
+        val missing = jars.filter { StartupCache.statSha(it) == null }
+        if (missing.isEmpty()) return
+        if (missing.size == 1) {
+            val file = missing.single()
+            val attributes = Files.readAttributes(file.toPath(), BasicFileAttributes::class.java)
+            StartupCache.rememberHash(
+                StartupCache.canonicalPathOf(file),
+                StartupCache.digest(file),
+                attributes.size(),
+                attributes.lastModifiedTime().toMillis(),
+            )
+            return
+        }
+        val pool = Executors.newFixedThreadPool(minOf(8, missing.size))
+        try {
+            val results = missing.map { file ->
+                pool.submit(Callable {
+                    val attributes = Files.readAttributes(file.toPath(), BasicFileAttributes::class.java)
+                    HashResult(
+                        StartupCache.canonicalPathOf(file),
+                        StartupCache.digest(file),
+                        attributes.size(),
+                        attributes.lastModifiedTime().toMillis(),
+                    )
+                })
+            }
+            for (result in results) {
+                val value = try {
+                    result.get()
+                } catch (e: java.util.concurrent.ExecutionException) {
+                    throw e.cause ?: e
+                }
+                StartupCache.rememberHash(value.path, value.sha, value.size, value.mtime)
+            }
+        } finally {
+            pool.shutdown()
+        }
+    }
+
     /**
      * [index] is the shared prefiltered walk when it could be built; `null` falls back to the
      * full walk (an unreadable jar then fails exactly as it did before the index existed).
@@ -72,11 +134,22 @@ object ModScanner {
         val found = mutableListOf<ModContainer>()
         if (index != null && index.reserved.isNotEmpty()) return refused(jarFile, index.reserved)
         val reserved = mutableListOf<String>()
-        JarFile(jarFile).use { zip ->
+        if (index != null && index.mods.all { it.bytes != null }) {
+            // The native walk returned the @Mod class bytes with the candidate records: the
+            // annotation values are read from memory, so not a single jar is opened here.
+            for (candidate in index.mods) {
+                parseModClass(candidate.bytes!!, jarFile)?.let(found::add)
+            }
+        } else {
+            JarFile(jarFile).use { zip ->
             if (index != null) {
                 // Candidates only: the index already saw every entry and matched the descriptor.
-                for (internalName in index.mods) {
-                    val entry = zip.getEntry("$internalName.class") ?: continue
+                for (candidate in index.mods) {
+                    if (candidate.bytes != null) {
+                        parseModClass(candidate.bytes, jarFile)?.let(found::add)
+                        continue
+                    }
+                    val entry = zip.getEntry(candidate.entryName) ?: continue
                     zip.getInputStream(entry).use { stream ->
                         parseModClass(stream, jarFile)?.let(found::add)
                     }
@@ -101,13 +174,19 @@ object ModScanner {
                     }
                 }
             }
+            }
         }
         if (reserved.isNotEmpty()) return refused(jarFile, reserved)
         return ScanResult(found, reservedHit = false)
     }
 
-    private fun parseModClass(stream: InputStream, jarFile: File): ModContainer? {
-        val reader = ClassReader(stream)
+    private fun parseModClass(bytes: ByteArray, jarFile: File): ModContainer? =
+        parseModClass(ClassReader(bytes), jarFile)
+
+    private fun parseModClass(stream: InputStream, jarFile: File): ModContainer? =
+        parseModClass(ClassReader(stream), jarFile)
+
+    private fun parseModClass(reader: ClassReader, jarFile: File): ModContainer? {
         val classNode = ClassNode()
         reader.accept(classNode, ClassReader.SKIP_CODE or ClassReader.SKIP_DEBUG)
 

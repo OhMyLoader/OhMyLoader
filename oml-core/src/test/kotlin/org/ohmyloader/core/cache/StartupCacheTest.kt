@@ -88,7 +88,7 @@ class StartupCacheTest {
     @Test
     fun `a broken ledger is discarded, not fatal`() {
         val dir = tempDir()
-        File(dir, "startup-scan.v1.txt").writeText("JAR\tthis is not a record\nMOD\txxx\u0000garbage\n")
+        File(dir, "startup-scan.v2.txt").writeText("JAR\tthis is not a record\nMOD\txxx\u0000garbage\n")
         StartupCache.init(dir)
         val jar = jarFile(dir, "mod.jar")
         assertTrue(StartupCache.statSha(jar) == null)

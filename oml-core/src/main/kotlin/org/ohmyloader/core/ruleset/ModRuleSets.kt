@@ -128,9 +128,14 @@ internal object ModRuleSets {
             // A jar with no rule sources (the common case in a modpack) is answered by an empty
             // record: neither the entry walk nor opening the jar is needed.
             if (cached != null && cached.isEmpty()) return
+            if (index != null && index.rules.isEmpty()) {
+                StartupCache.rememberRules(sha, emptyList())
+                return
+            }
             JarFile(mod.file).use { zip ->
                 if (cached != null) {
-                    val own = classEntries(zip).toSet()
+                    val feature = Runtime.version().feature()
+                    val own = ownClasses(zip)
                     for (rule in cached) {
                         // One class = one merge: the same rule class inside a multi-mod jar is
                         // registered for the first @Mod only (same ledger as the uncached path).
@@ -141,7 +146,7 @@ internal object ModRuleSets {
                             )
                             continue
                         }
-                        val node = parseClass(zip, rule.internalName)
+                        val node = parseClass(zip, JarClassIndex.winningEntryName(zip, rule.internalName, feature))
                         if (node == null) {
                             problems += "[${mod.id}] the cached rule class ${rule.internalName} is missing from the jar"
                             continue
@@ -151,11 +156,11 @@ internal object ModRuleSets {
                     return
                 }
 
-                val entries = classEntries(zip)
-                val own = entries.toSet()
+                val own = ownClasses(zip)
                 val jarRules = mutableListOf<StartupCache.CachedRule>()
-                for (entry in index?.rules ?: entries) {
-                    val node = parseClass(zip, entry) ?: continue
+                val entryNames = index?.rules?.map { it.entryName } ?: baseClassEntries(zip).map { "$it.class" }
+                for (entryName in entryNames) {
+                    val node = parseClass(zip, entryName) ?: continue
                     if (!hasRuleSource(node)) continue
                     jarRules += StartupCache.CachedRule(node.name, ruleSourceId(node))
                     // One class = one merge: the same rule class inside a multi-mod jar is
@@ -177,23 +182,36 @@ internal object ModRuleSets {
         }
     }
 
-    /** Class internal names in the jar, base copies only (central directory; no decompression). */
-    private fun classEntries(zip: JarFile): MutableList<String> {
+    /** Base-copy internal names (central directory; no decompression), for the no-index fallback. */
+    private fun baseClassEntries(zip: JarFile): List<String> {
         val entries = mutableListOf<String>()
         val all = zip.entries()
         while (all.hasMoreElements()) {
             val name = all.nextElement().name
-            // MR-JAR versioned copies are not rule sources: scanning them would register the same
-            // class a second time (and a versioned duplicate shadowing the base class is the exact
-            // ambiguity the MR-JAR mechanism resolves by class loader, not by scanner).
             if (name.startsWith("META-INF/")) continue
             if (name.endsWith(".class")) entries += name.removeSuffix(".class")
         }
         return entries
     }
 
-    private fun parseClass(zip: JarFile, internalName: String): ClassNode? {
-        val entry = zip.getEntry("$internalName.class") ?: return null
+    /**
+     * Every logical class the JVM can see: base copies plus the MR-JAR copies it recognises.
+     * A rule class may reference a helper that only exists in a versioned directory, so `own`
+     * must include the logical names of both.
+     */
+    private fun ownClasses(zip: JarFile): Set<String> {
+        val feature = JarClassIndex.runtimeFeature(zip)
+        val names = HashSet<String>()
+        val all = zip.entries()
+        while (all.hasMoreElements()) {
+            val name = all.nextElement().name
+            JarClassIndex.logicalClassName(name, feature)?.let(names::add)
+        }
+        return names
+    }
+
+    private fun parseClass(zip: JarFile, entryName: String): ClassNode? {
+        val entry = zip.getEntry(entryName) ?: return null
         zip.getInputStream(entry).use { stream ->
             val node = ClassNode(Opcodes.ASM9)
             ClassReader(stream).accept(node, ClassReader.SKIP_DEBUG or ClassReader.SKIP_FRAMES)

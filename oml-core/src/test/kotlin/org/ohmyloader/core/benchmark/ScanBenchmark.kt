@@ -7,7 +7,10 @@ import org.objectweb.asm.tree.ClassNode
 import org.ohmyloader.core.cache.StartupCache
 import org.ohmyloader.core.cache.TransformCacheKey
 import org.ohmyloader.core.hook.HookScanner
+import org.ohmyloader.core.mod.JarClassIndex
+import org.ohmyloader.core.mod.ModContainer
 import org.ohmyloader.core.mod.ModScanner
+import org.ohmyloader.core.mod.NativeJarScanner
 import org.ohmyloader.core.ruleset.ModRuleSets
 import java.io.File
 import java.util.jar.JarEntry
@@ -33,9 +36,13 @@ object ScanBenchmark {
 
     @JvmStatic
     fun main(args: Array<String>) {
+        // The native mode loads the library from the zig build output; the Java mode never does.
+        System.setProperty(
+            "oml.natives.dir",
+            File("..", "oml-native/build/${platform()}/${arch()}/release").absolutePath,
+        )
         val root = File("build/scan-benchmark").apply { deleteRecursively(); mkdirs() }
         val modsDir = File(root, "mods").apply { mkdirs() }
-        val cacheDir = File(root, "cache")
         val loader = ScanBenchmark::class.java.classLoader
 
         val generated = System.nanoTime()
@@ -46,6 +53,21 @@ object ScanBenchmark {
             "Scan benchmark: $JARS jars, ${JARS * CLASSES_PER_JAR} classes, " +
                 "${bytes / (1024 * 1024)} MiB (generated in $generateMs ms)",
         )
+
+        // The floor: opening every jar and inflating every class entry, with no scan at all.
+        val readStarted = System.nanoTime()
+        var readBytes = 0L
+        for (jar in modsDir.listFiles().orEmpty().sortedBy { it.name }) {
+            JarFile(jar).use { zip ->
+                val entries = zip.entries()
+                while (entries.hasMoreElements()) {
+                    val entry = entries.nextElement()
+                    if (!entry.name.endsWith(".class") || entry.name.startsWith("META-INF/")) continue
+                    readBytes += zip.getInputStream(entry).use { it.readBytes().size }
+                }
+            }
+        }
+        println("  read only: ${elapsedMs(readStarted)} ms (${readBytes / (1024 * 1024)} MiB)")
 
         // The old cold path, reproduced with the same ASM flags each scanner used: three full
         // decompress-and-parse passes over the same pack, on the same data and machine.
@@ -61,61 +83,102 @@ object ScanBenchmark {
         }
         println("  legacy total: ${elapsedMs(legacyStarted)} ms")
 
+        // The hash floor: every jar read once through SHA-256, which the cold scans pay anyway.
+        System.setProperty("oml.scan.native", "off")
+        JarClassIndex.clearForTests()
+        StartupCache.init(File(root, "cache-hash"))
+        val hashStarted = System.nanoTime()
+        for (jar in modsDir.listFiles().orEmpty().filter { it.name.endsWith(".jar") }.sortedBy { it.name }) {
+            StartupCache.hash(jar)
+        }
+        println("  hash only (sequential): ${elapsedMs(hashStarted)} ms")
+        StartupCache.save()
+
+        val javaMode = runMode("java", File(root, "cache-java"), native = false, modsDir, loader)
+        val nativeMode = runMode("native", File(root, "cache-native"), native = true, modsDir, loader)
+
+        val ledger = File(root, "cache-native/startup-scan.v2.txt")
+        println("ledger: ${ledger.length() / 1024} KiB, ${ledger.readLines().size} lines")
+        println(
+            "results: java cold=${javaMode.coldMods} mods/${javaMode.coldProblems} rule problems, " +
+                "native cold=${nativeMode.coldMods} mods/${nativeMode.coldProblems} rule problems",
+        )
+
+        val consistent = javaMode.coldMods == JARS &&
+            javaMode.warmMods == JARS &&
+            nativeMode.coldMods == JARS &&
+            nativeMode.warmMods == JARS &&
+            javaMode.coldProblems == javaMode.warmProblems &&
+            nativeMode.coldProblems == nativeMode.warmProblems &&
+            javaMode.fingerprint != null &&
+            javaMode.fingerprint == javaMode.warmFingerprint &&
+            nativeMode.fingerprint != null &&
+            nativeMode.fingerprint == nativeMode.warmFingerprint
+        if (!consistent) {
+            println("Scan benchmark: FAIL — the cold and warm passes disagree")
+            exitProcess(1)
+        }
+    }
+
+    private class ModeResult(
+        val coldMods: Int,
+        val warmMods: Int,
+        val coldProblems: Int,
+        val warmProblems: Int,
+        val fingerprint: String?,
+        val warmFingerprint: String?,
+    )
+
+    private fun runMode(
+        label: String,
+        cacheDir: File,
+        native: Boolean,
+        modsDir: File,
+        loader: ClassLoader,
+    ): ModeResult {
+        cacheDir.deleteRecursively()
+        System.setProperty("oml.scan.native", if (native) "on" else "off")
+        JarClassIndex.clearForTests()
+        println("[$label]")
+        if (native) println("  native scanner available: ${NativeJarScanner.available()}")
+
         val coldStarted = System.nanoTime()
         StartupCache.init(cacheDir)
         val coldMods = timed("cold mod scan") { ModScanner.scan(modsDir) }
         val coldRules = timed("cold rule sets") { ModRuleSets.load(coldMods, loader) }
         timed("cold hook scan") { HookScanner.createTransformer(coldMods) }
         println("  cold total: ${elapsedMs(coldStarted)} ms")
-        val fingerprint = timed("cold transform fingerprint") {
-            TransformCacheKey.compute(
-                gameJar = modsDir.listFiles().orEmpty().first(),
-                loaderVersion = "benchmark",
-                adapterId = "benchmark",
-                adapterLocation = modsDir.listFiles().orEmpty().first().toURI().toURL(),
-                layerLocations = coldMods.take(4).map { it.file.toURI().toURL() },
-                modJars = coldMods.map { it.file },
-                side = "client",
-                jdkFeature = Runtime.version().feature(),
-            )
-        }
+        val fingerprint = timed("cold transform fingerprint") { fingerprint(modsDir, coldMods) }
 
+        JarClassIndex.clearForTests()
         val warmStarted = System.nanoTime()
         StartupCache.init(cacheDir)
         val warmMods = timed("warm mod scan") { ModScanner.scan(modsDir) }
         val warmRules = timed("warm rule sets") { ModRuleSets.load(warmMods, loader) }
         timed("warm hook scan") { HookScanner.createTransformer(warmMods) }
         println("  warm total: ${elapsedMs(warmStarted)} ms")
-        val warmFingerprint = timed("warm transform fingerprint") {
-            TransformCacheKey.compute(
-                gameJar = modsDir.listFiles().orEmpty().first(),
-                loaderVersion = "benchmark",
-                adapterId = "benchmark",
-                adapterLocation = modsDir.listFiles().orEmpty().first().toURI().toURL(),
-                layerLocations = warmMods.take(4).map { it.file.toURI().toURL() },
-                modJars = warmMods.map { it.file },
-                side = "client",
-                jdkFeature = Runtime.version().feature(),
-            )
-        }
+        val warmFingerprint = timed("warm transform fingerprint") { fingerprint(modsDir, warmMods) }
 
-        val ledger = File(cacheDir, "startup-scan.v1.txt")
-        println("ledger: ${ledger.length() / 1024} KiB, ${ledger.readLines().size} lines")
-        println(
-            "results: cold=${coldMods.size} mods/${coldRules.problems.size} rule problems, " +
-                "warm=${warmMods.size} mods/${warmRules.problems.size} rule problems",
+        return ModeResult(
+            coldMods.size,
+            warmMods.size,
+            coldRules.problems.size,
+            warmRules.problems.size,
+            fingerprint,
+            warmFingerprint,
         )
-
-        val consistent = coldMods.size == JARS &&
-            warmMods.size == JARS &&
-            coldRules.problems.size == warmRules.problems.size &&
-            fingerprint != null &&
-            fingerprint == warmFingerprint
-        if (!consistent) {
-            println("Scan benchmark: FAIL — the cold and warm passes disagree")
-            exitProcess(1)
-        }
     }
+
+    private fun fingerprint(modsDir: File, mods: List<ModContainer>): String? = TransformCacheKey.compute(
+        gameJar = modsDir.listFiles().orEmpty().first(),
+        loaderVersion = "benchmark",
+        adapterId = "benchmark",
+        adapterLocation = modsDir.listFiles().orEmpty().first().toURI().toURL(),
+        layerLocations = mods.take(4).map { it.file.toURI().toURL() },
+        modJars = mods.map { it.file },
+        side = "client",
+        jdkFeature = Runtime.version().feature(),
+    )
 
     private fun generate(modsDir: File) {
         for (jarIndex in 0 until JARS) {
@@ -196,4 +259,15 @@ object ScanBenchmark {
     }
 
     private fun elapsedMs(started: Long): Long = (System.nanoTime() - started) / 1_000_000
+
+    private fun platform(): String = when {
+        System.getProperty("os.name", "").lowercase().contains("win") -> "windows"
+        System.getProperty("os.name", "").lowercase().let { it.contains("mac") || it.contains("darwin") } -> "macosx"
+        else -> "linux"
+    }
+
+    private fun arch(): String {
+        val arch = System.getProperty("os.arch", "").lowercase()
+        return if (arch.contains("aarch64") || arch.contains("arm64")) "arm64" else "x64"
+    }
 }
