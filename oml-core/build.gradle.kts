@@ -61,3 +61,10 @@ tasks.register<JavaExec>("transformBenchmark") {
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("org.ohmyloader.core.benchmark.TransformBenchmark")
 }
+
+tasks.register<JavaExec>("scanBenchmark") {
+    group = "verification"
+    description = "Measures cold/warm startup scan cost on a synthetic 300-jar pack."
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("org.ohmyloader.core.benchmark.ScanBenchmark")
+}

@@ -125,20 +125,12 @@ internal object ModRuleSets {
             // jar, so only those classes need the ASM parse (the entry list below is still walked
             // for the `own` class set — central-directory names only, no decompression).
             val index = if (cached == null) JarClassIndex.of(mod.file, sha) else null
+            // A jar with no rule sources (the common case in a modpack) is answered by an empty
+            // record: neither the entry walk nor opening the jar is needed.
+            if (cached != null && cached.isEmpty()) return
             JarFile(mod.file).use { zip ->
-                val entries = mutableListOf<String>()
-                val all = zip.entries()
-                while (all.hasMoreElements()) {
-                    val name = all.nextElement().name
-                    // MR-JAR versioned copies are not rule sources: scanning them would register the same
-                    // class a second time (and a versioned duplicate shadowing the base class is the exact
-                    // ambiguity the MR-JAR mechanism resolves by class loader, not by scanner).
-                    if (name.startsWith("META-INF/")) continue
-                    if (name.endsWith(".class")) entries += name.removeSuffix(".class")
-                }
-                val own = entries.toSet()
-
                 if (cached != null) {
+                    val own = classEntries(zip).toSet()
                     for (rule in cached) {
                         // One class = one merge: the same rule class inside a multi-mod jar is
                         // registered for the first @Mod only (same ledger as the uncached path).
@@ -159,6 +151,8 @@ internal object ModRuleSets {
                     return
                 }
 
+                val entries = classEntries(zip)
+                val own = entries.toSet()
                 val jarRules = mutableListOf<StartupCache.CachedRule>()
                 for (entry in index?.rules ?: entries) {
                     val node = parseClass(zip, entry) ?: continue
@@ -181,6 +175,21 @@ internal object ModRuleSets {
         } catch (t: Throwable) {
             problems += "[${mod.id}] failed to scan rule set: ${t.javaClass.simpleName}: ${t.message}"
         }
+    }
+
+    /** Class internal names in the jar, base copies only (central directory; no decompression). */
+    private fun classEntries(zip: JarFile): MutableList<String> {
+        val entries = mutableListOf<String>()
+        val all = zip.entries()
+        while (all.hasMoreElements()) {
+            val name = all.nextElement().name
+            // MR-JAR versioned copies are not rule sources: scanning them would register the same
+            // class a second time (and a versioned duplicate shadowing the base class is the exact
+            // ambiguity the MR-JAR mechanism resolves by class loader, not by scanner).
+            if (name.startsWith("META-INF/")) continue
+            if (name.endsWith(".class")) entries += name.removeSuffix(".class")
+        }
+        return entries
     }
 
     private fun parseClass(zip: JarFile, internalName: String): ClassNode? {

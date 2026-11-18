@@ -280,13 +280,17 @@ object HookScanner {
         // the jar, so the expensive EXPAND_FRAMES parse runs on those candidates only; the same
         // walk served the `@Mod` and `@RuleSource` scanners earlier in this run.
         val index = if (cachedCarriers == null) JarClassIndex.of(mod.file, sha) else null
+        // The common case in a modpack: the ledger already recorded "no carriers here", so there
+        // is nothing to parse and the jar does not even need to be opened.
+        if (cachedCarriers != null && cachedCarriers.isEmpty()) return ScanResult(emptyList(), emptyList())
         val carriers = mutableListOf<String>()
         JarFile(mod.file).use { zip ->
-            val classEntries = zip.entries().asSequence()
+            // Only the full-list fallback walks the central directory: a cached carrier list (or
+            // the shared index) already names every class that needs the expensive parse.
+            val scanTargets = cachedCarriers ?: index?.hooks ?: zip.entries().asSequence()
                 .filter { it.name.endsWith(".class") && !it.name.startsWith("META-INF/") }
                 .map { it.name.removeSuffix(".class") }
                 .toList()
-            val scanTargets = cachedCarriers ?: index?.hooks ?: classEntries
             for (internalName in scanTargets) {
                 val stream = try {
                     readClass(zip, internalName)
