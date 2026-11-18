@@ -344,15 +344,15 @@ class InstallerContractTest {
     @Test
     fun `the catalog bundles the one pinned adapter`() {
         val entry = VersionCatalog.versions().single()
-        assertEquals("26.4-snapshot-9", entry.version)
+        assertEquals("26.4-snapshot-10", entry.version)
         assertEquals("oml-adapter", entry.adapterArtifact)
     }
 
     @Test
     fun `the snapshot alias resolves to the real id and a real id passes through`() {
         val catalogEntry = SupportedVersion("snapshot", 27, "oml-adapter")
-        val resolved = resolveSnapshotAlias(catalogEntry, fetchLatest = { "26.4-snapshot-9" })
-        assertEquals("26.4-snapshot-9", resolved.version, "the alias must be replaced by the real id")
+        val resolved = resolveSnapshotAlias(catalogEntry, fetchLatest = { "26.4-snapshot-10" })
+        assertEquals("26.4-snapshot-10", resolved.version, "the alias must be replaced by the real id")
         assertEquals(27, resolved.javaMajor, "resolution must not touch the other fields")
         assertEquals("oml-adapter", resolved.adapterArtifact)
 
@@ -445,11 +445,11 @@ class InstallerContractTest {
         }
 
         assertTrue(
-            loggedFor("26.4-snapshot-10").any { it.contains("26.4-snapshot-9") },
+            loggedFor("26.4-snapshot-11").any { it.contains("26.4-snapshot-10") },
             "the snapshot install must state the adapter's verification scope",
         )
         assertTrue(
-            loggedFor("26.3").none { it.contains("26.4-snapshot-9") },
+            loggedFor("26.3").none { it.contains("26.4-snapshot-10") },
             "a release-version install must not carry the snapshot notice",
         )
     }

@@ -24,7 +24,7 @@ import kotlin.test.*
 class HookShapeTest {
 
     private val clientJar: File =
-        File(System.getProperty("oml.clientJar", "libs/26.4-snapshot-9-client.jar"))
+        File(System.getProperty("oml.clientJar", "libs/26.4-snapshot-10-client.jar"))
 
     /** Client and server transformers instantiate cleanly without any game class on the classpath: rules are pure data. */
     private val ruleSets = listOf(

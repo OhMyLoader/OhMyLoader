@@ -18,7 +18,7 @@ import kotlin.test.fail
  */
 class CreativeTabPositionTest {
 
-    private val clientJar: File = File(System.getProperty("oml.clientJar", "libs/26.4-snapshot-9-client.jar"))
+    private val clientJar: File = File(System.getProperty("oml.clientJar", "libs/26.4-snapshot-10-client.jar"))
 
     @Test
     fun `vanilla occupies no creative tab slot where OML registers its own`() {

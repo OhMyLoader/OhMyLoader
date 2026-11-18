@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit
  * `ParseBox.fromFullTree`.
  */
 class OMLAdapter : IAdapter {
-    override val versionId = "26.4-snapshot-9"
+    override val versionId = "26.4-snapshot-10"
 
     override val mainClass = "net.minecraft.client.main.Main"
 

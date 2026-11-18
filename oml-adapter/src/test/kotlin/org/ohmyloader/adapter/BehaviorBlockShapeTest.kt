@@ -19,7 +19,7 @@ import kotlin.test.assertTrue
 class BehaviorBlockShapeTest {
 
     private val clientJar: File =
-        File(System.getProperty("oml.clientJar", "libs/26.4-snapshot-9-client.jar"))
+        File(System.getProperty("oml.clientJar", "libs/26.4-snapshot-10-client.jar"))
 
     private fun ourClass(): ClassNode =
         OMLBehaviorBlock::class.java.classLoader
