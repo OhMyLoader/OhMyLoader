@@ -14,6 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** The L1/L2 store's contract: round-trip, disk fallback, integrity, and hostile keys. */
 class TransformCacheTest {
@@ -76,6 +77,23 @@ class TransformCacheTest {
         TransformCache.put("ns1", "a/B", new byte[]{1});
 
         assertNull(TransformCache.get("ns2", "a/B"));
+    }
+
+    @Test
+    void pruningKeepsOnlyTheCurrentFingerprint() throws Exception {
+        String old = "a".repeat(64);
+        String current = "b".repeat(64);
+        Path unrelated = Files.createDirectories(dir.resolve("keep-me"));
+        TransformCache.put(old, "a/B", new byte[]{1});
+        TransformCache.put(current, "a/B", new byte[]{2});
+
+        TransformCache.prune(current);
+
+        assertFalse(Files.exists(dir.resolve(old)), "a previous fingerprint's directory must be removed");
+        assertTrue(Files.exists(dir.resolve(current)), "the active fingerprint must survive");
+        assertTrue(Files.exists(unrelated), "directories outside the fingerprint shape are not the cache's to delete");
+        assertArrayEquals(new byte[]{2}, TransformCache.get(current, "a/B"));
+        assertNull(TransformCache.get(old, "a/B"), "evicted entries are cleared from the in-memory tier too");
     }
 
     @Test

@@ -81,6 +81,28 @@ class TransformCacheKeyTest {
         assertNotEquals(first, changed)
     }
 
+    @Test
+    fun `file inputs are hashed through the startup ledger, not read twice`() {
+        val cache = dir.resolve("startup").toFile().apply { mkdirs() }
+        StartupCache.init(cache)
+        val game = file("game.jar", "game")
+        val adapter = file("adapter.jar", "adapter")
+        val mod = file("mod.jar", "mod")
+
+        assertNotNull(compute(game, adapter, listOf(mod)))
+
+        assertNotNull(StartupCache.statSha(game), "the game jar was hashed but not recorded in the ledger")
+        assertNotNull(StartupCache.statSha(adapter), "the adapter jar was hashed but not recorded in the ledger")
+        assertNotNull(StartupCache.statSha(mod), "the mod jar was hashed but not recorded in the ledger")
+
+        // A later run answers the same stamps from disk, so the fingerprint costs no jar reads.
+        StartupCache.save()
+        StartupCache.init(cache)
+        assertNotNull(StartupCache.statSha(game))
+        assertNotNull(StartupCache.statSha(adapter))
+        assertNotNull(StartupCache.statSha(mod))
+    }
+
     private fun compute(
         game: File,
         adapter: File,

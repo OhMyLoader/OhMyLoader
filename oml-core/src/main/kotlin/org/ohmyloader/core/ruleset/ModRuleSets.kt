@@ -11,6 +11,7 @@ import org.ohmyloader.api.core.inject.RuleSet
 import org.ohmyloader.api.core.inject.RuleSetProvider
 import org.ohmyloader.core.cache.StartupCache
 import org.ohmyloader.core.hook.ClassMerger
+import org.ohmyloader.core.mod.JarClassIndex
 import org.ohmyloader.core.mod.ModContainer
 import java.io.File
 import java.util.jar.JarFile
@@ -120,6 +121,10 @@ internal object ModRuleSets {
         try {
             val sha = StartupCache.statSha(mod.file) ?: StartupCache.hash(mod.file)
             val cached = StartupCache.rulesFor(sha)
+            // Cold path: the shared index already matched the `@RuleSource` descriptor across the
+            // jar, so only those classes need the ASM parse (the entry list below is still walked
+            // for the `own` class set — central-directory names only, no decompression).
+            val index = if (cached == null) JarClassIndex.of(mod.file, sha) else null
             JarFile(mod.file).use { zip ->
                 val entries = mutableListOf<String>()
                 val all = zip.entries()
@@ -155,7 +160,7 @@ internal object ModRuleSets {
                 }
 
                 val jarRules = mutableListOf<StartupCache.CachedRule>()
-                for (entry in entries) {
+                for (entry in index?.rules ?: entries) {
                     val node = parseClass(zip, entry) ?: continue
                     if (!hasRuleSource(node)) continue
                     jarRules += StartupCache.CachedRule(node.name, ruleSourceId(node))

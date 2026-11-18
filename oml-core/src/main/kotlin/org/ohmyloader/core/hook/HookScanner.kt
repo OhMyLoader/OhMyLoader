@@ -13,6 +13,7 @@ import org.ohmyloader.core.cache.StartupCache
 import org.ohmyloader.core.hook.HookScanner.parseRedirect
 import org.ohmyloader.core.hook.HookScanner.policyProblem
 import org.ohmyloader.core.hook.HookScanner.refineVarAnchor
+import org.ohmyloader.core.mod.JarClassIndex
 import org.ohmyloader.core.mod.ModContainer
 import org.ohmyloader.core.transformer.IClassTransformer
 import org.ohmyloader.core.transformer.injection.AnchorResolver
@@ -275,13 +276,17 @@ object HookScanner {
         // of every class in the jar. The full pass below is the cold path that builds the list.
         val sha = StartupCache.statSha(mod.file) ?: StartupCache.hash(mod.file)
         val cachedCarriers = StartupCache.hookCarriersFor(sha)
+        // Cold path: the shared index already matched the `@Hooked`/`@Merged` descriptors across
+        // the jar, so the expensive EXPAND_FRAMES parse runs on those candidates only; the same
+        // walk served the `@Mod` and `@RuleSource` scanners earlier in this run.
+        val index = if (cachedCarriers == null) JarClassIndex.of(mod.file, sha) else null
         val carriers = mutableListOf<String>()
         JarFile(mod.file).use { zip ->
             val classEntries = zip.entries().asSequence()
                 .filter { it.name.endsWith(".class") && !it.name.startsWith("META-INF/") }
                 .map { it.name.removeSuffix(".class") }
                 .toList()
-            val scanTargets = cachedCarriers ?: classEntries
+            val scanTargets = cachedCarriers ?: index?.hooks ?: classEntries
             for (internalName in scanTargets) {
                 val stream = try {
                     readClass(zip, internalName)

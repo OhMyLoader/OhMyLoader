@@ -344,12 +344,18 @@ object OMLCore {
             OmlLog.warn("TransformCache", "disabled: the fingerprint has a missing input")
             return
         }
+        // The fingerprint hashed the game and loader-layer jars into the same ledger the scan
+        // uses; persist those stamps now, or the next run re-reads them for nothing.
+        StartupCache.save()
         val directory = File(cacheDirectory(), "transformed")
         System.setProperty("oml.transform.cache.dir", directory.absolutePath)
         val cache = LauncherTransformCache.create(OMLCore::class.java.classLoader) ?: run {
             OmlLog.info("TransformCache", "disabled: the launcher cache is not on the supervisor classpath")
             return
         }
+        // Only the current fingerprint's directory survives: the disk tier no longer grows by one
+        // directory per build, and the previous fingerprint's entries could never be reused anyway.
+        cache.prune(namespace)
         loader.installTransformCache(cache, namespace)
         OmlLog.info("TransformCache", "enabled namespace=${namespace.take(12)} dir=$directory")
     }

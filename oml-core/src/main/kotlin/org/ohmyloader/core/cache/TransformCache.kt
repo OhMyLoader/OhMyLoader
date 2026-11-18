@@ -7,4 +7,10 @@ package org.ohmyloader.core.cache
 interface TransformCache {
     fun get(namespace: String, internalName: String): ByteArray?
     fun put(namespace: String, internalName: String, bytes: ByteArray)
+
+    /**
+     * Drops entries belonging to every fingerprint other than [namespace]. Eviction is a disk-space
+     * concern only, so a backend without a persistent tier (or a failed delete) does nothing.
+     */
+    fun prune(namespace: String) {}
 }

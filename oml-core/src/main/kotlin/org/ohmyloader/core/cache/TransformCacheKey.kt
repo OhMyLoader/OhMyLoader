@@ -29,7 +29,9 @@ internal object TransformCacheKey {
     ): String? {
         if (gameJar == null || !gameJar.isFile) return null
         if (layerLocations.isEmpty()) return null
-        val gameHash = hashFile(gameJar)?.toHex() ?: return null
+        // File inputs go through the startup ledger: a jar the scan already hashed (or that was
+        // hashed in an earlier run, with a matching stat stamp) is not read a second time here.
+        val gameHash = hashFileHex(gameJar) ?: return null
         val adapterHash = adapterLocation?.let(::hashLocation) ?: "no-location"
         val layerHashes = layerLocations
             .map { hashLocation(it) ?: return null }
@@ -39,8 +41,8 @@ internal object TransformCacheKey {
             .distinctBy { it.path }
             .map { file ->
                 if (!file.isFile) return null
-                val hash = hashFile(file) ?: return null
-                file.name + "=" + hash.toHex()
+                val hash = hashFileHex(file) ?: return null
+                file.name + "=" + hash
             }
         // Deliberately not sorted: generated bridge method ids follow rule registration order, so
         // the mod load order is part of the transform input, not just the set of jars.
@@ -61,7 +63,7 @@ internal object TransformCacheKey {
 
     private fun hashLocation(url: URL): String? {
         val file = runCatching { File(url.toURI()) }.getOrNull() ?: return null
-        if (file.isFile) return hashFile(file)?.toHex()
+        if (file.isFile) return hashFileHex(file)
         if (!file.isDirectory) return null
         val digest = MessageDigest.getInstance("SHA-256")
         val classes = file.walkTopDown()
@@ -70,7 +72,7 @@ internal object TransformCacheKey {
             .toList()
         for (entry in classes) {
             val relative = entry.relativeTo(file).invariantSeparatorsPath
-            val hash = hashFile(entry) ?: return null
+            val hash = hashFileBytes(entry) ?: return null
             digest.update(relative.toByteArray(Charsets.UTF_8))
             digest.update(0)
             digest.update(hash)
@@ -78,7 +80,12 @@ internal object TransformCacheKey {
         return digest.digest().toHex()
     }
 
-    private fun hashFile(file: File): ByteArray? = runCatching {
+    /** A file's digest, answered by the startup ledger when its stat stamp still matches. */
+    private fun hashFileHex(file: File): String? =
+        runCatching { StartupCache.statSha(file) ?: StartupCache.hash(file) }.getOrNull()
+
+    /** Directory entries are not in the startup ledger; their bytes are hashed directly. */
+    private fun hashFileBytes(file: File): ByteArray? = runCatching {
         val digest = MessageDigest.getInstance("SHA-256")
         file.inputStream().use { input ->
             val buffer = ByteArray(BUFFER)

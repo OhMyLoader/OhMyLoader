@@ -10,6 +10,8 @@ import java.lang.reflect.Method
 internal class LauncherTransformCache private constructor(
     private val getter: Method,
     private val putter: Method,
+    /** Absent in an older launcher shell: the cache still works, it just never evicts. */
+    private val pruner: Method?,
 ) : TransformCache {
 
     override fun get(namespace: String, internalName: String): ByteArray? =
@@ -23,6 +25,14 @@ internal class LauncherTransformCache private constructor(
         }
     }
 
+    override fun prune(namespace: String) {
+        try {
+            pruner?.invoke(null, namespace)
+        } catch (_: Throwable) {
+            // A missed eviction only costs disk space.
+        }
+    }
+
     companion object {
         /** Null when the launcher layer does not ship the cache (unit tests, an old shell). */
         fun create(loader: ClassLoader): TransformCache? = runCatching {
@@ -30,6 +40,7 @@ internal class LauncherTransformCache private constructor(
             LauncherTransformCache(
                 type.getMethod("get", String::class.java, String::class.java),
                 type.getMethod("put", String::class.java, String::class.java, ByteArray::class.java),
+                runCatching { type.getMethod("prune", String::class.java) }.getOrNull(),
             )
         }.getOrNull()
     }

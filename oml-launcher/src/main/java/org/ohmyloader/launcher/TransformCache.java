@@ -3,15 +3,19 @@ package org.ohmyloader.launcher;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Stream;
 
 /**
  * The transform cache the Supervisor owns across sessions.
@@ -30,6 +34,9 @@ public final class TransformCache {
     private static final byte VERSION = 1;
     private static final int HEADER = 4 + 1 + 32 + 4;
     private static final long MAX_L1_BYTES = 256L * 1024 * 1024;
+
+    /** The fingerprint shape `TransformCacheKey` produces: a lowercase SHA-256 hex digest. */
+    private static final String FINGERPRINT = "[0-9a-f]{64}";
 
     private static final Map<String, byte[]> L1 = new ConcurrentHashMap<>();
     private static final AtomicLong L1_BYTES = new AtomicLong();
@@ -130,10 +137,47 @@ public final class TransformCache {
         return Path.of(dir).resolve(namespace).resolve(internalName + ".bin");
     }
 
+    /**
+     * Drops every fingerprint directory except {@code keepNamespace}.
+     *
+     * <p>L2 used to accumulate one directory per fingerprint forever (42 fingerprints, 78 MB
+     * during development). Only direct children shaped like a fingerprint are removed, so
+     * pointing the property at a shared directory cannot delete unrelated data; the current
+     * session's directory is kept. Failures are ignored — a missed eviction only costs disk
+     * space, and a concurrent session's entries are regenerated on demand.
+     *
+     * <p>Reflection entry point for the session-side classloader.
+     */
+    public static void prune(String keepNamespace) {
+        if (keepNamespace == null || !keepNamespace.matches(FINGERPRINT)) return;
+        L1.keySet().removeIf(key -> !key.startsWith(keepNamespace + "/"));
+        String dir = System.getProperty("oml.transform.cache.dir");
+        if (dir == null || dir.isBlank()) return;
+        Path root = Path.of(dir);
+        try (DirectoryStream<Path> children = Files.newDirectoryStream(root)) {
+            for (Path child : children) {
+                String name = child.getFileName().toString();
+                if (name.equals(keepNamespace) || !name.matches(FINGERPRINT)) continue;
+                if (!Files.isDirectory(child, LinkOption.NOFOLLOW_LINKS)) continue;
+                deleteTree(child);
+            }
+        } catch (IOException ignored) {
+            // A missing cache directory or an unreadable entry is a no-op.
+        }
+    }
+
     /** Test-only reset of the in-memory tier; L2 stays on disk. */
     static void clearForTests() {
         L1.clear();
         L1_BYTES.set(0);
+    }
+
+    private static void deleteTree(Path root) {
+        try (Stream<Path> paths = Files.walk(root)) {
+            paths.sorted(Comparator.reverseOrder()).forEach(TransformCache::deleteQuietly);
+        } catch (IOException ignored) {
+            // Leftovers are harmless; the next read still validates their header.
+        }
     }
 
     private static void remember(String key, byte[] data) {
