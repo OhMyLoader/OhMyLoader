@@ -49,23 +49,19 @@ internal object NativeJarScanner {
     private val bindings: Bindings? by lazy {
         try {
             val lookup = NativeManager.loadLibrary(NativeJarScanner::class.java, "oml-native")
-            if (!NativeManager.checkContract(lookup, "the jar scanner")) {
-                null
-            } else {
-                Bindings(
-                    lookup.downcall(
-                        "oml_scan_jar_v1",
-                        ValueLayout.JAVA_INT,
-                        ValueLayout.ADDRESS, // path
-                        ValueLayout.JAVA_LONG, // path length
-                        ValueLayout.JAVA_INT, // runtime feature
-                        ValueLayout.ADDRESS, // output
-                        ValueLayout.JAVA_LONG, // output capacity
-                        ValueLayout.ADDRESS, // required bytes
-                        ValueLayout.ADDRESS, // counts
-                    ),
-                )
-            }
+            Bindings(
+                lookup.downcall(
+                    "oml_scan_jar_v1",
+                    ValueLayout.JAVA_INT,
+                    ValueLayout.ADDRESS, // path
+                    ValueLayout.JAVA_LONG, // path length
+                    ValueLayout.JAVA_INT, // runtime feature
+                    ValueLayout.ADDRESS, // output
+                    ValueLayout.JAVA_LONG, // output capacity
+                    ValueLayout.ADDRESS, // required bytes
+                    ValueLayout.ADDRESS, // counts
+                ),
+            )
         } catch (t: Throwable) {
             // The pure-Java walk is a complete replacement; a missing native library is a
             // performance decision, not an error the user needs to see.

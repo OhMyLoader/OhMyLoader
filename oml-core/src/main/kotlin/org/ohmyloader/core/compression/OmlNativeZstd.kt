@@ -70,12 +70,7 @@ object OmlNativeZstd {
 
     private val bindings: Bindings? by lazy {
         try {
-            val lookup = NativeManager.loadLibrary(OmlNativeZstd::class.java, "oml-native")
-            if (!NativeManager.checkContract(lookup, "the zstd surface")) {
-                null
-            } else {
-                Bindings(lookup)
-            }
+            Bindings(NativeManager.loadLibrary(OmlNativeZstd::class.java, "oml-native"))
         } catch (t: Throwable) {
             OmlLog.error("OMLNative", "oml-native unavailable — zstd consumers stay on vanilla zlib", t)
             null

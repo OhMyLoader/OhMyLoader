@@ -24,52 +24,6 @@ object NativeManager {
     private val lookups = ConcurrentHashMap<String, SymbolLookup>()
 
     /**
-     * The minimum loader↔native contract version this build accepts. Bump when a native export's
-     * semantics change in a way the loader must refuse; the native side reports its own side of
-     * the contract through `oml_native_version`.
-     */
-    const val MIN_NATIVE_CONTRACT_VERSION = 1
-
-    /**
-     * The loader↔native version handshake, checked once per binding surface against the lookup it
-     * will bind from. `oml-native` reports its contract version through the `oml_native_version`
-     * export; a surface whose library reports less than [MIN_NATIVE_CONTRACT_VERSION] must refuse
-     * to bind and fall back.
-     *
-     * Tolerance ratchet: a build that **lacks** the export (every pre-0.1.1 artifact) is accepted
-     * with a loud warning, so the currently pinned artifact keeps working until the next native
-     * release; once the pin moves past the handshake, the ratchet can tighten and refuse missing
-     * versions outright.
-     */
-    fun checkContract(lookup: SymbolLookup, consumer: String): Boolean {
-        val address = lookup.find("oml_native_version").orElse(null) ?: run {
-            OmlLog.warn(
-                "OMLNative",
-                "$consumer: this oml-native build predates the version handshake (older than 0.1.1) — " +
-                    "redeploy natives/ from the current release to silence this",
-            )
-            return true
-        }
-        // The version symbol is a zero-argument C int; bound directly off the found address so the
-        // check needs no DSL dependency and a binding failure degrades to "refuse".
-        val version = runCatching {
-            java.lang.foreign.Linker.nativeLinker()
-                .downcallHandle(address, java.lang.foreign.FunctionDescriptor.of(java.lang.foreign.ValueLayout.JAVA_INT))
-                .invoke() as Int
-        }.getOrNull()
-        if (version == null || version < MIN_NATIVE_CONTRACT_VERSION) {
-            OmlLog.error(
-                "OMLNative",
-                "$consumer: oml-native reports contract version ${version ?: "unreadable"}, " +
-                    "this loader requires >= $MIN_NATIVE_CONTRACT_VERSION — the native build is stale, " +
-                    "redeploy natives/ from the current release",
-            )
-            return false
-        }
-        return true
-    }
-
-    /**
      * The directory every native library physically lives in. See [nativesDirFrom] for the
      * resolution order; the result is created if it does not exist yet, because the first mod to
      * ship a native must not crash on a fresh install.
