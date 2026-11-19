@@ -28,6 +28,14 @@ interface OMLTask {
  *
  * Mods queue through the side receivers ([server] / [client]); the side-parameterized forms below
  * exist for code whose side is only known at runtime.
+ *
+ * Identity and lifetime: this object lives in the parent-first `org.ohmyloader.api.core.*` carve-out
+ * (`OMLClassLoader`), so there is exactly one instance per process and it outlives every soft-reboot
+ * session. Queued tasks are the exception to that carve-out's "stateless only" contract, which is why
+ * [clearForSessionChange] exists: a task body is defined by the session that queued it, so anything
+ * still queued at a session change would both fire stale game objects into the new session and pin
+ * the old session's loader. The loader's teardown clears the queues; a mod must never rely on a task
+ * surviving a soft reboot (mod init re-runs and re-schedules).
  */
 object OMLScheduler {
 
@@ -131,5 +139,18 @@ object OMLScheduler {
             queue.due.getOrPut(queue.tick + delayTicks) { ArrayList() } += entry
         }
         return entry
+    }
+
+    /**
+     * Drops every queued task on both sides. Loader-internal — called by the session teardown at a
+     * soft reboot, never by mods. A task body is defined by the session that queued it: anything
+     * left queued at a session change would fire stale game objects into the new session and pin
+     * the old session's loader (which turns every later soft reboot into a process restart). The
+     * tick counters stay monotonic so a task queued after the change cannot land in the past.
+     */
+    fun clearForSessionChange() {
+        for (queue in queues.values) {
+            synchronized(queue.lock) { queue.due.clear() }
+        }
     }
 }

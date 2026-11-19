@@ -1,6 +1,7 @@
 package org.ohmyloader.core
 
 import org.ohmyloader.api.core.OmlLog
+import org.ohmyloader.api.core.tick.OMLScheduler
 import org.ohmyloader.core.hook.HookRegistry
 import org.ohmyloader.core.spi.IAdapter
 import java.lang.reflect.Field
@@ -23,6 +24,7 @@ internal object SessionTeardown {
         RebootMark.mark("teardown.begin")
         timed("teardown.adapter") { adapter?.shutdownSessionResources(clientSide) }
         timed("teardown.hooks") { HookRegistry.releaseForTeardown() }
+        timed("teardown.scheduler") { OMLScheduler.clearForSessionChange() }
         timed("teardown.executors") { shutdownGameExecutors(loader) }
         timed("teardown.telemetry") { releaseTelemetryExecutor(adapter, clientSide) }
         timed("teardown.jfr") { releaseJfr(loader, adapter) }

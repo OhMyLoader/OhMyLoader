@@ -91,4 +91,35 @@ class OMLSchedulerTest {
             OMLScheduler.every(OMLSide.CLIENT, intervalTicks = 0) { }
         }
     }
+
+    /**
+     * The soft-reboot contract: the scheduler is process-wide (parent-first carve-out), so a session
+     * change must drop every queued task — a body is defined by the session that queued it, and
+     * anything left over would fire stale game objects into the next session and pin its loader.
+     * A one-shot due next tick and a repeat with its period are both dropped; a task queued after
+     * the change (the next session's) still fires normally.
+     */
+    @Test
+    fun `a session change drops pending and repeating tasks on both sides`() {
+        var stale = 0
+        var repeating = 0
+        OMLScheduler.schedule(OMLSide.CLIENT, delayTicks = 3) { stale++ }
+        OMLScheduler.every(OMLSide.SERVER, intervalTicks = 2) { repeating++ }
+
+        OMLScheduler.advance(OMLSide.SERVER) // the repeat's initial delay passes: it is now queued again
+        OMLScheduler.clearForSessionChange()
+        stale = 0
+        repeating = 0 // anything fired before the change belongs to the dying session, not the assertion
+
+        repeat(6) {
+            OMLScheduler.advance(OMLSide.CLIENT)
+            OMLScheduler.advance(OMLSide.SERVER)
+        }
+        assertEquals(0 to 0, stale to repeating, "nothing from the old session survives the change")
+
+        var fresh = 0
+        OMLScheduler.schedule(OMLSide.CLIENT) { fresh++ }
+        OMLScheduler.advance(OMLSide.CLIENT)
+        assertEquals(1, fresh, "the next session's own scheduling works normally after the change")
+    }
 }

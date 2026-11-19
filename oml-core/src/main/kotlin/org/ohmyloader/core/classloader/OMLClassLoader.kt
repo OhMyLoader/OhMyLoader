@@ -241,6 +241,15 @@ class OMLClassLoader(
          * type, and both the loader and the mods hold it without the session's game jar. Without
          * this carve-out the `org.ohmyloader.api.` child-first rule above would define a second
          * copy of it per session.
+         *
+         * The carve-out's contract: a class living here is **process-wide** — one instance for every
+         * soft-reboot session — so it must hold **no session state**. Any mutable, session-scoped
+         * state on a parent-first object would survive the swap (stale game objects fired into the
+         * new session) and pin the retiring session's loader through its fields, which the canary
+         * then refuses. Stateful session surfaces belong in `org.ohmyloader.api.*` (child-first, one
+         * instance per session); anything that must live here and touch session state needs an
+         * explicit reset in the session teardown (`OMLScheduler.clearForSessionChange` is the one
+         * exception so far).
          */
         val CHILD_FIRST_EXCLUDED_PREFIXES = listOf("org.ohmyloader.api.core.")
 
