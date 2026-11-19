@@ -1,3 +1,14 @@
+import java.util.jar.JarEntry
+import java.util.jar.JarOutputStream
+import javax.inject.Inject
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.provider.ListProperty
+import org.gradle.api.provider.Property
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.Internal
+import org.gradle.api.tasks.TaskAction
+import org.gradle.workers.WorkerExecutor
 import oml.convention.omlGameVersion
 
 plugins {
@@ -86,34 +97,92 @@ val embedBundled = tasks.register<Sync>("embedBundled") {
     into(layout.buildDirectory.dir("resources/main/lib"))
 }
 
-// The native library is built and published by the OhMyLoaderNative repository. PCL2 / HMCL
+// The native library is built from the in-repo crate `native/oml-native` (Rust, cargo). PCL2 / HMCL
 // populate ${natives_directory} by extracting the `natives-<classifier>` jars declared in the
-// version JSON's libraries, so the installer embeds exactly the jars that publication ships;
+// version JSON's libraries, so the installer embeds exactly the jars this build produces;
 // InstallModel extracts the platform library from them at install time.
 val omlNativeVersion = providers.gradleProperty("oml_native_version").get()
-val omlNativeClassifiers = listOf(
-    "windows", "windows-arm64", "linux", "linux-arm64", "osx", "osx-arm64",
+val omlNativeCrate = rootProject.projectDir.resolve("native/oml-native")
+val omlNativeDist = omlNativeCrate.resolve("dist")
+
+data class OmlNativeTarget(val classifier: String, val triple: String, val fileName: String) : java.io.Serializable
+
+val omlNativeTargets = listOf(
+    OmlNativeTarget("windows", "x86_64-pc-windows-msvc", "oml-native.dll"),
+    OmlNativeTarget("windows-arm64", "aarch64-pc-windows-msvc", "oml-native.dll"),
+    OmlNativeTarget("linux", "x86_64-unknown-linux-gnu", "oml-native.so"),
+    OmlNativeTarget("linux-arm64", "aarch64-unknown-linux-gnu", "oml-native.so"),
+    OmlNativeTarget("osx", "x86_64-apple-darwin", "oml-native.dylib"),
+    OmlNativeTarget("osx-arm64", "aarch64-apple-darwin", "oml-native.dylib"),
 )
 
-// Resolved as a detached configuration: the jars are resources to embed, not compile dependencies.
-val omlNatives = configurations.create("omlNatives") {
-    isCanBeConsumed = false
-    isCanBeResolved = true
-    isTransitive = false
+// A config-cache-safe task class: the action reads only injected properties, never the script
+// receiver. Builds one classifier per target: cargo with the target triple, then jars the library
+// with the version stamp InstallModel parses back into the version JSON entry. A target whose
+// toolchain is not installed is skipped with a note — the release gate installs every target,
+// while a local host-only build produces its own classifier and the Sync below ships what exists.
+abstract class PackageOmlNativeJarsTask : DefaultTask() {
+    @get:Internal
+    abstract val crateDir: RegularFileProperty
+
+    @get:Internal
+    abstract val distDir: RegularFileProperty
+
+    @get:Input
+    abstract val version: Property<String>
+
+    @get:Input
+    abstract val targets: ListProperty<OmlNativeTarget>
+
+    @TaskAction
+    fun buildAndPackage() {
+        val crateDir = crateDir.get().asFile
+        val distDir = distDir.get().asFile
+        distDir.mkdirs()
+        for (target in targets.get()) {
+            val build = ProcessBuilder("cargo", "build", "--release", "--target", target.triple)
+                .directory(crateDir)
+                .redirectErrorStream(true)
+                .start()
+            val output = build.inputStream.buffered().readBytes().toString(Charsets.UTF_8)
+            if (build.waitFor() != 0) {
+                println("[oml] oml-native ${target.classifier}: cargo build failed (target not installed?) — skipped: $output")
+                continue
+            }
+            // cargo names the cdylib after the crate identifier (oml_native.dll, underscore); the
+            // packaged jar entry carries the hyphenated name the loader resolves.
+            val lib = crateDir.resolve("target/${target.triple}/release/oml_native.${target.fileName.substringAfterLast('.')}")
+            if (!lib.isFile) {
+                println("[oml] oml-native ${target.classifier}: cargo produced no ${target.fileName} — skipped")
+                continue
+            }
+            val out = distDir.resolve("oml-native-${version.get()}-natives-${target.classifier}.jar")
+            JarOutputStream(out.outputStream()).use { jar ->
+                jar.putNextEntry(JarEntry(target.fileName))
+                jar.write(lib.readBytes())
+                jar.closeEntry()
+            }
+            println("[oml] oml-native packaged: ${out.name} (${out.length() / 1024} KB)")
+        }
+    }
 }
 
-dependencies {
-    omlNativeClassifiers.forEach { classifier ->
-        add(omlNatives.name, "org.ohmyloader:oml-native:$omlNativeVersion:natives-$classifier")
-    }
+val packageOmlNativeJars = tasks.register<PackageOmlNativeJarsTask>("packageOmlNativeJars") {
+    group = "ohmyloader"
+    description = "Build the native crate for every installed target and package the natives-<classifier> jars"
+    crateDir.set(omlNativeCrate)
+    distDir.set(omlNativeDist)
+    version.set(omlNativeVersion)
+    targets.set(omlNativeTargets)
 }
 
 // Sync, not Copy: a classifier dropped from the list must stop shipping. The jar file names carry
 // the publication version, which InstallModel parses back into the version JSON entry.
 val embedNativesJars = tasks.register<Sync>("embedNativesJars") {
+    dependsOn(packageOmlNativeJars)
     group = "ohmyloader"
-    description = "Embed the published natives-<classifier> jars into the installer's resources"
-    from(omlNatives)
+    description = "Embed the built natives-<classifier> jars into the installer's resources"
+    from(omlNativeDist) { include("oml-native-$omlNativeVersion-natives-*.jar") }
     into(layout.buildDirectory.dir("resources/main/natives-jars"))
 }
 

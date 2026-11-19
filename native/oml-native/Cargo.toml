@@ -1,0 +1,30 @@
+[package]
+name = "oml-native"
+version = "0.1.0"
+edition = "2024"
+authors = ["FuBangkun"]
+description = "OhMyLoader native library: zstd codecs and the memory-mapped mod-jar scanner"
+license = "AGPL-3.0-or-later"
+
+[lib]
+name = "oml_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+libdeflater = "1"
+memchr = "2"
+memmap2 = "0.9"
+zstd-sys = "2"
+
+[dev-dependencies]
+tempfile = "3"
+zip = { version = "9", default-features = false, features = ["deflate"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+# Keep unwinding so a panic inside a parser can be caught at the FFI boundary and turned into a
+# negative return code; `panic = "abort"` would kill the JVM (and the shared game process).
+panic = "unwind"
+strip = true

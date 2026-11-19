@@ -9,22 +9,6 @@ plugins {
     antlr
 }
 
-/** The published classifier for the build machine, or null when the matrix does not cover it. */
-val hostOmlNativeClassifier: String? = run {
-    val os = System.getProperty("os.name").lowercase()
-    val arch = System.getProperty("os.arch").lowercase()
-    val arm = arch.contains("aarch64") || arch.contains("arm64")
-    val x64 = arch.contains("x86_64") || arch.contains("amd64")
-    when {
-        os.contains("win") && x64 -> "windows"
-        os.contains("win") && arm -> "windows-arm64"
-        os.contains("mac") || os.contains("darwin") -> if (arm) "osx-arm64" else if (x64) "osx" else null
-        x64 -> "linux"
-        arm -> "linux-arm64"
-        else -> null
-    }
-}
-
 dependencies {
     api(project(":oml-api-core"))
 
@@ -40,15 +24,6 @@ dependencies {
     implementation(libs.antlrRuntime)
 
     testImplementation(kotlin("test"))
-
-    // The native library is a published artifact. Its host classifier jar travels with the test
-    // fixtures (so the adapter's codec tests share it); NativeTestLibraries extracts the library and
-    // points `oml.natives.dir` at it. Unsupported arches get no artifact and the tests skip.
-    hostOmlNativeClassifier?.let { classifier ->
-        testFixturesRuntimeOnly(
-            "org.ohmyloader:oml-native:${providers.gradleProperty("oml_native_version").get()}:natives-$classifier",
-        )
-    }
 }
 
 tasks.generateGrammarSource {

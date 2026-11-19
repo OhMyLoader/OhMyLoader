@@ -140,8 +140,8 @@ compiler; this is valid.
 - `oml-launcher`: bootstrap header.
 - `oml-adapter`: the one adapter — hooks, event bridge, content materialization, network bridge, GUI and
   shader integration, built and shape-checked against the newest game line.
-- `oml-native`: built and published by the `OhMyLoaderNative` repository; this build consumes
-  `org.ohmyloader:oml-native:<oml_native_version>` for embedding and tests.
+- `native/oml-native`: the Rust crate (zstd codecs, the memory-mapped mod-jar scanner), built from
+  source by this repository's tests and installer.
 - `oml-devtools`: downloader.
 - `oml-installer`: installer, including the Java 8 bootstrap stub.
 

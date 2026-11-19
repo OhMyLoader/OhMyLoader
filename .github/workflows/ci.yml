@@ -12,9 +12,6 @@ on:
 
 permissions:
   contents: read
-  # oml-native is consumed from GitHub Packages (published by OhMyLoaderNative); the build jobs
-  # resolve it with the repository token.
-  packages: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -24,9 +21,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 90
-    env:
-      GITHUB_ACTOR: ${{ github.actor }}
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v7
       # The JVM floor is 27.0.2 (JDK-8394484, fixed by PR 33729): no distro carries that build, so
@@ -37,6 +31,13 @@ jobs:
           url: https://github.com/OhMyLoader/OhMyLoader/releases/download/jdk-27.0.2-internal/bundles-linux-x64.zip
           sha256: ce2052f923109e165e531c1ceada67e583347a4de757c40db5edcf46fc7270a8
       - uses: gradle/actions/setup-gradle@v6
+      # The in-repo native crate (native/oml-native) is built with cargo for the tests and the
+      # staged artifacts: the host target is native, the arm64 target cross-compiles with the
+      # standard GNU cross-linker.
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu
+          rustup target add aarch64-unknown-linux-gnu
       # Build-cache entries are content-addressed by task inputs, so a stale snapshot only
       # lowers the hit rate, never yields wrong outputs — the key can err on the coarse side.
       # A source fingerprint misses the exact key once per source change, restores the latest
@@ -90,41 +91,22 @@ jobs:
           name: loader-staging-maven
           path: ${{ runner.temp }}/loader-staging.tgz
           if-no-files-found: error
-      # `build` never executes the artifact it ships. The Java 8 bootstrap, the Main-Class, the
-      # embedded layer, the packaged natives and both message bundles are only proven by running the
-      # jar — and this runs before the upload, so a jar that cannot install is never published.
-      - name: The installer fat jar must run and install offline
-        run: |
-          set -e
-          # The bundled game version is gradle.properties' oml_game_version — the same file the
-          # adapter and the installer catalog read. No literal here.
-          version=$(sed -n 's/[[:space:]]//g; s/^oml_game_version=//p' gradle.properties | head -1)
-          [ -n "$version" ] || { echo "::error::oml_game_version missing from gradle.properties"; exit 1; }
-          jar=$(ls dist/oml-installer-*.jar)
-          java -jar "$jar" --help > /dev/null
-          mkdir -p "$RUNNER_TEMP/oml-smoke"
-          java -jar "$jar" --target standard --dir "$RUNNER_TEMP/oml-smoke" \
-            --version "$version" --isolation true --side client
-          json="$RUNNER_TEMP/oml-smoke/versions/$version-OML/$version-OML.json"
-          grep -q '"mainClass": "org.ohmyloader.launcher.OMLBootstrap"' "$json"
-          compgen -G "$RUNNER_TEMP/oml-smoke/versions/$version-OML/natives/*" > /dev/null
-          test -d "$RUNNER_TEMP/oml-smoke/versions/$version-OML/mods"
+      # The linux natives jars travel to the installer job, which assembles the six-classifier
+      # installer from every runner's product.
       - uses: actions/upload-artifact@v7
         with:
-          name: oml-installer
-          path: dist/oml-installer-*.jar
+          name: oml-native-linux
+          path: native/oml-native/dist/oml-native-*-natives-linux*.jar
           if-no-files-found: error
 
   # Windows coverage for two things the ubuntu job cannot decide: the installer's platform branches
   # (CRLF batch scripts, path separators, code page handling) and the real `oml-native.dll` load —
-  # oml-core's codec tests dlopen the published Windows artifact, so they are the only place its
-  # exports are ever bound on this OS.
+  # oml-core's codec tests dlopen the native built from the in-repo crate, so they are the only
+  # place its exports are ever bound on this OS. The job also packages both windows classifiers
+  # (x64 native, arm64 cross) for the installer job.
   windows-test:
     runs-on: windows-latest
     timeout-minutes: 60
-    env:
-      GITHUB_ACTOR: ${{ github.actor }}
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v7
       # OML's JVM floor is 27.0.2 (Java 27.0.1 carries the Windows stack-probe defect JDK-8394484:
@@ -147,10 +129,12 @@ jobs:
           key: gradle-build-cache-${{ runner.os }}-${{ hashFiles('**/*.kt', '**/*.kts', '**/*.java', 'gradle/libs.versions.toml', 'gradle.properties') }}
           restore-keys: |
             gradle-build-cache-${{ runner.os }}-
-      # The codec tests take the library from the published natives jar on the test classpath and
-      # assume-skip when it is absent, so the skip has to be checked after the run — a green job in
-      # which every native test skipped would prove nothing.
-      - run: ./gradlew.bat :oml-core:test :oml-installer:test :oml-devtools:test
+      # The codec tests build the native from the in-repo crate themselves (NativeTestLibraries
+      # runs cargo), and the skip has to be checked after the run — a green job in which every
+      # native test skipped would prove nothing.
+      - run: |
+          rustup target add aarch64-pc-windows-msvc
+          ./gradlew.bat :oml-core:test :oml-installer:test :oml-devtools:test :native:oml-native:packageOmlNativeJars
       - name: The native codec tests must not have skipped
         shell: bash
         run: |
@@ -162,6 +146,81 @@ jobs:
             fi
             echo "$suite ran against the real oml-native.dll"
           done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: oml-native-windows
+          path: native/oml-native/dist/oml-native-*-natives-windows*.jar
+          if-no-files-found: error
+
+  # macOS coverage for the required native: the codec tests build and dlopen the darwin library
+  # (both the runner-native arm64 build and the x86_64 cross), and the job packages both darwin
+  # classifiers for the installer job. The toolchain JDK comes from foojay provisioning — the
+  # codec tests only need any Java 27, not the pinned 27.0.2-internal game runtime.
+  macos-test:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: gradle/actions/setup-gradle@v6
+      - run: |
+          rustup target add x86_64-apple-darwin aarch64-apple-darwin
+          ./gradlew :oml-core:test :native:oml-native:packageOmlNativeJars
+      - uses: actions/upload-artifact@v7
+        with:
+          name: oml-native-osx
+          path: native/oml-native/dist/oml-native-*-natives-osx*.jar
+          if-no-files-found: error
+
+  # The installer fat jar, assembled from every runner's natives: the six classifiers are the
+  # three platform artifacts above, downloaded into the crate's dist directory before the
+  # embed task runs. The installer smoke test (run and install offline) moved here with the
+  # build, because a jar assembled from partial natives is not the artifact to verify.
+  installer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [build, windows-test, macos-test]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the 27.0.2-internal JDK bundle
+        uses: OhMyLoader/install-oml-jdk@v1
+        with:
+          url: https://github.com/OhMyLoader/OhMyLoader/releases/download/jdk-27.0.2-internal/bundles-linux-x64.zip
+          sha256: ce2052f923109e165e531c1ceada67e583347a4de757c40db5edcf46fc7270a8
+      - uses: gradle/actions/setup-gradle@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: oml-native-linux
+          path: native/oml-native/dist
+      - uses: actions/download-artifact@v8
+        with:
+          name: oml-native-windows
+          path: native/oml-native/dist
+      - uses: actions/download-artifact@v8
+        with:
+          name: oml-native-osx
+          path: native/oml-native/dist
+      - run: ./gradlew :oml-installer:shadowJar
+      - name: The installer fat jar must run and install offline
+        run: |
+          set -e
+          # The bundled game version is gradle.properties' oml_game_version — the same file the
+          # adapter and the installer catalog read. No literal here.
+          version=$(sed -n 's/[[:space:]]//g; s/^oml_game_version=//p' gradle.properties | head -1)
+          [ -n "$version" ] || { echo "::error::oml_game_version missing from gradle.properties"; exit 1; }
+          jar=$(ls dist/oml-installer-*.jar)
+          java -jar "$jar" --help > /dev/null
+          mkdir -p "$RUNNER_TEMP/oml-smoke"
+          java -jar "$jar" --target standard --dir "$RUNNER_TEMP/oml-smoke" \
+            --version "$version" --isolation true --side client
+          json="$RUNNER_TEMP/oml-smoke/versions/$version-OML/$version-OML.json"
+          grep -q '"mainClass": "org.ohmyloader.launcher.OMLBootstrap"' "$json"
+          compgen -G "$RUNNER_TEMP/oml-smoke/versions/$version-OML/natives/*" > /dev/null
+          test -d "$RUNNER_TEMP/oml-smoke/versions/$version-OML/mods"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: oml-installer
+          path: dist/oml-installer-*.jar
+          if-no-files-found: error
 
   # A tag is publishable only after the verification mod boots this tag's loader on both sides.
   # GitHub does not allow expressions in `uses`, so the verification repo is checked out at its
@@ -297,7 +356,7 @@ jobs:
     # coverage of the Windows library load and the installer's Windows branches, and a release must
     # not go out while either is red. e2e-release is the only job that boots the tagged loader;
     # without it the release evidence would contain zero game launches.
-    needs: [build, windows-test, e2e-release]
+    needs: [build, windows-test, macos-test, installer, e2e-release]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:

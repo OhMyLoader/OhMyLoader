@@ -9,6 +9,8 @@ import java.util.jar.Manifest
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import org.junit.jupiter.api.BeforeAll
+import kotlin.test.assertTrue
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -18,6 +20,19 @@ import kotlin.test.assertTrue
  * the jar again.
  */
 class JarClassIndexTest {
+
+    companion object {
+        // The walk is native-only now: the tests exercise the real oml-native built from the
+        // in-repo crate (NativeTestLibraries runs cargo and points oml.natives.dir at it).
+        @JvmStatic
+        @BeforeAll
+        fun loadNativeLibrary() {
+            assertTrue(
+                org.ohmyloader.core.compression.NativeTestLibraries.ensureOmlNative(),
+                "the in-repo oml-native build failed — cargo is required for these tests",
+            )
+        }
+    }
 
     private fun classBytes(internalName: String, annotation: String?): ByteArray {
         val writer = ClassWriter(0)

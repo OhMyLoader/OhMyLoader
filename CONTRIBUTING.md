@@ -2,8 +2,8 @@
 
 OhMyLoader is a mod loader for Minecraft Java Edition 26.x. This repository contains the loader runtime,
 the version-neutral API, the 26.3 API and adapter, the content layer, the downloader, and the installer.
-The native library lives in the sibling `OhMyLoaderNative` repository and is consumed here as a published
-Maven artifact. The end-to-end game gate lives in `OhMyLoaderTestMod`; a loader change may require a
+The native library lives in this repository at `native/oml-native` (Rust) and is built from source by
+this build. The end-to-end game gate lives in `OhMyLoaderTestMod`; a loader change may require a
 test-mod run there.
 
 ## Before you start
@@ -19,9 +19,9 @@ test-mod run there.
 
 - JDK 27. CI uses the Zulu distribution.
 - The Gradle wrapper in this repository (Gradle 9.9.1).
-- GitHub Packages credentials for `org.ohmyloader:oml-native`: CI injects `GITHUB_ACTOR` and
-  `GITHUB_TOKEN`; locally, put `gpr.user` and `gpr.key` (a PAT with `read:packages`) in
-  `~/.gradle/gradle.properties`. GitHub Packages requires authentication even for public packages.
+- Rust (stable) with cargo: `native/oml-native` is built from source by this repository's tests
+  (`NativeTestLibraries` runs cargo) and by the installer's `packageOmlNativeJars` task. CI installs
+  the cross targets per job.
 - Network access for the Piston metadata and Maven artifacts used by fetch tasks.
 - A sibling `OhMyLoaderTestMod` checkout for real game gates. It is not a build dependency.
 
@@ -44,9 +44,8 @@ java -jar dist/oml-installer-*.jar --target standard --dir /tmp/oml-smoke \
 ./gradlew :oml-core:injectionBenchmark
 ```
 
-The codec and native-scan tests run against the published `natives-<classifier>` jar on the test
-classpath; they assume-skip on a platform the publication does not cover. Native unit tests belong to
-`OhMyLoaderNative` and run there.
+The codec and native-scan tests build the native from `native/oml-native` with cargo and dlopen the
+result; a missing Rust toolchain makes them skip, which CI treats as red.
 
 `./gradlew build` runs the tests that do not launch the game. `HookShapeTest` reads the real 26.3 client
 jar through `fetchClientJar`; a shape mismatch must fail there, not at runtime. The Windows CI job runs
@@ -88,9 +87,9 @@ The E2E scripts target Linux with Xvfb; CI uses software rendering. Windows deve
   test pass.
 - Adapter and injection changes must keep `HookShapeTest` green and should be exercised by the test mod
   when the change affects runtime behavior.
-- Native changes belong in `OhMyLoaderNative` and are verified by its `cargo test` and build matrix;
-  `oml_native_version` here only selects the published release. Installer changes need the offline
-  install smoke.
+- Native changes live in `native/oml-native` (Rust); `cargo test` plus the loader codec tests cover
+  them, and the installer packages every platform target. Installer changes need the offline install
+  smoke.
 
 ## Commit and pull request
 
@@ -105,10 +104,9 @@ The E2E scripts target Linux with Xvfb; CI uses software rendering. Windows deve
 ## Releases (maintainers)
 
 - `oml_version` in `gradle.properties` is the single version source. Do not edit generated version output.
-- `oml_native_version` selects the published `org.ohmyloader:oml-native` release this build embeds. Bump it
-  after `OhMyLoaderNative` publishes a new version; `publishToMavenLocal` no longer produces the native
-  artifact, so a machine without GitHub Packages credentials cannot build the installer.
-- A `v*` tag runs the build, Windows tests, the pinned TestMod gate, and the release job. The release job
+- `oml_native_version` stamps the natives-<classifier> jar names the installer embeds and the version
+  JSON entries name; the artifacts are built from `native/oml-native` in the same build. Bump it when
+  the native contract changes in a way a shipped installer must name differently.- A `v*` tag runs the build, Windows tests, the pinned TestMod gate, and the release job. The release job
   requires `OML_TESTMOD_REF` and `OML_GRADLE_REF`, stages the Maven artifacts, compares the release rebuild
   against the staged SHA-256 manifest, and publishes only on a match.
 - Do not bypass the E2E gate or the byte comparison. A failure is release-blocking.

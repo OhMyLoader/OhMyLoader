@@ -3,6 +3,7 @@
 oml-adapter/libs/
 # installer fat jar output
 dist/
+native/oml-native/target/
 # build-time working directories (fetchClientJar / installLauncher)
 run/
 # log4j's output when devtools runs from a module directory

@@ -7,7 +7,7 @@ that matter when an agent works in this repository.
 - Work only in this repository. Consume the Gradle plugin and test mod through Maven coordinates; do not
   add relative paths to sibling checkouts, shared catalogs, `includeBuild`, or source mounts.
 - Run `./gradlew build` for code changes. The native library is an external artifact: native changes
-  belong in `OhMyLoaderNative`, and this build only selects `oml_native_version`.
+  live in `native/oml-native` (Rust) in this repository and are built from source.
 - Run the sibling test-mod E2E when a change affects loaders, adapters, events, content, or injection.
   Do not treat a unit test as a substitute for a runtime change.
 - Keep the loader build and tag gate intact. Do not weaken `HookShapeTest`, injection verification,
@@ -16,8 +16,8 @@ that matter when an agent works in this repository.
   a separate `!` commit with the migration in the body.
 - Comments state constraints, not history. Keep KDoc to one or two sentences; test KDoc states the
   reproduced shape, the failure, and the assertion. `TODO`, `FIXME`, and `@Deprecated` stay at zero.
-- Do not vendor the native library or add a sibling source mount for it; consume the published
-  `org.ohmyloader:oml-native` coordinate through the configured repository.
+- The native crate lives in this repository at `native/oml-native` and is built from source; do not
+  reintroduce a published coordinate or a sibling source mount for it.
 - Do not commit `build/`, `run/`, `dist/`, `.gradle/`, or local paths.
 - Commit in this repository. Do not push, tag, or publish unless explicitly asked. Releases use the
   pinned TestMod/plugin variables and the E2E plus byte-equality gate.
