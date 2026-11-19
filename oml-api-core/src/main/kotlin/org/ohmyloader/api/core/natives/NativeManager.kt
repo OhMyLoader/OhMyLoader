@@ -12,14 +12,32 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * The single entry point a mod uses to load a native library.
- * One-physical-place rule: every OML-managed dynamic library lives in exactly one directory, `<gameDir>/natives/` — where `-Djava.library.path` points and where the vanilla (LWJGL) natives were extracted. Nothing is released into `%TEMP%` or a private subdirectory: temp extraction defeats unified cleanup, and a private path is a second location every crash report must explain.
- * [loadLibrary] resolves the library from the *caller's* jar under `/natives/<os>-<arch>/<libname>.<ext>`, verifies the `natives/` copy against the resource's SHA-256 (identical = untouched, so N mods shipping one library extract once; differing = same-directory temp file + atomic move, so a crash mid-extract never leaves a half library), then opens it with `SymbolLookup.libraryLookup` — never `System.loadLibrary`, so the result does not depend on how the JVM captured its search path at startup.
+ *
+ * Residency is two-tier, by structural rule rather than by validation: the shared `natives/` root
+ * is **first-party property** — only the loader's own deployment (installer / Gradle deploy) writes
+ * it, and only callers from the `org.ohmyloader.*` namespace read-and-resolve there. Every other
+ * caller is a mod, and a mod's bundled libraries extract into a **mod-scoped directory**
+ * (`natives/mod/<caller package path>/`), never the shared root — so a third-party jar physically
+ * cannot replace a first-party binary, and two mods shipping the same library cannot overwrite
+ * each other. Within its own directory the old rules hold: SHA-256-gated extraction (identical =
+ * untouched), same-directory temp file + atomic move so a crash mid-extract never leaves a half
+ * library. The loader's own namespace is additionally protected upstream: the mod scanner refuses
+ * any jar that packs classes under `org/ohmyloader/`, so a third-party jar cannot even claim the
+ * first-party caller prefix.
+ *
+ * [loadLibrary] resolves the library from the *caller's* jar under `/natives/<os>-<arch>/<libname>.<ext>`, then opens it with `SymbolLookup.libraryLookup` — never `System.loadLibrary`, so the result does not depend on how the JVM captured its search path at startup.
  * The `<os>-<arch>` token (`windows-x86_64`, `osx-arm64`) is the repository-wide spelling used by the installer and the Gradle deploy.
  */
 object NativeManager {
 
     /** Optional explicit override of the natives directory (`-Doml.natives.dir=...`). */
     private const val DIR_PROPERTY = "oml.natives.dir"
+
+    /** The caller-package prefix that counts as first-party (the loader's own code). */
+    private const val FIRST_PARTY_PACKAGE = "org.ohmyloader."
+
+    /** The subdirectory of [nativesDir] where mod-scoped libraries extract. */
+    private const val MOD_DIR = "mod"
 
     private val lookups = ConcurrentHashMap<String, SymbolLookup>()
 
@@ -75,12 +93,12 @@ object NativeManager {
     }
 
     /**
-     * Resolves [libName] to a physical file in the `natives/` directory, extracting the caller's
-     * bundled copy when needed. Split from [loadLibrary] so the path/extraction logic is testable
-     * without actually dlopen-ing anything.
+     * Resolves [libName] to a physical file, first-party root or mod-scoped directory depending on
+     * the caller's namespace, extracting the caller's bundled copy when needed. Split from
+     * [loadLibrary] so the path/extraction logic is testable without actually dlopen-ing anything.
      */
     fun resolveLibrary(callerClass: Class<*>, libName: String): File {
-        val dir = nativesDir()
+        val dir = directoryFor(callerClass.name, nativesDir())
         val fileName = withPlatformExtension(libName)
         val target = File(dir, fileName)
         when (val resource = callerClass.classLoader?.getResource(bundledPath(fileName))) {
@@ -106,6 +124,39 @@ object NativeManager {
             }
         }
         return target
+    }
+
+    /**
+     * The directory a caller's libraries resolve in: the first-party root for the loader's own
+     * namespace (what the installer deployed), a mod-scoped `natives/mod/<package path>/`
+     * directory for everyone else. Identity by **namespace**, not by classloader: the mod scanner
+     * refuses any jar packing classes under `org/ohmyloader/`, so the prefix cannot be claimed by
+     * a third-party jar. Takes the class name so the decision is testable without fabricating
+     * classes.
+     */
+    internal fun directoryFor(className: String, natives: File): File =
+        if (isFirstPartyCaller(className)) {
+            natives
+        } else {
+            File(natives, "$MOD_DIR/${modScopeSegments(className).joinToString("/")}").apply { mkdirs() }
+        }
+
+    /** True when [className] names a first-party caller (`org.ohmyloader.*`). Visible for tests. */
+    internal fun isFirstPartyCaller(className: String): Boolean =
+        className == FIRST_PARTY_PACKAGE.trimEnd('.') || className.startsWith(FIRST_PARTY_PACKAGE)
+
+    /**
+     * The mod-scoped directory segments for [className]: the class's package path, each segment
+     * sanitized to filesystem-safe characters and lowercased. A class in the default package (no
+     * package) scopes to `unnamed` — a mod shipping natives from the default package lands in one
+     * shared bucket, which is still its own, never the first-party root.
+     */
+    internal fun modScopeSegments(className: String): List<String> {
+        val packagePath = className.substringBeforeLast('.', "").takeIf { it.isNotEmpty() } ?: return listOf("unnamed")
+        return packagePath.split('.').map { segment ->
+            val safe = segment.filter { it.isLetterOrDigit() || it == '_' }.lowercase()
+            safe.ifEmpty { "_" }
+        }
     }
 
     /** `libfoo` on windows becomes `libfoo.dll`; names that already carry an extension pass through. */

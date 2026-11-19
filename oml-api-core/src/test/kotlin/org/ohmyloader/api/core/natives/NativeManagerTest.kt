@@ -3,12 +3,24 @@ package org.ohmyloader.api.core.natives
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
-import java.lang.reflect.Proxy
 import java.net.URL
+import java.lang.reflect.Proxy
 import java.nio.file.Files
+import java.nio.file.StandardOpenOption
 import kotlin.io.path.writeBytes
 import kotlin.test.*
 
+/**
+ * The natives residency contract: the shared `natives/` root is first-party property, every other
+ * caller (a mod) resolves into its own `natives/mod/<package path>/` scope, and within a scope the
+ * extraction is SHA-256-gated (identical = untouched, differing = atomic replace).
+ *
+ * Callers are fabricated as dynamic proxies: a proxy class is DEFINED by the loader it is created
+ * with, so `callerClass.classLoader` (where the resource lookup goes through) and the caller's
+ * package (which decides the scope — JDK 27 names proxy packages per defining loader, `jdk.proxyN`)
+ * both come from the same fabricated loader. Two proxies from one loader therefore share a scope;
+ * two proxies from two loaders never do.
+ */
 class NativeManagerTest {
 
     // -----------------------------------------------------------------------------------------
@@ -78,7 +90,7 @@ class NativeManagerTest {
     }
 
     // -----------------------------------------------------------------------------------------
-    // Resolution + SHA-256-gated extraction
+    // Residency: first-party root vs mod-scoped directories
     //
     // The lookup always uses the *running* platform's token (that is the contract), so the tests
     // serve resources under NativeManager.bundledPath(...) with default parameters instead of a
@@ -89,43 +101,87 @@ class NativeManagerTest {
     private val fakeBundlePath = NativeManager.bundledPath("libfake.so")
 
     @Test
-    fun aBundledLibraryIsExtractedIntoTheNativesDirectory(@TempDir tempDir: File) {
+    fun aModCallerExtractsIntoItsOwnScopeNeverTheFirstPartyRoot(@TempDir tempDir: File) {
         val natives = newDir(tempDir, "natives")
-        val payload = "fake-library-v1".toByteArray()
-        val loader = loaderServing("oml-test", fakeBundlePath, payload)
+        val loader = loaderServing("oml-test", fakeBundlePath, "fake-library-v1".toByteArray())
         val caller = classWith(loader)
 
         runWithNativesDir(natives) {
             val resolved = NativeManager.resolveLibrary(caller, "libfake.so")
-            assertEquals(natives.resolve("libfake.so").absoluteFile, resolved)
+            val scoped = scopeDir(natives, caller).resolve("libfake.so").absoluteFile
+            assertEquals(scoped, resolved)
             assertTrue(resolved.isFile)
             assertContains(resolved.readText(), "fake-library-v1")
+            // The first-party root is untouched by a third-party caller
+            assertFalse(File(natives, "libfake.so").isFile)
+        }
+    }
+
+    // The first-party branch of the residency decision is covered by name in
+    // [theResidencyDecisionSplitsFirstPartyFromModScoped] — fabricating a class genuinely named
+    // org.ohmyloader.* would mean shipping bytecode in the test resources.
+
+    @Test
+    fun theResidencyDecisionSplitsFirstPartyFromModScoped(@TempDir tempDir: File) {
+        val natives = newDir(tempDir, "natives")
+        assertEquals(
+            natives,
+            NativeManager.directoryFor("org.ohmyloader.core.compression.OmlNativeZstd", natives),
+            "the loader's own namespace shares the first-party root",
+        )
+        // A look-alike one character past the namespace is NOT first-party
+        val scoped = NativeManager.directoryFor("org.ohmyloaderish.Evil", natives)
+        assertEquals(natives.resolve("mod/org/ohmyloaderish"), scoped)
+        assertTrue(scoped.isDirectory)
+    }
+
+    @Test
+    fun twoModsShippingTheSameLibraryExtractIntoTheirOwnScopes(@TempDir tempDir: File) {
+        val natives = newDir(tempDir, "natives")
+        val modA = classWith(loaderServing("oml-test-a", fakeBundlePath, "mod-a-v1".toByteArray()))
+        val modB = classWith(loaderServing("oml-test-b", fakeBundlePath, "mod-b-v1".toByteArray()))
+
+        runWithNativesDir(natives) {
+            val a = NativeManager.resolveLibrary(modA, "libfake.so")
+            val b = NativeManager.resolveLibrary(modB, "libfake.so")
+            assertTrue(
+                a.parentFile != b.parentFile,
+                "two mods shipping one library extract into their own scopes (each defining loader names its own proxy package)",
+            )
+            assertContains(a.readText(), "mod-a-v1")
+            assertContains(b.readText(), "mod-b-v1")
+            // and neither touched the first-party root
+            assertFalse(File(natives, "libfake.so").isFile)
         }
     }
 
     @Test
     fun anIdenticalCopyIsNotTouchedButADifferentOneIsReplaced(@TempDir tempDir: File) {
         val natives = newDir(tempDir, "natives")
-        val caller = classWith(
-            loaderServing("oml-test", fakeBundlePath, "fake-library-v2".toByteArray()),
-        )
+        // One backing file, rewritten in place: the same caller jar "updating" its library. The
+        // loader and its proxy class stay identical, so the scope is identical too.
+        val backing = Files.createTempFile("oml-nm-test", ".bin")
+        backing.writeBytes("fake-library-v2".toByteArray())
+        val loader = object : ClassLoader() {
+            override fun getResource(name: String): URL? =
+                if (name == fakeBundlePath) backing.toUri().toURL() else null
+        }
+        val caller = classWith(loader)
 
         runWithNativesDir(natives) {
             val first = NativeManager.resolveLibrary(caller, "libfake.so")
             val firstStamp = first.lastModified()
+            assertEquals("fake-library-v2", first.readText())
 
-            // Same bytes: the extraction is skipped — an identical copy must be left alone
-            // (File identity differs per call; the path, the bytes and the mtime must not change)
+            // Same bytes served again: the extraction is skipped — an identical copy must be left
+            // alone (the path, the bytes and the mtime must not change)
             val untouched = NativeManager.resolveLibrary(caller, "libfake.so")
             assertEquals(first.absolutePath, untouched.absolutePath)
-            assertEquals("fake-library-v2", first.readText())
             assertEquals(firstStamp, first.lastModified())
 
-            // Different bytes under the same name: the directory converges to the new build
-            val changed = classWith(
-                loaderServing("oml-test", fakeBundlePath, "fake-library-v3".toByteArray()),
-            )
-            NativeManager.resolveLibrary(changed, "libfake.so")
+            // Different bytes under the same name: the scope converges to the new build
+            backing.writeBytes("fake-library-v3".toByteArray(), StandardOpenOption.WRITE)
+            NativeManager.resolveLibrary(caller, "libfake.so")
             assertEquals("fake-library-v3", first.readText())
         }
     }
@@ -144,6 +200,23 @@ class NativeManagerTest {
         }
     }
 
+    @Test
+    fun theScopePathIsSanitizedAndDeterministic() {
+        // The simple name after the last dot is dropped; only the package path scopes
+        assertEquals(
+            listOf("com", "sun", "proxy"),
+            NativeManager.modScopeSegments("com.sun.proxy.\$Proxy12"),
+        )
+        assertEquals(listOf("unnamed"), NativeManager.modScopeSegments("NakedClass"))
+        // "M-D Mod!\Weird" is the simple name (no dot before it), so it never reaches the scope
+        assertEquals(listOf("org", "example"), NativeManager.modScopeSegments("Org.Example.M-D Mod!\\Weird"))
+        assertTrue(NativeManager.isFirstPartyCaller("org.ohmyloader.core.compression.OmlNativeZstd"))
+        assertTrue(NativeManager.isFirstPartyCaller("org.ohmyloader.api.core.natives.NativeManager"))
+        // A look-alike one character past the namespace is NOT first-party
+        assertFalse(NativeManager.isFirstPartyCaller("org.ohmyloaderish.Evil"))
+        assertFalse(NativeManager.isFirstPartyCaller("com.example.mod.Foo"))
+    }
+
     // -----------------------------------------------------------------------------------------
     // helpers
     // -----------------------------------------------------------------------------------------
@@ -151,7 +224,7 @@ class NativeManagerTest {
     private fun newDir(parent: File, name: String): File =
         Files.createDirectories(parent.toPath().resolve(name)).toFile()
 
-    /** A classloader that serves exactly one fabricated resource, backed by a temp file URL. */
+    /** A classloader that serves exactly one fabricated resource from a temp file. */
     private fun loaderServing(id: String, path: String, bytes: ByteArray): ClassLoader {
         val backing = Files.createTempFile("oml-nm-test-$id", ".bin")
         backing.writeBytes(bytes)
@@ -162,13 +235,13 @@ class NativeManagerTest {
     }
 
     /** A caller class pinned to [loader] — NativeManager resolves bundles through its loader. */
-    private fun classWith(loader: ClassLoader): Class<*> {
-        // A dynamic proxy is DEFINED by the supplied loader (unlike, say, java.lang.Object, whose
-        // defining loader is the bootstrap) — so callerClass.classLoader is exactly the loader the
-        // resource lookup goes through.
-        return Proxy.newProxyInstance(loader, arrayOf(Runnable::class.java)) { _, _, _ -> }
+    private fun classWith(loader: ClassLoader): Class<*> =
+        Proxy.newProxyInstance(loader, arrayOf(Runnable::class.java)) { _, _, _ -> }
             .javaClass
-    }
+
+    /** The mod-scoped directory a caller's class resolves into. */
+    private fun scopeDir(natives: File, caller: Class<*>): File =
+        NativeManager.directoryFor(caller.name, natives)
 
     /** Pins `oml.natives.dir` for the duration of [block] — the documented explicit override. */
     private fun runWithNativesDir(dir: File, block: () -> Unit) {
