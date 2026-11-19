@@ -60,9 +60,7 @@ class OmlZstdCompressionDecoder(private var threshold: Int, private var validate
     }
 
     private fun decodeZstd(ctx: ChannelHandlerContext, input: ByteBuf, out: MutableList<Any>, size: Int, payload: Int) {
-        if (!OmlNativeZstd.available()) {
-            throw DecoderException("received a zstd-compressed packet but the native library failed to load")
-        }
+        // The native is verified at loader startup; reaching this handler without it is impossible.
         val dst = ctx.alloc().directBuffer(size)
         try {
             val dstSegment = MemorySegment.ofAddress(dst.memoryAddress())

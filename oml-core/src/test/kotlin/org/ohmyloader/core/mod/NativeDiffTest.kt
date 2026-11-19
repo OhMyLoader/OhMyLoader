@@ -107,8 +107,8 @@ class NativeDiffTest {
 
     private fun compare(file: File) {
         assumeTrue(NativeJarScanner.available(), "oml-native is not built for this platform")
-        val java = JarClassIndex.javaCandidatesForTest(file)
-        val native = JarClassIndex.nativeCandidatesForTest(file)
+        val java = JavaScanOracle.candidates(file)
+        val native = NativeJarScanner.scan(file, Runtime.version().feature())?.let(JarClassIndex::fromNative)
         assertNotNull(native, "the native walker refused ${file.name}")
         assertEquals(signature(java), signature(native), "native and Java disagree on ${file.name}")
     }

@@ -12,7 +12,10 @@ import java.lang.foreign.ValueLayout
  * The official driver wrapper around our own **oml-native** library (built and published by the `OhMyLoaderNative` repository with zstd statically linked). Every export carries the `oml_zstd_` prefix, so the lookup can never collide with any other libzstd mapped in the process (a launcher, LWJGL, or another mod's copy): the JVM resolves our addresses by name from our library, whatever else is loaded.
  * The library is found via [NativeManager.loadLibrary] — FFM's `SymbolLookup.libraryLookup` on an explicit path, never `System.loadLibrary`, so no JVM-startup search-path capture is involved.
  * API shape: address-in/address-out one-shots mirroring libzstd's own C ABI; streaming is implemented Java-side on top (see [OmlZstdStreams]) — chunk payloads are bounded by the region sector size, so whole-payload buffering costs one memcpy and buys a five-function C surface.
- * Lazy and fault-tolerant by contract: [available] is false when the library or any symbol cannot be resolved, and every consumer (region registration, packet codec) degrades to the vanilla zlib paths it also supports.
+ * Eagerly verified at loader startup through [requireAvailable] — oml-native is a first-party
+ * dependency that deploys with the loader, and a missing library is a startup failure, not a
+ * degrade. The packet decoder's Deflate branch and the region reader's growth loop are *format*
+ * compatibility (vanilla peers, old worlds), not availability fallbacks.
  */
 object OmlNativeZstd {
 
@@ -79,6 +82,15 @@ object OmlNativeZstd {
 
     /** True once the library opened AND all six symbols bound. Consumers call this before use. */
     fun available(): Boolean = bindings != null
+
+    /**
+     * The startup gate: binds now or throws with the diagnosis the user needs. Same contract as
+     * [NativeJarScanner.requireAvailable] — oml-native deploys with the loader and a missing
+     * library is fatal, not a degrade.
+     */
+    fun requireAvailable() {
+        requireBindings()
+    }
 
     /**
      * The call surface is only meaningful once [available] is true; reaching this error means a

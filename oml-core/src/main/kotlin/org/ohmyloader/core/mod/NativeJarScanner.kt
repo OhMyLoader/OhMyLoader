@@ -85,6 +85,19 @@ internal object NativeJarScanner {
     /** True when the library and the symbol are both available. */
     fun available(): Boolean = bindings != null
 
+    /**
+     * The startup gate: binds now or throws with the diagnosis the user needs. oml-native is a
+     * first-party component that deploys with the loader — a missing library is as fatal as a
+     * missing oml-core jar, and there is no Java fallback to silently degrade into.
+     */
+    fun requireAvailable() {
+        bindings ?: error(
+            "oml-native is unavailable — the mod scan cannot run without it. " +
+                "This is an install problem, not a mod problem: reinstall OML so the native library " +
+                "is deployed next to the loader (expected in ${NativeManager.nativesDir().absolutePath}).",
+        )
+    }
+
     /** Null whenever the native path cannot answer; the caller must fall back to Java. */
     fun scan(jar: File, runtimeFeature: Int): List<Record>? {
         val bindings = bindings ?: return null

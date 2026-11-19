@@ -7,10 +7,10 @@ import org.objectweb.asm.tree.ClassNode
 import org.ohmyloader.core.cache.StartupCache
 import org.ohmyloader.core.cache.TransformCacheKey
 import org.ohmyloader.core.hook.HookScanner
-import org.ohmyloader.core.mod.JarClassIndex
 import org.ohmyloader.core.mod.ModContainer
 import org.ohmyloader.core.mod.ModScanner
 import org.ohmyloader.core.mod.NativeJarScanner
+import org.ohmyloader.core.mod.JarClassIndex
 import org.ohmyloader.core.ruleset.ModRuleSets
 import java.io.File
 import java.util.jar.JarEntry
@@ -19,10 +19,11 @@ import java.util.jar.JarOutputStream
 import kotlin.system.exitProcess
 
 /**
- * Measures the startup scan of a synthetic 300-jar pack — the modpack shape `native-plan.md` §4.1
- * uses as the trigger for a native scanner. A cold run scans every class once through the shared
- * prefilter; a warm run answers from the startup ledger. The per-phase numbers are machine-relative;
- * compare runs, not machines.
+ * Measures the startup scan of a synthetic 300-jar pack — the modpack shape the native scanner was
+ * built for. A cold run scans every class once through the shared prefilter; a warm run answers
+ * from the startup ledger. The legacy three-pass reference and the SHA-256 floor are local
+ * baselines, not production paths. The per-phase numbers are machine-relative; compare runs, not
+ * machines.
  *
  * Run with `./gradlew :oml-core:scanBenchmark`. Not part of `build`/`check`.
  */
@@ -36,12 +37,11 @@ object ScanBenchmark {
 
     @JvmStatic
     fun main(args: Array<String>) {
-        // The native mode loads the published artifact extracted by the shared test wiring; the
-        // Java mode never touches it.
+        // The native library is a required dependency; the shared test wiring deploys it.
         org.ohmyloader.core.compression.NativeTestLibraries.ensureOmlNative()
+        NativeJarScanner.requireAvailable()
         val root = File("build/scan-benchmark").apply { deleteRecursively(); mkdirs() }
         val modsDir = File(root, "mods").apply { mkdirs() }
-        val loader = ScanBenchmark::class.java.classLoader
 
         val generated = System.nanoTime()
         generate(modsDir)
@@ -82,9 +82,9 @@ object ScanBenchmark {
         println("  legacy total: ${elapsedMs(legacyStarted)} ms")
 
         // The hash floor: every jar read once through SHA-256, which the cold scans pay anyway.
-        System.setProperty("oml.scan.native", "off")
-        JarClassIndex.clearForTests()
-        StartupCache.init(File(root, "cache-hash"))
+        val hashCache = File(root, "cache-hash")
+        JarClassIndexClear()
+        StartupCache.init(hashCache)
         val hashStarted = System.nanoTime()
         for (jar in modsDir.listFiles().orEmpty().filter { it.name.endsWith(".jar") }.sortedBy { it.name }) {
             StartupCache.hash(jar)
@@ -92,26 +92,20 @@ object ScanBenchmark {
         println("  hash only (sequential): ${elapsedMs(hashStarted)} ms")
         StartupCache.save()
 
-        val javaMode = runMode("java", File(root, "cache-java"), native = false, modsDir, loader)
-        val nativeMode = runMode("native", File(root, "cache-native"), native = true, modsDir, loader)
+        val mode = runMode(File(root, "cache-scan"), modsDir)
 
-        val ledger = File(root, "cache-native/startup-scan.v2.txt")
+        val ledger = File(root, "cache-scan/startup-scan.v2.txt")
         println("ledger: ${ledger.length() / 1024} KiB, ${ledger.readLines().size} lines")
         println(
-            "results: java cold=${javaMode.coldMods} mods/${javaMode.coldProblems} rule problems, " +
-                "native cold=${nativeMode.coldMods} mods/${nativeMode.coldProblems} rule problems",
+            "results: cold=${mode.coldMods} mods/${mode.coldProblems} rule problems, " +
+                "warm=${mode.warmMods} mods/${mode.warmProblems} rule problems",
         )
 
-        val consistent = javaMode.coldMods == JARS &&
-            javaMode.warmMods == JARS &&
-            nativeMode.coldMods == JARS &&
-            nativeMode.warmMods == JARS &&
-            javaMode.coldProblems == javaMode.warmProblems &&
-            nativeMode.coldProblems == nativeMode.warmProblems &&
-            javaMode.fingerprint != null &&
-            javaMode.fingerprint == javaMode.warmFingerprint &&
-            nativeMode.fingerprint != null &&
-            nativeMode.fingerprint == nativeMode.warmFingerprint
+        val consistent = mode.coldMods == JARS &&
+            mode.warmMods == JARS &&
+            mode.coldProblems == mode.warmProblems &&
+            mode.fingerprint != null &&
+            mode.fingerprint == mode.warmFingerprint
         if (!consistent) {
             println("Scan benchmark: FAIL — the cold and warm passes disagree")
             exitProcess(1)
@@ -127,32 +121,30 @@ object ScanBenchmark {
         val warmFingerprint: String?,
     )
 
+    /** Clears the in-memory index without touching the ledger files on disk. */
+    private fun JarClassIndexClear() = JarClassIndex.clearForTests()
+
     private fun runMode(
-        label: String,
         cacheDir: File,
-        native: Boolean,
         modsDir: File,
-        loader: ClassLoader,
     ): ModeResult {
         cacheDir.deleteRecursively()
-        System.setProperty("oml.scan.native", if (native) "on" else "off")
-        JarClassIndex.clearForTests()
-        println("[$label]")
-        if (native) println("  native scanner available: ${NativeJarScanner.available()}")
+        JarClassIndexClear()
+        println("[scan]")
 
         val coldStarted = System.nanoTime()
         StartupCache.init(cacheDir)
         val coldMods = timed("cold mod scan") { ModScanner.scan(modsDir) }
-        val coldRules = timed("cold rule sets") { ModRuleSets.load(coldMods, loader) }
+        val coldRules = timed("cold rule sets") { ModRuleSets.load(coldMods, ScanBenchmark::class.java.classLoader) }
         timed("cold hook scan") { HookScanner.createTransformer(coldMods) }
         println("  cold total: ${elapsedMs(coldStarted)} ms")
         val fingerprint = timed("cold transform fingerprint") { fingerprint(modsDir, coldMods) }
 
-        JarClassIndex.clearForTests()
+        JarClassIndexClear()
         val warmStarted = System.nanoTime()
         StartupCache.init(cacheDir)
         val warmMods = timed("warm mod scan") { ModScanner.scan(modsDir) }
-        val warmRules = timed("warm rule sets") { ModRuleSets.load(warmMods, loader) }
+        val warmRules = timed("warm rule sets") { ModRuleSets.load(warmMods, ScanBenchmark::class.java.classLoader) }
         timed("warm hook scan") { HookScanner.createTransformer(warmMods) }
         println("  warm total: ${elapsedMs(warmStarted)} ms")
         val warmFingerprint = timed("warm transform fingerprint") { fingerprint(modsDir, warmMods) }

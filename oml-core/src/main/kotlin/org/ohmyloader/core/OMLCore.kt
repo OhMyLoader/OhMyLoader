@@ -20,6 +20,8 @@ import org.ohmyloader.core.cache.LauncherTransformCache
 import org.ohmyloader.core.cache.StartupCache
 import org.ohmyloader.core.cache.TransformCacheKey
 import org.ohmyloader.core.classloader.OMLClassLoader
+import org.ohmyloader.core.compression.OmlNativeZstd
+import org.ohmyloader.core.mod.NativeJarScanner
 import org.ohmyloader.core.client.KeyBindingDeclarations
 import org.ohmyloader.core.command.CommandDeclarations
 import org.ohmyloader.core.diagnostics.Diagnostics
@@ -137,6 +139,13 @@ object OMLCore {
         // The startup scan cache opens before the first mod-jar walk: the scan, the rule-set load
         // and the hook compilation all answer from it on the happy path.
         StartupCache.init(cacheDirectory())
+
+        // oml-native is a first-party dependency, not an optional accelerator: it deploys with the
+        // loader, and a missing or stale library aborts startup here with a clear diagnosis — the
+        // same treatment a missing oml-core jar gets. Everything below (mod scan, rule sets, the
+        // hook scan, the packet codec, region storage) binds through these surfaces.
+        NativeJarScanner.requireAvailable()
+        OmlNativeZstd.requireAvailable()
 
         // Parent loader = the "loader classpath" set up by the launcher (core / api / adapter / dependencies all live on this layer)
         val parent = Thread.currentThread().contextClassLoader

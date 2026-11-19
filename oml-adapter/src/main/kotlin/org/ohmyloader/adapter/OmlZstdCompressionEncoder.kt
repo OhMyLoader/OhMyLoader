@@ -63,7 +63,9 @@ class OmlZstdCompressionEncoder(private var threshold: Int) : MessageToByteEncod
             out.writeBytes(msg)
             return
         }
-        if (OmlZstdNetwork.isNegotiated(ctx) && OmlNativeZstd.available()) {
+        // The encoder speaks zstd to any peer that negotiated — the native is verified at loader
+        // startup, so there is no availability check here (vanilla peers stay on Deflate below).
+        if (OmlZstdNetwork.isNegotiated(ctx)) {
             encodeZstd(ctx, msg, out, plain)
         } else {
             encodeZlib(msg, out, plain)
