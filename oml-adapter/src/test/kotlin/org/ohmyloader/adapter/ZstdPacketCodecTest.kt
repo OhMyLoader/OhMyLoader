@@ -17,8 +17,8 @@ import kotlin.test.*
 class ZstdPacketCodecTest {
 
     init {
-        // The codec drives the real oml-native library; skipped (not failed) when the zig build output is absent.
-        org.junit.jupiter.api.Assumptions.assumeTrue(NativeTestLibraries.ensureOmlNative(), "oml-native not built")
+        // The codec drives the real oml-native library; skipped (not failed) when the published artifact is absent.
+        org.junit.jupiter.api.Assumptions.assumeTrue(NativeTestLibraries.ensureOmlNative(), "oml-native artifact absent")
     }
 
     private fun channel(negotiated: Boolean, threshold: Int = 256): EmbeddedChannel =

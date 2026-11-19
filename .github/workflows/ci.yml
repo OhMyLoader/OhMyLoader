@@ -12,6 +12,9 @@ on:
 
 permissions:
   contents: read
+  # oml-native is consumed from GitHub Packages (published by OhMyLoaderNative); the build jobs
+  # resolve it with the repository token.
+  packages: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -21,6 +24,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    env:
+      GITHUB_ACTOR: ${{ github.actor }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v7
       # The JVM floor is 27.0.2 (JDK-8394484, fixed by PR 33729): no distro carries that build, so
@@ -30,10 +36,6 @@ jobs:
         with:
           url: https://github.com/OhMyLoader/OhMyLoader/releases/download/jdk-27.0.2-internal/bundles-linux-x64.zip
           sha256: ce2052f923109e165e531c1ceada67e583347a4de757c40db5edcf46fc7270a8
-      # oml-native is built from source as part of `build` (the installer embeds it)
-      - uses: mlugg/setup-zig@v2
-        with:
-          version: 0.17.0
       - uses: gradle/actions/setup-gradle@v6
       # Build-cache entries are content-addressed by task inputs, so a stale snapshot only
       # lowers the hit rate, never yields wrong outputs — the key can err on the coarse side.
@@ -64,11 +66,6 @@ jobs:
       - name: Compute the release version for tag builds
         if: startsWith(github.ref, 'refs/tags/v')
         run: echo "OML_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
-      # The Gradle task runs `zig build --install` only, so the C library's own unit tests are not
-      # part of `build` and would never run without this step.
-      - name: oml-native unit tests
-        working-directory: oml-native
-        run: zig build test
       - run: ./gradlew ${OML_VERSION:+-Poml_version=$OML_VERSION} build
       # The verification mod consumes this exact staging directory; the release job rebuilds and
       # compares against it before publishing. Building it once here keeps the e2e input independent
@@ -120,12 +117,14 @@ jobs:
 
   # Windows coverage for two things the ubuntu job cannot decide: the installer's platform branches
   # (CRLF batch scripts, path separators, code page handling) and the real `oml-native.dll` load —
-  # oml-core's codec tests dlopen the library zig built for this platform, so they are the only place
-  # the Windows artifact's exports are ever bound. zig is needed for both: the installer's
-  # processResources embeds the library, and the codec tests read its build layout.
+  # oml-core's codec tests dlopen the published Windows artifact, so they are the only place its
+  # exports are ever bound on this OS.
   windows-test:
     runs-on: windows-latest
     timeout-minutes: 60
+    env:
+      GITHUB_ACTOR: ${{ github.actor }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v7
       # OML's JVM floor is 27.0.2 (Java 27.0.1 carries the Windows stack-probe defect JDK-8394484:
@@ -136,13 +135,9 @@ jobs:
         with:
           url: https://github.com/OhMyLoader/OhMyLoader/releases/download/jdk-27.0.2-internal/bundles-windows-x64.zip
           sha256: 196cb71a10b9ab9e0f90360c7ce8600019c302b11b74708ef354cb1b47e3964b
-      - uses: mlugg/setup-zig@v2
-        with:
-          version: 0.17.0
       - uses: gradle/actions/setup-gradle@v6
       # Same build-cache snapshot design as the build job (see there). Keyed per OS: the cached
-      # artifacts are platform-specific compilation outputs. The zig toolchain installed above
-      # lives outside this path.
+      # artifacts are platform-specific compilation outputs.
       - uses: actions/cache@v6
         with:
           # Windows: ~ expands to HOME; %VAR% does not, so the backslash form below is the
@@ -152,10 +147,9 @@ jobs:
           key: gradle-build-cache-${{ runner.os }}-${{ hashFiles('**/*.kt', '**/*.kts', '**/*.java', 'gradle/libs.versions.toml', 'gradle.properties') }}
           restore-keys: |
             gradle-build-cache-${{ runner.os }}-
-      # The codec tests look for the library in zig's build layout and assume-skip when it is absent,
-      # so the build has to be realized before them and the skip has to be checked after — a green job
-      # in which every native test skipped would prove nothing.
-      - run: ./gradlew.bat :oml-native:buildOmlNative
+      # The codec tests take the library from the published natives jar on the test classpath and
+      # assume-skip when it is absent, so the skip has to be checked after the run — a green job in
+      # which every native test skipped would prove nothing.
       - run: ./gradlew.bat :oml-core:test :oml-installer:test :oml-devtools:test
       - name: The native codec tests must not have skipped
         shell: bash
@@ -227,9 +221,6 @@ jobs:
         with:
           url: https://github.com/OhMyLoader/OhMyLoader/releases/download/jdk-27.0.2-internal/bundles-linux-x64.zip
           sha256: ce2052f923109e165e531c1ceada67e583347a4de757c40db5edcf46fc7270a8
-      - uses: mlugg/setup-zig@v2
-        with:
-          version: 0.17.0
       - uses: gradle/actions/setup-gradle@v6
       - uses: actions/cache@v6
         with:
@@ -302,10 +293,10 @@ jobs:
   # the tag too — is attached to the GitHub Release. No rebuild of the installer here.
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    # windows-test is a prerequisite because the release publishes oml-native and ships the installer:
-    # that job is the only coverage of the Windows library load and the installer's Windows branches,
-    # and a release must not go out while either is red. e2e-release is the only job that boots the
-    # tagged loader; without it the release evidence would contain zero game launches.
+    # windows-test is a prerequisite because the release ships the installer: that job is the only
+    # coverage of the Windows library load and the installer's Windows branches, and a release must
+    # not go out while either is red. e2e-release is the only job that boots the tagged loader;
+    # without it the release evidence would contain zero game launches.
     needs: [build, windows-test, e2e-release]
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -320,12 +311,6 @@ jobs:
         with:
           url: https://github.com/OhMyLoader/OhMyLoader/releases/download/jdk-27.0.2-internal/bundles-linux-x64.zip
           sha256: ce2052f923109e165e531c1ceada67e583347a4de757c40db5edcf46fc7270a8
-      # `publish` at the root includes :oml-native, whose natives jars dependOn buildOmlNative — the
-      # publish shells out to zig. Depending on a remote build-cache hit from the build job would make
-      # the release fail on one cache eviction.
-      - uses: mlugg/setup-zig@v2
-        with:
-          version: 0.17.0
       - uses: gradle/actions/setup-gradle@v6
       - uses: actions/download-artifact@v8
         with:

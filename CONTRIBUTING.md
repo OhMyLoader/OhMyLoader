@@ -1,8 +1,9 @@
 # Contributing to OhMyLoader
 
 OhMyLoader is a mod loader for Minecraft Java Edition 26.x. This repository contains the loader runtime,
-the version-neutral API, the 26.3 API and adapter, the content layer, the native library, the downloader,
-and the installer. The end-to-end game gate lives in `OhMyLoaderTestMod`; a loader change may require a
+the version-neutral API, the 26.3 API and adapter, the content layer, the downloader, and the installer.
+The native library lives in the sibling `OhMyLoaderNative` repository and is consumed here as a published
+Maven artifact. The end-to-end game gate lives in `OhMyLoaderTestMod`; a loader change may require a
 test-mod run there.
 
 ## Before you start
@@ -18,7 +19,9 @@ test-mod run there.
 
 - JDK 27. CI uses the Zulu distribution.
 - The Gradle wrapper in this repository (Gradle 9.9.1).
-- Zig 0.17.0 on `PATH` for `oml-native` and for `publishToMavenLocal`.
+- GitHub Packages credentials for `org.ohmyloader:oml-native`: CI injects `GITHUB_ACTOR` and
+  `GITHUB_TOKEN`; locally, put `gpr.user` and `gpr.key` (a PAT with `read:packages`) in
+  `~/.gradle/gradle.properties`. GitHub Packages requires authentication even for public packages.
 - Network access for the Piston metadata and Maven artifacts used by fetch tasks.
 - A sibling `OhMyLoaderTestMod` checkout for real game gates. It is not a build dependency.
 
@@ -27,9 +30,6 @@ test-mod run there.
 ```bash
 # Compile every module and run the unit and contract tests:
 ./gradlew build
-
-# Native library tests; the Gradle build only runs zig build --install:
-(cd oml-native && zig build test)
 
 # Build and smoke-test the installer:
 ./gradlew :oml-installer:shadowJar
@@ -44,10 +44,14 @@ java -jar dist/oml-installer-*.jar --target standard --dir /tmp/oml-smoke \
 ./gradlew :oml-core:injectionBenchmark
 ```
 
+The codec and native-scan tests run against the published `natives-<classifier>` jar on the test
+classpath; they assume-skip on a platform the publication does not cover. Native unit tests belong to
+`OhMyLoaderNative` and run there.
+
 `./gradlew build` runs the tests that do not launch the game. `HookShapeTest` reads the real 26.3 client
-jar through `fetchClientJar`; a shape mismatch must fail there, not at runtime. The Windows CI job builds
-the native library and runs `:oml-core:test`, `:oml-installer:test`, and `:oml-devtools:test` against the
-Windows artifact.
+jar through `fetchClientJar`; a shape mismatch must fail there, not at runtime. The Windows CI job runs
+`:oml-core:test`, `:oml-installer:test`, and `:oml-devtools:test` against the published Windows
+`natives-windows` jar.
 
 Real client and server gates run in a sibling test-mod checkout:
 
@@ -84,7 +88,9 @@ The E2E scripts target Linux with Xvfb; CI uses software rendering. Windows deve
   test pass.
 - Adapter and injection changes must keep `HookShapeTest` green and should be exercised by the test mod
   when the change affects runtime behavior.
-- Native changes need `zig build test`; installer changes need the offline install smoke.
+- Native changes belong in `OhMyLoaderNative` and are verified by its `cargo test` and build matrix;
+  `oml_native_version` here only selects the published release. Installer changes need the offline
+  install smoke.
 
 ## Commit and pull request
 
@@ -99,6 +105,9 @@ The E2E scripts target Linux with Xvfb; CI uses software rendering. Windows deve
 ## Releases (maintainers)
 
 - `oml_version` in `gradle.properties` is the single version source. Do not edit generated version output.
+- `oml_native_version` selects the published `org.ohmyloader:oml-native` release this build embeds. Bump it
+  after `OhMyLoaderNative` publishes a new version; `publishToMavenLocal` no longer produces the native
+  artifact, so a machine without GitHub Packages credentials cannot build the installer.
 - A `v*` tag runs the build, Windows tests, the pinned TestMod gate, and the release job. The release job
   requires `OML_TESTMOD_REF` and `OML_GRADLE_REF`, stages the Maven artifacts, compares the release rebuild
   against the staged SHA-256 manifest, and publishes only on a match.

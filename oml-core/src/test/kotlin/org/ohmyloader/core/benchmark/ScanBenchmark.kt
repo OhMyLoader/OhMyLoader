@@ -36,11 +36,9 @@ object ScanBenchmark {
 
     @JvmStatic
     fun main(args: Array<String>) {
-        // The native mode loads the library from the zig build output; the Java mode never does.
-        System.setProperty(
-            "oml.natives.dir",
-            File("..", "oml-native/build/${platform()}/${arch()}/release").absolutePath,
-        )
+        // The native mode loads the published artifact extracted by the shared test wiring; the
+        // Java mode never touches it.
+        org.ohmyloader.core.compression.NativeTestLibraries.ensureOmlNative()
         val root = File("build/scan-benchmark").apply { deleteRecursively(); mkdirs() }
         val modsDir = File(root, "mods").apply { mkdirs() }
         val loader = ScanBenchmark::class.java.classLoader
@@ -259,15 +257,4 @@ object ScanBenchmark {
     }
 
     private fun elapsedMs(started: Long): Long = (System.nanoTime() - started) / 1_000_000
-
-    private fun platform(): String = when {
-        System.getProperty("os.name", "").lowercase().contains("win") -> "windows"
-        System.getProperty("os.name", "").lowercase().let { it.contains("mac") || it.contains("darwin") } -> "macosx"
-        else -> "linux"
-    }
-
-    private fun arch(): String {
-        val arch = System.getProperty("os.arch", "").lowercase()
-        return if (arch.contains("aarch64") || arch.contains("arm64")) "arm64" else "x64"
-    }
 }

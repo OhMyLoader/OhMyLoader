@@ -109,21 +109,6 @@ class InstallerContractTest {
         }
     }
 
-    @Test
-    fun `the build embeds the native library under the hyphenated platform token`() {
-        // The writer half, and the half the bug actually lived in. A build-time rename has no runtime
-        // surface to assert against, so the guard reads the script — the same approach the atomic-move
-        // test below takes with AssetDownloader, and for the same reason: the property is invisible in
-        // any outcome the test could otherwise observe.
-        val script = File("build.gradle.kts")
-        assertTrue(script.isFile, "this test must run from the oml-installer project directory")
-        assertTrue(
-            script.readText().contains($$"RelativePath(true, \"$os-$arch\""),
-            "embedOmlNative must lay the library out as natives/<os>-<arch>/...; a bare `os, arch` " +
-                "pair writes natives/windows/x86_64/..., which nativeLibrary() never looks for",
-        )
-    }
-
     // ------------------------------------------------------------------------------------------
     // oml-native: one jar per OS under libraries/ (flat for Prism, Maven tree for a version JSON),
     // plus a bare library under natives/. All three paths must exist and agree with the JSON / patch
@@ -131,7 +116,7 @@ class InstallerContractTest {
     // up with an empty natives/ and a runtime that loads nothing.
     // ------------------------------------------------------------------------------------------
 
-    /** A packaged natives jar the way `packageOmlNativeJars` builds one: the library at the root. */
+    /** A packaged natives jar the way the OhMyLoaderNative publication builds one: the library at the root. */
     private fun packagedNativesJar(dir: File, version: String, os: String, libraryName: String): File {
         val jar = File(dir, "oml-native-$version-natives-$os.jar")
         ZipOutputStream(jar.outputStream()).use { zip ->

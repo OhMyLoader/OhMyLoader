@@ -15,7 +15,7 @@ import kotlin.test.*
 class OmlNativeZstdTest {
 
     init {
-        org.junit.jupiter.api.Assumptions.assumeTrue(NativeTestLibraries.ensureOmlNative(), "oml-native not built")
+        org.junit.jupiter.api.Assumptions.assumeTrue(NativeTestLibraries.ensureOmlNative(), "oml-native artifact absent")
     }
 
     @Test

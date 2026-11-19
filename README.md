@@ -140,7 +140,8 @@ compiler; this is valid.
 - `oml-launcher`: bootstrap header.
 - `oml-adapter`: the one adapter — hooks, event bridge, content materialization, network bridge, GUI and
   shader integration, built and shape-checked against the newest game line.
-- `oml-native`: Zig-built C library for Zstandard codecs.
+- `oml-native`: built and published by the `OhMyLoaderNative` repository; this build consumes
+  `org.ohmyloader:oml-native:<oml_native_version>` for embedding and tests.
 - `oml-devtools`: downloader.
 - `oml-installer`: installer, including the Java 8 bootstrap stub.
 

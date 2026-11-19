@@ -31,13 +31,15 @@ object NativeScanBenchmark {
             println("native scan benchmark: run :oml-core:scanBenchmark first (missing $modsDir)")
             exitProcess(1)
         }
-        val nativesDir = File("..", "oml-native/build/${platform()}/${arch()}/release").absoluteFile
-        System.setProperty("oml.natives.dir", nativesDir.absolutePath)
+        if (!org.ohmyloader.core.compression.NativeTestLibraries.ensureOmlNative()) {
+            println("native scan benchmark: oml-native is not on the test runtime classpath — skipped")
+            return
+        }
         val lookup = runCatching {
             NativeManager.loadLibrary(NativeScanBenchmark::class.java, "oml-native")
         }.getOrNull()
         if (lookup == null) {
-            println("native scan benchmark: oml-native not found under $nativesDir — skipped")
+            println("native scan benchmark: oml-native could not be loaded — skipped")
             return
         }
         val nativeScan = lookup.downcall(
@@ -125,16 +127,5 @@ object NativeScanBenchmark {
             required,
             counts,
         ) as Int
-    }
-
-    private fun platform(): String = when {
-        System.getProperty("os.name", "").lowercase().contains("win") -> "windows"
-        System.getProperty("os.name", "").lowercase().let { it.contains("mac") || it.contains("darwin") } -> "macosx"
-        else -> "linux"
-    }
-
-    private fun arch(): String {
-        val arch = System.getProperty("os.arch", "").lowercase()
-        return if (arch.contains("aarch64") || arch.contains("arm64")) "arm64" else "x64"
     }
 }

@@ -43,9 +43,9 @@ class InstallEndToEndTest {
 
     /** Every platform slot: neither target directory is guaranteed to stay on the installing machine. */
     private fun nativePackages(dir: File): List<File> = listOf(
-        // The bare spelling, as :oml-native packages it (BuildOmlNativeTask renames zig's Unix
-        // `lib`-prefixed artifact on the way into the layout): the entry name is what the installer
-        // deploys verbatim, and the runtime resolves that same bare name from natives/.
+        // The bare spelling, as the OhMyLoaderNative publication packages it (its Unix output is
+        // renamed on the way into the layout): the entry name is what the installer deploys
+        // verbatim, and the runtime resolves that same bare name from natives/.
         "windows" to "oml-native.dll",
         "linux" to "oml-native.so",
         "osx" to "oml-native.dylib",

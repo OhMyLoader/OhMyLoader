@@ -8,10 +8,6 @@ plugins {
 
 kotlin {
     jvmToolchain(27)
-
-    // The loader side of the oml-native build declaration; the oml-gradle plugin repository
-    // carries its own verbatim copy (the two repositories cannot share classes — sync by hand).
-    sourceSets.getByName("main").kotlin.srcDir(file("oml-native-build"))
 }
 
 dependencies {

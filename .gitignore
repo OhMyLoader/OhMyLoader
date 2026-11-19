@@ -1,10 +1,4 @@
 # --- project build artifacts ---
-# zig build tree and package cache (oml-native); the tree layout IS the deploy contract
-.zig-cache/
-zig-out/
-zig-pkg/
-# this module's own Gradle outputs (zig owns build/)
-gradle-build/
 # game artifacts fetched by fetchClientJar / fetchGameLibraries (the adapter compiles against the jar)
 oml-adapter/libs/
 # installer fat jar output

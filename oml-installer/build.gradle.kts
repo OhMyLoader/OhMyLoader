@@ -86,51 +86,44 @@ val embedBundled = tasks.register<Sync>("embedBundled") {
     into(layout.buildDirectory.dir("resources/main/lib"))
 }
 
-// Our zig-built C library, embedded under natives/<os>-<arch>/ (the tokens NativeManager resolves).
-// Copying whatever exists instead of failing on a missing platform keeps a single-platform zig
-// checkout installable; targets skip the download when the current platform is absent.
-val omlNativeProject = project(":oml-native")
+// The native library is built and published by the OhMyLoaderNative repository. PCL2 / HMCL
+// populate ${natives_directory} by extracting the `natives-<classifier>` jars declared in the
+// version JSON's libraries, so the installer embeds exactly the jars that publication ships;
+// InstallModel extracts the platform library from them at install time.
+val omlNativeVersion = providers.gradleProperty("oml_native_version").get()
+val omlNativeClassifiers = listOf(
+    "windows", "windows-arm64", "linux", "linux-arm64", "osx", "osx-arm64",
+)
 
-val embedOmlNative = tasks.register<Sync>("embedOmlNative") {
-    group = "ohmyloader"
-    description = "Embed built oml-native libraries (build output) into the installer's resources"
-    dependsOn(omlNativeProject.tasks.named("buildOmlNative"))
-    // Locals of this configuration lambda, not script-level vals: a captured script object breaks
-    // the configuration cache.
-    val osTokens = mapOf(
-        "windows" to "windows", "linux" to "linux", "macosx" to "osx", "mingw" to "windows",
-    )
-    val archTokens = mapOf(
-        "x64" to "x86_64", "x86_64" to "x86_64", "amd64" to "x86_64",
-        "arm64" to "arm64", "aarch64" to "arm64",
-    )
-    from(rootProject.file("oml-native/build")) {
-        include("*/*/release/oml-native.dll", "*/*/release/oml-native.so", "*/*/release/oml-native.dylib")
-        eachFile {
-            // relative path inside oml-native/build: <plat>/<arch>/release/oml-native.<ext>
-            val segments = relativePath.pathString.split("/", "\\")
-            val os = osTokens[segments[0].lowercase()]
-            val arch = archTokens[segments[1].lowercase()]
-            if (os == null || arch == null) {
-                exclude()
-            } else {
-                relativePath = RelativePath(true, "$os-$arch", segments[3])
-            }
-        }
-    }
-    into(layout.buildDirectory.dir("resources/main/natives"))
+// Resolved as a detached configuration: the jars are resources to embed, not compile dependencies.
+val omlNatives = configurations.create("omlNatives") {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+    isTransitive = false
 }
 
-// PCL2 / HMCL populate ${natives_directory} exclusively by extracting `natives-<classifier>` jars
-// from the version JSON's libraries, so the compliant distribution form is a library entry with a
-// natives block backed by such a jar (produced and published by :oml-native; embedded here for
-// install time).
+dependencies {
+    omlNativeClassifiers.forEach { classifier ->
+        add(omlNatives.name, "org.ohmyloader:oml-native:$omlNativeVersion:natives-$classifier")
+    }
+}
+
+// Sync, not Copy: a classifier dropped from the list must stop shipping. The jar file names carry
+// the publication version, which InstallModel parses back into the version JSON entry.
 val embedNativesJars = tasks.register<Sync>("embedNativesJars") {
     group = "ohmyloader"
-    description = "Embed :oml-native's packaged natives-<classifier> jars into the installer's resources"
-    dependsOn(omlNativeProject.tasks.named("packageOmlNativeJars"))
-    from(omlNativeProject.layout.buildDirectory.dir("natives-jars"))
+    description = "Embed the published natives-<classifier> jars into the installer's resources"
+    from(omlNatives)
     into(layout.buildDirectory.dir("resources/main/natives-jars"))
+}
+
+// The installer used to embed a plain copy of every library under natives/<os>-<arch>/. The
+// version JSON's natives jars are the only shape now, so a checkout that still carries the old
+// build output would otherwise keep shipping a stale library. Sync with no sources empties it.
+val clearLegacyNatives = tasks.register<Sync>("clearLegacyNatives") {
+    group = "ohmyloader"
+    description = "Remove the pre-publication plain natives copies from the installer's resources"
+    into(layout.buildDirectory.dir("resources/main/natives"))
 }
 
 /** Java major version OML requires. Written into the launcher version JSON and into every user-facing message. */
@@ -193,11 +186,11 @@ val generateVersionCatalog = tasks.register("generateVersionCatalog") {
     }
 }
 
-// The four generators write into subdirectories of this task's own output directory
+// The generators write into subdirectories of this task's own output directory
 // (resources/main/{lib,natives,natives-jars}); dependsOn schedules them and mustRunAfter states the
 // direction explicitly, so a refactor that drops the dependency cannot silently let processResources
 // run first. Task references only — configuration-cache safe.
-val resourceGenerators = listOf(embedBundled, embedOmlNative, embedNativesJars, generateVersionCatalog)
+val resourceGenerators = listOf(embedBundled, embedNativesJars, clearLegacyNatives, generateVersionCatalog)
 
 tasks.processResources {
     dependsOn(resourceGenerators)

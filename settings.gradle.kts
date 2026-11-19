@@ -16,7 +16,31 @@ pluginManagement {
 dependencyResolutionManagement {
     @Suppress("UnstableApiUsage")
     repositories {
-        mavenCentral()
+        // The native library is built and published by the OhMyLoaderNative repository. GitHub
+        // Packages requires authentication even for public packages: CI injects GITHUB_ACTOR and
+        // GITHUB_TOKEN, a local build reads gpr.user/gpr.key from ~/.gradle/gradle.properties. The
+        // content filter keeps the credential off every group except OML's own artifacts.
+        // Local native-iteration path: publish a locally built oml-native into ~/.m2 (the same
+        // layout the CI publish job produces) and it wins over the remote without credentials. It
+        // must sit BEFORE GitHubPackages: a 401 there aborts resolution instead of falling through.
+        mavenLocal()
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/OhMyLoader/OhMyLoader")
+            content {
+                includeGroup("org.ohmyloader")
+            }
+            val user = providers.environmentVariable("GITHUB_ACTOR").orNull
+                ?: providers.gradleProperty("gpr.user").orNull
+            val token = providers.environmentVariable("GITHUB_TOKEN").orNull
+                ?: providers.gradleProperty("gpr.key").orNull
+            if (user != null && token != null) {
+                credentials {
+                    username = user
+                    password = token
+                }
+            }
+        }
         maven("https://maven.minecraftforge.net/")
         maven("https://libraries.minecraft.net/")
     }
@@ -32,7 +56,6 @@ include(":oml-api")
 include(":oml-core")
 include(":oml-content")
 include(":oml-devtools")
-include(":oml-native")
 include(":oml-installer")
 include(":oml-adapter")
 

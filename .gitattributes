@@ -5,7 +5,6 @@
 *.kt text eol=lf
 *.kts text eol=lf
 *.java text eol=lf
-*.zig text eol=lf
 *.toml text eol=lf
 gradlew text eol=lf
 *.sh text eol=lf

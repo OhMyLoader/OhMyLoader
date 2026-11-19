@@ -3,6 +3,7 @@ package org.ohmyloader.core.mod
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
+import org.ohmyloader.core.compression.NativeTestLibraries
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes
 import java.io.File
@@ -18,30 +19,15 @@ import kotlin.test.assertNotNull
  * Differential gate: the native walker and the pure-Java fallback must produce the exact same
  * candidate sets and masks for every shape the loader accepts — including stored and deflated
  * entries, MR-JAR winners, a jar that is not multi-release, reserved namespaces, empty jars and
- * malformed class bytes. Skipped when the native library has not been built.
+ * malformed class bytes. Skipped when the published native artifact is not on the test classpath.
  */
 class NativeDiffTest {
 
     companion object {
         @JvmStatic
         @BeforeAll
-        fun pointAtNativeBuild() {
-            val dir = File("..", "oml-native/build/${platform()}/${arch()}/release").absoluteFile
-            System.setProperty("oml.natives.dir", dir.absolutePath)
-        }
-
-        private fun platform(): String = when {
-            System.getProperty("os.name", "").lowercase().contains("win") -> "windows"
-            System.getProperty("os.name", "").lowercase().let {
-                it.contains("mac") || it.contains("darwin")
-            } -> "macosx"
-
-            else -> "linux"
-        }
-
-        private fun arch(): String {
-            val arch = System.getProperty("os.arch", "").lowercase()
-            return if (arch.contains("aarch64") || arch.contains("arm64")) "arm64" else "x64"
+        fun loadNativeLibrary() {
+            NativeTestLibraries.ensureOmlNative()
         }
     }
 
