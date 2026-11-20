@@ -6,7 +6,7 @@ import java.nio.file.Files
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Shared test wiring for the in-repo `native/oml-native` crate: builds the host library with
+ * Shared test wiring for the in-repo `oml-native` crate: builds the host library with
  * cargo (incremental — a no-op when sources are unchanged) and points `oml.natives.dir` at the
  * built binary, so every consumer dlopens the exact bytes the working tree produces. No published
  * artifact, no staging step — the tests and the shipped installer see the same source of truth.
@@ -24,11 +24,11 @@ object NativeTestLibraries {
     internal fun crateRoot(): File {
         var dir = File(System.getProperty("user.dir")).absoluteFile
         repeat(4) {
-            val candidate = File(dir, "native/oml-native")
+            val candidate = File(dir, "oml-native")
             if (File(candidate, "Cargo.toml").isFile) return candidate
             dir = dir.parentFile ?: return@repeat
         }
-        error("native/oml-native not found from ${System.getProperty("user.dir")}")
+        error("oml-native not found from ${System.getProperty("user.dir")}")
     }
 
     fun ensureOmlNative(): Boolean {

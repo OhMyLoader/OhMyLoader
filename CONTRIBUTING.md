@@ -2,7 +2,7 @@
 
 OhMyLoader is a mod loader for Minecraft Java Edition 26.x. This repository contains the loader runtime,
 the version-neutral API, the 26.3 API and adapter, the content layer, the downloader, and the installer.
-The native library lives in this repository at `native/oml-native` (Rust) and is built from source by
+The native library lives in this repository at `oml-native` (Rust) and is built from source by
 this build. The end-to-end game gate lives in `OhMyLoaderTestMod`; a loader change may require a
 test-mod run there.
 
@@ -19,7 +19,7 @@ test-mod run there.
 
 - JDK 27. CI uses the Zulu distribution.
 - The Gradle wrapper in this repository (Gradle 9.9.1).
-- Rust (stable) with cargo: `native/oml-native` is built from source by this repository's tests
+- Rust (stable) with cargo: `oml-native` is built from source by this repository's tests
   (`NativeTestLibraries` runs cargo) and by the installer's `packageOmlNativeJars` task. CI installs
   the cross targets per job.
 - Network access for the Piston metadata and Maven artifacts used by fetch tasks.
@@ -44,7 +44,7 @@ java -jar dist/oml-installer-*.jar --target standard --dir /tmp/oml-smoke \
 ./gradlew :oml-core:injectionBenchmark
 ```
 
-The codec and native-scan tests build the native from `native/oml-native` with cargo and dlopen the
+The codec and native-scan tests build the native from `oml-native` with cargo and dlopen the
 result; a missing Rust toolchain makes them skip, which CI treats as red.
 
 `./gradlew build` runs the tests that do not launch the game. `HookShapeTest` reads the real 26.3 client
@@ -87,7 +87,7 @@ The E2E scripts target Linux with Xvfb; CI uses software rendering. Windows deve
   test pass.
 - Adapter and injection changes must keep `HookShapeTest` green and should be exercised by the test mod
   when the change affects runtime behavior.
-- Native changes live in `native/oml-native` (Rust); `cargo test` plus the loader codec tests cover
+- Native changes live in `oml-native` (Rust); `cargo test` plus the loader codec tests cover
   them, and the installer packages every platform target. Installer changes need the offline install
   smoke.
 
@@ -105,7 +105,7 @@ The E2E scripts target Linux with Xvfb; CI uses software rendering. Windows deve
 
 - `oml_version` in `gradle.properties` is the single version source. Do not edit generated version output.
 - `oml_native_version` stamps the natives-<classifier> jar names the installer embeds and the version
-  JSON entries name; the artifacts are built from `native/oml-native` in the same build. Bump it when
+  JSON entries name; the artifacts are built from `oml-native` in the same build. Bump it when
   the native contract changes in a way a shipped installer must name differently.- A `v*` tag runs the build, Windows tests, the pinned TestMod gate, and the release job. The release job
   requires `OML_TESTMOD_REF` and `OML_GRADLE_REF`, stages the Maven artifacts, compares the release rebuild
   against the staged SHA-256 manifest, and publishes only on a match.

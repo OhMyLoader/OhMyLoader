@@ -9,9 +9,9 @@ updates:
         update-types:
           - minor
           - patch
-  # the in-repo Rust crate (native/oml-native), Dependabot reads Cargo.lock natively
+  # the in-repo Rust crate (oml-native), Dependabot reads Cargo.lock natively
   - package-ecosystem: cargo
-    directory: "/native/oml-native"
+    directory: "/oml-native"
     schedule:
       interval: weekly
     groups:

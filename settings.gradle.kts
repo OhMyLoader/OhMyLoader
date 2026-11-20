@@ -16,7 +16,7 @@ pluginManagement {
 dependencyResolutionManagement {
     @Suppress("UnstableApiUsage")
     repositories {
-        // No GitHub Packages: oml-native lives in this repository (native/oml-native) and is built
+        // No GitHub Packages: oml-native lives in this repository (oml-native) and is built
         // from source by this build — there is no published artifact to resolve, and no credential
         // to hold. Everything else resolves from the public mirrors below.
         mavenCentral()
@@ -30,7 +30,7 @@ plugins {
 }
 
 include(":oml-launcher")
-include(":native:oml-native")
+include(":oml-native")
 include(":oml-api-core")
 include(":oml-api")
 include(":oml-core")

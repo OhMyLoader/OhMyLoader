@@ -97,12 +97,12 @@ val embedBundled = tasks.register<Sync>("embedBundled") {
     into(layout.buildDirectory.dir("resources/main/lib"))
 }
 
-// The native library is built from the in-repo crate `native/oml-native` (Rust, cargo). PCL2 / HMCL
+// The native library is built from the in-repo crate `oml-native` (Rust, cargo). PCL2 / HMCL
 // populate ${natives_directory} by extracting the `natives-<classifier>` jars declared in the
 // version JSON's libraries, so the installer embeds exactly the jars this build produces;
 // InstallModel extracts the platform library from them at install time.
 val omlNativeVersion = providers.gradleProperty("oml_native_version").get()
-val omlNativeCrate = rootProject.projectDir.resolve("native/oml-native")
+val omlNativeCrate = rootProject.projectDir.resolve("oml-native")
 val omlNativeDist = omlNativeCrate.resolve("dist")
 
 data class OmlNativeTarget(val classifier: String, val triple: String, val fileName: String) : java.io.Serializable

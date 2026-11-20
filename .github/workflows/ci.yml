@@ -31,7 +31,7 @@ jobs:
           url: https://github.com/OhMyLoader/OhMyLoader/releases/download/jdk-27.0.2-internal/bundles-linux-x64.zip
           sha256: ce2052f923109e165e531c1ceada67e583347a4de757c40db5edcf46fc7270a8
       - uses: gradle/actions/setup-gradle@v6
-      # The in-repo native crate (native/oml-native) is built with cargo for the tests and the
+      # The in-repo native crate (oml-native) is built with cargo for the tests and the
       # staged artifacts: the host target is native, the arm64 target cross-compiles with the
       # standard GNU cross-linker.
       - run: |
@@ -96,7 +96,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: oml-native-linux
-          path: native/oml-native/dist/oml-native-*-natives-linux*.jar
+          path: oml-native/dist/oml-native-*-natives-linux*.jar
           if-no-files-found: error
 
   # Windows coverage for two things the ubuntu job cannot decide: the installer's platform branches
@@ -149,7 +149,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: oml-native-windows
-          path: native/oml-native/dist/oml-native-*-natives-windows*.jar
+          path: oml-native/dist/oml-native-*-natives-windows*.jar
           if-no-files-found: error
 
   # macOS coverage for the required native: the codec tests build and dlopen the darwin library
@@ -168,7 +168,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: oml-native-osx
-          path: native/oml-native/dist/oml-native-*-natives-osx*.jar
+          path: oml-native/dist/oml-native-*-natives-osx*.jar
           if-no-files-found: error
 
   # The installer fat jar, assembled from every runner's natives: the six classifiers are the
@@ -190,15 +190,15 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: oml-native-linux
-          path: native/oml-native/dist
+          path: oml-native/dist
       - uses: actions/download-artifact@v8
         with:
           name: oml-native-windows
-          path: native/oml-native/dist
+          path: oml-native/dist
       - uses: actions/download-artifact@v8
         with:
           name: oml-native-osx
-          path: native/oml-native/dist
+          path: oml-native/dist
       - run: ./gradlew :oml-installer:shadowJar
       - name: The installer fat jar must run and install offline
         run: |
