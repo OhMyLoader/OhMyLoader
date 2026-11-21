@@ -67,7 +67,8 @@ val emptyMainJar = tasks.register<Jar>("mainJar") {
 val nativesJar = tasks.register<Jar>("nativesJar") {
     archiveBaseName.set("oml-native")
     archiveVersion.set(omlVersion)
-    archiveClassifier.set(hostClassifier)
+    // The classifier spelling the plugin resolves: natives-<os> (natives-windows/natives-linux/natives-osx).
+    archiveClassifier.set("natives-$hostClassifier")
     // The cargo output carries the crate identifier (lib-prefixed on unix); the jar entry is
     // renamed to exactly the hyphenated `oml-native.<ext>` the loader resolves — a naive
     // replaceFirst on `liboml_native.so` leaves the lib prefix in (`liboml-native.so`), which
