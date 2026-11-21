@@ -47,9 +47,17 @@ object NativeTestLibraries {
                     return false
                 }
                 val fileName = NativeManager.withPlatformExtension("oml-native")
-                // cargo names the cdylib after the crate identifier: oml_native.dll (underscore); the
-                // loader resolves oml-native.dll — the deploy renames, exactly like the publication CI did.
-                val built = File(target, "release/oml_native.${fileName.substringAfterLast('.')}")
+                // cargo names the cdylib after the crate identifier, with a `lib` prefix on unix:
+                // `oml_native.dll` (windows) but `liboml_native.so` / `liboml_native.dylib`. The
+                // loader resolves the hyphenated `oml-native.<ext>` — the deploy renames, exactly
+                // like the publication CI used to.
+                val ext = fileName.substringAfterLast('.')
+                val builtName = if (System.getProperty("os.name").lowercase().contains("win")) {
+                    "oml_native.$ext"
+                } else {
+                    "liboml_native.$ext"
+                }
+                val built = File(target, "release/$builtName")
                 if (!built.isFile) {
                     println("[OMLTest] cargo produced no $fileName under ${built.parentFile} — native tests will skip")
                     return false

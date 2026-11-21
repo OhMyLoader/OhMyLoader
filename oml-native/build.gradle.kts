@@ -68,7 +68,12 @@ val nativesJar = tasks.register<Jar>("nativesJar") {
     archiveBaseName.set("oml-native")
     archiveVersion.set(omlVersion)
     archiveClassifier.set(hostClassifier)
-    from(builtLibrary) { include("oml-native.*") }
+    // The cargo output carries the crate identifier (lib-prefixed on unix); the jar entry is
+    // renamed to the hyphenated name the loader resolves.
+    from(builtLibrary) {
+        include("oml_native.*", "liboml_native.*")
+        rename { it -> it.replaceFirst("oml_native", "oml-native") }
+    }
 }
 
 tasks.named("assemble") { dependsOn(buildOmlNative, nativesJar, emptyMainJar) }

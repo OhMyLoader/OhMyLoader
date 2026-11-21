@@ -149,11 +149,14 @@ abstract class PackageOmlNativeJarsTask : DefaultTask() {
                 println("[oml] oml-native ${target.classifier}: cargo build failed (target not installed?) — skipped: $output")
                 continue
             }
-            // cargo names the cdylib after the crate identifier (oml_native.dll, underscore); the
-            // packaged jar entry carries the hyphenated name the loader resolves.
-            val lib = crateDir.resolve("target/${target.triple}/release/oml_native.${target.fileName.substringAfterLast('.')}")
+            // cargo names the cdylib after the crate identifier, with a `lib` prefix on unix:
+            // oml_native.dll (windows) but liboml_native.so / liboml_native.dylib. The packaged
+            // jar entry carries the hyphenated name the loader resolves.
+            val ext = target.fileName.substringAfterLast('.')
+            val builtName = if (target.classifier.startsWith("windows")) "oml_native.$ext" else "liboml_native.$ext"
+            val lib = crateDir.resolve("target/${target.triple}/release/$builtName")
             if (!lib.isFile) {
-                println("[oml] oml-native ${target.classifier}: cargo produced no ${target.fileName} — skipped")
+                println("[oml] oml-native ${target.classifier}: cargo produced no $builtName — skipped")
                 continue
             }
             val out = distDir.resolve("oml-native-${version.get()}-natives-${target.classifier}.jar")
