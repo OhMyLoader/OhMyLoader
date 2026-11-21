@@ -6,16 +6,12 @@ package org.ohmyloader.launcher;
  *
  * <p>A reboot crosses a boundary no session can see across: the session that starts the swap is
  * collected before the one that finishes it exists, and the pixels in between belong to whoever
- * renders last. The fix is to make that boundary irrelevant — the screen a player sees is not drawn
- * in three instalments by three different layers, it is drawn by <b>one</b> routine reading
- * <b>one</b> state object. This class is that state object.
- *
- * <p>It lives in the supervisor loader on purpose (parent-first, defined once for the life of the
- * process) so both sessions and the in-between code read the *same* instance, not a copy each. In
- * this direction lies the reason it holds nothing but primitives, a {@link String} and a
- * {@code long}: a reference to a {@code Minecraft}, a {@code Screen} or anything else the session
- * loader defines would pin the retiring session's loader alive, and the canary gate would fail for
- * exactly the reason it exists.
+ * renders last. The fix is to make that boundary irrelevant — the screen is drawn by <b>one</b>
+ * routine reading <b>one</b> state object, and this class is that state object. It lives in the
+ * supervisor loader on purpose (parent-first, defined once for the life of the process) so both
+ * sessions read the *same* instance. That is also why it holds nothing but primitives, a {@link
+ * String} and a {@code long}: a reference to anything the session loader defines would pin the
+ * retiring session's loader alive, and the canary gate would fail for exactly the reason it exists.
  *
  * <p>Progress is a ceiling, not a value: {@link #milestone} can only move it forward, so a late
  * report from a session being torn down can never drag the bar backwards. What is presented is
@@ -239,9 +235,7 @@ public final class OMLRebootOverlay {
         double step = Math.min(seconds, TAU_SECONDS);
 
         if (ceiling >= DONE) {
-            // Reaching the end is not a chase. An exponential approach never actually arrives — the
-            // first version stopped the bar at 99.5% and the fade never started, which the player
-            // sees as a permanently stuck transition. So the last stretch is filled at a fixed rate
+            // Reaching the end is not a chase. An exponential approach never actually arrives, so the last stretch is filled at a fixed rate
             // and the curtain lifts the moment it is full.
             shown = Math.min(1f, shown + (float) (FILL_PER_SECOND * step));
             if (shown >= 0.9995f) {

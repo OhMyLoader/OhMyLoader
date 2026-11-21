@@ -9,7 +9,7 @@ import net.minecraft.world.clock.WorldClock
 import net.minecraft.world.level.Level
 
 /*
- * 26.3 keeps time in clocks addressed by registry id instead of one day-time counter: a clock is a tick
+ * The game keeps time in clocks addressed by registry id instead of one day-time counter: a clock is a tick
  * counter with a rate, and the named moments `/time` refers to (`minecraft:day`, `minecraft:noon`) are markers
  * registered against it. The counting state is readable on either side — the server pushes it to clients
  * whenever it changes — while the writes and the marker table live on the server, so a client's

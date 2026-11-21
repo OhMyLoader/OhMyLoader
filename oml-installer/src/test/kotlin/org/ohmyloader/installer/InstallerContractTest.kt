@@ -116,7 +116,7 @@ class InstallerContractTest {
     // up with an empty natives/ and a runtime that loads nothing.
     // ------------------------------------------------------------------------------------------
 
-    /** A packaged natives jar the way the OhMyLoaderNative publication builds one: the library at the root. */
+    /** A packaged natives jar the way the in-repo native packaging task builds one: the library at the root. */
     private fun packagedNativesJar(dir: File, version: String, os: String, libraryName: String): File {
         val jar = File(dir, "oml-native-$version-natives-$os.jar")
         ZipOutputStream(jar.outputStream()).use { zip ->

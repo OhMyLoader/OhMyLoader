@@ -16,10 +16,11 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
 /**
- * Differential gate: the native walker and the pure-Java fallback must produce the exact same
- * candidate sets and masks for every shape the loader accepts — including stored and deflated
- * entries, MR-JAR winners, a jar that is not multi-release, reserved namespaces, empty jars and
- * malformed class bytes. Skipped when the published native artifact is not on the test classpath.
+ * Differential gate: the native walker and the test-only Java oracle ([JavaScanOracle]) must
+ * produce the exact same candidate sets and masks for every shape the loader accepts — including
+ * stored and deflated entries, MR-JAR winners, a jar that is not multi-release, reserved
+ * namespaces, empty jars and malformed class bytes. Skipped when the in-repo native cannot be
+ * built.
  */
 class NativeDiffTest {
 

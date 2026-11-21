@@ -11,21 +11,15 @@ import java.security.MessageDigest
  *
  * - the **jar ledger** — one stat stamp `(path, size, mtime)` per scanned jar mapped to its SHA-256
  *   and the scan products derived from its bytes (the `@Mod` records, the `@RuleSource` classes) —
- *   so the three full mod-jar decompress-and-parse passes that used to run every launch become one
- *   pass per changed jar and pure stat hits otherwise;
+ *   so a warm launch is pure stat hits and a cold one re-parses only changed jars;
  * - the **asset index** (`assets/`/`data/` keys of the mod jars and pack archives), keyed on the
- *   exact stat signature of the file set — it is built lazily inside the game's resource-reload
- *   window, and this takes a full zip walk out of that window.
+ *   exact stat signature of the file set — built lazily inside the game's resource-reload window,
+ *   taking a full zip walk out of that window.
  *
  * Trust model: a stat stamp that matches answers everything without hashing; any mismatch (or a
- * missing file) re-hashes that jar once and re-scans. A deleted jar simply stops being asked
+ * missing file) re-hashes that jar once and re-scans; a deleted jar simply stops being asked
  * about. Every load and write is defensive — a broken or truncated cache is discarded and
- * regenerated, never fatal. `uninstall` preserves the installer's `cache/` directory, and this
- * directory is safe to delete by hand at any time.
- *
- * Line format (tab-separated, backslash-escaped fields): `JAR` records the stat stamp and digest,
- * `MOD`/`RULE` hang scan products off the digest, `SHA` is an entry recorded without products (a
- * jar whose scan is still pending in this run).
+ * regenerated, never fatal, and the directory is safe to delete by hand at any time.
  */
 object StartupCache {
 

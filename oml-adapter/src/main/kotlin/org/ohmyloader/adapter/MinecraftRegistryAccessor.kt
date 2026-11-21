@@ -27,7 +27,7 @@ import java.util.function.Consumer
 import java.util.stream.Stream
 
 /**
- * 26.3 typed registry access. Every field here is a direct getstatic: reflecting on these static
+ * Typed registry access against the tracked game. Every field here is a direct getstatic: reflecting on these static
  * fields through Field.get(null) creates JEP 416 method-handle metadata backed by a boot
  * LambdaForm$MH hidden class, which keeps the disposable session loader reachable across a soft
  * reboot. Keeping the accessor version-specific also keeps the shared content registry free of

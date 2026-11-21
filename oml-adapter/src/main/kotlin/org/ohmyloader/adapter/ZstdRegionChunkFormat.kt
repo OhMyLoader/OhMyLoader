@@ -10,7 +10,7 @@ import java.io.OutputStream
 import java.lang.reflect.Proxy
 
 /**
- * Zstd (ID **127**) region-file chunk compression for Minecraft 26.3, built on our own **oml-native** C library (see [OmlNativeZstd]). In 26.3, ID 127 is `VERSION_CUSTOM`, a *sentinel* whose wrappers throw — not a working codec. We construct a fresh `RegionFileVersion(127, "zstd", …)` via reflection and push it through vanilla's own private `register`, replacing that entry: vanilla ids 1/2/3/4 and the sentinel field stay untouched, so old worlds keep reading through the original wrappers unchanged.
+ * Zstd (ID **127**) region-file chunk compression for the tracked Minecraft line, built on our own **oml-native** C library (see [OmlNativeZstd]). In the tracked game, ID 127 is `VERSION_CUSTOM`, a *sentinel* whose wrappers throw — not a working codec. We construct a fresh `RegionFileVersion(127, "zstd", …)` via reflection and push it through vanilla's own private `register`, replacing that entry: vanilla ids 1/2/3/4 and the sentinel field stay untouched, so old worlds keep reading through the original wrappers unchanged.
  * Write path: every new `RegionFile` picks its codec via `getSelected()` and stamps the chunk header's 5th byte with the same version's id, so rewriting `getSelected()` switches format and on-disk algorithm byte together, atomically. Read path: `createChunkInputStream` dispatches on the on-disk byte via `fromId` and never consults `getSelected()`, so a chunk written by our instance reads back plain (no name prefix), exactly like a vanilla chunk.
  * Minting a version needs the private constructor, private `register` and the package-private `StreamWrapper` interface — none reachable from `org.ohmyloader.*` — hence the `java.lang.reflect.Proxy` wrappers (invoked once per chunk, negligible next to compression).
  * Side effect of the "zstd" name: `region-file-compression=zstd` in server.properties becomes a valid spelling of the same codec; the `getSelected` rewrite overrides the *default* regardless — the product decision is "new chunks are Zstd", not "Zstd is opt-in".
@@ -90,7 +90,7 @@ object ZstdRegionChunkFormat {
             // raw `StreamWrapper` type: (decompressing<InputStream>, compressing<OutputStream>).
             // Swapped, the first chunk save dies with `ClassCastException: ChunkBuffer cannot be
             // cast to InputStream` (the write path would find the decompressing wrapper). Verified
-            // against the class's generic signature in the 26.3 jar.
+            // against the class's generic signature in the tracked game jar.
             val version = constructor.newInstance(VERSION_ID, "zstd", decompressing, compressing)
 
             val register = RegionFileVersion::class.java.getDeclaredMethod(

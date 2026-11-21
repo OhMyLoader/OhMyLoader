@@ -44,8 +44,8 @@ object EventBridge {
     /**
      * [Commands handover] Registers the mod commands into a freshly built dispatcher (see the hook).
      * Takes the dispatcher itself — not the `Commands` wrapper — because the snapshot line keeps the
-     * dispatcher private to the `CommandBox` hierarchy; the 26.3-shaped unwrap lives in the 26.3
-     * adapter, whose bytecode ships only into 26.3 installs.
+     * dispatcher private to the `CommandBox` hierarchy; the unwrap from it lives in this adapter,
+     * whose bytecode ships only into installs of the tracked game line.
      */
     @JvmStatic
     fun onDispatcherReady(dispatcher: com.mojang.brigadier.CommandDispatcher<net.minecraft.commands.CommandSourceStack>) =

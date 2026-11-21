@@ -14,17 +14,14 @@ import org.ohmyloader.api.core.tick.OMLScheduler
  * state machine.
  *
  * <p>One rule governs everything here: **nothing may hold a session object across the swap.** The
- * snapshot is written as a plain line of text into the supervisor's
- * [org.ohmyloader.launcher.RebootSnapshot] and read back the same way; the transition is drawn from
- * the supervisor's [org.ohmyloader.launcher.OMLRebootOverlay], which holds nothing but floats.
+ * snapshot is a plain text line written into and read back from the supervisor's
+ * [org.ohmyloader.launcher.RebootSnapshot]; the transition is drawn from the supervisor's
+ * [org.ohmyloader.launcher.OMLRebootOverlay], which holds nothing but floats.
  *
- * <p>The transition is drawn from the **tail of `Gui.extractRenderState`** — after the HUD, after the
- * vanilla overlay, after the screen, after the saving indicator. That single position is what makes
- * the transition one screen instead of three: session 1 draws it there and the shutdown's own
- * "Saving world" screen lands underneath it; session 2 draws it there and the vanilla loading
- * overlay and level-loading screen land underneath it. Neither session needs to suppress anything,
- * and no screen swap can ever be seen. This module says *what* that frame looks like
- * ([transitionFrame]); the version module says how to draw it.
+ * <p>The transition is drawn from the tail of `Gui.extractRenderState` — after the HUD, the vanilla
+ * overlay, the screen and the saving indicator — so each session draws it there and whatever the
+ * game shows next lands underneath it; no screen swap is ever seen. This module says *what* that
+ * frame looks like ([transitionFrame]); the version module says how to draw it.
  *
  * The line is positional and versioned so a mismatch is a loud "ignored" instead of a silently
  * wrong teleport:

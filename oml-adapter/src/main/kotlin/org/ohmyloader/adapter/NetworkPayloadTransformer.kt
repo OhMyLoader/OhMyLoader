@@ -9,7 +9,7 @@ import org.ohmyloader.core.transformer.injection.InjectingTransformer
  * channel name, so this transformer is registered on **both** sides in [OMLAdapter] like
  * [NetworkCompressionTransformer] — the same rules run in a client process and in a dedicated server.
  *
- * Anchor constraints in 26.3: `CustomPacketPayload.codec(FallbackProvider, List)` is the single static
+ * Anchor constraints: `CustomPacketPayload.codec(FallbackProvider, List)` is the single static
  * factory both payload packet classes build their dispatch map from, and the list is still mutable at its
  * head (the map is snapshotted inside the method); the two inbound handlers differ in shape — the client
  * listener receives the payload itself, the server listener the packet wrapping it.

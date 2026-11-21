@@ -36,9 +36,9 @@ object OMLCommandBridge {
     private val registered = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Any, Boolean>())
 
     /**
-     * The dispatcher itself is the dedup key, not the `Commands` wrapper: the 26.3 line hands the
-     * wrapper over and the bridge unwraps it (in the 26.3 adapter, shared bytecode must not name
-     * `getDispatcher`), while the snapshot line hands the dispatcher over directly.
+     * The dispatcher itself is the dedup key, not the `Commands` wrapper: the game hands the
+     * wrapper over and the bridge unwraps it (shared adapter, shared bytecode must not name
+     * `getDispatcher`).
      */
     @JvmStatic
     fun register(dispatcher: CommandDispatcher<CommandSourceStack>) {
@@ -67,8 +67,8 @@ object OMLCommandBridge {
      * The construction-time handover at `ParseBox.fromFullTree` sees only the declarations that
      * exist while the instance is built; on the dedicated server the real instance is built before
      * the mods' late declarations (the built-in `/oml` node, for one) land. The execution entry
-     * point therefore re-runs this registration — the same laziness the 26.3 line got from its
-     * `performPrefixedCommand` hook.
+     * point therefore re-runs this registration — the same laziness the game's own
+     * `performPrefixedCommand` hook has.
      */
     @JvmStatic
     fun registerFor(commands: net.minecraft.commands.Commands) {

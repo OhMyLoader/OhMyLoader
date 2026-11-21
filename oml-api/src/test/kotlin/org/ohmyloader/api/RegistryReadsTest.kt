@@ -11,7 +11,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 /**
- * The id-addressed reads the whole 26.3-facing surface rests on, pinned against a registry the test builds
+ * The id-addressed reads the whole version-facing surface rests on, pinned against a registry the test builds
  * itself rather than the game's statics — those are filled by the game's own bootstrap, which a unit test
  * does not run.
  *

@@ -965,16 +965,13 @@ internal object ClassMerger {
 
     /**
      * Splice [mixinClinit]'s method body onto the **end** (before the `RETURN`) of the target `<clinit>`;
-     * when the target has none, the mixin's copy is adopted as is.
-     *
-     * It must go at the end: static-field initialization order is semantically meaningful (a later
-     * initializer can read a value assigned earlier), and inserting ahead of the target's initializers
-     * would change that order.
+     * when the target has none, the mixin's copy is adopted as is. It must go at the end: static-field
+     * initialization order is semantically meaningful (a later initializer can read a value assigned
+     * earlier), and inserting ahead of the target's initializers would change that order.
      *
      * Pseudo-instructions do not survive the splice: the segment's stack frames describe the **mixin's**
-     * `<clinit>` state (its own locals, its own offsets) and are wrong in the target's method, so they
-     * are dropped — the same stripping the constructor merge segment applies (labels are kept here, since
-     * a static initializer may branch, unlike the branch-free constructor segment). A segment containing
+     * `<clinit>` state and are wrong in the target's method, so they are dropped (labels are kept — a
+     * static initializer may branch, unlike the branch-free constructor segment). A segment containing
      * branches then needs frames at its (moved) branch targets, so the whole merged `<clinit>` gets its
      * frames recomputed from dataflow — see [rebuildClinitFrames].
      */

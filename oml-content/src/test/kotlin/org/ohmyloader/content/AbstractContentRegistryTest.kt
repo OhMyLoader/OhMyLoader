@@ -7,7 +7,7 @@ import kotlin.test.*
 /**
  * The version-independent half of the two-phase content contract: collection order, declaration
  * payloads, and the "not materialized yet" guard on the handles. The materialization half is
- * version-specific and lives with the adapters (its 26.3 counterpart is exercised in game).
+ * version-specific and lives with the adapters (its in-game counterpart is exercised in game).
  */
 class AbstractContentRegistryTest {
 
@@ -54,7 +54,7 @@ class AbstractContentRegistryTest {
             ?: fail("the crafting recipe must be served as datapack json")
         assertTrue("\"type\":\"minecraft:crafting_shaped\"" in json)
         assertTrue("\"pattern\":[\"RR\",\"RR\"]" in json)
-        assertTrue("\"R\":\"mymod:ruby\"" in json, "bare ingredient ids must be qualified (26.3: plain-string keys)")
+        assertTrue("\"R\":\"mymod:ruby\"" in json, "bare ingredient ids must be qualified (the game: plain-string keys)")
         assertTrue("\"result\":{\"id\":\"mymod:ruby_block\"}" in json)
     }
 

@@ -15,14 +15,12 @@ import java.util.concurrent.TimeUnit;
  * <p>Statics on this class live on the supervisor loader, so marks written by the retiring
  * session, the supervisor and the next session all land on one wall clock that started at the
  * reboot request. Every mark prints as it happens (with its offset from {@code t0}) and
- * {@link #summary()} prints the whole bill — one line per segment (delta between consecutive
- * marks) plus the concurrent accumulators (things that overlap the segments, like GC rounds or
- * async shader/texture work measured as totals rather than positions).
+ * {@link #summary()} prints the whole bill — one line per segment plus the concurrent accumulators
+ * (things that overlap the segments, like GC rounds or async shader/texture work measured as
+ * totals rather than positions).
  *
  * <p>Measurement only: no reader of the marks changes behaviour, and everything degrades to a
- * no-op if the reflective caller disappears. Session-side code reaches this class through parent
- * delegation ({@code Class.forName(..., RebootMark.classLoader)}), the same way it already
- * reaches {@link OMLRebootOverlay} and {@code SessionControl}.
+ * no-op if the reflective caller disappears.
  */
 public final class RebootClock {
 

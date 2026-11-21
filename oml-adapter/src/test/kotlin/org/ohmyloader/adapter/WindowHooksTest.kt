@@ -81,7 +81,7 @@ class WindowHooksTest {
         WindowLease.beginShare()
         val original = FakeOperation(9L)
 
-        assertTrue(WindowLease.shared(), "26.3 reaches Window.createWindow once per session, so GL can share too")
+        assertTrue(WindowLease.shared(), "the game reaches Window.createWindow once per session, so GL can share too")
         val handle = WindowHooks.createWindow(gl, 800, 600, "window", original, 0)
 
         assertEquals(42L, handle)

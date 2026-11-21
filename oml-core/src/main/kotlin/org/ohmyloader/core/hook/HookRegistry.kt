@@ -26,14 +26,12 @@ import java.util.concurrent.atomic.AtomicInteger
  * class**, which invokes the handler.
  *
  * Each bridge method is one `invokedynamic` whose bootstrap runs at **first execution** — the point where the
- * handler class is safe to load. The bootstrap binds a `MethodHandle` to the handler (direct static call, or a
- * bound instance for non-static handlers) and returns a `ConstantCallSite`, so the steady-state path has no
- * reflection, no boxing and no captures array. Kinds whose result must be read back from a per-call handle
- * ([BridgeKind.CANCELABLE] / [BridgeKind.RETURNABLE]), or handlers whose class cannot be reached directly,
- * fall back to the reflective entry points below with identical semantics.
- *
- * The bridge class itself is generated once at startup, one method per handler (cancelable return `Z`, else
- * `V`), because the capture descriptor is only known after scanning.
+ * handler class is safe to load. The bootstrap binds a `MethodHandle` to the handler and returns a
+ * `ConstantCallSite`, so the steady-state path has no reflection, no boxing and no captures array. Kinds whose
+ * result must be read back from a per-call handle ([BridgeKind.CANCELABLE] / [BridgeKind.RETURNABLE]), or
+ * handlers whose class cannot be reached directly, fall back to the reflective entry points with identical
+ * semantics. The bridge class is generated once at startup, one method per handler, because the capture
+ * descriptor is only known after scanning.
  */
 private class BridgeClassWriter(flags: Int, private val loader: ClassLoader) : ClassWriter(flags) {
     override fun getCommonSuperClass(type1: String, type2: String): String {
@@ -346,7 +344,7 @@ object HookRegistry {
         val kind = BridgeKind.entries[kindOrdinal]
         val target = try {
             when (kind) {
-                // CANCELABLE/RETURNABLE used to bind a handler MethodHandle. The bound handle's
+                // CANCELABLE/RETURNABLE must not bind a handler MethodHandle. The bound handle's
                 // LambdaForm is a JVM-hidden class rooted outside the heap, and its method type
                 // names HookValue; that metadata pins the session after the game stops. The
                 // reflective stub preserves the same semantics without a bound handle.
@@ -504,7 +502,7 @@ object HookRegistry {
         return lookup.findStatic(defined, "invoke", bridgeType)
     }
 
-    /** The body used to be the generated bridge method itself; keep it as a stub when a direct call is impossible. */
+    /** A stub for the cases where a direct call is impossible; the generated bridge carries the real body. */
     private fun fallbackStub(handler: Handler, kind: BridgeKind, bridgeType: MethodType): ByteArray {
         val cw = ClassWriter(ClassWriter.COMPUTE_MAXS)
         val internal = "$REGISTRY\$Fallback${fallbackCounter.incrementAndGet()}"
@@ -862,7 +860,7 @@ object HookRegistry {
     /**
      * Resolve (and cache) the handler call for [handler]: the method plus its receiver — **null for a
      * static handler**, which the bridge dispatches without instantiating the mixin class. Unresolvable
-     * handlers are **not** cached: they throw on every dispatch, matching the pre-cache failure behavior.
+     * handlers are **not** cached: they throw on every dispatch.
      */
     private fun resolvedCall(handler: Handler): ResolvedCall =
         resolvedCalls[handler.id] ?: run {
@@ -879,7 +877,7 @@ object HookRegistry {
 
     /**
      * Resolve (and cache) the handler method for [handler] on [clazz]. Unresolvable handlers are **not**
-     * cached: they throw on every dispatch, matching the pre-cache failure behavior.
+     * cached: they throw on every dispatch.
      */
     private fun handlerMethod(handler: Handler, clazz: Class<*>): Method =
         resolvedMethods[handler.id] ?: resolveHandlerMethod(clazz, handler).also { resolvedMethods[handler.id] = it }

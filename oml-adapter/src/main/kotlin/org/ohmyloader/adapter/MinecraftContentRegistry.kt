@@ -11,16 +11,16 @@ import org.ohmyloader.content.AbstractContentRegistry
 import org.ohmyloader.core.OMLCore
 
 /**
- * 26.3 content registration: two-stage translation. Collection (before `Main.main`) only records declarations — bootstrap has not run yet, and registry writes would be rejected by vanilla's own freeze check. Materialization happens at the registry freeze point (the `freeze()` call inside `BuiltInRegistries.bootStrap` redirected to [EventBridge.onRegistryFreeze]): content is registered before the registry truly closes, and 26.3 runs `validate(REGISTRY)` straight after, so the game itself validates the injected content.
+ * Content registration against the tracked game: two-stage translation. Collection (before `Main.main`) only records declarations — bootstrap has not run yet, and registry writes would be rejected by vanilla's own freeze check. Materialization happens at the registry freeze point (the `freeze()` call inside `BuiltInRegistries.bootStrap` redirected to [EventBridge.onRegistryFreeze]): content is registered before the registry truly closes, and the game runs `validate(REGISTRY)` straight after, so the game itself validates the injected content.
  * Data components go through `Item$Properties.component(DataComponentType, T)` — vanilla's own path, so the values live in the item's `DataComponentMap` like any vanilla item's. `maxDamage` must be accompanied by `MAX_STACK_SIZE=1` / `DAMAGE=0` (exactly what vanilla's `durability(int)` sets): the game's component validation rejects a damageable item that is still stackable.
- * 26.3 traps: `net.minecraft.resources.ResourceLocation` no longer exists — the class is `net.minecraft.resources.Identifier` (same API). `BlockBehaviour.Properties` / `Item$Properties` **require the id to be set before construction** (`drops`/`descriptionId` are `DependantName`s derived from the key), and the id must be the very key the object is registered under, or loot tables and translation keys point at nothing.
+ * Traps: `net.minecraft.resources.ResourceLocation` no longer exists — the class is `net.minecraft.resources.Identifier` (same API). `BlockBehaviour.Properties` / `Item$Properties` **require the id to be set before construction** (`drops`/`descriptionId` are `DependantName`s derived from the key), and the id must be the very key the object is registered under, or loot tables and translation keys point at nothing.
  * Vanilla registers block states into `Block.BLOCK_STATE_REGISTRY` and runs each state's `initCache()` in one pass at the end of `Blocks.<clinit>` — before this freeze-point materialization — so materialization must replay both; skipping `initCache()` leaves every modded state's occlusion shapes null and the chunk renderer NPEs on first placement.
  * All reflection goes through the OML game class loader (game classes are not on the parent loader's classpath); queues, handle caches and the mod facade come from [AbstractContentRegistry].
  */
 object MinecraftContentRegistry : AbstractContentRegistry() {
 
     /**
-     * Installed by the version adapter before materialization. The 26.3 adapter uses direct game
+     * Installed by the version adapter before materialization. The adapter uses direct game
      * fields; the fallback is retained only for adapters that have not installed one yet.
      */
     @Volatile
@@ -42,7 +42,7 @@ object MinecraftContentRegistry : AbstractContentRegistry() {
         val itemClass = Class.forName("net.minecraft.world.item.Item", true, loader)
         val blockItemClass = Class.forName("net.minecraft.world.item.BlockItem", true, loader)
         val resourceKeyClass = Class.forName("net.minecraft.resources.ResourceKey", true, loader)
-        // 26.3: the id is required on both sides of the pair. `Properties.drops` and
+        // The id is required on both sides of the pair. `Properties.drops` and
         // `.descriptionId` are `DependantName`s — values *derived from* the entry's key rather than
         // stored — so `effectiveDrops()` does `Objects.requireNonNull(id, "Block id not set")` and
         // the `Block` constructor calls it; `Item$Properties` has the same requirement ("Item id

@@ -11,7 +11,7 @@ import java.io.DataOutputStream
 import java.util.*
 
 /**
- * The [OMLBlockData] implementation over a plain map. 26.3's `ValueInput` cannot enumerate its
+ * The [OMLBlockData] implementation over a plain map. The game's `ValueInput` cannot enumerate its
  * keys, so the whole store travels under ONE known key as a self-describing binary payload
  * (DataOutputStream frames + Base64): type tag per value, `writeUTF` for every string — a stored
  * key or value may contain any character.

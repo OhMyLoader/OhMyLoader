@@ -12,16 +12,16 @@ import kotlin.test.assertSame
  * The loader's delegation contract, pinned because two of its consequences are invisible until they
  * bite at runtime:
  *
- * 1. **Adapter classes are defined by the main loader even when only the parent carries them.** That
- *    is why [OMLCore][org.ohmyloader.core.OMLCore] has to discover the adapter *through* the main
- *    loader: the injected hooks resolve adapter classes by the defining loader of the game class they
- *    were injected into, so an adapter instance from the parent would be a second copy carrying its
- *    own (empty) adapter-side singletons — content declared in one copy and materialized from the
- *    other, silently.
+ * 1. **Adapter classes are defined by the main loader even when only the parent carries them.**
+ *    [OMLCore][org.ohmyloader.core.OMLCore] has to discover the adapter *through* the main loader:
+ *    the injected hooks resolve adapter classes by the defining loader of the game class they were
+ *    injected into, and an adapter instance from the parent would be a second copy with its own
+ *    adapter-side singletons — content declared in one copy and materialized from the other,
+ *    silently.
  * 2. **Everything else under `org.ohmyloader.` keeps a single identity** (parent-first — except the
- *    `CHILD_FIRST_PREFIXES` that name game types), and game /
- *    mod classes are child-first. A change to either rule breaks class identity or the transform
- *    pipeline, and neither shows up as a compile error.
+ *    `CHILD_FIRST_PREFIXES` that name game types), and game / mod classes are child-first. A
+ *    change to either rule breaks class identity or the transform pipeline, and neither shows up
+ *    as a compile error.
  */
 class OMLClassLoaderTest {
 

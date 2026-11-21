@@ -9,7 +9,7 @@ import net.minecraft.world.level.Level
 import net.minecraft.world.level.dimension.DimensionType
 
 /*
- * 26.3 builds a level for every entry in its `dimension` table when the server starts, and a mod's content
+ * The game builds a level for every entry in its `dimension` table when the server starts, and a mod's content
  * pack feeds that table — so these reads answer the question a mod cannot otherwise ask cheaply: did the game
  * take the declaration, and which dimension type is a running level actually obeying. The type itself is the
  * game's own record, so its fields (`hasSkyLight()`, `height()`, `coordinateScale()`) are read straight off it.

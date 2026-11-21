@@ -3,7 +3,7 @@ package org.ohmyloader.api.event
 import org.ohmyloader.api.core.event.EventDefinition
 
 /**
- * The 26.3 event registry: mods subscribe through [EventDefinition.register], the version adapter
+ * The event registry: mods subscribe through [EventDefinition.register], the version adapter
  * dispatches through [EventDefinition.fire]. Payload fields are the game's own types — this module
  * exists so a mod can hold a `ServerPlayer` rather than a translation of one.
  */

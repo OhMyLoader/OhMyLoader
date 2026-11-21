@@ -9,7 +9,7 @@ import java.util.concurrent.ExecutorService
  * specific version.
  */
 interface IAdapter {
-    /** Game version identifier, e.g. "26.3". */
+    /** Game version identifier, e.g. "26.4-snapshot-10". */
     val versionId: String
 
     /** This version's **client** entry class (dotted name — it is the argument to `Class.forName`). */

@@ -1,7 +1,7 @@
-//! The zstd C surface, mirroring the previous Zig exports one-for-one.
+//! The zstd C surface: the `oml_zstd_*` symbols mirror the zstd C API one-for-one.
 //!
-//! `zstd-sys` compiles the upstream C sources and statically links them, so the loader gets the
-//! same implementation as before without a system zstd dependency.
+//! `zstd-sys` compiles the upstream C sources and statically links them, so there is no system
+//! zstd dependency.
 
 use std::cell::Cell;
 use std::ffi::c_void;
@@ -11,7 +11,7 @@ use zstd_sys::ZSTD_CCtx;
 thread_local! {
     /// One ZSTD_CCtx per calling thread. `ZSTD_CCtx` is not thread-safe; the packet path runs on
     /// concurrent Netty event-loop threads, so each keeps its own context. The context is
-    /// process/thread-lifetime (same trade-off as the Zig implementation).
+    /// process/thread-lifetime.
     static COMPRESS_CTX: Cell<*mut ZSTD_CCtx> = const { Cell::new(std::ptr::null_mut()) };
 }
 

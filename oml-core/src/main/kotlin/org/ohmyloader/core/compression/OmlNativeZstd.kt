@@ -9,7 +9,7 @@ import java.lang.foreign.SymbolLookup
 import java.lang.foreign.ValueLayout
 
 /**
- * The official driver wrapper around our own **oml-native** library (built and published by the `OhMyLoaderNative` repository with zstd statically linked). Every export carries the `oml_zstd_` prefix, so the lookup can never collide with any other libzstd mapped in the process (a launcher, LWJGL, or another mod's copy): the JVM resolves our addresses by name from our library, whatever else is loaded.
+ * The official driver wrapper around our own **oml-native** library (built from the in-repo `oml-native/` crate, with zstd statically linked). Every export carries the `oml_zstd_` prefix, so the lookup can never collide with any other libzstd mapped in the process (a launcher, LWJGL, or another mod's copy): the JVM resolves our addresses by name from our library, whatever else is loaded.
  * The library is found via [NativeManager.loadLibrary] — FFM's `SymbolLookup.libraryLookup` on an explicit path, never `System.loadLibrary`, so no JVM-startup search-path capture is involved.
  * API shape: address-in/address-out one-shots mirroring libzstd's own C ABI; streaming is implemented Java-side on top (see [OmlZstdStreams]) — chunk payloads are bounded by the region sector size, so whole-payload buffering costs one memcpy and buys a five-function C surface.
  * Eagerly verified at loader startup through [requireAvailable] — oml-native is a first-party

@@ -15,9 +15,9 @@ import kotlin.test.assertTrue
  * Discovery / validation / evaluation of mod rule sets ([ModRuleSets]).
  *
  * This layer catches the kinds of mistakes that are necessarily missed at startup time: rule
- * classes are loaded **first**, so ① the discovery phase can only read bytecode; ② references to
+ * classes are loaded **first**, so (1) the discovery phase can only read bytecode; (2) references to
  * game classes must be intercepted **before** loading (by the time a load happens it is already too
- * late — the game class would be pulled in, and as the unrewritten copy); ③ an exception thrown by
+ * late — the game class would be pulled in, and as the unrewritten copy); (3) an exception thrown by
  * author code during evaluation must become a readable problem rather than blowing up the bootstrap
  * in someone else's exception stack. The cases walk all three stages through real temp jars —
  * discovery and evaluation both assume real bytecode, and building a ClassNode doesn't exercise

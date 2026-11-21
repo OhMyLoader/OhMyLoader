@@ -36,8 +36,8 @@ object FrameHooks {
  * ```
  * The vanilla code never touches locals in that window, so HotSpot stays silent; but once the injection block
  * reads `this`, the verifier judges from that empty-locals frame that "slot 0 is top" and rejects the whole
- * class (`VerifyError: Bad local variable type @23: aload_0 — Type top ... not assignable to reference type`).
- * Fix: declare `this` back into that frame ([FrameRepair]), without touching the code.
+ * class (`VerifyError: Bad local variable type @23: aload_0`). Fix: declare `this` back into that
+ * frame ([FrameRepair]), without touching the code.
  */
 class DegenerateFrameTest {
 

@@ -3,22 +3,18 @@ package org.ohmyloader.launcher;
 /**
  * The OS window lease the supervisor can keep across sessions.
  *
- * <p>26.3 uses SDL, not GLFW: {@code Window} owns a {@code long} SDL window handle, and the GPU
- * surface is created separately by {@code GpuDevice.createSurface(long)}. The first session records
+ * <p>The tracked game uses SDL, not GLFW: {@code Window} owns a {@code long} SDL handle and the GPU
+ * surface is created separately ({@code GpuDevice.createSurface(long)}). The first session records
  * the handle; a reboot marks the lease shared before the old session closes, so the old
  * {@code Window.close}/SDL_Quit are skipped; the next session adopts the handle, then clears the
  * shared flag so a normal exit destroys the window and quits SDL as usual.
  *
- * <p>The lease is <b>on by default</b>. It was opt-in while 26.3's graphics-device shutdown was
- * believed to invalidate the native window regardless of the close paths; the adoption trace showed
- * otherwise — the handle survives as long as the retiring session releases its GPU surface and the
- * renderer's context attributes are restored before the window is adopted — and the reboot gate now
- * exercises that path on every reboot. {@code -Doml.window.lease=off} is the escape hatch: it brings
- * back the older behaviour, where the retiring session closes its window and the next one builds a
- * fresh one.
- *
- * <p>The class lives in the supervisor loader and is parent-first to the session, so the game hook
- * and the supervisor see one static lease.
+ * <p>The lease is <b>on by default</b>: the handle survives as long as the retiring session
+ * releases its GPU surface and the renderer's context attributes are restored before the window is
+ * adopted, and the reboot gate exercises that path on every reboot. {@code -Doml.window.lease=off} is
+ * the escape hatch — the older behaviour, where the retiring session closes its window and the next
+ * one builds a fresh one. The class is parent-first to the session, so the game hook and the
+ * supervisor see one static lease.
  */
 public final class WindowLease {
 
@@ -99,13 +95,9 @@ public final class WindowLease {
     /**
      * Called by the reboot pipeline before the old session closes.
      *
-     * <p>This used to refuse every backend except Vulkan, on the theory that 26.3's OpenGL device
-     * creates a hidden utility window before {@code Window.createWindow} can adopt anything. The
-     * lease trace disproved the second half: {@code Window.createWindow} is reached exactly once
-     * per session for the main window, because the GL utility window is created by
-     * {@code GlBackend.createWindow} directly and never passes the hook. What actually decides
-     * whether a handle can be reused is whether SDL still knows it, so the adoption probe checks
-     * that instead of a hard-coded backend name, and falls back to creating a window otherwise.
+     * <p>Whether a handle can be reused is decided by whether SDL still knows it — not by a
+     * hard-coded backend name — so the adoption probe checks that and falls back to creating a
+     * window otherwise.
      */
     public static void beginShare() {
         shared = enabled() && hasHandle();

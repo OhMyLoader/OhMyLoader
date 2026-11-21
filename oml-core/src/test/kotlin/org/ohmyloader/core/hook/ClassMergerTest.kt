@@ -529,8 +529,7 @@ class ClassMergerTest {
     @Test
     fun `the accessor mixin's interface is declared on the target class`() {
         // Without the interface on the target, a mod's `(game instance as AccessorMixin)` cast throws
-        // ClassCastException even though the synthesized methods exist — the AppleSkinOML port found
-        // exactly that on its first in-world tick.
+        // ClassCastException even though the synthesized methods exist.
         val [merged, result] = mergeInto(
             target(),
             accessorMixin(abstractMethod("readPayload", "()Ljava/lang/String;", ACCESSOR, "payload")),
@@ -591,7 +590,7 @@ class ClassMergerTest {
 
         val clazz = define(merged)
         val instance = clazz.getDeclaredConstructor().newInstance()
-        // On the unfixed synthesizer this write throws IllegalAccessError.
+        // The synthesizer must drop `final`, or this write throws IllegalAccessError.
         clazz.methods.first { it.name == "writePayload" }.invoke(instance, "new")
         assertEquals("new", invoke(clazz, instance, "readPayload"))
     }
@@ -786,8 +785,7 @@ class ClassMergerTest {
      * the **target class's class-file version**: a target may be compiled to Java 6 (version 50), while
      * `invokedynamic` needs version ≥ 51.
      * Splicing it in does not mean "this code does not take effect" — it means **the whole class fails
-     * to load**, and the error only names the target class. So it must be called out at merge time (in
-     * production it was Kotlin's string templates that stepped here).
+     * to load**, and the error only names the target class. So it must be called out at merge time.
      */
     @Test
     fun `a merged segment using invokedynamic is rejected on a Java 6 target`() {

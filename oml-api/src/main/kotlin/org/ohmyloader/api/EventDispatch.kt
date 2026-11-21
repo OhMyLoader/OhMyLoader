@@ -140,7 +140,7 @@ object EventDispatch {
 
     /**
      * The translatable key behind a component, or null when it is not a plain translatable.
-     * {@code TranslatableContents.getKey()} is public in 26.3, so this stays a typed call: the
+     * {@code TranslatableContents.getKey()} is public in the tracked game line, so this stays a typed call: the
      * broadcast hook runs on the server thread and reflection here would add another JEP 416
      * accessor for a game class.
      */

@@ -10,6 +10,6 @@ package org.ohmyloader.installer
  * present it: the GUI shows a modal dialog and keeps the console log, the CLI prints it and exits
  * non-zero, the Gradle task fails the build.
  *
- * [message] must be written for the person running the installer (actionable, in Chinese), not for us.
+ * [message] must be written for the person running the installer (actionable, localized), not for us.
  */
 class InstallationException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)

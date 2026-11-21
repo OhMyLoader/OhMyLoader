@@ -10,7 +10,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** The fingerprint must be stable, order-independent and change with every transform input. */
+/** The fingerprint must be stable, order-sensitive and change with every transform input. */
 class TransformCacheKeyTest {
 
     @TempDir

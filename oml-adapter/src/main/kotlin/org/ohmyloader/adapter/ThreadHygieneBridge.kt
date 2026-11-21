@@ -13,7 +13,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * 26.3 bridge to the supervisor's ThreadHygiene. The bridge itself is session code, but the
+ * Version-facing bridge to the supervisor's ThreadHygiene. The bridge itself is session code, but the
  * objects it creates (plain Threads, ForkJoin workers, factories, UEH) are loaded by the
  * persistent supervisor and therefore do not reference the disposable session loader.
  */

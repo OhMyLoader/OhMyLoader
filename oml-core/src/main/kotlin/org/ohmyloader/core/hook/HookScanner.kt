@@ -261,7 +261,7 @@ object HookScanner {
     /** Tail kind of the handler parameter list (`@Inject` uses the first two; the other annotations have no callback handle). */
     private enum class Tail { CALLBACK_INFO, RETURNABLE, NONE }
 
-    /** The dispatch model, declared by the carrier annotation ( / ) — never inferred. */
+    /** The dispatch model, declared by the carrier annotation ([Hooked] / [Merged]) — never inferred. */
     private enum class Model { HOOK, MERGE }
 
     // ---------- scanning ----------

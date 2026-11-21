@@ -12,17 +12,16 @@ import java.io.File
  * extension) is the resource namespace; inside the archive, each file declares exactly one entity —
  * `content/<type>/<id>.toml`, the directory naming the type and the path (subdirectories included)
  * naming the id, vanilla's path-is-id rule. Keys are snake_case mirrors of the code declarations,
- * every one optional. Unknown keys are reported loudly but never reject the pack — a typo'd field
+ * every one optional; unknown keys are reported loudly but never reject the pack — a typo'd field
  * would otherwise silently produce vanilla defaults.
  *
- * Types: `block` (properties + optional inline `ore` table), `item`, `crafting`, `smelting` (the
- * file id is the result), `loot` (the file id is the block), `damage_type`, `clock` (no fields),
- * `timeline` (`clock` + optional `period_ticks` + `markers`), `dimension_type`, `dimension`,
- * `tag` (`registry` + `tag` + `values` + optional `replace`) — the tag file is the one whose values
- * carry ids, because a TOML bare key cannot spell the `:` of `minecraft:is_fire` or the `/` of
- * `worldgen/biome`. Behavior hooks and block entities are mod code, so they have no TOML form.
- * Loading runs in the loader's content-declaration window, so the data track shares the code
- * track's freeze-point materialization.
+ * Types: `block`, `item`, `crafting`, `smelting` (the file id is the result), `loot` (the file id
+ * is the block), `damage_type`, `clock` (no fields), `timeline` (`clock` + optional
+ * `period_ticks` + `markers`), `dimension_type`, `dimension`, `tag` — the one whose values carry
+ * ids, because a TOML bare key cannot spell the `:` of `minecraft:is_fire`. Behavior hooks and
+ * block entities are mod code, so they have no TOML form. Loading runs in the loader's
+ * content-declaration window, so the data track shares the code track's freeze-point
+ * materialization.
  */
 object TomlContentLoader {
 
@@ -223,11 +222,11 @@ object TomlContentLoader {
         registry.declareBlockDrop(block = id, drop = drop, dropCountMin = min, dropCountMax = max)
     }
 
-    /** A `[clock.<id>]` section: a 26.3 clock has no fields, so the section exists only to name it. */
+    /** A `[clock.<id>]` section: a clock has no fields, so the section exists only to name it. */
     private fun declareClockSection(id: String, fields: Map<String, Any>, source: String, registry: ContentRegistry) {
         requireId(id, source, "clock")
         if (fields.isNotEmpty()) {
-            fail(source, "clock '$id' takes no fields (a 26.3 clock declares nothing but its id)")
+            fail(source, "clock '$id' takes no fields (a clock declares nothing but its id)")
         }
         registry.declareClock(id)
     }

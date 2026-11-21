@@ -15,8 +15,8 @@ import java.util.concurrent.ConcurrentHashMap
  * [ModResourcePack] view, mounted into `PackRepository`. No proxy and no reflection on the resource
  * interface itself; the pack metadata is still assembled from the game's own classes because the
  * metadata type set is read at run time.
- * 26.3 hard facts honored here: `PackLocationInfo`/`PackSelectionConfig` live in `net.minecraft.server.packs` (not `.repository`); one `ResourcesSupplier` with two independent entries (`openMetadata` + `openResources`); the `pack` metadata section is mandatory (a null one fails `readMetaAndCreate`) and its format must be copied from `WorldVersion.packVersion(PackType)` (an int became a value object, so it cannot be guessed); a `PackResources` *is* a `PackMetadataResources` and its `getResource`/`getNamespaces`/`listResources` take a `PackType`; item assets are `items/<id>.json` *definitions*, not models — the vanilla jar ships no `models/item/<id>.json` at all, and textures live under `textures/block/`.
- * The pack serves **everything the mod jars ship under `assets/`** — 26.3 discovers sounds, blockstates, item definitions, particles, fonts and shaders by *listing directories*, so a block-only whitelist would make a mod's sounds, lang, GUI textures and atlases invisible — under unfiltered namespaces (a mod overriding `assets/minecraft/…` must win: the pack sits at `Pack.Position.TOP`).
+ * Game-line facts honored here: `PackLocationInfo`/`PackSelectionConfig` live in `net.minecraft.server.packs` (not `.repository`); one `ResourcesSupplier` with two independent entries (`openMetadata` + `openResources`); the `pack` metadata section is mandatory (a null one fails `readMetaAndCreate`) and its format must be copied from `WorldVersion.packVersion(PackType)` (an int became a value object, so it cannot be guessed); a `PackResources` *is* a `PackMetadataResources` and its `getResource`/`getNamespaces`/`listResources` take a `PackType`; item assets are `items/<id>.json` *definitions*, not models — the vanilla jar ships no `models/item/<id>.json` at all, and textures live under `textures/block/`.
+ * The pack serves **everything the mod jars ship under `assets/`** — the game discovers sounds, blockstates, item definitions, particles, fonts and shaders by *listing directories*, so a block-only whitelist would make a mod's sounds, lang, GUI textures and atlases invisible — under unfiltered namespaces (a mod overriding `assets/minecraft/…` must win: the pack sits at `Pack.Position.TOP`).
  * Resolution priority: real jar resource > synthesized model JSON > miss (synthesizing over a real asset would replace what the author actually wrote). Injection point: the head of `PackRepository.openAllSelected` — both resource-reload paths (the `Minecraft` constructor's inlined `reload()` and F3+T / the pack screen's `reloadResourcePacks`) reach it after the options selection is applied, so the pack cannot be overwritten by later flow.
  */
 object ModAssetInjector {
@@ -78,7 +78,7 @@ object ModAssetInjector {
      */
     private fun createPack(loader: ClassLoader): Any? = try {
         val packClass = Class.forName("net.minecraft.server.packs.repository.Pack", true, loader)
-        // 26.3: both of these are top-level in net.minecraft.server.packs, not in .repository
+        // Both of these are top-level in net.minecraft.server.packs, not in .repository
         val locationClass = Class.forName("net.minecraft.server.packs.PackLocationInfo", true, loader)
         val selectionClass = Class.forName("net.minecraft.server.packs.PackSelectionConfig", true, loader)
         val componentClass = Class.forName("net.minecraft.network.chat.Component", true, loader)
@@ -235,7 +235,7 @@ object ModAssetInjector {
     /**
      * The asset index over the loaded mod jars, built once at the first asset query (after the mod
      * scan). Jar indexing, namespace computation and directory enumeration are version-independent
-     * and live in oml-content's [ModAssetIndex]; this file owns only the 26.3 pack wiring and asset
+     * and live in oml-content's [ModAssetIndex]; this file owns only the pack wiring and asset
      * shapes on top of it.
      */
     private fun assetIndex(): ModAssetIndex {
@@ -289,7 +289,7 @@ object ModAssetInjector {
                     """{"parent":"minecraft:block/cube_all","textures":{"all":"$namespace:block/$id"}}"""
                 }
 
-                // 26.3 item asset: an item *definition*, not a model. The vanilla jar has no
+                // Item asset: an item *definition*, not a model. The vanilla jar has no
                 // models/item/<id>.json at all, so only this shape is ever read. A block(-item)
                 // definition points at the synthesized block model; a pure item (declared via
                 // declareItem or a TOML pack, no block with the same id) points at its own
@@ -517,7 +517,7 @@ object ModAssetInjector {
 
     /**
      * Collect the ids registered under the given namespace in one of `BuiltInRegistries`' fields.
-     * 26.3's `Registry.keySet()` returns `Set<Identifier>` directly, so each element already
+     * The game's `Registry.keySet()` returns `Set<Identifier>` directly, so each element already
      * carries namespace and path through `getNamespace()` / `getPath()` — there is no unwrapping
      * step in between.
      */

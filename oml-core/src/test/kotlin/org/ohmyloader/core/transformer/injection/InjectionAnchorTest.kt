@@ -528,7 +528,7 @@ class InjectionAnchorTest {
     // ---------- define and run: CheckCall after a call ----------
 
     /**
-     * The packet-handler shape the 26.3 CHAT_RECEIVED hook rides on: a void static call first
+     * The packet-handler shape the CHAT_RECEIVED hook rides on: a void static call first
      * (the re-dispatch, which consumes the packet argument like the real one does), the hook right
      * after it, observable work afterwards. Defining the class fails with VerifyError if the
      * continuation frame the engine derives is wrong, and running it shows the hook fires once with

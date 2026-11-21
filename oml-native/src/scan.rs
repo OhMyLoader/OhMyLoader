@@ -1,6 +1,6 @@
 //! The memory-mapped mod-jar scanner (`oml_scan_jar_v1`).
 //!
-//! Ported from the Zig implementation with the same observable behavior:
+//! Behavior contract:
 //!
 //! * the jar is mapped read-only and the ZIP central directory is parsed in place (ZIP64 included);
 //! * `STORED` entries are scanned in the mapping, `DEFLATED` entries go through libdeflate;
@@ -711,6 +711,7 @@ fn scan_jar_impl(
     if out_ptr.is_null() && out_cap > 0 {
         return -1;
     }
+    // required_ptr points at one u64 and counts_ptr at five; both are caller-owned writable scratch.
     unsafe {
         *required_ptr = 0;
         for index in 0..5 {
@@ -718,6 +719,7 @@ fn scan_jar_impl(
         }
     }
 
+    // path_ptr is a caller-owned UTF-8 buffer of path_len bytes, readable for the duration of the call.
     let path_bytes = unsafe { slice::from_raw_parts(path_ptr, path_len) };
     let Ok(path) = std::str::from_utf8(path_bytes) else {
         return -3;
@@ -740,6 +742,7 @@ fn scan_jar_impl(
         Ok(mapping) => mapping,
         Err(_) => return -5,
     };
+    // out_ptr/out_cap describe a caller-owned writable buffer of out_cap bytes (out_cap == 0 means none).
     let out: &mut [u8] = if out_cap == 0 {
         &mut []
     } else {

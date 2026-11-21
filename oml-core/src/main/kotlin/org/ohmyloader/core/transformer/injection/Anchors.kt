@@ -85,7 +85,7 @@ internal object AnchorResolver {
         frames: MethodFrames,
     ): List<AbstractInsnNode> {
         // Sliced anchors: find by core first, then trim the window, and only then apply the ordinal
-        // —— the ordinal is "the Nth within the window", matching Mixin's Slice behavior
+        // — the ordinal is "the Nth within the window", matching Mixin's Slice behavior
         if (point is InjectionPoint.Sliced) {
             val inner = resolveCandidates(point.inner, classNode, method, owner, superName, frames)
             val windowed = applySlice(inner, point, classNode, method, owner, superName, frames)

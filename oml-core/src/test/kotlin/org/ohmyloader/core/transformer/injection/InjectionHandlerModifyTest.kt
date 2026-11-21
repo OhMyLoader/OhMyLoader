@@ -144,7 +144,7 @@ class InjectionHandlerModifyTest {
         // INVOKESPECIAL trips the package access check (the handler lives in a different package)
         // ⇒ it must be INVOKEVIRTUAL.
         //
-        // ⚠️ This must not go through [build]/[transformedTarget]: the former defines the class
+        // This must not go through [build]/[transformedTarget]: the former defines the class
         // (a bodyless int handler fails verification), the latter would also run the [modifyArgSpec]
         // rule. Here we only need "merge + inject once into run4", so we use a handler set that
         // **declares only the shape**: the merge moves name/descriptor into the target class, and the
@@ -282,10 +282,9 @@ class InjectionHandlerModifyTest {
     fun `an entry inject and a ModifyConstant on one method use different slots`() {
         // The entry short-circuit (`@Inject` cancelable) needs a temp slot for the callback handle,
         // and a value kind (`@ModifyConstant`) also needs one to hold "the constant already on the
-        // stack". When both hang on the same method, they **must get different slots** — this is exactly
-        // the combination that blew up in the real game.
+        // stack". When both hang on the same method, they **must get different slots**.
         //
-        // ⚠️ Order matters: the **value kind must come first** — query-without-claiming only collides
+        // Order matters: the **value kind must come first** — query-without-claiming only collides
         // when "the side that grabs a slot first does not claim it"; reversed (entry first, and it
         // claims), there is no collision and the test would be pointless.
         val target = mergedTarget()

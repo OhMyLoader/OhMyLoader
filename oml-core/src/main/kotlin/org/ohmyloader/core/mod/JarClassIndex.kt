@@ -10,18 +10,14 @@ import java.util.jar.JarFile
  * The walk is the native walker (`oml-native`) — the only one. oml-native is a first-party
  * component that deploys with the loader ([NativeJarScanner.requireAvailable] fails startup when
  * it is missing, exactly like a missing oml-core jar), so there is no Java fallback and no
- * optional-degradation path. A jar the native cannot read (`null` from [scan]) fails that jar's
- * own load with a problem report; it never silently downgrades the run.
- *
- * The pure-Java walk survives as a test-only oracle (`JavaScanOracle`, test fixtures), where it
- * differential-tests the native result against the same rules.
+ * optional-degradation path: a jar the native cannot read (`null` from [scan]) fails that jar's
+ * own load with a problem report. The pure-Java walk survives as a test-only oracle
+ * (`JavaScanOracle`, test fixtures), where it differential-tests the native result.
  *
  * MR-JAR: `META-INF/versions/N/<class>` replaces `<class>` for runtime N; the highest N not above
  * the running feature wins and the base copy is shadowed. Reserved-namespace classes are reported
- * separately so [ModScanner] can refuse the jar.
- *
- * The result is keyed by the jar digest and reused for the rest of the process. A jar in OML's
- * own namespace is not cached: the error path must report on every run.
+ * separately so [ModScanner] can refuse the jar. Results are keyed by the jar digest; a jar in
+ * OML's own namespace is not cached — the error path must report on every run.
  */
 object JarClassIndex {
 

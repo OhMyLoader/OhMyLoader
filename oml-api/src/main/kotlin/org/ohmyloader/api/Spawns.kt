@@ -7,7 +7,7 @@ import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.level.storage.LevelData
 
 /*
- * 26.3 keeps two respawn anchors: one per player and one for the world, both as the game's own
+ * The game keeps two respawn anchors: one per player and one for the world, both as the game's own
  * `LevelData.RespawnData` — a global position plus the view angles. Every write hands the game that record and
  * reports by reading it back, because an anchor that is stored but not where it was set would only show at the
  * moment the player dies. Both refusals matter for the same reason: the game stores any dimension key it is
@@ -17,7 +17,7 @@ import net.minecraft.world.level.storage.LevelData
 /**
  * The spawn this player returns to, as the game holds it; null means the player returns to the world's spawn.
  *
- * An anchor carries its dimension, which is what makes it per-player state: 26.3 keeps exactly **one** world
+ * An anchor carries its dimension, which is what makes it per-player state: The game keeps exactly **one** world
  * spawn record for the whole server, so naming a dimension there re-points that single record instead of
  * giving the dimension a spawn of its own.
  */

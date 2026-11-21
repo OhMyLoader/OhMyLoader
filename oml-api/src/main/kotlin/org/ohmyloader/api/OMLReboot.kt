@@ -40,7 +40,7 @@ object OMLReboot {
             .onFailure { OmlLog.error("Reboot", "capturing the player state failed", it) }
             .getOrDefault(false)
 
-        // Keep the next session on this session's actual backend: 26.3 resets the preference after
+        // Keep the next session on this session's actual backend: The game resets the preference after
         // an unclean shutdown, and a matching backend is what the lease requires to adopt a handle.
         pinGraphicsBackend(client)
 

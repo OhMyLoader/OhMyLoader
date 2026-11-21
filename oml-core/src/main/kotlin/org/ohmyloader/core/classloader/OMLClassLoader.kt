@@ -21,16 +21,14 @@ import java.util.concurrent.CopyOnWriteArrayList
  * uniformly flowing through the transformation pipeline (locate the bytecode → run each
  * [IClassTransformer] → write back and define).
  *
- * Delegation strategy: game/mod classes are child-first (otherwise the parent loader would
- * load them as-is and the pipeline would never get a chance); JDK internals and the
- * loader's own dependencies (ASM, Kotlin, logging, LWJGL, etc.) stay parent-first,
- * guaranteeing module access and a single global class identity.
+ * Delegation: game/mod classes are child-first (otherwise the parent loader would load them
+ * as-is and the pipeline would never get a chance); JDK internals and the loader's own
+ * dependencies stay parent-first, guaranteeing module access and a single global class identity.
  *
- * Concurrency: this loader is deliberately **not** registered as parallel capable, so every
- * `loadClass` serializes on the per-class loading lock and the transformer pipeline runs
- * single-threaded. The transformer list itself is a copy-on-write snapshot (safe to read from
- * any thread), but enabling `registerAsParallelCapable` additionally requires auditing the full
- * [findClass] path (Diagnostics recording, resource lookup, re-entrant class loading) first.
+ * Concurrency: deliberately **not** parallel capable — every `loadClass` serializes on the
+ * per-class loading lock and the transformer pipeline runs single-threaded. The transformer list
+ * is a copy-on-write snapshot; enabling `registerAsParallelCapable` additionally requires auditing
+ * the full [findClass] path first.
  */
 class OMLClassLoader(
     urls: Array<URL>,
@@ -243,13 +241,11 @@ class OMLClassLoader(
          * copy of it per session.
          *
          * The carve-out's contract: a class living here is **process-wide** — one instance for every
-         * soft-reboot session — so it must hold **no session state**. Any mutable, session-scoped
-         * state on a parent-first object would survive the swap (stale game objects fired into the
-         * new session) and pin the retiring session's loader through its fields, which the canary
-         * then refuses. Stateful session surfaces belong in `org.ohmyloader.api.*` (child-first, one
-         * instance per session); anything that must live here and touch session state needs an
-         * explicit reset in the session teardown (`OMLScheduler.clearForSessionChange` is the one
-         * exception so far).
+         * soft-reboot session — so it must hold **no session state**: mutable session state would
+         * survive the swap and pin the retiring session's loader, which the canary then refuses.
+         * Stateful session surfaces belong in `org.ohmyloader.api.*`; anything that must live here
+         * and touch session state needs an explicit reset in the session teardown
+         * (`OMLScheduler.clearForSessionChange` is the one exception so far).
          */
         val CHILD_FIRST_EXCLUDED_PREFIXES = listOf("org.ohmyloader.api.core.")
 

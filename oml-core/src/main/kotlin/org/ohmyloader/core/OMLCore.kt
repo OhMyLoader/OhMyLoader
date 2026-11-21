@@ -206,16 +206,13 @@ object OMLCore {
      * Moves the session teardown to the end of the process on the dedicated-server side.
      *
      * <p>`net.minecraft.server.Main.main` returns as soon as the server thread is running: the thread
-     * keeps the process alive, the return value does not. Tearing the session down at that moment is
-     * what closed the server's executors underneath it — the first structure lookup after
-     * `Preparing level` died with `RejectedExecutionException` out of
-     * `ChunkGeneratorStructureState`, so a dedicated server could never finish loading a world.
+     * keeps the process alive, the return value does not — and tearing the session down there closes
+     * the server's executors underneath it, so the teardown must wait for process end on this side.
      *
      * <p>This side has no reboot boundary (no window, no reboot signal), so the session really ends
-     * when the process does. Vanilla stops through `MinecraftServer.halt`, which is a `System.exit`,
-     * and that runs shutdown hooks. Both captures are weak on purpose: a strong reference would pin
-     * the disposable loader for the whole session and make the canary's verdict — "what did the game
-     * leave behind" — meaningless.
+     * when the process does. Vanilla stops through `MinecraftServer.halt` — a `System.exit` that
+     * runs shutdown hooks. Both captures are weak on purpose: a strong reference would pin the
+     * disposable loader for the whole session and make the canary's verdict meaningless.
      */
     private fun teardownWhenServerExits(adapter: IAdapter) {
         val loader = WeakReference<ClassLoader>(primaryLoader)

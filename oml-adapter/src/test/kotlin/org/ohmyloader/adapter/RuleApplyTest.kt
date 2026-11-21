@@ -12,7 +12,7 @@ import kotlin.test.assertTrue
 import kotlin.test.fail
 
 /**
- * The live rules are **applied** to the real 26.3 bytecode here, class by class, so an anchor that no
+ * The live rules are **applied** to the real game bytecode here, class by class, so an anchor that no
  * longer matches fails the build on the `require=` line the rule declares instead of at game startup.
  *
  * [HandlerShapeTest] checks the handler side of each rule; this one checks the target side: anchor

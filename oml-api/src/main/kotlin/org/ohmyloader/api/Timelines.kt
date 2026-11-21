@@ -8,7 +8,7 @@ import net.minecraft.world.clock.ClockTimeMarker
 import net.minecraft.world.timeline.Timeline
 
 /*
- * A timeline is 26.3's declaration unit for named moments: it names a clock, an optional cycle length, and the
+ * A timeline is the game's declaration unit for named moments: it names a clock, an optional cycle length, and the
  * markers a clock can be moved onto. The game's own datapack reload is what puts one in the registry — OML only
  * serves the file — so these reads answer from the loaded table, and null or empty is the game's answer for an id
  * nothing registered. The table exists on both sides: the server's is built from the packs, the client's arrives

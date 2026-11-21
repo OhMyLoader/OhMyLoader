@@ -10,7 +10,7 @@ import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
 /*
- * 26.3 gates authority on **nodes**, not only on the 0..4 op level: the game's own checks are
+ * The game gates authority on **nodes**, not only on the 0..4 op level: the game's own checks are
  * `Permission.Atom` ids (`minecraft:chat/send_messages`, `minecraft:commands/entity_selectors`) plus
  * `Permission.HasCommandLevel(level)`, and a `PermissionSet` is nothing but `hasPermission(node)`. Every
  * consumer reaches a player's set through `ServerPlayer.permissions()`, so an override applied there is what

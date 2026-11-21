@@ -22,7 +22,7 @@ import kotlin.test.assertTrue
 class ZstdChunkCodecTest {
 
     init {
-        // Drives the real oml-native library; skipped (not failed) when the published artifact is absent.
+        // Drives the real oml-native library; skipped (not failed) when the in-repo native cannot be built.
         org.junit.jupiter.api.Assumptions.assumeTrue(NativeTestLibraries.ensureOmlNative(), "oml-native artifact absent")
     }
 

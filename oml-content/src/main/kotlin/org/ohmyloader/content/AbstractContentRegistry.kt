@@ -67,7 +67,7 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
 
     /**
      * A collected damage-type declaration: [key] is the datapack file's local id, so the registry id the
-     * game binds is `namespace:key` and the 26.3 `hurt` extension takes that same string.
+     * game binds is `namespace:key` and the `hurt` extension takes that same string.
      */
     data class DamageTypeDecl(
         val namespace: String,
@@ -77,7 +77,7 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
     )
 
     /**
-     * A collected clock declaration. 26.3's `WorldClock` is an identity with no fields, so the datapack file
+     * A collected clock declaration. The game's `WorldClock` is an identity with no fields, so the datapack file
      * is an empty object and the declaration is the id.
      */
     data class ClockDecl(val namespace: String, val key: String, val reloadable: Boolean)
@@ -180,7 +180,7 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
     fun damageTypeIdsFor(namespace: String): List<String> =
         collectedDamageTypes.filter { it.namespace == namespace }.map { it.key }
 
-    /** A 26.3 clock declares nothing but its own id, so its datapack file is the empty object. */
+    /** A clock declares nothing but its own id, so its datapack file is the empty object. */
     @Synchronized
     fun clockJsonFor(namespace: String, id: String): String? =
         if (collectedClocks.any { it.namespace == namespace && it.key == id }) "{}" else null
@@ -326,7 +326,7 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
             "{\"type\":\"minecraft:biome\"}]}"
 
     /**
-     * The game's own straight oak, pointed at the mod's blocks: the 26.3 tree codec is flat (no
+     * The game's own straight oak, pointed at the mod's blocks: the game's tree codec is flat (no
      * `config` wrapper) and takes compact state providers (`id` + optional `properties`), so a
      * plain declared block needs the id alone. `below_trunk_provider` names the game's built-in
      * soil provider file, which replaces the block under the trunk with dirt — the same fact the
@@ -1002,7 +1002,7 @@ abstract class AbstractContentRegistry : ContentRegistryFactory {
         max: Int,
     ): String {
         val dropId = qualify(namespace, drop)
-        // 26.3 loot shape: pool conditions are a single `condition` object and entry functions are
+        // Loot shape: pool conditions are a single `condition` object and entry functions are
         // `modifier` entries — the pre-1.21 array shapes fail the loot codec, and a rejected loot
         // override silently drops nothing.
         // `random_sequence` is the loot table's own id, which the game derives from the block's
@@ -1118,7 +1118,7 @@ private val DEATH_MESSAGE_TYPES = setOf("default", "fall_variants", "intentional
 private val DATAPACK_NAME = Regex("[a-z0-9_.-]+")
 
 /**
- * The game's own `DimensionType` codec windows, read off 26.3: `intRange(MIN_Y, MAX_Y)` for `min_y`,
+ * The game's own `DimensionType` codec windows, read off the tracked game jar: `intRange(MIN_Y, MAX_Y)` for `min_y`,
  * `intRange(16, Y_SIZE)` for `height` and `intRange(0, Y_SIZE)` for `logical_height`, where
  * `Y_SIZE = (1 << BlockPos.PACKED_Y_LENGTH) - 32 = 4064`, `MAX_Y = 2031` and `MIN_Y = -2032`. The
  * constructor adds `height % 16 == 0`, `min_y % 16 == 0`, `logical_height <= height` and

@@ -59,7 +59,7 @@ class MinecraftHookTransformer(private val idPrefix: String) : InjectingTransfor
             // slot 2 (offset 96 istore_2, the method's only int-slot write at that point — the other
             // int local is slot 4, not yet written). Read it back after the **first** ProfilerFiller.push
             // (offset 115, the first thing inside the `if (render)` branch). The slot is named
-            // explicitly instead of being resolved by type alone: 26.3's runTick has a second int local
+            // explicitly instead of being resolved by type alone: the game's runTick has a second int local
             // (slot 4, offsets 229 / 547), so "the only int local" is no longer a safe inference.
             method("runTick", desc = "(Z)V") {
                 expect(1)
@@ -144,7 +144,7 @@ class MinecraftHookTransformer(private val idPrefix: String) : InjectingTransfor
                     )
                 }
             }
-            // WorldLoadEvent (world = null). 26.3 has no `disconnect()` on Minecraft any more:
+            // WorldLoadEvent (world = null). The game has no `disconnect()` on Minecraft any more:
             // `disconnectFromWorld(Component)` is the leaving-the-world path (it disconnects the
             // ClientLevel, swaps in the progress/saving screen and finally a TitleScreen). Anchoring
             // its head fires the event while the world is still live, before any teardown.

@@ -40,7 +40,7 @@ object AssetDownloader {
      * fetch resolved from the version metadata. Whoever launches the game needs this id: the game
      * declares `--assetIndex` with a required argument and no default, and the version.json embedded
      * in its own jar carries no assetIndex field. A launch without it silently misses every resource
-     * that lives only in the asset index — in 26.3 that is every sound definition in the game.
+     * that lives only in the asset index — in the tracked game line that is every sound definition in the game.
      */
     const val ASSET_INDEX_MARKER = "oml-asset-index.txt"
 

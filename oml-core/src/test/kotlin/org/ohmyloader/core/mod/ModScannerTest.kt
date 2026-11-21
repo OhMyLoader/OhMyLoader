@@ -108,7 +108,7 @@ class ModScannerTest {
         // What a real mod jar actually carries besides classes: directory entries, `.json` data, a
         // `kotlin/…` module descriptor. Any of them reaching the class reader aborts the whole scan —
         // "Unsupported class file version" from a text file — so a jar with resources must still yield
-        // its mods. This is the shape the reserved-namespace check nearly broke.
+        // its mods.
         val modsDir = createTempDirectory("oml-mods").toFile()
         JarOutputStream(File(modsDir, "with-resources.jar").outputStream()).use { jar ->
             jar.putNextEntry(JarEntry("data/")); jar.closeEntry()

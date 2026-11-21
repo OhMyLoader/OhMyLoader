@@ -26,10 +26,10 @@ import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * 26.3 custom-payload bridge: publishes the declared channels into the game's payload registry, routes
+ * Custom-payload bridge: publishes the declared channels into the game's payload registry, routes
  * inbound payloads to the declaring mod's handler, and sends outbound ones.
  *
- * 26.3 allocates packet ids by registration order (`ProtocolInfoBuilder`), so a mod-added packet type
+ * The game allocates packet ids by registration order (`ProtocolInfoBuilder`), so a mod-added packet type
  * would shift every id after it and desync the vanilla client — mod traffic travels exclusively as
  * `CustomPacketPayload`, which the game routes by channel name over two fixed packet ids.
  */
@@ -161,7 +161,7 @@ object OMLNetworkBridge : OMLNetworkSender {
         val level = Minecraft.getInstance().level
             ?: error("OMLNetwork.sendToServer needs a client that is in a world")
         val listener = clientListener(level)
-            ?: error("the client's packet listener is not reachable (26.3 field 'connection' on ClientLevel)")
+            ?: error("the client's packet listener is not reachable (the 'connection' field on ClientLevel)")
         listener.send(ServerboundCustomPayloadPacket(Envelope(entry.wireId, value)))
     }
 

@@ -17,7 +17,7 @@ import org.ohmyloader.core.adapter.Refl
 
 /**
  * The `oml:zstd` packet-compression negotiation and the hook handlers that implement it, over a login custom query. A vanilla client answers unknown login queries with an **empty** answer (`DiscardedQueryAnswerPayload`), guaranteed protocol behavior — so the query costs a vanilla client one round trip and nothing else; an OML client intercepts the query (head of `ClientHandshakePacketListenerImpl.handleCustomQuery`) and answers with the 4-byte `OMLZ` payload instead.
- * The server recognizes its own query by transaction id **and** payload bytes; the payload bytes need a read-path return-value rewrite because vanilla's `ServerboundCustomQueryAnswerPacket.readPayload` *discards* answer bytes (`skipBytes`) — and 26.3 passes the *transaction id* into `readPayload`'s `size` parameter, which must never be used as a length.
+ * The server recognizes its own query by transaction id **and** payload bytes; the payload bytes need a read-path return-value rewrite because vanilla's `ServerboundCustomQueryAnswerPacket.readPayload` *discards* answer bytes (`skipBytes`) — and the game passes the *transaction id* into `readPayload`'s `size` parameter, which must never be used as a length.
  * No ordering hazard: both sides install OML's handlers at `Connection.setupCompression` unconditionally, and both handlers are **format-agnostic** — the decoder sniffs the zstd frame magic per frame, the encoder emits Deflate until the negotiated flag flips. Whatever order "query sent / answered / compression enabled" lands in, the first zstd frame is decoded by a peer that recognizes it, and a peer that never negotiated keeps seeing pure Deflate, byte-identical to vanilla.
  */
 object OmlZstdNetwork {
@@ -95,7 +95,7 @@ object OmlZstdNetwork {
 
     /**
      * Head of `ServerLoginPacketListenerImpl.handleCustomQueryPacket` (**cancelable**): recognize
-     * the OML answer. 26.3's vanilla body is *unconditionally* `disconnect(UNEXPECTED_QUERY)` —
+     * the OML answer. The vanilla body is *unconditionally* `disconnect(UNEXPECTED_QUERY)` —
      * verified with `javap`, any answer to any login query gets kicked — so this hook MUST cancel
      * the body for every answer to our own query id: a `SERVER_MARKER` payload means OML peer
      * (negotiate), anything else (a vanilla client's empty answer) means zlib fallback. Answers to
@@ -120,7 +120,7 @@ object OmlZstdNetwork {
 
     /**
      * Return-value rewrite of `ServerboundCustomQueryAnswerPacket.readPayload`. **`size` is a
-     * trap**: `javap` on 26.3 shows `read()` passes the *transaction id* into `readPayload`'s
+     * trap**: `javap` on the tracked game jar shows `read()` passes the *transaction id* into `readPayload`'s
      * `int` parameter, and `readPayload` delegates to `readUnknownPayload`, which skips
      * `readableBytes()` — so at return the reader index sits at the buffer's end and the wire
      * payload (`[present flag][OMLZ]`, written via `writeNullable`) ends exactly at

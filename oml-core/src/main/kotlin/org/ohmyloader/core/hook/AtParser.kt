@@ -274,8 +274,8 @@ internal object AtParser {
     /**
      * Split the target into its `owner` and `member` parts:
      *
-     * - `Lnet/minecraft/Foo;bar(I)V` → owner = `net/minecraft/Foo`、member = `bar(I)V`
-     * - `Lnet/minecraft/Foo;` → same owner、member = empty (matched by type)
+     * - `Lnet/minecraft/Foo;bar(I)V` → owner = `net/minecraft/Foo`, member = `bar(I)V`
+     * - `Lnet/minecraft/Foo;` → same owner, member = empty (matched by type)
      * - `bar(I)V` → owner = null
      *
      * Dots in the owner are always converted to `/` so Java names can be used directly.

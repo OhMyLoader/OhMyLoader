@@ -152,8 +152,7 @@ public final class TransformCache {
      * Drops stale fingerprint directories, keeping the current one and the most recently used
      * previous one.
      *
-     * <p>L2 used to accumulate one directory per fingerprint forever (42 fingerprints, 78 MB
-     * during development), and dropping every other directory would make a mod toggle
+     * <p>Dropping every other directory would make a mod toggle
      * (A → B → A) rebuild A's transformed bytes. One previous fingerprint is the useful window:
      * adding or removing a mod produces exactly one new fingerprint, and toggling back reuses
      * the one before it. Only direct children shaped like a fingerprint are considered, so

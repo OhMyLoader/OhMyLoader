@@ -71,7 +71,7 @@ interface RegistryAccessor {
 }
 
 /**
- * Fallback for adapters that do not install a typed accessor. The 26.3 adapter installs
+ * Fallback for adapters that do not install a typed accessor. The adapter installs
  * [org.ohmyloader.adapter.MinecraftRegistryAccessor], which avoids reflection entirely.
  */
 object ReflectiveRegistryAccessor : RegistryAccessor {
@@ -222,7 +222,7 @@ object ReflectiveRegistryAccessor : RegistryAccessor {
     override fun register(registryName: String, identifier: Any, value: Any) {
         val registry = builtinRegistry(registryName)
         val loader = OMLCore.gameClassLoader()
-        // 26.3's MappedRegistry.register is private; the public entry point is the static
+        // The game's MappedRegistry.register is private; the public entry point is the static
         // Registry.register(Registry, Identifier, T). Three 3-argument overloads exist
         // (String / Identifier / ResourceKey key types) — the Identifier one is selected by
         // matching the key's actual class rather than by position.

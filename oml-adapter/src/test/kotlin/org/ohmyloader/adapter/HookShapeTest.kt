@@ -13,7 +13,7 @@ import java.util.jar.JarFile
 import kotlin.test.*
 
 /**
- * **Anti-drift shape assertions**: every hook the 26.3 adapters declare is checked against the *real* `26.3-client.jar` bytecode, so the
+ * **Anti-drift shape assertions**: every hook the adapter declares is checked against the *real* client-jar bytecode of the tracked game line, so the
  * day Mojang renames or reshapes an anchor, this build fails instead of the game silently doing one thing less at launch.
  * The assertions are **derived from the live rule sets** (`MinecraftHookTransformer.rules` / `ServerHookTransformer.rules` / `NetworkPayloadTransformer.rules`), not a
  * hand-copied list: the rule declarations are the single source of truth, and this test walks them — every targeted class, method

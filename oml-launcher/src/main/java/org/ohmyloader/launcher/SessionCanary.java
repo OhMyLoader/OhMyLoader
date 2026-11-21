@@ -535,8 +535,7 @@ final class SessionCanary {
 
     /**
      * The supervisor URLClassLoader survives every session, so any of its fields that caches a
-     * child loader is a permanent root. The canary heap dump showed the session loader reachable
-     * from this object; inspect its fields directly, report the exact field, and clear the cache
+     * child loader is a permanent root. Inspect this object's fields directly, report the exact field, and clear the cache
      * containers that hold the old loader. The launcher's classes rebuild cache values on demand.
      */
     private static void clearSupervisorReferences(ClassLoader target, ClassLoader main) {

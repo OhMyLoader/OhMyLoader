@@ -99,7 +99,7 @@ class InjectionVariableTest {
             mixedTarget(),
         )
 
-        // a=3,b=10 → x=4→104、y=11 → 104 + 11 = 115
+        // a=3,b=10 → x=4→104, y=11 → 104 + 11 = 115
         assertEquals(115L, invokeStatic(clazz, "mixed", 3, 10L))
     }
 

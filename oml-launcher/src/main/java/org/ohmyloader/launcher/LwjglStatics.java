@@ -13,9 +13,7 @@ import java.nio.ByteBuffer;
  * inherits the retiring session's bindings even though its GPU context, its function pointer tables
  * and its native library handles are gone.
  *
- * <p>Checked against LWJGL 3.4.3's bytecode, the shared state that matters is small and entirely
- * per-class — {@code Library} and {@code MemoryUtil} hold no method-handle or address cache of
- * their own in this version, so there is no FFM stub table to invalidate. What does survive is:
+ * <p>Checked against LWJGL 3.4.3's bytecode, the shared state that matters is:
  *
  * <ul>
  *   <li>non-final static capability, router and dispatch objects on {@code GL}/{@code AL}/{@code
@@ -27,40 +25,30 @@ import java.nio.ByteBuffer;
  *       the *same* Java thread across a reboot.
  * </ul>
  *
- * <p>{@code GL.functionProvider} and {@code ALC.functionProvider} are not in that list — see
- * {@link #BINDINGS}. They are the game's own loaded-library flags and clearing them aborts the next
- * session before it has a window.
- *
- * <p>{@code GL.icd}, {@code AL.icd} and {@code ALC.icd} are deliberately left alone. {@code
- * GL.setCapabilities} and {@code AL.setCurrentProcess} forward to {@code icd.set(...)} with no null
- * check, so clearing the field would turn the *next* session's own setup into a
- * {@code NullPointerException}; {@code ALC.setCapabilities} recreates its {@code ICDStatic} lazily
- * but the other two do not. What those two setters do instead — install a null capability table — is
- * the state LWJGL's own {@code destroy()} leaves behind, and it turns every entry point into the
- * "function missing" abort rather than into a call through a dead address.
- *
- * <p>The reset is deliberately non-destructive: {@code VK.destroy()} and {@code GL.destroy()} call
- * {@code free()} on a provider whose native library the session may already have unloaded, turning a
- * stale binding into a double free. Clearing the field is what the next session needs.
+ * <p>Deliberately left alone: {@code GL}/{@code ALC}.{@code functionProvider} (the game's own
+ * loaded-library flags — clearing them aborts the next session before it has a window; see {@link
+ * #BINDINGS}) and the {@code icd} fields ({@code GL.setCapabilities}/{@code AL.setCurrentProcess}
+ * forward to {@code icd.set(...)} with no null check, so clearing the field turns the next
+ * session's own setup into a {@code NullPointerException}). The reset is deliberately
+ * non-destructive: {@code VK.destroy()}/{@code GL.destroy()} call {@code free()} on a provider
+ * whose native library may already be unloaded — clearing the field is what the next session
+ * needs.
  */
 final class LwjglStatics {
 
     /**
      * Binding classes and the non-final static references they keep.
      *
-     * <p>Every name here was read off the 3.4.3 jars. A missing field is reported, not ignored: if
-     * LWJGL renames one, this list is what silently stops resetting it.
+     * <p>Every name here was read off the 3.4.3 jars; a missing field is reported, not ignored —
+     * if LWJGL renames one, this list is what silently stops resetting it.
      *
-     * <p>{@code GL.functionProvider} and {@code ALC.functionProvider} are deliberately **absent**.
-     * They look like the same kind of residue and are not: the game reads them as its own "this
-     * library is loaded" flag. {@code NativeLibrariesBootstrap.loadOpenGL()} is literally
-     * {@code Objects.requireNonNull(GL.getFunctionProvider())}, and {@code loadOpenAL()} is the
-     * {@code ALC} twin — both run at the start of every session, and {@code GL}'s class initialiser
-     * (which is what loads the library) does not run a second time inside the same process. Clearing
-     * the field therefore turns the next session's first library check into a
-     * {@code NullPointerException} before a window exists. {@code VK.functionProvider} is the
-     * opposite case: the game re-runs {@code VK.create()} itself, wrapped in a catch, and that call
-     * refuses to run while the field is set.
+     * <p>{@code GL.functionProvider} and {@code ALC.functionProvider} are deliberately **absent**:
+     * the game reads them as its own "this library is loaded" flag ({@code loadOpenGL()} is
+     * literally {@code Objects.requireNonNull(GL.getFunctionProvider())}, and its class initialiser
+     * does not run twice inside one process) — clearing the field turns the next session's first
+     * library check into a {@code NullPointerException} before a window exists. {@code
+     * VK.functionProvider} is the opposite case: the game re-runs {@code VK.create()} itself,
+     * wrapped in a catch, and that call refuses to run while the field is set.
      */
     private static final String[][] BINDINGS = {
         {"org.lwjgl.opengl.GL", "capabilitiesWGL", "capabilitiesGLX", "capabilitiesGLXClient"},
@@ -161,17 +149,14 @@ final class LwjglStatics {
     /**
      * Every {@code static final ThreadLocal} these classes own, emptied on the current thread.
      *
-     * <p>This is the residue that a static-field sweep cannot see. The render thread is the *same*
-     * Java thread across a reboot — the session only replaces its classloader — so a ThreadLocal
+     * <p>This is the residue a static-field sweep cannot see: the render thread is the *same* Java
+     * thread across a reboot — the session only replaces its classloader — so a ThreadLocal
      * populated by the retiring session is still installed when the next one starts. {@code
      * MemoryStack} is the dangerous one: its thread stack holds native blocks allocated by the old
-     * session, and the next session pushes onto them. {@code AL}/{@code ALC} keep their capability
-     * caches the same way.
-     *
-     * <p>{@code remove()} only drops this thread's entry, which is exactly the scope that has to be
-     * cleaned; the blocks become collectable and the next use allocates a fresh stack. The stack's
-     * own top-of-stack pointer is rewound first, so nothing can be read out of it between the reset
-     * and the collection: see {@link #rewindMemoryStack}.
+     * session, and the next session pushes onto them; {@code AL}/{@code ALC} keep their capability
+     * caches the same way. {@code remove()} only drops this thread's entry, which is exactly the
+     * scope that has to be cleaned; the stack's own top-of-stack pointer is rewound first — see
+     * {@link #rewindMemoryStack}.
      */
     private static int clearThreadLocals(ClassLoader loader) {
         int cleared = 0;

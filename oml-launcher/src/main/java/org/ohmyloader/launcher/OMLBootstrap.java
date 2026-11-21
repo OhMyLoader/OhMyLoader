@@ -23,11 +23,10 @@ import java.util.Properties;
  * classpath holds only this jar, so the OML layer is discovered in {@code lib/} next to this jar and
  * handed to {@link OMLSupervisor}, which owns the Supervisor/Session boundary. The game layer is
  * never downloaded here — the installer lays it out and passes its paths via system properties
- * ({@code oml.library.dir} feeds {@code OMLCore.buildRuntimeUrls}).
- *
- * <p>This class only resolves the launcher layout and the {@code launch.properties} overrides. It
- * deliberately does not load {@code oml-core}: that module is session-scoped and must disappear
- * together with the game when the session is replaced.
+ * ({@code oml.library.dir} feeds {@code OMLCore.buildRuntimeUrls}). This class only resolves the
+ * launcher layout and the {@code launch.properties} overrides; it deliberately does not load {@code
+ * oml-core}: that module is session-scoped and must disappear together with the game when the
+ * session is replaced.
  *
  * <p>Two launch forms: <b>server</b> — the installer wrote a {@code launch.properties} next to the
  * jar carrying side / version / paths; <b>launcher</b> — PCL2 / HMCL / official put this jar on the

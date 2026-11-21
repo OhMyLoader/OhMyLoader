@@ -4,7 +4,7 @@ package org.ohmyloader.api.core.content
  * Content declaration registry: a mod registers simple content declaratively inside
  * [OMLContentProvider.declareContent], and OML translates it to the version's registration
  * mechanism at the registry-freeze point (the earliest point the version registry is still
- * writable), so a 26.3 build can attach real `DataComponentMap` values.
+ * writable), so a build against the real game can attach real `DataComponentMap` values.
  * Blocks and items declared here are **data-only**: their vanilla properties are configured
  * through the declaration DSL, and behavior beyond vanilla's comes from the declarative hooks
  * ([OMLBlockDeclaration.onStepOn] / [OMLBlockDeclaration.onHit]) whose implementation is the
@@ -91,7 +91,7 @@ interface ContentRegistry {
 
     /**
      * Declares a damage type, which the game loads from OML's injected content pack: the version
-     * adapter's `LivingEntity.hurt` extension (in `oml-api-core-<game version>`) takes its id, and a
+     * adapter's `LivingEntity.hurt` extension (in `oml-api`) takes its id, and a
      * `LIVING_HURT` handler reports [messageId] as the damage type of the hit.
      * [scaling] is how the game multiplies the amount by difficulty (`never`,
      * `when_caused_by_living_non_player`, `always`), [effects] the vanilla sounds and particles that come
@@ -111,7 +111,7 @@ interface ContentRegistry {
 
     /**
      * Declares a world clock, which the game loads from OML's injected content pack as
-     * `data/<namespace>/world_clock/<id>.json`. A 26.3 clock carries no fields beyond its identity: the
+     * `data/<namespace>/world_clock/<id>.json`. A clock carries no fields beyond its identity: the
      * position, rate and pause belong to the server's clock manager, which runs one instance for **every**
      * registered clock — including one no dimension binds, so a mod's own clock counts on its own.
      */
@@ -137,7 +137,7 @@ interface ContentRegistry {
     /**
      * Declares a dimension, loaded as `data/<namespace>/dimension/<id>.json`. The game creates a level for
      * **every** entry in that table when the server starts ([org.ohmyloader.api.levelById] then answers for
-     * it), so this is the whole of what 26.3 gives a mod without writing a level implementer.
+     * it), so this is the whole of what the game gives a mod without writing a level implementer.
      * [OMLDimensionDeclaration.type] is required.
      */
     fun declareDimension(id: String, configure: OMLDimensionDeclaration.() -> Unit)
@@ -242,7 +242,7 @@ class OMLDimensionTypeDeclaration {
 
 /**
  * The level stem for [ContentRegistry.declareDimension]: which dimension type the level runs on, and how its
- * terrain is produced. 26.3 offers three generators a mod can name without writing code: `flat`, `noise` and
+ * terrain is produced. The game offers three generators a mod can name without writing code: `flat`, `noise` and
  * `debug`.
  */
 class OMLDimensionDeclaration {
@@ -516,7 +516,7 @@ class OMLBlockPlantDeclaration {
 }
 
 /**
- * Data-component configuration for [ContentRegistry.declareItem]; everything maps onto native 26.3 item components at materialization
+ * Data-component configuration for [ContentRegistry.declareItem]; everything maps onto native item components at materialization
  * time: [maxDurability] → `DataComponents.MAX_DAMAGE` (enables the durability bar and durability loss); [attackDamage] / [attackSpeed] →
  * `DataComponents.ATTRIBUTE_MODIFIERS`, `ADD_VALUE` modifiers on `Attributes.ATTACK_DAMAGE` / `Attributes.ATTACK_SPEED` in the MAINHAND
  * group — the values are the **modifier amounts** a hand adds while holding the item (vanilla fists are 1.0 attack damage / 4.0 attack

@@ -6,8 +6,8 @@ import org.ohmyloader.core.transformer.injection.InjectingTransformer
 
 /**
  * The `oml:zstd` packet-compression hooks. Network code is shared between the client and the dedicated server (both run out of the same
- * unified 26.3 jar), so this transformer is registered on **both** sides in [OMLAdapter] — the rules are written once, in one place.
- * Anchor constraints in 26.3: `ServerLoginPacketListenerImpl.handleCustomQueryPacket` runs ahead of vanilla's answer handling (vanilla
+ * unified game jar), so this transformer is registered on **both** sides in [OMLAdapter] — the rules are written once, in one place.
+ * Anchor constraints: `ServerLoginPacketListenerImpl.handleCustomQueryPacket` runs ahead of vanilla's answer handling (vanilla
  * discards unknown answers); `ServerboundCustomQueryAnswerPacket.readPayload` (private static) *skips* the answer bytes, so the only way
  * to see them is a return-value rewrite — at return the buffer's reader index sits at the payload end; `Connection.setupCompression(int,
  * boolean)` is the single point where vanilla installs or reconfigures `"compress"` / `"decompress"` — OML reconfigures ahead of it and
@@ -31,7 +31,7 @@ class NetworkCompressionTransformer(private val idPrefix: String) : InjectingTra
                 desc = "(Lnet/minecraft/network/protocol/login/ServerboundCustomQueryAnswerPacket;)V",
             ) {
                 atHead {
-                    // Cancelable by necessity: 26.3's vanilla body disconnects on ANY answer
+                    // Cancelable by necessity: The vanilla body disconnects on ANY answer
                     // (javap: the method is a single `disconnect(UNEXPECTED_QUERY)`), so both the
                     // OML answer and a vanilla client's empty fallback answer must cancel it.
                     cancelableCall(

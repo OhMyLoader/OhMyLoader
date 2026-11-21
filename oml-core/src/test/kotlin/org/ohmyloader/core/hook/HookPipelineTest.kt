@@ -537,7 +537,6 @@ fun `a void ModifyArgs handler calls the bridge generated for its kind`() {
 }
 
 /** The handler's write target for the generated mixins; lives here so the bytecode stays simple. */
-/** The handler's write target for the generated mixins; lives here so the bytecode stays simple. */
 object GenRecorder {
     val hits = java.util.concurrent.atomic.AtomicInteger(0)
 }

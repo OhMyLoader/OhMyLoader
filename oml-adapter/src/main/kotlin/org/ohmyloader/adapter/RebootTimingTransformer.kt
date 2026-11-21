@@ -15,7 +15,7 @@ import org.ohmyloader.core.transformer.injection.InjectingTransformer
  * session-server future for the friends flag, and that join is a pure network wait on the boot
  * path (see the handler).
  *
- * 26.3-only (the RenderPearl frontend and the 26.3 reload internals are version-facing), so the
+ * Version-facing (the RenderPearl frontend and the game's reload internals are version-facing), so the
  * rules live with the adapter rather than the shared Minecraft transformer.
  */
 class RebootTimingTransformer : InjectingTransformer(

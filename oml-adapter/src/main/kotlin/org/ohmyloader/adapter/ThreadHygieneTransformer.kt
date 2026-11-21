@@ -5,7 +5,7 @@ import org.ohmyloader.api.core.inject.injection
 import org.ohmyloader.core.transformer.injection.InjectingTransformer
 
 /**
- * 26.3-only thread hygiene. Game executors and Netty event loops create workers while the render
+ * Version-facing thread hygiene. Game executors and Netty event loops create workers while the render
  * thread still carries the disposable OML class loader; a JNI global reference can then keep the
  * dead Thread object (and its loader) alive forever. Every worker is replaced with a supervisor
  * ThreadHygiene wrapper: plain bootstrap Thread or supervisor ForkJoin worker, supervisor target
