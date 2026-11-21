@@ -162,8 +162,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: gradle/actions/setup-gradle@v6
-      // The pinned 27.0.2-internal release publishes only linux/windows bundles; macOS runs the
-      // same vendor-agnostic Java 27 from Zulu — the codec tests run FFM, not the game runtime.
+      # The pinned 27.0.2-internal release publishes only linux/windows bundles; macOS runs the
+      # same vendor-agnostic Java 27 from Zulu — the codec tests run FFM, not the game runtime.
       - uses: actions/setup-java@v5
         with:
           distribution: zulu
