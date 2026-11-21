@@ -162,6 +162,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: gradle/actions/setup-gradle@v6
+      // The pinned 27.0.2-internal release publishes only linux/windows bundles; macOS runs the
+      // same vendor-agnostic Java 27 from Zulu — the codec tests run FFM, not the game runtime.
+      - uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 27
       - run: |
           rustup target add x86_64-apple-darwin aarch64-apple-darwin
           ./gradlew :oml-core:test :native:oml-native:packageOmlNativeJars
