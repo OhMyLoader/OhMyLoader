@@ -32,4 +32,4 @@ API reference, and content packs.
 
 ## License
 
-Licensed under AGPL-3.0.
+Licensed under AGPL-3.0-or-later.

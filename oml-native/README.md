@@ -72,4 +72,4 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for the build and release rules.
 
 ## License
 
-GNU Affero General Public License v3.0.
+GNU Affero General Public License v3.0 or later.

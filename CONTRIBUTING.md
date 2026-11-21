@@ -120,4 +120,4 @@ Report vulnerabilities privately; the organization-wide policy lives in the
 
 ## License
 
-The project is licensed under AGPL-3.0.
+The project is licensed under AGPL-3.0-or-later.
