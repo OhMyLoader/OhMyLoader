@@ -69,10 +69,12 @@ val nativesJar = tasks.register<Jar>("nativesJar") {
     archiveVersion.set(omlVersion)
     archiveClassifier.set(hostClassifier)
     // The cargo output carries the crate identifier (lib-prefixed on unix); the jar entry is
-    // renamed to the hyphenated name the loader resolves.
+    // renamed to exactly the hyphenated `oml-native.<ext>` the loader resolves — a naive
+    // replaceFirst on `liboml_native.so` leaves the lib prefix in (`liboml-native.so`), which
+    // the deploy regex rejects and the loader then loads a stale deployed copy.
     from(builtLibrary) {
         include("oml_native.*", "liboml_native.*")
-        rename { it -> it.replaceFirst("oml_native", "oml-native") }
+        rename { it -> it.removePrefix("lib").replace('_', '-') }
     }
 }
 
