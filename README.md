@@ -9,9 +9,15 @@ mod ([OhMyLoaderTestMod](https://github.com/OhMyLoader/OhMyLoaderTestMod)) befor
 
 ## Install
 
-Download the installer from [Releases](https://github.com/OhMyLoader/OhMyLoader/releases), run
-`java -jar`, and select a launcher target, game version, and directory. The installer adds only the
-OML layer; the launcher downloads the game.
+The installer is not published yet (pre-release). Build it from the loader source and run:
+
+```bash
+./gradlew :oml-installer:shadowJar
+java -jar dist/oml-installer-*.jar
+```
+
+Pick a launcher target, game version, and directory. The installer adds only the OML layer; the
+launcher downloads the game.
 
 ## Write a mod
 

@@ -1,7 +1,7 @@
 # Contributing to OhMyLoader
 
 OhMyLoader is a mod loader for Minecraft Java Edition 26.x. This repository contains the loader runtime,
-the version-neutral API, the 26.3 API and adapter, the content layer, the downloader, and the installer.
+the version-neutral API, the game-facing API and adapter, the content layer, the downloader, and the installer.
 The native library lives in this repository at `oml-native` (Rust) and is built from source by
 this build. The end-to-end game gate lives in `OhMyLoaderTestMod`; a loader change may require a
 test-mod run there.
@@ -35,7 +35,7 @@ test-mod run there.
 ./gradlew :oml-installer:shadowJar
 java -jar dist/oml-installer-*.jar --help
 java -jar dist/oml-installer-*.jar --target standard --dir /tmp/oml-smoke \
-  --version 26.3 --isolation true --side client
+  --version 26.4-snapshot-10 --isolation true --side client
 
 # Publish every module locally for the plugin and test mod:
 ./gradlew publishToMavenLocal
@@ -47,7 +47,7 @@ java -jar dist/oml-installer-*.jar --target standard --dir /tmp/oml-smoke \
 The codec and native-scan tests build the native from `oml-native` with cargo and dlopen the
 result; a missing Rust toolchain makes them skip, which CI treats as red.
 
-`./gradlew build` runs the tests that do not launch the game. `HookShapeTest` reads the real 26.3 client
+`./gradlew build` runs the tests that do not launch the game. `HookShapeTest` reads the real client
 jar through `fetchClientJar`; a shape mismatch must fail there, not at runtime. The Windows CI job runs
 `:oml-core:test`, `:oml-installer:test`, and `:oml-devtools:test` against the published Windows
 `natives-windows` jar.
