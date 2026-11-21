@@ -21,8 +21,8 @@ import java.nio.ByteOrder
  * namespace, which the Java side refuses.
  *
  * Every failure — no library, an old library without the symbol, a corrupt jar, a buffer that
- * still does not fit after one growth — returns null, and the caller falls back to the Java walk.
- * The cache is best-effort and must never fail a scan.
+ * still does not fit after one growth — returns null, and the caller reports the failure against
+ * that jar. The cache is best-effort and must never fail a scan.
  */
 internal object NativeJarScanner {
 
@@ -63,9 +63,9 @@ internal object NativeJarScanner {
                 ),
             )
         } catch (t: Throwable) {
-            // The pure-Java walk is a complete replacement; a missing native library is a
-            // performance decision, not an error the user needs to see.
-            OmlLog.info("OMLNative", "native jar scanner unavailable, using the Java walk (${t.message})")
+            // Unreachable in a working install: requireAvailable() has already bound the library
+            // at startup. Answer null and let the caller report the failure against the jar.
+            OmlLog.info("OMLNative", "native jar scanner unavailable (${t.message})")
             null
         }
     }
@@ -98,7 +98,7 @@ internal object NativeJarScanner {
         )
     }
 
-    /** Null whenever the native path cannot answer; the caller must fall back to Java. */
+    /** Null whenever the native path cannot answer; the caller reports the failure against the jar. */
     fun scan(jar: File, runtimeFeature: Int): List<Record>? {
         val bindings = bindings ?: return null
         return try {

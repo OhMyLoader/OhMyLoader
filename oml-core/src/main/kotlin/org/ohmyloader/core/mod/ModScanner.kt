@@ -6,12 +6,10 @@ import org.ohmyloader.api.core.OmlLog
 import org.ohmyloader.core.cache.StartupCache
 import org.ohmyloader.core.diagnostics.Diagnostics
 import java.io.File
-import java.io.InputStream
 import java.nio.file.Files
 import java.nio.file.attribute.BasicFileAttributes
 import java.util.concurrent.Callable
 import java.util.concurrent.Executors
-import java.util.jar.JarFile
 
 object ModScanner {
 
@@ -52,9 +50,20 @@ object ModScanner {
             // restricted to those classes instead of every class in the jar; the same index is
             // reused by the rule-set and hook scanners later in this run.
             val scan = JarClassIndex.scan(jarFile)
-            val sha = scan?.sha ?: StartupCache.hash(jarFile)
-            val index = scan?.candidates
-            val scanned = if (index != null && index.mods.isEmpty() && index.reserved.isEmpty()) {
+            if (scan == null) {
+                // The native walker could not read the jar. No Java walk exists to fall back on:
+                // the jar fails its own load with a report, and nothing from it enters the run or
+                // the ledger — a broken setup must keep shouting until it is fixed.
+                OmlLog.error(
+                    "ModScanner",
+                    "skipping ${jarFile.name}: the native scanner cannot read it (corrupt or unsupported " +
+                        "jar structure). Rebuild or re-export the jar; there is no Java fallback.",
+                )
+                continue
+            }
+            val sha = scan.sha
+            val index = scan.candidates
+            val scanned = if (index.mods.isEmpty() && index.reserved.isEmpty()) {
                 // A library jar: nothing to parse, and the empty record is still cached below.
                 ScanResult(emptyList(), reservedHit = false)
             } else {
@@ -127,64 +136,22 @@ object ModScanner {
     }
 
     /**
-     * [index] is the shared prefiltered walk when it could be built; `null` falls back to the
-     * full walk (an unreadable jar then fails exactly as it did before the index existed).
+     * [index] is the shared prefiltered walk; every `@Mod` candidate carries its class bytes, so
+     * the annotation values are read from memory and not a single jar is opened here.
      */
-    private fun scanJar(jarFile: File, index: JarClassIndex.Candidates?): ScanResult {
+    private fun scanJar(jarFile: File, index: JarClassIndex.Candidates): ScanResult {
+        if (index.reserved.isNotEmpty()) return refused(jarFile, index.reserved)
         val found = mutableListOf<ModContainer>()
-        if (index != null && index.reserved.isNotEmpty()) return refused(jarFile, index.reserved)
-        val reserved = mutableListOf<String>()
-        if (index != null && index.mods.all { it.bytes != null }) {
-            // The native walk returned the @Mod class bytes with the candidate records: the
-            // annotation values are read from memory, so not a single jar is opened here.
-            for (candidate in index.mods) {
-                parseModClass(candidate.bytes!!, jarFile)?.let(found::add)
-            }
-        } else {
-            JarFile(jarFile).use { zip ->
-            if (index != null) {
-                // Candidates only: the index already saw every entry and matched the descriptor.
-                for (candidate in index.mods) {
-                    if (candidate.bytes != null) {
-                        parseModClass(candidate.bytes, jarFile)?.let(found::add)
-                        continue
-                    }
-                    val entry = zip.getEntry(candidate.entryName) ?: continue
-                    zip.getInputStream(entry).use { stream ->
-                        parseModClass(stream, jarFile)?.let(found::add)
-                    }
-                }
-            } else {
-                val entries = zip.entries()
-                while (entries.hasMoreElements()) {
-                    val entry = entries.nextElement()
-                    // Directory entries, `kotlin/…`, `.json` payloads: only class files are read as bytecode.
-                    if (!entry.name.endsWith(".class")) continue
-                    val packed = JarClassIndex.reservedClassName(entry.name)
-                    if (packed != null) {
-                        reserved += packed
-                        continue
-                    }
-                    // MR-JAR versioned copies are not entry points: scanning them would produce a
-                    // second ModContainer for the same modId and initialize the mod twice.
-                    if (entry.name.startsWith("META-INF/")) continue
-
-                    zip.getInputStream(entry).use { stream ->
-                        parseModClass(stream, jarFile)?.let(found::add)
-                    }
-                }
-            }
-            }
+        for (candidate in index.mods) {
+            // The ABI guarantees bytes for `@Mod` records; a record without them is a native-side
+            // contract violation, not a jar shape to work around.
+            parseModClass(requireNotNull(candidate.bytes), jarFile)?.let(found::add)
         }
-        if (reserved.isNotEmpty()) return refused(jarFile, reserved)
         return ScanResult(found, reservedHit = false)
     }
 
     private fun parseModClass(bytes: ByteArray, jarFile: File): ModContainer? =
         parseModClass(ClassReader(bytes), jarFile)
-
-    private fun parseModClass(stream: InputStream, jarFile: File): ModContainer? =
-        parseModClass(ClassReader(stream), jarFile)
 
     private fun parseModClass(reader: ClassReader, jarFile: File): ModContainer? {
         val classNode = ClassNode()
