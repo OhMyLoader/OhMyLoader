@@ -134,7 +134,7 @@ jobs:
       # native test skipped would prove nothing.
       - run: |
           rustup target add aarch64-pc-windows-msvc
-          ./gradlew.bat :oml-core:test :oml-installer:test :oml-devtools:test :native:oml-native:packageOmlNativeJars
+          ./gradlew.bat :oml-core:test :oml-installer:test :oml-devtools:test :oml-native:packageOmlNativeJars
       - name: The native codec tests must not have skipped
         shell: bash
         run: |
@@ -170,7 +170,7 @@ jobs:
           java-version: 27
       - run: |
           rustup target add x86_64-apple-darwin aarch64-apple-darwin
-          ./gradlew :oml-core:test :native:oml-native:packageOmlNativeJars
+          ./gradlew :oml-core:test :oml-native:packageOmlNativeJars
       - uses: actions/upload-artifact@v7
         with:
           name: oml-native-osx
