@@ -106,7 +106,8 @@ The E2E scripts target Linux with Xvfb; CI uses software rendering. Windows deve
 - `oml_version` in `gradle.properties` is the single version source. Do not edit generated version output.
 - `oml_native_version` stamps the natives-<classifier> jar names the installer embeds and the version
   JSON entries name; the artifacts are built from `oml-native` in the same build. Bump it when
-  the native contract changes in a way a shipped installer must name differently.- A `v*` tag runs the build, Windows tests, the pinned TestMod gate, and the release job. The release job
+  the native contract changes in a way a shipped installer must name differently.
+- A `v*` tag runs the build, Windows tests, the pinned TestMod gate, and the release job. The release job
   requires `OML_TESTMOD_REF` and `OML_GRADLE_REF`, stages the Maven artifacts, compares the release rebuild
   against the staged SHA-256 manifest, and publishes only on a match.
 - Do not bypass the E2E gate or the byte comparison. A failure is release-blocking.
@@ -114,12 +115,9 @@ The E2E scripts target Linux with Xvfb; CI uses software rendering. Windows deve
 
 ## Security
 
-Do not report a vulnerability in a public issue. Use GitHub's private vulnerability reporting for this
-repository; include the affected version or commit, reproduction steps, and impact. If private reporting
-is unavailable, contact the maintainer through GitHub before public disclosure.
+Report vulnerabilities privately; the organization-wide policy lives in the
+[`.github` repository](https://github.com/OhMyLoader/.github/blob/main/SECURITY.md) and applies here.
 
 ## License
 
-The project is licensed under AGPL-3.0. By submitting a contribution, you confirm that you have the right
-to license it under AGPL-3.0. No CLA or `Signed-off-by` is required. Do not submit code with an
-incompatible license.
+The project is licensed under AGPL-3.0.

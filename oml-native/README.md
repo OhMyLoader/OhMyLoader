@@ -1,8 +1,6 @@
 # oml-native
 
-OhMyLoader's native library, loaded through the JVM Foreign Function & Memory API. It replaces the
-Zig implementation with the same C ABI: the loader's `NativeJarScanner` and `OmlNativeZstd` bindings
-are unchanged.
+OhMyLoader's native library, loaded through the JVM Foreign Function & Memory API.
 
 Two surfaces:
 
@@ -14,8 +12,9 @@ Two surfaces:
   `org/ohmyloader/` markers, and `@Mod` records carry their class bytes so the Java side never
   reopens the jar.
 
-Published as `org.ohmyloader:oml-native` with one `natives-<classifier>` jar per platform, the
-standard shape PCL2 / HMCL extract and the loader resolves by coordinate.
+The build packages one `natives-<classifier>` jar per platform; the installer embeds them
+(`packageOmlNativeJars`) and `oml_native_version` in the loader's `gradle.properties` stamps the
+coordinates it resolves.
 
 ## Layout
 
@@ -24,7 +23,6 @@ standard shape PCL2 / HMCL extract and the loader resolves by coordinate.
 | `src/lib.rs` | crate surface and re-exports |
 | `src/zstd.rs` | `oml_zstd_*` exports over `zstd-sys` |
 | `src/scan.rs` | `oml_scan_jar_v1`: ZIP parsing, inflation, constant-pool scan, MR-JAR selection |
-| `.github/workflows/native.yml` | six-platform build matrix and the GitHub Packages publication |
 | `Cargo.toml` | `cdylib` crate, release profile with LTO |
 
 ## Build and test
@@ -40,7 +38,7 @@ cargo build --release
 ```
 
 The release library is `target/release/oml_native.dll` (Windows), `liboml_native.so` (Linux) or
-`liboml_native.dylib` (macOS). The workflow renames it to `oml-native.<ext>` inside the natives jar,
+`liboml_native.dylib` (macOS). Packaging renames it to `oml-native.<ext>` inside the natives jar,
 because that is the name the loader's native loader expects.
 
 ## ABI
@@ -70,16 +68,7 @@ over for that jar. `counts` is `[mods, rules, hooks, classes, reserved]`.
 The `_v1` suffix is the ABI contract: a different record layout requires a new symbol name so an
 older loader can fall back cleanly instead of calling a mismatched signature.
 
-## Publishing
-
-A `v*` tag (or a manual `workflow_dispatch` with a version) builds the six-platform matrix, packages
-the main jar plus the `natives-windows`, `natives-windows-arm64`, `natives-linux`, `natives-linux-arm64`,
-`natives-osx` and `natives-osx-arm64` jars, and deploys them with `mvn deploy:deploy-file` to
-`https://maven.pkg.github.com/OhMyLoader/OhMyLoader`.
-
-The publication writes the loader's package namespace from this repository, which its own
-`GITHUB_TOKEN` cannot do: the `publish` job needs a `PACKAGES_TOKEN` secret (a PAT with
-`write:packages`). See [CONTRIBUTING.md](CONTRIBUTING.md) for the release rules.
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for the build and release rules.
 
 ## License
 
